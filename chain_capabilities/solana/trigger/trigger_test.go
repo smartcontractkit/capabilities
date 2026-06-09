@@ -17,6 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -37,6 +38,13 @@ const (
 	testAddress           = "11111111111111111111111111111112"
 	testEventName         = "TestEvent"
 )
+
+func testLimitsFactory(tb testing.TB) limits.Factory {
+	tb.Helper()
+	g, err := settings.NewJSONGetter([]byte(`{}`))
+	require.NoError(tb, err)
+	return limits.Factory{Settings: g, Logger: logger.Test(tb)}
+}
 
 var (
 	testPublicKey    = createTestPublicKey(testAddress)
@@ -136,7 +144,7 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 		LogTriggerSendChannelBufferSize: testChannelBufferSize,
 		Retention:                       time.Hour * 24,
 		MaxLogsKept:                     10000,
-		LimitsFactory:                   limits.Factory{Logger: lggr},
+		LimitsFactory:                   testLimitsFactory(t),
 		TriggerEventStore:               capabilities.NewMemEventStore(),
 		CapabilityID:                    testCapabilityID,
 	}
@@ -644,7 +652,7 @@ func TestStartPolling(t *testing.T) {
 			LogTriggerSendChannelBufferSize: testChannelBufferSize,
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
-			LimitsFactory:                   limits.Factory{Logger: logger.Nop()},
+			LimitsFactory:                   testLimitsFactory(t),
 			TriggerEventStore:               capabilities.NewMemEventStore(),
 			CapabilityID:                    testCapabilityID,
 		}
@@ -756,7 +764,7 @@ func TestStartPolling(t *testing.T) {
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   limits.Factory{Logger: lggr},
+			LimitsFactory:                   testLimitsFactory(t),
 			TriggerEventStore:               capabilities.NewMemEventStore(),
 			CapabilityID:                    testCapabilityID,
 		}
@@ -813,7 +821,7 @@ func TestStartPolling(t *testing.T) {
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   limits.Factory{Logger: lggr},
+			LimitsFactory:                   testLimitsFactory(t),
 			TriggerEventStore:               capabilities.NewMemEventStore(),
 			CapabilityID:                    testCapabilityID,
 		}
@@ -875,7 +883,7 @@ func TestStartPolling(t *testing.T) {
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   limits.Factory{Logger: lggr},
+			LimitsFactory:                   testLimitsFactory(t),
 			TriggerEventStore:               capabilities.NewMemEventStore(),
 			CapabilityID:                    testCapabilityID,
 		}
@@ -1106,7 +1114,7 @@ func BenchmarkSolanaLogTriggerService_ToLogPollerFilter(b *testing.B) {
 		MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		Retention:         time.Hour * 24,
 		MaxLogsKept:       10000,
-		LimitsFactory:     limits.Factory{Logger: lggr},
+		LimitsFactory:     testLimitsFactory(b),
 		TriggerEventStore: capabilities.NewMemEventStore(),
 		CapabilityID:      testCapabilityID,
 	}
@@ -1142,7 +1150,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     limits.Factory{Logger: lggr},
+			LimitsFactory:     testLimitsFactory(t),
 			TriggerEventStore: capabilities.NewMemEventStore(),
 			CapabilityID:      testCapabilityID,
 		})
@@ -1170,7 +1178,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			MaxLogsKept:                     20000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   limits.Factory{Logger: lggr},
+			LimitsFactory:                   testLimitsFactory(t),
 			TriggerEventStore:               capabilities.NewMemEventStore(),
 			CapabilityID:                    testCapabilityID,
 		}
@@ -1193,7 +1201,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     limits.Factory{Logger: lggr},
+			LimitsFactory:     testLimitsFactory(t),
 			CapabilityID:      testCapabilityID,
 		})
 		require.Error(t, err)
@@ -1206,7 +1214,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     limits.Factory{Logger: lggr},
+			LimitsFactory:     testLimitsFactory(t),
 			TriggerEventStore: capabilities.NewMemEventStore(),
 		})
 		require.Error(t, err)
@@ -1295,7 +1303,7 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     limits.Factory{Logger: lggr},
+			LimitsFactory:     testLimitsFactory(t),
 			TriggerEventStore: capabilities.NewMemEventStore(),
 			CapabilityID:      testCapabilityID,
 		})

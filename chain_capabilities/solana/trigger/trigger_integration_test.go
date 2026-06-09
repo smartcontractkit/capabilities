@@ -27,7 +27,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/sqlutil/sqltest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	logreadtest "github.com/smartcontractkit/chainlink-solana/contracts/generated/log_read_test"
@@ -75,7 +74,7 @@ func TestSolanaLogTrigger(t *testing.T) {
 		LogTriggerSendChannelBufferSize: 100,
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
-		LimitsFactory:                   limits.Factory{Logger: lggr},
+		LimitsFactory:                   testLimitsFactory(t),
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		TriggerEventStore:               capabilities.NewMemEventStore(),
@@ -183,7 +182,7 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 		LogTriggerSendChannelBufferSize: 100,
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
-		LimitsFactory:                   limits.Factory{Logger: lggr},
+		LimitsFactory:                   testLimitsFactory(t),
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		TriggerEventStore:               capabilities.NewMemEventStore(),
@@ -312,7 +311,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 		LogTriggerSendChannelBufferSize: 100,
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
-		LimitsFactory:                   limits.Factory{Logger: lggr},
+		LimitsFactory:                   testLimitsFactory(t),
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		TriggerEventStore:               capabilities.NewMemEventStore(),
@@ -502,6 +501,7 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 		LogTriggerSendChannelBufferSize: 100,
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
+		LimitsFactory:                   testLimitsFactory(t),
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		TriggerEventStore:               capabilities.NewMemEventStore(),
@@ -584,7 +584,7 @@ func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
 		LogTriggerSendChannelBufferSize: 100,
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
-		LimitsFactory:                   limits.Factory{Logger: lggr},
+		LimitsFactory:                   testLimitsFactory(t),
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		TriggerEventStore:               capabilities.NewMemEventStore(),
@@ -689,6 +689,7 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 		LogTriggerSendChannelBufferSize: 100,
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
+		LimitsFactory:                   testLimitsFactory(t),
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		TriggerEventStore:               capabilities.NewMemEventStore(),
