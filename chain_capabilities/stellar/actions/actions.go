@@ -59,7 +59,7 @@ func (s *Stellar) ReadContract(
 		metadata.WorkflowExecutionID,
 		metadata.ReferenceID,
 		metering.GetResponseMetadata(metering.ReadContract),
-		func(ctx context.Context) (*stellarcap.ReadContractResponse, int64, error) {
+		func(ctx context.Context) (*stellarcap.ReadContractResponse, uint64, error) {
 			response, err := s.StellarService.ReadContract(ctx, request)
 			if err != nil {
 				return nil, 0, err
@@ -69,7 +69,7 @@ func (s *Stellar) ReadContract(
 				Result:         response.Result,
 				LedgerSequence: response.LedgerSequence,
 				Error:          response.Error,
-			}, int64(response.LedgerSequence), nil
+			}, uint64(response.LedgerSequence), nil
 		},
 		lggr,
 	)
