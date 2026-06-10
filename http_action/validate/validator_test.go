@@ -10,14 +10,20 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
 
 func testValidator(t *testing.T) *Validator {
+	return testValidatorWithSettings(t, nil)
+}
+
+func testValidatorWithSettings(t *testing.T, getter settings.Getter) *Validator {
 	lggr := logger.Test(t)
 	limitsFactory := limits.Factory{
-		Logger: lggr,
+		Logger:   lggr,
+		Settings: getter,
 	}
 
 	validator, err := NewValidator(lggr, limitsFactory)
@@ -357,5 +363,40 @@ func TestValidateResponseSize(t *testing.T) {
 		err := validator.ValidateResponseSize(ctx, largeResponse)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "ResponseSizeLimit limited")
+	})
+}
+
+func TestResolveGatewayProxyDonID(t *testing.T) {
+	t.Parallel()
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "test-org", Owner: "test-owner", Workflow: "test-workflow"})
+
+	t.Run("returns empty when no settings configured", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		got, err := validator.ResolveGatewayProxyDonID(ctx)
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+
+	t.Run("returns org-scoped override", func(t *testing.T) {
+		t.Parallel()
+		getter, err := settings.NewJSONGetter([]byte(`{
+			"org": {
+				"test-org": {
+					"PerWorkflow": {
+						"HTTPAction": {
+							"GatewayProxyDonID": "gateway_don_eu"
+						}
+					}
+				}
+			}
+		}`))
+		require.NoError(t, err)
+
+		validator := testValidatorWithSettings(t, getter)
+		got, err := validator.ResolveGatewayProxyDonID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "gateway_don_eu", got)
 	})
 }

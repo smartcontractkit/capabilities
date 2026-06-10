@@ -37,6 +37,12 @@ var (
 	_ common.OutboundRequestClient = &gatewayOutboundProxy{}
 )
 
+// routingGatewayConnector is the subset of MultiGatewayConnector used for outbound routing.
+type routingGatewayConnector interface {
+	core.GatewayConnector
+	GatewayIDsForDon(ctx context.Context, donID string) ([]string, error)
+}
+
 type gatewayOutboundProxy struct {
 	services.StateMachine
 	gatewayConnector        core.GatewayConnector
@@ -179,7 +185,14 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 
 	p.metrics.IncrementRequestCount(ctx, lggr)
-	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
+
+	donID, err := p.validator.ResolveGatewayProxyDonID(ctx)
+	if err != nil {
+		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
+		return nil, 0, fmt.Errorf("failed to resolve gateway proxy DON: %w", err)
+	}
+
+	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, gatewayReq.Hash())
 	if err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
 		return nil, 0, fmt.Errorf("failed to establish connection to gateway: %w", err)
@@ -242,10 +255,10 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 // from the consistent hash ring and the method retries to select another gateway.
 // When all gateways are evicted from the hash ring, then it will retry to get the list of gateways and reinitialize the ring and retry after backoff.
 // Note that consitent hash ring is reset every time a new request is made, so it will always use the latest list of gateways.
-func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, requestHash string) (string, error) {
-	gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
+func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, donID, requestHash string) (string, error) {
+	gatewayIDs, err := p.gatewayIDsForDon(ctx, donID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get gateway IDs: %w", err)
+		return "", err
 	}
 	selector := setupRing(gatewayIDs)
 	backoff := time.Duration(p.gatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
@@ -261,9 +274,9 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 				case <-ctx.Done():
 					return "", ctx.Err()
 				case <-time.After(backoff):
-					gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
+					gatewayIDs, err := p.gatewayIDsForDon(ctx, donID)
 					if err != nil {
-						return "", fmt.Errorf("failed to get gateway IDs: %w", err)
+						return "", err
 					}
 					selector = setupRing(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
@@ -285,6 +298,21 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 			return gateway, nil
 		}
 	}
+}
+
+func (p *gatewayOutboundProxy) gatewayIDsForDon(ctx context.Context, donID string) ([]string, error) {
+	routing, ok := p.gatewayConnector.(routingGatewayConnector)
+	if !ok {
+		return nil, fmt.Errorf("gateway connector does not support multi-gateway routing")
+	}
+	gatewayIDs, err := routing.GatewayIDsForDon(ctx, donID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get gateway IDs: %w", err)
+	}
+	if len(gatewayIDs) == 0 {
+		return nil, fmt.Errorf("no gateways configured for DON %q", donID)
+	}
+	return gatewayIDs, nil
 }
 
 // attemptGatewayConnection waits to connect to a gateway with a new child context

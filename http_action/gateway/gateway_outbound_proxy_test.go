@@ -52,7 +52,10 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 			name: "successful connection on first try",
 			gatewayConnectorSetup: func(mockConnector *mockGatewayConnector) {
 				mockConnector.AwaitErrs = nil
-				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
+				mockConnector.Gateways = []mockGatewayEntry{
+					{ID: "gateway1"},
+					{ID: "gateway2"},
+				}
 			},
 			ctxSetup:        context.Background,
 			expectedGateway: "gateway2",
@@ -61,7 +64,10 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 			name: "connection timeout then success",
 			gatewayConnectorSetup: func(mockConnector *mockGatewayConnector) {
 				mockConnector.AwaitErrs = []error{errors.New("timeout"), nil}
-				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
+				mockConnector.Gateways = []mockGatewayEntry{
+					{ID: "gateway1"},
+					{ID: "gateway2"},
+				}
 			},
 			ctxSetup:        context.Background,
 			expectedGateway: "gateway1",
@@ -69,7 +75,10 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 		{
 			name: "connection timeout then success after backoff",
 			gatewayConnectorSetup: func(mockConnector *mockGatewayConnector) {
-				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
+				mockConnector.Gateways = []mockGatewayEntry{
+					{ID: "gateway1"},
+					{ID: "gateway2"},
+				}
 				mockConnector.AwaitErrs = []error{errors.New("connection failed"), errors.New("connection failed"), nil}
 			},
 			ctxSetup:        context.Background,
@@ -78,7 +87,10 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 		{
 			name: "context canceled",
 			gatewayConnectorSetup: func(mockConnector *mockGatewayConnector) {
-				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
+				mockConnector.Gateways = []mockGatewayEntry{
+					{ID: "gateway1"},
+					{ID: "gateway2"},
+				}
 			},
 			ctxSetup: func() context.Context {
 				ctx, cancel := context.WithCancel(t.Context())
@@ -103,7 +115,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 			}
 
 			ctx := tc.ctxSetup()
-			gateway, err := c.awaitConnection(ctx, logger.Test(t), "requestHash")
+			gateway, err := c.awaitConnection(ctx, logger.Test(t), "", "requestHash")
 			assert.Equal(t, tc.expectedGateway, gateway)
 			if tc.expectedError != "" {
 				require.ErrorContains(t, err, tc.expectedError)
@@ -118,8 +130,10 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
 	readyCh := make(chan string, 1)
 	mockConnector := &mockGatewayConnector{
-		DonIDVal:      "don1",
-		GatewayIDsVal: []string{"gateway1"},
+		SourceDonID: "don1",
+		Gateways: []mockGatewayEntry{
+			{ID: "gateway1"},
+		},
 		OnSend: func(id string) {
 			readyCh <- id
 		},
@@ -408,10 +422,15 @@ func simulateGatewayMessageWithMultiHeaders(t *testing.T, proxy *gatewayOutbound
 	require.NoError(t, err)
 }
 
+type mockGatewayEntry struct {
+	ID    string
+	DonID string
+}
+
 type mockGatewayConnector struct {
 	core.GatewayConnector
-	DonIDVal      string
-	GatewayIDsVal []string
+	SourceDonID   string
+	Gateways      []mockGatewayEntry
 	SendErr       error
 	AwaitErrs     []error
 	AddHandlerErr error
@@ -423,12 +442,47 @@ type mockGatewayConnector struct {
 	awaitCalls []string
 }
 
+func (m *mockGatewayConnector) multiDonMode() bool {
+	for _, gw := range m.Gateways {
+		if gw.DonID != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *mockGatewayConnector) gatewayIDsForDon(donID string) []string {
+	if donID == "" {
+		ids := make([]string, len(m.Gateways))
+		for i, gw := range m.Gateways {
+			ids[i] = gw.ID
+		}
+		return ids
+	}
+
+	if !m.multiDonMode() {
+		return nil
+	}
+
+	var ids []string
+	for _, gw := range m.Gateways {
+		if gw.DonID == donID {
+			ids = append(ids, gw.ID)
+		}
+	}
+	return ids
+}
+
 func (m *mockGatewayConnector) DonID(context.Context) (string, error) {
-	return m.DonIDVal, nil
+	return m.SourceDonID, nil
 }
 
 func (m *mockGatewayConnector) GatewayIDs(context.Context) ([]string, error) {
-	return m.GatewayIDsVal, nil
+	return m.gatewayIDsForDon(""), nil
+}
+
+func (m *mockGatewayConnector) GatewayIDsForDon(_ context.Context, donID string) ([]string, error) {
+	return m.gatewayIDsForDon(donID), nil
 }
 
 func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, resp *jsonrpc.Response[json.RawMessage]) error {
@@ -454,6 +508,14 @@ func (m *mockGatewayConnector) AddHandler(ctx context.Context, methods []string,
 	return m.AddHandlerErr
 }
 
+func (m *mockGatewayConnector) RemoveHandler(context.Context, []string) error {
+	return nil
+}
+
+func (m *mockGatewayConnector) SignMessage(context.Context, []byte) ([]byte, error) {
+	return nil, nil
+}
+
 func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 	proxy := &gatewayOutboundProxy{
 		gatewayConnectionConfig: common.GatewayConnectionConfig{
@@ -471,7 +533,10 @@ func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {
 	t.Run("respects context timeout - prevents infinite retry", func(t *testing.T) {
 		mockConnector := &mockGatewayConnector{
-			GatewayIDsVal: []string{"gateway1", "gateway2"},
+			Gateways: []mockGatewayEntry{
+				{ID: "gateway1"},
+				{ID: "gateway2"},
+			},
 			// Provide enough errors so that timeout can be triggered
 			AwaitErrs: make([]error, 20),
 		}
@@ -491,7 +556,7 @@ func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {
 		// Set a context timeout that's shorter than what would be needed for infinite retries
 		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 		defer cancel()
-		gateway, err := proxy.awaitConnection(ctx, logger.Test(t), "testHash")
+		gateway, err := proxy.awaitConnection(ctx, logger.Test(t), "", "testHash")
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "context deadline exceeded")
@@ -513,8 +578,8 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		capturedCh := make(chan *gateway_common.OutboundHTTPRequest, 1)
 		readyCh := make(chan string, 1)
 		mockConnector := &mockGatewayConnector{
-			GatewayIDsVal: []string{"gateway1"},
-			OnSend:        func(id string) { readyCh <- id },
+			Gateways: []mockGatewayEntry{{ID: "gateway1"}},
+			OnSend:   func(id string) { readyCh <- id },
 			CaptureSendPayload: func(resp *jsonrpc.Response[json.RawMessage]) {
 				if resp.Result == nil {
 					capturedCh <- nil
@@ -679,8 +744,8 @@ func TestGatewayOutboundProxy_SendRequest_Mtls(t *testing.T) {
 		capturedCh := make(chan *gateway_common.OutboundHTTPRequest, 1)
 		readyCh := make(chan string, 1)
 		mockConnector := &mockGatewayConnector{
-			GatewayIDsVal: []string{"gateway1"},
-			OnSend:        func(id string) { readyCh <- id },
+			Gateways: []mockGatewayEntry{{ID: "gateway1"}},
+			OnSend:   func(id string) { readyCh <- id },
 			CaptureSendPayload: func(resp *jsonrpc.Response[json.RawMessage]) {
 				if resp.Result == nil {
 					capturedCh <- nil
@@ -788,4 +853,166 @@ func TestResponseHeadersFromGateway(t *testing.T) {
 		require.Equal(t, []string{"application/json"}, multiHeaders["Content-Type"].Values)
 		require.Equal(t, []string{"s1", "s2"}, multiHeaders["Set-Cookie"].Values)
 	})
+}
+
+func TestGatewayOutboundProxy_SendRequest_GatewayProxyDonIDRouting(t *testing.T) {
+	t.Parallel()
+
+	var resolvedDonID string
+	readyCh := make(chan string, 1)
+
+	mockConnector := &mockGatewayConnector{
+		Gateways: []mockGatewayEntry{
+			{ID: "gateway_eu", DonID: "gateway_don_eu"},
+		},
+		OnSend:    func(id string) { readyCh <- id },
+		AwaitErrs: []error{nil},
+	}
+
+	baseValidator := newTestValidator(t)
+	validator := &mockRequestValidator{
+		RequestValidator: baseValidator,
+		resolveDonID: func(context.Context) (string, error) {
+			resolvedDonID = "gateway_don_eu"
+			return resolvedDonID, nil
+		},
+	}
+
+	proxy, err := NewGatewayOutboundProxy(
+		mockConnector,
+		common.ServiceConfig{},
+		logger.Test(t),
+		newMetrics(t),
+		validator,
+	)
+	require.NoError(t, err)
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	input := &http.Request{
+		Url:           "http://example.com",
+		Method:        "GET",
+		Timeout:       testTimeout,
+		CacheSettings: &http.CacheSettings{},
+	}
+
+	go func() {
+		id := <-readyCh
+		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
+	}()
+
+	output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, output)
+	require.Equal(t, "gateway_don_eu", resolvedDonID)
+	require.Equal(t, []string{"gateway_eu"}, mockConnector.awaitCalls)
+}
+
+func TestGatewayOutboundProxy_SendRequest_emptyDonIDUsesAllGateways(t *testing.T) {
+	t.Parallel()
+
+	readyCh := make(chan string, 1)
+
+	mockConnector := &mockGatewayConnector{
+		Gateways: []mockGatewayEntry{
+			{ID: "gateway_a"},
+			{ID: "gateway_b"},
+		},
+		OnSend:    func(id string) { readyCh <- id },
+		AwaitErrs: []error{nil},
+	}
+
+	proxy, err := NewGatewayOutboundProxy(
+		mockConnector,
+		common.ServiceConfig{},
+		logger.Test(t),
+		newMetrics(t),
+		newTestValidator(t),
+	)
+	require.NoError(t, err)
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	input := &http.Request{
+		Url:           "http://example.com",
+		Method:        "GET",
+		Timeout:       testTimeout,
+		CacheSettings: &http.CacheSettings{},
+	}
+
+	go func() {
+		id := <-readyCh
+		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
+	}()
+
+	output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, output)
+	require.Len(t, mockConnector.awaitCalls, 1)
+	require.Contains(t, []string{"gateway_a", "gateway_b"}, mockConnector.awaitCalls[0])
+}
+
+func TestGatewayOutboundProxy_gatewayIDsForDon_emptyDonID(t *testing.T) {
+	t.Parallel()
+
+	mockConnector := &mockGatewayConnector{
+		Gateways: []mockGatewayEntry{
+			{ID: "gateway_a"},
+			{ID: "gateway_b"},
+		},
+	}
+	proxy := &gatewayOutboundProxy{gatewayConnector: mockConnector}
+
+	got, err := proxy.gatewayIDsForDon(t.Context(), "")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"gateway_a", "gateway_b"}, got)
+}
+
+func TestMockGatewayConnector_GatewayIDsForDon(t *testing.T) {
+	t.Parallel()
+
+	t.Run("legacy non-empty donID returns no gateways", func(t *testing.T) {
+		t.Parallel()
+		mockConnector := &mockGatewayConnector{
+			Gateways: []mockGatewayEntry{
+				{ID: "gateway_a"},
+				{ID: "gateway_b"},
+			},
+		}
+		got, err := mockConnector.GatewayIDsForDon(t.Context(), "gateway_don_eu")
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+
+	t.Run("multi-DON filters by per-gateway donID", func(t *testing.T) {
+		t.Parallel()
+		mockConnector := &mockGatewayConnector{
+			Gateways: []mockGatewayEntry{
+				{ID: "gateway_us_1", DonID: "gateway_don_us"},
+				{ID: "gateway_us_2", DonID: "gateway_don_us"},
+				{ID: "gateway_eu_1", DonID: "gateway_don_eu"},
+			},
+		}
+		got, err := mockConnector.GatewayIDsForDon(t.Context(), "gateway_don_us")
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"gateway_us_1", "gateway_us_2"}, got)
+	})
+}
+
+type mockRequestValidator struct {
+	common.RequestValidator
+	resolveDonID func(ctx context.Context) (string, error)
+}
+
+func (m *mockRequestValidator) ResolveGatewayProxyDonID(ctx context.Context) (string, error) {
+	if m.resolveDonID != nil {
+		return m.resolveDonID(ctx)
+	}
+	return m.RequestValidator.ResolveGatewayProxyDonID(ctx)
 }
