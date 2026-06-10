@@ -1271,3 +1271,72 @@ func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
 	require.Equal(t, caperrors.LimitExceeded, capErr.Code())
 	require.Contains(t, capErr.Error(), "maximum fastest cron schedule is 5s")
 }
+
+// nextRunGaps returns the wall-clock gaps between consecutive scheduled runs.
+func nextRunGaps(t *testing.T, schedule string, count int) []time.Duration {
+	t.Helper()
+
+	jobDef := gocron.CronJob(schedule, true)
+	scheduler, err := gocron.NewScheduler(
+		gocron.WithLocation(time.UTC),
+		gocron.WithClock(clockwork.NewFakeClockAt(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))),
+	)
+	require.NoError(t, err)
+
+	job, err := scheduler.NewJob(jobDef, gocron.NewTask(func() {}))
+	require.NoError(t, err)
+
+	scheduler.Start()
+	defer func() { _ = scheduler.Shutdown() }()
+
+	nextRuns, err := job.NextRuns(count)
+	require.NoError(t, err)
+	require.Len(t, nextRuns, count)
+
+	gaps := make([]time.Duration, count-1)
+	for i := 1; i < len(nextRuns); i++ {
+		gaps[i-1] = nextRuns[i].Sub(nextRuns[i-1])
+	}
+	return gaps
+}
+
+func TestEnforceFastestSchedule_SecondStepMinuteRollover(t *testing.T) {
+	t.Parallel()
+
+	const minimumGap = 5 * time.Second
+
+	t.Run("*/14 looks like every 14s but has a 4s gap at the minute boundary", func(t *testing.T) {
+		t.Parallel()
+
+		schedule := "*/14 * * * * *"
+		gaps := nextRunGaps(t, schedule, 12)
+		t.Logf("%s fires at second 0,14,28,42,56 each minute", schedule)
+		t.Logf("%s consecutive run gaps: %v", schedule, gaps)
+
+		require.Equal(t, 14*time.Second, gaps[0])
+		require.Equal(t, 14*time.Second, gaps[3])
+		require.Equal(t, 4*time.Second, gaps[4], ":56 -> next :00 is only 4s because 60 is not divisible by 14")
+
+		capErr := enforceFastestSchedule(logger.Nop(), gocron.CronJob(schedule, true), minimumGap)
+		require.NotNil(t, capErr, "4s rollover gap violates the 5s minimum")
+		require.Equal(t, caperrors.LimitExceeded, capErr.Code())
+		require.Contains(t, capErr.Error(), "maximum fastest cron schedule is 5s")
+	})
+
+	t.Run("*/15 is valid because 60 is divisible by 15", func(t *testing.T) {
+		t.Parallel()
+
+		schedule := "*/15 * * * * *"
+		gaps := nextRunGaps(t, schedule, 12)
+		t.Logf("%s fires at second 0,15,30,45 each minute", schedule)
+		t.Logf("%s consecutive run gaps: %v", schedule, gaps)
+
+		for _, gap := range gaps {
+			require.Equal(t, 15*time.Second, gap)
+			require.GreaterOrEqual(t, gap, minimumGap)
+		}
+
+		capErr := enforceFastestSchedule(logger.Nop(), gocron.CronJob(schedule, true), minimumGap)
+		require.Nil(t, capErr)
+	})
+}
