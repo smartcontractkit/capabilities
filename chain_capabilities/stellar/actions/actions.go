@@ -7,45 +7,82 @@ import (
 	"strings"
 	"time"
 
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 )
 
-// Stellar implements the CRE capability actions for the Stellar chain
+// Stellar implements the CRE capability actions for the Stellar chain.
 type Stellar struct {
 	types.StellarService
-	handler        chainconsensus.RequestHandler
-	lggr           logger.SugaredLogger
-	messageBuilder *commonmon.MessageBuilder
-	chainSelector  uint64
+	handler               chainconsensus.RequestHandler
+	lggr                  logger.SugaredLogger
+	messageBuilder        *commonmon.MessageBuilder
+	chainSelector         uint64
+	forwarderAddress      string
+	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
+	transmissionScheduler ts.TransmissionScheduler
 }
 
-// NewStellar builds the Stellar capability actions.
 func NewStellar(
 	service types.StellarService,
+	forwarderAddress string,
 	lggr logger.Logger,
+	limitsFactory limits.Factory,
+	transmissionScheduler ts.TransmissionScheduler,
 	chainSelector uint64,
 	handler chainconsensus.RequestHandler,
 	messageBuilder *commonmon.MessageBuilder,
 ) (*Stellar, error) {
-	return &Stellar{
-		StellarService: service,
-		handler:        handler,
-		lggr:           logger.Sugared(lggr),
-		messageBuilder: messageBuilder,
-		chainSelector:  chainSelector,
-	}, nil
+	if service == nil {
+		return nil, fmt.Errorf("stellar service is required")
+	}
+
+	st := &Stellar{
+		StellarService:        service,
+		handler:               handler,
+		lggr:                  logger.Sugared(lggr),
+		messageBuilder:        messageBuilder,
+		chainSelector:         chainSelector,
+		forwarderAddress:      forwarderAddress,
+		transmissionScheduler: transmissionScheduler,
+	}
+	return st, st.initLimiters(limitsFactory)
+}
+
+func (s *Stellar) initLimiters(limitsFactory limits.Factory) (err error) {
+	s.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.ReportSizeLimit)
+	return err
+}
+
+func (s *Stellar) Close() error {
+	return services.CloseAll(s.reportSizeLimit)
+}
+
+func (s *Stellar) GetLatestLedger(ctx context.Context, _ capabilities.RequestMetadata, _ *stellarcap.GetLatestLedgerRequest) (*capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse], caperrors.Error) {
+	resp, err := s.StellarService.GetLatestLedger(ctx)
+	if err != nil {
+		return nil, capcommon.GetError(err, false)
+	}
+	protoResp, err := stellarcap.ConvertGetLatestLedgerResponseToProto(resp)
+	if err != nil {
+		return nil, capcommon.GetError(err, false)
+	}
+	return &capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse]{Response: protoResp}, nil
 }
 
 // ReadContract performs a consensus read of a read-only Soroban contract call.
@@ -101,20 +138,12 @@ func (s *Stellar) ReadContract(
 	return responseAndMetadata, nil
 }
 
-func (s *Stellar) GetLatestLedger(
-	_ context.Context,
-	_ capabilities.RequestMetadata,
-	_ *stellarcap.GetLatestLedgerRequest,
-) (*capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse], caperrors.Error) {
-	return nil, caperrors.NewPublicSystemError(errors.New("unimplemented"), caperrors.Unknown)
+func (s *Stellar) isUserErrorWriteReport(err error) bool {
+	return strings.HasPrefix(err.Error(), capcommon.UserError)
 }
 
-func (s *Stellar) WriteReport(
-	_ context.Context,
-	_ capabilities.RequestMetadata,
-	_ *stellarcap.WriteReportRequest,
-) (*capabilities.ResponseAndMetadata[*stellarcap.WriteReportReply], caperrors.Error) {
-	return nil, caperrors.NewPublicSystemError(errors.New("unimplemented"), caperrors.Unknown)
+func (s *Stellar) Info() (capabilities.CapabilityInfo, error) {
+	return capabilities.CapabilityInfo{}, nil
 }
 
 func getReadError(lggr logger.SugaredLogger, err error) caperrors.Error {
@@ -141,8 +170,8 @@ func isUserError(err error) bool {
 }
 
 // isStellarNodeInfraError reports whether err is a node-availability failure. It checks both
-// error identity and the message substring because errors reach this function through LOOP gRPC ,
-// which preserve only the gRPC status code and message — Go error identity (errors.Is) does not survive that round trip.
+// error identity and the message substring because errors reach this function through LOOP gRPC,
+// which preserves only the gRPC status code and message.
 func isStellarNodeInfraError(err error) bool {
 	return errors.Is(err, multinode.ErrNodeError) || strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
