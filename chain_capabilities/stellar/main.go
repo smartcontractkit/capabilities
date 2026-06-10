@@ -20,6 +20,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
+	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
@@ -170,7 +171,15 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	toStart = append(toStart, c.requestPoller, c.consensusHandler, c.oracle)
 
-	c.Stellar, err = actions.NewStellar(stellarService, c.lggr, c.chainSelector, c.consensusHandler)
+	var nodeAddress string
+	if localNode, lnErr := dependencies.CapabilityRegistry.LocalNode(ctx); lnErr != nil {
+		c.lggr.Warnw("Failed to resolve local node; source id will be empty in telemetry", "error", lnErr)
+	} else if localNode.PeerID != nil {
+		nodeAddress = localNode.PeerID.String()
+	}
+
+	messageBuilder := commonmon.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
+	c.Stellar, err = actions.NewStellar(stellarService, c.lggr, c.chainSelector, c.consensusHandler, messageBuilder)
 	if err != nil {
 		return err
 	}

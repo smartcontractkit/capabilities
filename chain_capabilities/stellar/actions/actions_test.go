@@ -15,9 +15,11 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 
+	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
@@ -35,6 +37,7 @@ func newMockedStellar(t *testing.T) *mockedStellar {
 		StellarService: mockStellarService,
 		chainSelector:  1,
 		lggr:           logger.Sugared(lggr),
+		messageBuilder: commonmon.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		handler:        testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 

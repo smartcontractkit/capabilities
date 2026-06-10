@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
@@ -21,9 +23,10 @@ import (
 // Stellar implements the CRE capability actions for the Stellar chain
 type Stellar struct {
 	types.StellarService
-	handler       chainconsensus.RequestHandler
-	lggr          logger.SugaredLogger
-	chainSelector uint64
+	handler        chainconsensus.RequestHandler
+	lggr           logger.SugaredLogger
+	messageBuilder *commonmon.MessageBuilder
+	chainSelector  uint64
 }
 
 // NewStellar builds the Stellar capability actions.
@@ -32,11 +35,13 @@ func NewStellar(
 	lggr logger.Logger,
 	chainSelector uint64,
 	handler chainconsensus.RequestHandler,
+	messageBuilder *commonmon.MessageBuilder,
 ) (*Stellar, error) {
 	return &Stellar{
 		StellarService: service,
 		handler:        handler,
 		lggr:           logger.Sugared(lggr),
+		messageBuilder: messageBuilder,
 		chainSelector:  chainSelector,
 	}, nil
 }
@@ -52,7 +57,14 @@ func (s *Stellar) ReadContract(
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err), caperrors.InvalidArgument)
 	}
 
-	lggr := s.lggr.With("workflowExecutionID", metadata.WorkflowExecutionID, "referenceID", metadata.ReferenceID)
+	tc := commonmon.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
+	lggr := s.messageBuilder.RequestLggr(s.lggr, tc).With(
+		"chainSelector", s.chainSelector,
+		"contractID", request.ContractID,
+		"function", request.Function,
+		"sourceAccount", request.SourceAccount,
+		"argsCount", len(request.Args),
+	)
 	lggr.Info("Received ReadContract request")
 
 	cReq := ctypes.NewVolatileRequest(
@@ -79,7 +91,11 @@ func (s *Stellar) ReadContract(
 		return nil, getReadError(lggr, fmt.Errorf("failed to ReadContract: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled ReadContract")
+	resp := responseAndMetadata.Response
+	lggr.Infow("Successfully handled ReadContract",
+		"ledgerSequence", resp.GetLedgerSequence(),
+		"resultByteLength", len(resp.GetResult()),
+	)
 	return responseAndMetadata, nil
 }
 
