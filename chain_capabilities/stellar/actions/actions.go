@@ -65,7 +65,7 @@ func (s *Stellar) ReadContract(
 		"sourceAccount", request.SourceAccount,
 		"argsCount", len(request.Args),
 	)
-	lggr.Info("Received ReadContract request")
+	lggr.Debug("Received ReadContract request")
 
 	cReq := ctypes.NewVolatileRequest(
 		metadata.WorkflowExecutionID,
@@ -92,7 +92,7 @@ func (s *Stellar) ReadContract(
 	}
 
 	resp := responseAndMetadata.Response
-	lggr.Infow("Successfully handled ReadContract",
+	lggr.Debugw("Successfully handled ReadContract",
 		"ledgerSequence", resp.GetLedgerSequence(),
 		"resultByteLength", len(resp.GetResult()),
 	)

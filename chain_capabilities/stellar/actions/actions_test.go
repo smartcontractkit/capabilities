@@ -57,18 +57,6 @@ func validReadContractRequest() *stellarcap.ReadContractRequest {
 func TestReadContract(t *testing.T) {
 	t.Parallel()
 
-	t.Run("reads disabled", func(t *testing.T) {
-		t.Parallel()
-		helper := newMockedStellar(t)
-
-		_, err := helper.stellar.ReadContract(t.Context(), capabilities.RequestMetadata{
-			WorkflowExecutionID: "weid",
-			ReferenceID:         "step-id",
-		}, validReadContractRequest())
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "reads are not available")
-	})
-
 	t.Run("invalid request - missing contractID", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedStellar(t)

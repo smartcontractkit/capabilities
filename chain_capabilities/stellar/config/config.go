@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -23,30 +22,4 @@ type Config struct {
 	ObservationPollPeriod time.Duration `json:"observationPollPeriod"`
 	// UnknownRequestsTTL is how long results for not-yet-tracked requests are cached.
 	UnknownRequestsTTL time.Duration `json:"unknownRequestsTTL"`
-}
-
-func (c *Config) UnmarshalJSON(bs []byte) error {
-	type config struct {
-		Network string `json:"network"`
-		ChainID string `json:"chainId"`
-		IsLocal bool   `json:"isLocal,omitempty"`
-
-		ReadsEnabled                  bool          `json:"readsEnabled"`
-		ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
-		ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
-		UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
-	}
-	var cfg config
-	if err := json.Unmarshal(bs, &cfg); err != nil {
-		return err
-	}
-
-	c.Network = cfg.Network
-	c.ChainID = cfg.ChainID
-	c.IsLocal = cfg.IsLocal
-	c.ObservationPollerWorkersCount = cfg.ObservationPollerWorkersCount
-	c.ObservationPollPeriod = cfg.ObservationPollPeriod
-	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL
-
-	return nil
 }
