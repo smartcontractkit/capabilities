@@ -20,7 +20,7 @@ func GetResponseMetadata(action SpendValueCredits) capabilities.ResponseMetadata
 			{
 				// Peer2PeerID is assigned by the engine, leaving it empty here.
 				SpendValue: string(action),
-				SpendUnit:  "RPC_STELLAR", // TODO: PLEX-3022 - generalize spend unit across chain capabilities
+				SpendUnit:  "RPC_EVM", // TODO: PLEX-3022 - generalize spend unit across chain capabilities
 			},
 		},
 	}
