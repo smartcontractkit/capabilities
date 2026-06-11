@@ -899,6 +899,23 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		_, err := svc.GetTransactionReceipt(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
 	})
+	t.Run("preserves already wrapped capability errors", func(t *testing.T) {
+		svc := actions.InitMocks(t)
+		capErr := caperrors.NewPublicSystemError(errors.New("failed to marshal receipt reply"), caperrors.Internal)
+		ch := make(chan types.Reply, 1)
+		ch <- types.Reply{Err: capErr}
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
+		_, err := svc.GetTransactionReceipt(t.Context(), test.GetMetadataWithFunds(), req)
+		require.Error(t, err)
+
+		var got caperrors.Error
+		require.True(t, errors.As(err, &got))
+		require.Equal(t, caperrors.OriginSystem, got.Origin())
+		require.Equal(t, caperrors.Internal, got.Code())
+		require.Equal(t, capErr.Error(), err.Error())
+	})
 }
 
 func TestCapability_EstimateGas(t *testing.T) {

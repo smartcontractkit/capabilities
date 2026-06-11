@@ -2,12 +2,16 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -96,49 +100,6 @@ func TestNormalizeBlockNumber(t *testing.T) {
 				require.Equal(t, tt.expectedIsLocking, gotLocking)
 				require.Equal(t, tt.expectedConfidenceLevel, confidenceLevel)
 			}
-		})
-	}
-}
-
-func TestIsRevertError(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		err      error
-		expected bool
-	}{
-		{
-			name:     "execution reverted with reason",
-			err:      fmt.Errorf("execution reverted: division by zero"),
-			expected: true,
-		},
-		{
-			name:     "wrapped RPC revert",
-			err:      fmt.Errorf("RPC call failed: execution reverted"),
-			expected: true,
-		},
-		{
-			name:     "execution reverted bare",
-			err:      fmt.Errorf("execution reverted"),
-			expected: true,
-		},
-		{
-			name:     "non-revert error",
-			err:      fmt.Errorf("insufficient funds"),
-			expected: false,
-		},
-		{
-			name:     "context deadline exceeded",
-			err:      context.DeadlineExceeded,
-			expected: false,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tc.expected, isRevertError(tc.err))
 		})
 	}
 }
@@ -322,6 +283,83 @@ func TestFilterLogs(t *testing.T) {
 				require.ErrorContains(t, err, tc.ExpectedError)
 				return
 			}
+		})
+	}
+}
+
+func TestEVMEnsureCapabilityError(t *testing.T) {
+	evm := &EVM{lggr: logger.Sugared(logger.Test(t))}
+	limitErr := limits.NewUpperBoundLimiter[uint64](10).Check(t.Context(), 11)
+	require.Error(t, limitErr)
+
+	publicUserErr := caperrors.NewPublicUserError(errors.New("invalid receipt hash"), caperrors.InvalidArgument)
+	publicSystemErr := caperrors.NewPublicSystemError(errors.New("failed to marshal receipt reply"), caperrors.Internal)
+
+	testCases := []struct {
+		name           string
+		err            error
+		expectedOrigin caperrors.Origin
+		expectedCode   caperrors.ErrorCode
+		expectedError  string
+	}{
+		{
+			name:           "preserves capability user error",
+			err:            publicUserErr,
+			expectedOrigin: caperrors.OriginUser,
+			expectedCode:   caperrors.InvalidArgument,
+			expectedError:  publicUserErr.Error(),
+		},
+		{
+			name:           "preserves capability system error",
+			err:            publicSystemErr,
+			expectedOrigin: caperrors.OriginSystem,
+			expectedCode:   caperrors.Internal,
+			expectedError:  publicSystemErr.Error(),
+		},
+		{
+			name:           "wraps known user limit error",
+			err:            limitErr,
+			expectedOrigin: caperrors.OriginUser,
+			expectedCode:   caperrors.LimitExceeded,
+			expectedError:  "limited: cannot use 11, limit is 10",
+		},
+		{
+			name:           "wraps known system timeout error",
+			err:            context.DeadlineExceeded,
+			expectedOrigin: caperrors.OriginSystem,
+			expectedCode:   caperrors.Unknown,
+			expectedError:  context.DeadlineExceeded.Error(),
+		},
+		{
+			name:           "wraps node infra error matched by errors.Is",
+			err:            fmt.Errorf("rpc call failed: %w", multinode.ErrNodeError),
+			expectedOrigin: caperrors.OriginSystem,
+			expectedCode:   caperrors.Unknown,
+			expectedError:  multinode.ErrNodeError.Error(),
+		},
+		{
+			name:           "wraps node infra error matched by string contains",
+			err:            errors.New("rpc call failed: " + multinode.ErrNodeError.Error()),
+			expectedOrigin: caperrors.OriginSystem,
+			expectedCode:   caperrors.Unknown,
+			expectedError:  multinode.ErrNodeError.Error(),
+		},
+		{
+			name:           "wraps unknown plain error as user error",
+			err:            errors.New("some unexpected failure"),
+			expectedOrigin: caperrors.OriginUser,
+			expectedCode:   caperrors.Unknown,
+			expectedError:  "some unexpected failure",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := evm.ensureCapabilityError(tc.err)
+			require.Equal(t, caperrors.VisibilityPublic, got.Visibility())
+			require.Equal(t, tc.expectedOrigin, got.Origin())
+			require.Equal(t, tc.expectedCode, got.Code())
+			require.Contains(t, got.Error(), tc.expectedError)
 		})
 	}
 }

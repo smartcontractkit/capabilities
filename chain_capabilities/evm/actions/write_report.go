@@ -60,16 +60,18 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 	if err := e.validateInputsAndReportMetadata(metadata, input); err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", err.Error(), true))
-		return nil, NewUserError(err)
+		capError := caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", capError))
+		return nil, capError
 	}
 
 	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
 		isUserError := e.isUserErrorWriteReport(err)
+		capError := capcommon.GetError(err, isUserError)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", capError))
+		return nil, capError
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully executed WriteReport", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))

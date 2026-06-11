@@ -351,7 +351,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "[2]Unknown: received address is not 20 bytes long. Address in HEX: ", err.Error())
+		require.Equal(t, "[3]InvalidArgument: received address is not 20 bytes long. Address in HEX: ", err.Error())
 	})
 
 	t.Run("Invalid report metadata", func(t *testing.T) {
@@ -363,7 +363,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "[2]Unknown: metadata: raw too short, want ≥109, got 0", err.Error())
+		require.Equal(t, "[3]InvalidArgument: metadata: raw too short, want ≥109, got 0", err.Error())
 	})
 
 	t.Run("Report signatures are not empty", func(t *testing.T) {
@@ -397,7 +397,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, "[2]Unknown: unsupported report version: 20", err.Error())
+		require.Contains(t, "[3]InvalidArgument: unsupported report version: 20", err.Error())
 	})
 
 	t.Run("Workflow names do not match", func(t *testing.T) {
@@ -2155,7 +2155,7 @@ func TestWriteReport_RevertReceiptFetchFailsReturnsUserError(t *testing.T) {
 
 		require.Error(t, err)
 		require.True(t, service.isUserErrorWriteReport(err))
-		capErr := GetError(err, service.isUserErrorWriteReport(err))
+		capErr := capcommon.GetError(err, service.isUserErrorWriteReport(err))
 		require.Equal(t, caperrors.OriginUser, capErr.Origin())
 	}
 

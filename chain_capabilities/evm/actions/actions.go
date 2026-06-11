@@ -67,12 +67,12 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
-		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)
+		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.FailedPrecondition)
 	}
 
 	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, cfg.ForwarderLookbackBlocks, lggr)
 	if err != nil {
-		return &EVM{}, caperrors.NewPublicSystemError(err, caperrors.Unknown)
+		return &EVM{}, caperrors.NewPublicSystemError(err, caperrors.Internal)
 	}
 
 	e := &EVM{
@@ -141,17 +141,17 @@ func (e *EVM) CallContract(
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 
 	callMsg, err := evm.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(input.GetBlockNumber())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(telemetryContext, callMsg, blockNumber.Int64()))
@@ -159,7 +159,7 @@ func (e *EVM) CallContract(
 	callContract := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 		if err != nil {
-			return nil, caperrors.NewPublicSystemError(fmt.Errorf("error getting call block number: %w", err), caperrors.Unknown)
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("error getting call block number: %w", err), caperrors.Internal)
 		}
 
 		resp, err := e.EVMService.CallContract(ctx, evmtypes.CallContractRequest{
@@ -182,10 +182,10 @@ func (e *EVM) CallContract(
 	}
 
 	if err != nil {
-		isUserError := isRevertError(err) || e.isUserError(err)
+		capError := e.ensureCapabilityError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", capError))
+		return nil, capError
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(telemetryContext, callMsg, blockNumber.Int64()))
@@ -245,15 +245,15 @@ type filterLogsQuery struct {
 	ConfidenceLevel           primitives.ConfidenceLevel
 }
 
-func (e *EVM) convertLogsFilterFromProto(ctx context.Context, req *evm.FilterLogsRequest) (*filterLogsQuery, error) {
+func (e *EVM) convertLogsFilterFromProto(ctx context.Context, req *evm.FilterLogsRequest) (*filterLogsQuery, caperrors.Error) {
 	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 
 	if ethFilterQuery.BlockHash != (evmtypes.Hash{}) {
 		if ethFilterQuery.FromBlock != nil || ethFilterQuery.ToBlock != nil {
-			return nil, NewUserError(errors.New("cannot specify both block hash and block range"))
+			return nil, caperrors.NewPublicUserError(errors.New("cannot specify both block hash and block range"), caperrors.InvalidArgument)
 		}
 
 		return &filterLogsQuery{
@@ -265,18 +265,17 @@ func (e *EVM) convertLogsFilterFromProto(ctx context.Context, req *evm.FilterLog
 
 	fromBlock, fromNeedsBlockHeightConsensus, _, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.FromBlock))
 	if err != nil {
-		return nil, NewUserError(fmt.Errorf("fromBlock is invalid: %w", err))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("fromBlock is invalid: %w", err), caperrors.InvalidArgument)
 	}
 
 	toBlock, toNeedsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.ToBlock))
 	if err != nil {
-		return nil, NewUserError(fmt.Errorf("toBlock is invalid: %w", err))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("toBlock is invalid: %w", err), caperrors.InvalidArgument)
 	}
 
 	if !fromNeedsBlockHeightConsensus && !toNeedsBlockHeightConsensus {
-		err = e.validateBlockRange(ctx, ethFilterQuery.FromBlock, ethFilterQuery.ToBlock)
-		if err != nil {
-			return nil, NewUserError(err)
+		if err := e.validateBlockRangeInput(ctx, ethFilterQuery.FromBlock, ethFilterQuery.ToBlock); err != nil {
+			return nil, err
 		}
 
 		return &filterLogsQuery{
@@ -295,33 +294,35 @@ func (e *EVM) convertLogsFilterFromProto(ctx context.Context, req *evm.FilterLog
 	}, nil
 }
 
-func (e *EVM) validateBlockRange(ctx context.Context, fromBlock, toBlock *big.Int) error {
+func (e *EVM) validateBlockRangeInput(ctx context.Context, fromBlock, toBlock *big.Int) caperrors.Error {
 	rangeSize := big.NewInt(0).Sub(toBlock, fromBlock)
 	if rangeSize.Sign() < 0 {
-		return fmt.Errorf("toBlock %s is less than fromBlock %s", toBlock.String(), fromBlock.String())
+		return caperrors.NewPublicUserError(fmt.Errorf("toBlock %s is less than fromBlock %s", toBlock.String(), fromBlock.String()), caperrors.InvalidArgument)
 	}
 
 	if !rangeSize.IsUint64() {
-		return fmt.Errorf("block range size %s overflows uint64", rangeSize)
+		return caperrors.NewPublicUserError(fmt.Errorf("block range size %s overflows uint64", rangeSize), caperrors.InvalidArgument)
 	}
 
-	return e.logQueryBlockLimit.Check(ctx, rangeSize.Uint64())
+	if err := e.logQueryBlockLimit.Check(ctx, rangeSize.Uint64()); err != nil {
+		return caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
+	}
+	return nil
 }
 
 func (e *EVM) getLockedFilterLogsQuery(ctx context.Context, query *filterLogsQuery, height *ctypes.ChainHeight) (evmtypes.FilterQuery, primitives.ConfidenceLevel, error) {
 	callFromBlock, err := getCallBlockNumber(query.NormalizedFromBlock, height)
 	if err != nil {
-		return evmtypes.FilterQuery{}, primitives.Unconfirmed, fmt.Errorf("error getting callFromBlock: %w", err)
+		return evmtypes.FilterQuery{}, primitives.Unconfirmed, caperrors.NewPublicSystemError(fmt.Errorf("error getting callFromBlock: %w", err), caperrors.Internal)
 	}
 
 	callToBlock, err := getCallBlockNumber(query.NormalizedToBlock, height)
 	if err != nil {
-		return evmtypes.FilterQuery{}, primitives.Unconfirmed, fmt.Errorf("error getting callToBlock: %w", err)
+		return evmtypes.FilterQuery{}, primitives.Unconfirmed, caperrors.NewPublicSystemError(fmt.Errorf("error getting callToBlock: %w", err), caperrors.Internal)
 	}
 
-	err = e.validateBlockRange(ctx, callFromBlock, callToBlock)
-	if err != nil {
-		return evmtypes.FilterQuery{}, primitives.Unconfirmed, NewUserError(err)
+	if err := e.validateBlockRangeInput(ctx, callFromBlock, callToBlock); err != nil {
+		return evmtypes.FilterQuery{}, primitives.Unconfirmed, err
 	}
 
 	result := query.EthFilterLogs // copy
@@ -337,21 +338,21 @@ func (e *EVM) filterLogsObserve(ctx context.Context, query evmtypes.FilterQuery,
 		IsExternal:      true,
 	})
 	if err != nil {
-		return nil, nil, GetError(err, e.isUserError(err))
+		return nil, nil, err
 	}
 
 	logs, err := evm.ConvertLogsToProto(serviceReply.Logs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to convert logs to proto: %w", err)
+		return nil, nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert logs to proto: %w", err), caperrors.Internal)
 	}
 
 	capReply := &evm.FilterLogsReply{Logs: logs}
 	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(capReply)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to marshal filter logs reply: %w", err), caperrors.Internal)
 	}
 	if err = e.readPayloadSizeLimiter.Check(ctx, commoncfg.SizeOf(b)); err != nil {
-		return nil, nil, NewUserError(err)
+		return nil, nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 	return capReply, b, nil
 }
@@ -411,27 +412,28 @@ func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata,
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.FilterLogs)); err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 
-	query, err := e.convertLogsFilterFromProto(ctx, req)
-	if err != nil {
-		return nil, EnsureRemoteReportable(err)
+	query, capError := e.convertLogsFilterFromProto(ctx, req)
+	if capError != nil {
+		return nil, capError
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(telemetryContext, query.EthFilterLogs))
 
 	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.FilterLogsReply]
+	var err error
 	if e.useHashBasedConsensus(ctx, meta) {
 		responseAndMetadata, err = e.filterLogsV2(ctx, meta, query)
 	} else {
 		responseAndMetadata, err = e.filterLogsV1(ctx, requestID(meta), query)
 	}
 	if err != nil {
-		isUserError := e.isUserError(err)
+		capError := e.ensureCapabilityError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildFilterLogsError(telemetryContext, query.EthFilterLogs, "Failed to FilterLogs", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildFilterLogsError(telemetryContext, query.EthFilterLogs, "Failed to FilterLogs", capError))
+		return nil, capError
 	}
 
 	// G115: integer overflow conversion int -> int32 (gosec)
@@ -446,7 +448,11 @@ func (e *EVM) balanceAtV1(ctx context.Context, requestID string, needsBlockHeigh
 		if err != nil {
 			return nil, err
 		}
-		return proto.Marshal(r.Balance)
+		balance, err := proto.Marshal(r.Balance)
+		if err != nil {
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to marshal balance reply: %w", err), caperrors.Internal)
+		}
+		return balance, nil
 	}
 	var request ctypes.Request
 	if needsBlockHeightConsensus {
@@ -483,24 +489,24 @@ func (e *EVM) balanceAtV2(ctx context.Context, meta capabilities.RequestMetadata
 
 func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64()))
 
 	balanceAt := func(ctx context.Context, height *ctypes.ChainHeight) (*evm.BalanceAtReply, error) {
 		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 		if err != nil {
-			return nil, NewUserError(fmt.Errorf("error getting call block number: %w", err))
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("error getting call block number: %w", err), caperrors.Internal)
 		}
 
 		address, err := evmservice.ConvertOptionalAddressFromProto(req.GetAccount())
 		if err != nil {
-			return nil, NewUserError(fmt.Errorf("error converting address from proto: %w", err))
+			return nil, caperrors.NewPublicUserError(fmt.Errorf("error converting address from proto: %w", err), caperrors.InvalidArgument)
 		}
 
 		reply, err := e.EVMService.BalanceAt(ctx, evmtypes.BalanceAtRequest{
@@ -523,10 +529,10 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 		responseAndMetadata, err = e.balanceAtV1(ctx, requestID(meta), needsBlockHeightConsensus, balanceAt)
 	}
 	if err != nil {
-		isUserError := e.isUserError(err)
+		capError := e.ensureCapabilityError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", capError))
+		return nil, capError
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read BalanceAt", e.lggr, e.beholderProcessor,
@@ -536,12 +542,12 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 
 func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasInitiated(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data))
@@ -565,10 +571,10 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 
 	rawEstimate, err := chainconsensus.ReadDecimal(ctx, e.consensusHandler, request)
 	if err != nil {
-		isUserError := e.isUserError(err)
+		capError := e.ensureCapabilityError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", capError))
+		return nil, capError
 	}
 
 	logMsg := e.messageBuilder.BuildEstimateGasSuccess(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, rawEstimate.BigInt().Int64())
@@ -591,7 +597,7 @@ func (e *EVM) getTransactionByHashObserve(ctx context.Context, hash common.Hash)
 
 	protoTx, err := evm.ConvertTransactionToProto(tx)
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicSystemError(err, caperrors.Internal)
 	}
 
 	return &evm.GetTransactionByHashReply{Transaction: protoTx}, nil
@@ -603,7 +609,11 @@ func (e *EVM) getTransactionByHashV1(ctx context.Context, requestID string, hash
 		if err != nil {
 			return nil, err
 		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(r.Transaction)
+		tx, err := proto.MarshalOptions{Deterministic: true}.Marshal(r.Transaction)
+		if err != nil {
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to marshal transaction reply: %w", err), caperrors.Internal)
+		}
+		return tx, nil
 	})
 
 	var tx evm.Transaction
@@ -625,12 +635,12 @@ func (e *EVM) getTransactionByHashV2(ctx context.Context, meta capabilities.Requ
 
 func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 
@@ -641,10 +651,10 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 		responseAndMetadata, err = e.getTransactionByHashV1(ctx, requestID(meta), hash)
 	}
 	if err != nil {
-		isUserError := e.isUserError(err)
+		capError := e.ensureCapabilityError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", capError))
+		return nil, capError
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionByHash", e.lggr, e.beholderProcessor,
@@ -663,7 +673,7 @@ func (e *EVM) getTransactionReceiptObserve(ctx context.Context, hash common.Hash
 
 	protoReceipt, err := evm.ConvertReceiptToProto(receipt)
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicSystemError(err, caperrors.Internal)
 	}
 
 	return &evm.GetTransactionReceiptReply{Receipt: protoReceipt}, nil
@@ -675,7 +685,11 @@ func (e *EVM) getTransactionReceiptV1(ctx context.Context, requestID string, has
 		if err != nil {
 			return nil, err
 		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(r.Receipt)
+		receipt, err := proto.MarshalOptions{Deterministic: true}.Marshal(r.Receipt)
+		if err != nil {
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to marshal receipt reply: %w", err), caperrors.Internal)
+		}
+		return receipt, nil
 	})
 
 	var receipt evm.Receipt
@@ -697,12 +711,12 @@ func (e *EVM) getTransactionReceiptV2(ctx context.Context, meta capabilities.Req
 
 func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 
@@ -713,10 +727,10 @@ func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reque
 		responseAndMetadata, err = e.getTransactionReceiptV1(ctx, requestID(meta), hash)
 	}
 	if err != nil {
-		isUserError := e.isUserError(err)
+		capError := e.ensureCapabilityError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", capError))
+		return nil, capError
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionReceiptSuccess", e.lggr, e.beholderProcessor,
@@ -730,7 +744,11 @@ func (e *EVM) headerByNumberV1(ctx context.Context, requestID string, needsBlock
 		if err != nil {
 			return nil, err
 		}
-		return proto.MarshalOptions{Deterministic: true}.Marshal(r)
+		header, err := proto.MarshalOptions{Deterministic: true}.Marshal(r)
+		if err != nil {
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to marshal header reply: %w", err), caperrors.Internal)
+		}
+		return header, nil
 	}
 	var request ctypes.Request
 	if needsBlockHeightConsensus {
@@ -771,12 +789,12 @@ func (e *EVM) HeaderByNumber(
 	req *evm.HeaderByNumberRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(telemetryContext, blockNumber.Int64()))
@@ -784,7 +802,7 @@ func (e *EVM) HeaderByNumber(
 	headerByNumber := func(ctx context.Context, height *ctypes.ChainHeight) (*evm.HeaderByNumberReply, error) {
 		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 		if err != nil {
-			return nil, fmt.Errorf("error getting call block number: %w", err)
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("error getting call block number: %w", err), caperrors.Internal)
 		}
 
 		reply, err := e.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
@@ -796,12 +814,12 @@ func (e *EVM) HeaderByNumber(
 		}
 
 		if reply.Header == nil {
-			return nil, NewUserError(fmt.Errorf("header is nil"))
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("header is nil"), caperrors.Internal)
 		}
 
 		header, err := evm.ConvertHeaderToProto(reply.Header)
 		if err != nil {
-			return nil, NewUserError(err)
+			return nil, caperrors.NewPublicSystemError(err, caperrors.Internal)
 		}
 
 		return &evm.HeaderByNumberReply{Header: header}, nil
@@ -814,10 +832,10 @@ func (e *EVM) HeaderByNumber(
 		responseAndMetadata, err = e.headerByNumberV1(ctx, requestID(meta), needsBlockHeightConsensus, headerByNumber)
 	}
 	if err != nil {
-		isUserError := e.isUserError(err)
+		capError := e.ensureCapabilityError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", err.Error(), isUserError))
-		return nil, GetError(err, isUserError)
+			e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", capError))
+		return nil, capError
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(telemetryContext, blockNumber.Int64(), responseAndMetadata.Response.Header))
@@ -885,7 +903,10 @@ func (e *EVM) readProto(ctx context.Context, request ctypes.Request, into proto.
 	if err != nil {
 		return err
 	}
-	return proto.Unmarshal(data, into)
+	if err := proto.Unmarshal(data, into); err != nil {
+		return caperrors.NewPublicSystemError(fmt.Errorf("failed to unmarshal response proto: %w", err), caperrors.Internal)
+	}
+	return nil
 }
 
 func (e *EVM) isUserError(err error) bool {
@@ -897,29 +918,16 @@ func isEVMNodeInfraError(err error) bool {
 		strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
 
-func isRevertError(err error) bool {
-	return strings.Contains(err.Error(), "execution reverted")
-}
-
-var GetError = capcommon.GetError
-var NewUserError = capcommon.NewUserError
-
-func EnsureRemoteReportable(err error) caperrors.Error {
-	if err == nil {
-		return nil
+// ensureCapabilityError is meant to be used as a safeguard to guarantee all actions' error responses are of type caperror.Error,
+// so the platform can properly handle them in the WF DON side of it
+func (e *EVM) ensureCapabilityError(err error) caperrors.Error {
+	if capErr, ok := errors.AsType[caperrors.Error](err); ok {
+		return capErr
 	}
-
-	// placeholder for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
-	// should uncomment below
-	//var targetUser *capabilities.RemoteReportableUserError
-	//if errors.As(err, &targetUser) {
-	//	return err
-	//}
-	var targetInternal caperrors.Error
-	if errors.As(err, &targetInternal) {
-		return targetInternal
+	// Should only reach up here for legacy paths that still return plain unhandled errors, and those should always be a system one
+	isUserError := e.isUserError(err)
+	if isUserError {
+		e.lggr.Errorw("Got a user error in the last safety check, this should have been caught earlier", "error", err.Error())
 	}
-
-	// Not already remote-reportable -> wrap it.
-	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
+	return capcommon.GetError(err, isUserError)
 }
