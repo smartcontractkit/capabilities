@@ -34,69 +34,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
 
-const triggerGatewayConfigTemplate = `
-{
-  "ConnectionManagerConfig": {
-    "AuthChallengeLen": 32,
-    "AuthGatewayId": "test_gateway",
-    "AuthTimestampToleranceSec": 30
-  },
-  "NodeServerConfig": {
-    "Path": "/node",
-    "Port": 0,
-    "HandshakeTimeoutMillis": 2000,
-    "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 5000,
-    "RequestTimeoutMillis": 5000,
-    "WriteTimeoutMillis": 10000
-  },
-  "UserServerConfig": {
-    "Path": "/user",
-    "Port": 0,
-    "ContentTypeHeader": "application/jsonrpc",
-    "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 5000,
-    "RequestTimeoutMillis": 5000,
-    "WriteTimeoutMillis": 10000
-  },
-  "Dons": [
-    {
-      "DonId": "test_don",
-      "F": 1,
-      "Handlers": [
-		{
-			"Name": "http-capabilities",
-			"ServiceName": "workflows",
-			"Config": {
-				"MaxTriggerRequestDurationMs": 5000,
-				"MetadataPullIntervalMs": 1000,
-				"MetadataAggregationIntervalMs": 1000,
-				"NodeRateLimiter": {
-					"GlobalBurst": 10,
-					"GlobalRPS": 50,
-					"PerSenderBurst": 10,
-					"PerSenderRPS": 10
-				},
-				"UserRateLimiter": {
-					"GlobalBurst": 10,
-					"GlobalRPS": 50,
-					"PerSenderBurst": 10,
-					"PerSenderRPS": 10	
-				}
-			}
-	    }
-	  ],
-      "Members": [ %s ]
-    }
-  ]
-}
-`
-
-const memberTemplate = `{
-	"Address": "%s",
-    "Name": "test_node_%d"
-}`
-
 // Workflow reference constants for testing
 const (
 	workflowOwner = "0x1234567890123456789012345678901234567890"
@@ -143,15 +80,15 @@ func setupTestEnv(t *testing.T, numHonestNodes int, numFaultyNodes int) *testEnv
 	signingKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 
-	membersStr := make([]string, 0, len(nodeKeys))
+	nodes := make([]gatewayNode, len(nodeKeys))
 	for i, key := range nodeKeys {
-		membersStr = append(membersStr, fmt.Sprintf(memberTemplate, crypto.PubkeyToAddress(key.PublicKey).Hex(), i))
+		nodes[i] = gatewayNode{
+			Name:    fmt.Sprintf("test_node_%d", i),
+			Address: crypto.PubkeyToAddress(key.PublicKey).Hex(),
+		}
 	}
 
-	gatewayConfigStr := fmt.Sprintf(
-		triggerGatewayConfigTemplate,
-		strings.Join(membersStr, ","),
-	)
+	gatewayConfigStr := buildHTTPTriggerGatewayConfig("test_gateway", 1, nodes)
 	gateway := newTestGatewayFromConfig(t, gatewayConfigStr, nil, lggr)
 	nodeURL := fmt.Sprintf("ws://localhost:%d/node", gateway.GetNodePort())
 	userURL := fmt.Sprintf("http://localhost:%d/user", gateway.GetUserPort())
