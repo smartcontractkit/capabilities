@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -11,6 +12,7 @@ import (
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-framework/multinode"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
@@ -134,10 +136,15 @@ func getReadError(lggr logger.SugaredLogger, err error) caperrors.Error {
 	return capErr
 }
 
-// isUserError classifies an error as user-facing. Context deadline/cancellation are treated as
-// system errors (transient infra), everything else is surfaced to the user.
 func isUserError(err error) bool {
-	return !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled)
+	return !errors.Is(err, context.DeadlineExceeded) && !isStellarNodeInfraError(err)
+}
+
+// isStellarNodeInfraError reports whether err is a node-availability failure. It checks both
+// error identity and the message substring because errors reach this function through LOOP gRPC ,
+// which preserve only the gRPC status code and message — Go error identity (errors.Is) does not survive that round trip.
+func isStellarNodeInfraError(err error) bool {
+	return errors.Is(err, multinode.ErrNodeError) || strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
 
 var GetError = capcommon.GetError

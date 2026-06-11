@@ -19,6 +19,8 @@ import (
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 
+	"github.com/smartcontractkit/chainlink-framework/multinode"
+
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
@@ -96,11 +98,12 @@ func TestReadContract(t *testing.T) {
 		require.Equal(t, ledgerSeq, resp.Response.GetLedgerSequence())
 	})
 
-	t.Run("service error", func(t *testing.T) {
+	t.Run("non-infra service error is a user error", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedStellar(t)
 
-		expectedErr := errors.New("rpc boom")
+		// Plain errors (e.g. invalid input surfaced by the relayer) default to user errors.
+		expectedErr := errors.New("failed to decode contract id")
 		helper.stellarService.EXPECT().
 			ReadContract(mock.Anything, mock.Anything).
 			Return(stellartypes.ReadContractResponse{}, expectedErr).
@@ -112,6 +115,32 @@ func TestReadContract(t *testing.T) {
 		}, validReadContractRequest())
 		require.Error(t, err)
 		require.ErrorContains(t, err, expectedErr.Error())
+		var capErr caperrors.Error
+		require.True(t, errors.As(err, &capErr))
+		require.Equal(t, caperrors.OriginUser, capErr.Origin())
+	})
+
+	t.Run("node-infra service error is a system error", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedStellar(t)
+
+		// Errors tagged by the relayer with multinode.ErrNodeError must survive the
+		// observation-error serialization round trip and stay classified as infra/system.
+		expectedErr := fmt.Errorf("failed to read contract: %w", multinode.ErrNodeError)
+		helper.stellarService.EXPECT().
+			ReadContract(mock.Anything, mock.Anything).
+			Return(stellartypes.ReadContractResponse{}, expectedErr).
+			Once()
+
+		_, err := helper.stellar.ReadContract(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid",
+			ReferenceID:         "step-id",
+		}, validReadContractRequest())
+		require.Error(t, err)
+		require.ErrorContains(t, err, multinode.ErrNodeError.Error())
+		var capErr caperrors.Error
+		require.True(t, errors.As(err, &capErr))
+		require.Equal(t, caperrors.OriginSystem, capErr.Origin())
 	})
 
 	t.Run("context canceled", func(t *testing.T) {
