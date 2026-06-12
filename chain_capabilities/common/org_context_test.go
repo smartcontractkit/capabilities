@@ -10,7 +10,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 )
 
 type stubOrgResolver struct {
@@ -26,13 +25,6 @@ func (s stubOrgResolver) Ready() error                                    { retu
 func (s stubOrgResolver) Name() string                                    { return "stubOrgResolver" }
 
 var _ orgresolver.OrgResolver = stubOrgResolver{}
-
-func creSettingsJSON(t *testing.T, json string) settings.Getter {
-	t.Helper()
-	g, err := settings.NewJSONGetter([]byte(json))
-	require.NoError(t, err)
-	return g
-}
 
 func TestContextWithOrgForDelivery(t *testing.T) {
 	t.Parallel()
