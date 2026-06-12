@@ -24,7 +24,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
@@ -139,7 +138,7 @@ func (s *Solana) GetBalance(
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
-		return response, 0, nil
+		return response, rawResponse.Slot, nil
 	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetBalanceReply](ctx, s.handler, cReq)
 	if err != nil {
@@ -200,30 +199,26 @@ func (s *Solana) GetFeeForMessage(
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
 	lggr.Debugw("Received GetFeeForMessage request")
-	cReq := ctypes.NewAggregatableRequest(commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID), func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
+	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetFeeForMessageReply, uint64, error) {
 		rawResponse, err := s.SolanaService.GetFeeForMessage(ctx, *request)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
-		return &ctypes.AggregatableObservation{
-			Method: ctypes.AggregationMethodFPlusOneHighest,
-			Value: &valuespb.Decimal{
-				Coefficient: valuespb.NewBigIntFromInt(new(big.Int).SetUint64(rawResponse.Fee)),
-				Exponent:    0,
-			},
-		}, nil
-	})
-	aggregatedFee, err := chainconsensus.ReadDecimal(ctx, s.handler, cReq)
+		response, err := solcap.ConvertGetFeeForMessageReplyToProto(rawResponse)
+		if err != nil {
+			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
+		}
+
+		return response, rawResponse.Slot, nil
+	}, lggr)
+	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetFeeForMessageReply](ctx, s.handler, cReq)
 	if err != nil {
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetFeeForMessage: %w", err))
 	}
 
 	lggr.Debugw("Successfully handled GetFeeForMessage")
-	return &capabilities.ResponseAndMetadata[*solcap.GetFeeForMessageReply]{
-		Response:         &solcap.GetFeeForMessageReply{Fee: aggregatedFee.BigInt().Uint64()},
-		ResponseMetadata: metering.GetResponseMetadata(metering.GetAccountInfo),
-	}, nil
+	return responseAndMetadata, nil
 }
 
 func (s *Solana) GetMultipleAccountsWithOpts(
@@ -276,19 +271,24 @@ func (s *Solana) GetSignatureStatuses(
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
 	lggr.Debugw("Received GetSignatureStatuses request")
-	cReq := ctypes.NewECHashableRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetSignatureStatusesReply, error) {
+	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetSignatureStatusesReply, uint64, error) {
 		rawResponse, err := s.SolanaService.GetSignatureStatuses(ctx, *request)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		response, err := solcap.ConvertGetSignatureStatusesReplyToProto(rawResponse)
 		if err != nil {
-			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
+			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
-		return response, nil
-	})
+		var maxSlot uint64
+		for _, r := range rawResponse.Results {
+			maxSlot = max(maxSlot, r.Slot)
+		}
+
+		return response, maxSlot, nil
+	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetSignatureStatusesReply](ctx, s.handler, cReq)
 	if err != nil {
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetSignatureStatuses: %w", err))
@@ -394,16 +394,15 @@ func (s *Solana) GetProgramAccounts(
 			return nil, 0, err
 		}
 
-		// getProgramAccounts does not guarantee ordering across RPC nodes.
-		// Sort by pubkey so all nodes produce an identical hash.
-		slices.SortFunc(rawResponse.Value, func(a, b *soltypes.KeyedAccount) int {
-			return bytes.Compare(a.Pubkey[:], b.Pubkey[:])
-		})
-
 		response, err := solcap.ConvertGetProgramAccountsReplyToProto(rawResponse)
 		if err != nil {
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
+		// getProgramAccounts does not guarantee ordering across RPC nodes.
+		// Sort by pubkey so all nodes produce an identical hash.
+		slices.SortFunc(response.Value, func(a, b *solcap.KeyedAccount) int {
+			return bytes.Compare(a.Pubkey[:], b.Pubkey[:])
+		})
 
 		return response, 0, nil
 	}, lggr)

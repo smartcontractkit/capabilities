@@ -678,7 +678,6 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("reads disabled", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
-		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
 		_, err := helper.solana.GetSignatureStatuses(t.Context(), capabilities.RequestMetadata{
 			WorkflowExecutionID: "weid", ReferenceID: "ref",
 		}, &solcap.GetSignatureStatusesRequest{Sigs: [][]byte{validSig()}})
@@ -689,7 +688,6 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("invalid signature", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
 		_, err := helper.solana.GetSignatureStatuses(t.Context(), capabilities.RequestMetadata{
 			WorkflowExecutionID: "weid", ReferenceID: "ref",
 		}, &solcap.GetSignatureStatusesRequest{Sigs: [][]byte{{1, 2, 3}}})
@@ -702,7 +700,6 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
 
 		conf := uint64(10)
 		serviceReply := &soltypes.GetSignatureStatusesReply{
@@ -727,7 +724,6 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("service error", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
 		svcErr := errors.New("sig lookup failed")
 
 		helper.solanaService.EXPECT().
@@ -886,7 +882,6 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("reads disabled", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
-		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
 		_, err := helper.solana.GetFeeForMessage(t.Context(), capabilities.RequestMetadata{
 			WorkflowExecutionID: "weid", ReferenceID: "ref",
 		}, &solcap.GetFeeForMessageRequest{Message: "someMsg"})
@@ -897,7 +892,6 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("invalid commitment", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
 		_, err := helper.solana.GetFeeForMessage(t.Context(), capabilities.RequestMetadata{
 			WorkflowExecutionID: "weid", ReferenceID: "ref",
 		}, &solcap.GetFeeForMessageRequest{
@@ -913,14 +907,13 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
 
 		const fee uint64 = 5000
 		helper.solanaService.EXPECT().
 			GetFeeForMessage(mock.Anything, mock.MatchedBy(func(req soltypes.GetFeeForMessageRequest) bool {
 				return req.Message == "someMsg"
 			})).
-			Return(&soltypes.GetFeeForMessageReply{Fee: fee}, nil).Once()
+			Return(&soltypes.GetFeeForMessageReply{Fee: fee, Slot: 42}, nil).Once()
 
 		resp, err := helper.solana.GetFeeForMessage(t.Context(), capabilities.RequestMetadata{
 			WorkflowExecutionID: "weid", ReferenceID: "ref",
@@ -933,7 +926,6 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("service error", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
 		svcErr := errors.New("fee estimation failed")
 
 		helper.solanaService.EXPECT().
