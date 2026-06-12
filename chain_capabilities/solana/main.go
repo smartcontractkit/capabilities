@@ -235,6 +235,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		LimitsFactory:     c.limitsFactory,
 		TriggerEventStore: dependencies.TriggerEventStore,
 		CapabilityID:      c.id,
+		OrgResolver:       dependencies.OrgResolver,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create log trigger service: %w", err)
