@@ -118,7 +118,7 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 	lggr := logger.Test(t)
 
 	opts := LogTriggerServiceOpts{
-		SolanaService:                   mockSolanaService,
+		SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 		Logger:                          lggr,
 		BeholderProcessor:               NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -624,7 +624,7 @@ func TestStartPolling(t *testing.T) {
 		store := NewSolanaLogTriggerStore()
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          logger.Nop(),
 			BeholderProcessor:               NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -733,7 +733,7 @@ func TestStartPolling(t *testing.T) {
 
 		// Create service with very small buffer
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          logger.Test(t),
 			Triggers:                        store,
 			LogTriggerPollInterval:          1 * time.Millisecond,
@@ -786,7 +786,7 @@ func TestStartPolling(t *testing.T) {
 		store := NewSolanaLogTriggerStore()
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          logger.Test(t),
 			Triggers:                        store,
 			LogTriggerPollInterval:          10 * time.Millisecond,
@@ -844,7 +844,7 @@ func TestStartPolling(t *testing.T) {
 		store := NewSolanaLogTriggerStore()
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          logger.Test(t),
 			Triggers:                        store,
 			LogTriggerPollInterval:          5 * time.Millisecond,
@@ -1125,11 +1125,12 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 
 	t.Run("respects provided values", func(t *testing.T) {
 		mockService := mocks.NewSolanaService(t)
+		wrappedService := mocks.WrapSolanaService(mockService)
 		store := NewSolanaLogTriggerStore()
 		lggr := logger.Test(t)
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockService,
+			SolanaService:                   wrappedService,
 			Logger:                          lggr,
 			Triggers:                        store,
 			LogTriggerPollInterval:          5 * time.Second,
@@ -1144,7 +1145,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, service)
 
-		assert.Equal(t, mockService, service.SolanaService)
+		assert.Equal(t, wrappedService, service.SolanaService)
 		assert.Equal(t, store, service.triggers)
 		assert.Equal(t, 5*time.Second, service.logTriggerPollInterval)
 		assert.Equal(t, uint64(2000), service.logTriggerSendChannelBufferSize)
