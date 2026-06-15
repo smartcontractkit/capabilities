@@ -88,8 +88,10 @@ type writeReport struct {
 	p2pConfig              map[string]string
 	chainSelector          uint64
 	maxGasAmountLimit      limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler  ts.TransmissionScheduler
+	reportSizeLimit                limits.BoundLimiter[commoncfg.Size]
+	writeReportTxTimestampActive   limits.RangeLimiter[commoncfg.Timestamp]
+	executionTimestamp             time.Time
+	transmissionScheduler          ts.TransmissionScheduler
 	txSearchStartingBuffer time.Duration
 	beholderProcessor      beholder.ProtoProcessor
 	messageBuilder         *monitoring.MessageBuilder
@@ -108,9 +110,11 @@ func (s *Aptos) executeWriteReport(
 		lggr:                   s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
 		p2pConfig:              s.p2pConfig,
 		chainSelector:          s.chainSelector,
-		maxGasAmountLimit:      s.maxGasAmountLimit,
-		reportSizeLimit:        s.reportSizeLimit,
-		transmissionScheduler:  s.transmissionScheduler,
+		maxGasAmountLimit:              s.maxGasAmountLimit,
+		reportSizeLimit:                s.reportSizeLimit,
+		writeReportTxTimestampActive:   s.writeReportTxTimestampActive,
+		executionTimestamp:             metadata.ExecutionTimestamp,
+		transmissionScheduler:          s.transmissionScheduler,
 		txSearchStartingBuffer: s.txSearchStartingBuffer,
 		beholderProcessor:      s.beholderProcessor,
 		messageBuilder:         s.messageBuilder,
@@ -199,7 +203,7 @@ func (wr *writeReport) execute(
 			TxHash:                          &txResult.TxHash,
 			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			TransactionFee:                  &feeOctas,
-			TxTimestamp:                     &txResult.TxTimestamp,
+			TxTimestamp:                     wr.maybeTxTimestamp(ctx, txResult.TxTimestamp),
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
@@ -291,7 +295,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &successResult.TxHash,
 				TransactionFee:                  &feeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
-				TxTimestamp:                     &successResult.TxTimestamp,
+				TxTimestamp:                     wr.maybeTxTimestamp(ctx, successResult.TxTimestamp),
 			}, meteringMetadata, nil
 		case aptostypes.TxSuccess:
 			return &aptoscap.WriteReportReply{
@@ -299,7 +303,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &txReply.TxHash,
 				TransactionFee:                  &ownFeeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
-				TxTimestamp:                     &ownTxTimestamp,
+				TxTimestamp:                     wr.maybeTxTimestamp(ctx, ownTxTimestamp),
 			}, ownMeteringMetadata, nil
 		default:
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %v", txReply.TxStatus)
@@ -317,7 +321,7 @@ func (wr *writeReport) execute(
 			TransactionFee:                  &ownFeeInOctas,
 			ErrorMessage:                    ptrIfNonEmpty(ownVMStatus),
 			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVMStatus, wr.forwarderAddress),
-			TxTimestamp:                     &ownTxTimestamp,
+			TxTimestamp:                     wr.maybeTxTimestamp(ctx, ownTxTimestamp),
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
@@ -360,7 +364,7 @@ func (wr *writeReport) execute(
 				TransactionFee:                  &feeOctas,
 				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
 				ReceiverContractExecutionStatus: recvStatus,
-				TxTimestamp:                     &failedResult.TxTimestamp,
+				TxTimestamp:                     wr.maybeTxTimestamp(ctx, failedResult.TxTimestamp),
 			}, replyMeta, nil
 		}
 
@@ -420,6 +424,24 @@ func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (
 		return 0, 0, "", 0, fmt.Errorf("failed to unmarshal transaction data: %w", err)
 	}
 	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, uint64(txData.Timestamp), nil
+}
+
+func (wr *writeReport) includeTxTimestampInReply(ctx context.Context) bool {
+	if wr.writeReportTxTimestampActive == nil {
+		return false
+	}
+	if wr.executionTimestamp.IsZero() {
+		wr.lggr.Errorw("ExecutionTimestamp is zero")
+	}
+	return wr.writeReportTxTimestampActive.Check(ctx, commoncfg.NewTimestamp(wr.executionTimestamp)) == nil
+}
+
+func (wr *writeReport) maybeTxTimestamp(ctx context.Context, ts uint64) *uint64 {
+	if !wr.includeTxTimestampInReply(ctx) {
+		wr.lggr.Debugw("WriteReport tx timestamp feature flag is inactive; omitting tx_timestamp from reply")
+		return nil
+	}
+	return &ts
 }
 
 func ptrIfNonEmpty(s string) *string {

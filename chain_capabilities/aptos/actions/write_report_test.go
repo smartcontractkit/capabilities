@@ -24,7 +24,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
@@ -38,6 +40,8 @@ const testChainSelector = uint64(1)
 const testGasUsed = uint64(500)
 const testGasUnitPrice = uint64(100)
 const testTxTimestampMicro = int64(1_700_000_000_123_456) // deterministic micros timestamp
+
+var testExecutionTimestamp = time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
 var (
 	testForwarderAddr = aptos_sdk.AccountAddress{0xAA}
@@ -58,6 +62,13 @@ func requireReplyTxTimestamp(t *testing.T, reply *aptoscap.WriteReportReply, exp
 	t.Helper()
 	require.NotNil(t, reply.TxTimestamp)
 	require.Equal(t, expected, *reply.TxTimestamp)
+}
+
+func enableWriteReportTxTimestampFeatureFlag(a *Aptos) {
+	a.writeReportTxTimestampActive = limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
+		Lower: commoncfg.NewTimestamp(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)),
+		Upper: commoncfg.NewTimestamp(time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)),
+	})
 }
 
 type testHelper struct {
@@ -87,6 +98,7 @@ func newTestHelper(t *testing.T) *testHelper {
 		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
+	enableWriteReportTxTimestampFeatureFlag(a)
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
 }
 
@@ -132,6 +144,7 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
+	enableWriteReportTxTimestampFeatureFlag(a)
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}, node0Addr
 }
 
@@ -148,6 +161,7 @@ func newReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMeta
 	reqMeta := capabilities.RequestMetadata{
 		WorkflowID: rm.WorkflowID, WorkflowOwner: rm.WorkflowOwner, WorkflowName: rm.WorkflowName,
 		WorkflowDonID: rm.DONID, WorkflowDonConfigVersion: rm.DONConfigVersion, WorkflowExecutionID: rm.ExecutionID,
+		ExecutionTimestamp: testExecutionTimestamp,
 	}
 	reportContext := make([]byte, 96) // zeroed 96-byte report context
 	req := &aptoscap.WriteReportRequest{
@@ -681,6 +695,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 			messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		}
 		require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
+		enableWriteReportTxTimestampFeatureFlag(a)
 		h := &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
 
 		// Permanent false — initial poll waits for stageTimer, then proceeds to submit
@@ -774,6 +789,58 @@ func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
 		require.Greater(t, rpcCalls.Load(), int64(0))
 		require.Error(t, err)
 	})
+}
+
+func TestWriteReport_TxTimestampFeatureFlag(t *testing.T) {
+	t.Parallel()
+
+	activeFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activeUntil := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	testCases := []struct {
+		name               string
+		executionTimestamp time.Time
+		expectTxTimestamp  bool
+	}{
+		{
+			name:               "inactive flag omits tx_timestamp",
+			executionTimestamp: activeFrom.Add(-time.Second),
+			expectTxTimestamp:  false,
+		},
+		{
+			name:               "active flag includes tx_timestamp",
+			executionTimestamp: activeFrom,
+			expectTxTimestamp:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := newTestHelper(t)
+			h.aptos.writeReportTxTimestampActive = limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
+				Lower: commoncfg.NewTimestamp(activeFrom),
+				Upper: commoncfg.NewTimestamp(activeUntil),
+			})
+
+			_, reqMeta, req := newReportFixture(t)
+			reqMeta.ExecutionTimestamp = tc.executionTimestamp
+
+			h.mockTransmission(TransmissionInfo{Success: false}).Once()
+			h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
+			h.mockTransmission(TransmissionInfo{Success: true, Transmitter: testTransmitter})
+			h.mockTransactionByHash("0xabc", testGasUsed, testGasUnitPrice)
+
+			result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+			require.Nil(t, capErr)
+			require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+			if tc.expectTxTimestamp {
+				requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+			} else {
+				require.Nil(t, result.Response.TxTimestamp)
+			}
+		})
+	}
 }
 
 func TestGetTxnInfoFromChain_ReturnsTimestamp(t *testing.T) {

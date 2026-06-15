@@ -37,9 +37,10 @@ type Aptos struct {
 	lggr                   logger.SugaredLogger
 	p2pConfig              map[string]string
 	chainSelector          uint64
-	maxGasAmountLimit      limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler  ts.TransmissionScheduler
+	maxGasAmountLimit              limits.BoundLimiter[uint64]
+	reportSizeLimit                limits.BoundLimiter[commoncfg.Size]
+	writeReportTxTimestampActive   limits.RangeLimiter[commoncfg.Timestamp]
+	transmissionScheduler          ts.TransmissionScheduler
 	txSearchStartingBuffer time.Duration
 	beholderProcessor      beholder.ProtoProcessor
 	messageBuilder         *monitoring.MessageBuilder
@@ -83,11 +84,13 @@ func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 	if err != nil {
 		return
 	}
+
+	a.writeReportTxTimestampActive, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureAptosWriteReportTxTimestampActivePeriod)
 	return
 }
 
 func (a *Aptos) Close() error {
-	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit)
+	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit, a.writeReportTxTimestampActive)
 }
 
 func (a *Aptos) AccountAPTBalance(
