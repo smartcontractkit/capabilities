@@ -199,6 +199,7 @@ func (wr *writeReport) execute(
 			TxHash:                          &txResult.TxHash,
 			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			TransactionFee:                  &feeOctas,
+			TxTimestamp:                     &txResult.TxTimestamp,
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
@@ -230,7 +231,7 @@ func (wr *writeReport) execute(
 	// avoids stale-fullnode false negatives.
 	var ownMeteringMetadata capabilities.ResponseMetadata
 	var pinnedLedgerVersion *uint64
-	ownLedgerVersion, ownFeeInOctas, ownVMStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
+	ownLedgerVersion, ownFeeInOctas, ownVMStatus, ownTxTimestamp, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
@@ -290,6 +291,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &successResult.TxHash,
 				TransactionFee:                  &feeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
+				TxTimestamp:                     &successResult.TxTimestamp,
 			}, meteringMetadata, nil
 		case aptostypes.TxSuccess:
 			return &aptoscap.WriteReportReply{
@@ -297,6 +299,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &txReply.TxHash,
 				TransactionFee:                  &ownFeeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
+				TxTimestamp:                     &ownTxTimestamp,
 			}, ownMeteringMetadata, nil
 		default:
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %v", txReply.TxStatus)
@@ -314,6 +317,7 @@ func (wr *writeReport) execute(
 			TransactionFee:                  &ownFeeInOctas,
 			ErrorMessage:                    ptrIfNonEmpty(ownVMStatus),
 			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVMStatus, wr.forwarderAddress),
+			TxTimestamp:                     &ownTxTimestamp,
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
@@ -356,6 +360,7 @@ func (wr *writeReport) execute(
 				TransactionFee:                  &feeOctas,
 				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
 				ReceiverContractExecutionStatus: recvStatus,
+				TxTimestamp:                     &failedResult.TxTimestamp,
 			}, replyMeta, nil
 		}
 
@@ -394,27 +399,27 @@ func isOutOfGas(vmStatus string) bool {
 
 // getTxnInfoFromChain returns the committed ledger version, fee in octas (gasUsed * gasUnitPrice),
 // and VM status for a submitted tx, looked up via AptosService.TransactionByHash.
-func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, uint64, string, error) {
+func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, uint64, string, uint64, error) {
 	reply, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*aptostypes.TransactionByHashReply, error) {
 		return wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: txHash})
 	})
 	if err != nil {
-		return 0, 0, "", fmt.Errorf("failed to get transaction by hash: %w", err)
+		return 0, 0, "", 0, fmt.Errorf("failed to get transaction by hash: %w", err)
 	}
 	if reply == nil || reply.Transaction == nil {
-		return 0, 0, "", fmt.Errorf("transaction by hash %s returned empty reply", txHash)
+		return 0, 0, "", 0, fmt.Errorf("transaction by hash %s returned empty reply", txHash)
 	}
 	if reply.Transaction.Version == nil {
-		return 0, 0, "", fmt.Errorf("transaction %s has no committed ledger version", txHash)
+		return 0, 0, "", 0, fmt.Errorf("transaction %s has no committed ledger version", txHash)
 	}
 	if reply.Transaction.Data == nil {
-		return *reply.Transaction.Version, 0, "", fmt.Errorf("transaction %s has nil data", txHash)
+		return *reply.Transaction.Version, 0, "", 0, fmt.Errorf("transaction %s has nil data", txHash)
 	}
 	var txData userTxData
 	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
-		return 0, 0, "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
+		return 0, 0, "", 0, fmt.Errorf("failed to unmarshal transaction data: %w", err)
 	}
-	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, nil
+	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, uint64(txData.Timestamp), nil
 }
 
 func ptrIfNonEmpty(s string) *string {
