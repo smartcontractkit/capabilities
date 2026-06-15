@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	chain_selectors "github.com/smartcontractkit/chain-selectors"
+	chainselectors "github.com/smartcontractkit/chain-selectors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
@@ -16,7 +16,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
-	consmetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
@@ -30,19 +30,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const (
-	CapabilityName    = "stellar"
-	CapabilityVersion = "1.0.0"
+const CapabilityName = "stellar"
 
+const (
 	// Default values for optional Stellar consensus/read settings when not provided in config.
 	defaultObservationPollPeriod = 3 * time.Second
 	defaultPollerWorkersCount    = 10
 	defaultUnknownRequestsTTL    = 10 * time.Second
 )
-
-func capabilityID(chainSelector uint64) string {
-	return CapabilityName + ":ChainSelector:" + strconv.FormatUint(chainSelector, 10) + "@" + CapabilityVersion
-}
 
 // capabilityGRPCService is the top-level server wrapping the Stellar capability.
 // It implements loop.StandardCapabilities.
@@ -76,7 +71,7 @@ func main() {
 			lggr:          s.Logger.Named(CapabilityName),
 			limitsFactory: s.LimitsFactory,
 		})
-	}, loop.WithOtelViews(consmetrics.MetricViews()))
+	}, loop.WithOtelViews(consMetrics.MetricViews()))
 }
 
 func (c *capabilityGRPCService) ChainSelector() uint64 {
@@ -147,7 +142,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err = c.setSelector(cfg); err != nil {
 		return err
 	}
-	c.id = capabilityID(c.chainSelector)
+	c.id = CapabilityName + ":ChainSelector:" + strconv.FormatUint(c.chainSelector, 10) + "@1.0.0"
 
 	var chainInfo types.ChainInfo
 	if !cfg.IsLocal {
@@ -170,7 +165,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		}
 	}
 
-	consensusMetrics, err := consmetrics.NewConsensusMetrics(chainInfo)
+	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
 	if err != nil {
 		return fmt.Errorf("failed to create stellar consensus metrics: %w", err)
 	}
@@ -178,13 +173,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
-			BlockchainTimeout:                  20 * time.Second,
-			ContractConfigTrackerPollInterval:  10 * time.Second,
+			BlockchainTimeout:                  time.Second * 20,
+			ContractConfigTrackerPollInterval:  time.Second * 10,
 			ContractConfigConfirmations:        1,
-			ContractTransmitterTransmitTimeout: 10 * time.Second,
-			DatabaseTimeout:                    10 * time.Second,
-			ContractConfigLoadTimeout:          10 * time.Second,
-			DefaultMaxDurationInitialization:   10 * time.Second,
+			ContractTransmitterTransmitTimeout: time.Second * 10,
+			DatabaseTimeout:                    time.Second * 10,
+			ContractConfigLoadTimeout:          time.Second * 10,
+			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
@@ -227,11 +222,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	if cfg.IsLocal {
-		c.chainSelector = chain_selectors.STELLAR_LOCALNET.Selector
+		c.chainSelector = chainselectors.STELLAR_LOCALNET.Selector
 		return nil
 	}
 
-	cs, ok := chain_selectors.StellarChainIdToChainSelector()[cfg.ChainID]
+	cs, ok := chainselectors.StellarChainIdToChainSelector()[cfg.ChainID]
 	if !ok {
 		return fmt.Errorf("chain selector not found for chainID: %s", cfg.ChainID)
 	}
