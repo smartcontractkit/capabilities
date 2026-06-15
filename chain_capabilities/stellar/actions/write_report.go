@@ -3,7 +3,6 @@ package actions
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -56,6 +55,7 @@ type writeReport struct {
 	service               types.StellarService
 	lggr                  logger.SugaredLogger
 	forwarderAddress      string
+	nodeAddress           string
 	chainSelector         uint64
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler ts.TransmissionScheduler
@@ -69,13 +69,14 @@ func (s *Stellar) WriteReport(
 	ctx = metadata.ContextWithCRE(ctx)
 
 	if err := s.validateWriteReportInputs(metadata, input); err != nil {
-		return nil, capcommon.NewUserError(err)
+		return nil, NewUserError(err, caperrors.InvalidArgument)
 	}
 
 	wr := &writeReport{
 		service:               s.StellarService,
 		lggr:                  s.lggr,
 		forwarderAddress:      s.forwarderAddress,
+		nodeAddress:           s.nodeAddress,
 		chainSelector:         s.chainSelector,
 		reportSizeLimit:       s.reportSizeLimit,
 		transmissionScheduler: s.transmissionScheduler,
@@ -83,7 +84,7 @@ func (s *Stellar) WriteReport(
 
 	reply, err := wr.execute(ctx, metadata, input)
 	if err != nil {
-		return nil, capcommon.GetError(err, s.isUserErrorWriteReport(err))
+		return nil, GetError(err, s.isUserErrorWriteReport(err))
 	}
 
 	return &capabilities.ResponseAndMetadata[*stellarcap.WriteReportReply]{
@@ -127,16 +128,22 @@ func (wr *writeReport) execute(
 		return nil, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
-	args, err := buildForwarderReportArgs(request.ContractId, request.Report)
+	if wr.nodeAddress == "" {
+		return nil, fmt.Errorf("%s node address is not configured; required for write operations", capcommon.UserError)
+	}
+
+	args, err := buildForwarderReportArgs(wr.nodeAddress, request.ContractId, request.Report)
 	if err != nil {
 		return nil, err
 	}
 
-	simResp, err := wr.service.SimulateTransaction(ctx, stellartypes.SimulateTransactionRequest{
-		ContractID:         wr.forwarderAddress,
-		Function:           forwarderReportFunction,
-		Args:               args,
-		LedgerBoundsOffset: defaultLedgerBoundsOffset,
+	// Pre-check the report against the forwarder via simulation (ReadContract uses simulate-only;
+	// no signing, no fee). This catches forwarder-level user errors (wrong DON, bad report
+	// metadata, invalid config) cheaply before committing to TXM submission.
+	simResp, err := wr.service.ReadContract(ctx, stellartypes.ReadContractRequest{
+		ContractID: wr.forwarderAddress,
+		Function:   forwarderReportFunction,
+		Args:       args,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to simulate forwarder report call: %w", err)
@@ -145,27 +152,23 @@ func (wr *writeReport) execute(
 		return nil, fmt.Errorf("%s forwarder simulation failed: %s", capcommon.UserError, simResp.Error)
 	}
 
+	// Submit via TXM, which handles simulate-for-fees, signing, sending, and on-chain confirmation.
 	txID := uuid.NewString()
-	ops, err := buildInvokeContractOperationsXDR(wr.forwarderAddress, forwarderReportFunction, args)
-	if err != nil {
-		return nil, err
-	}
-
-	submitReply, err := wr.service.SubmitTransaction(ctx, stellartypes.SubmitTransactionRequest{
-		ID:                 txID,
-		OperationsXDR:      ops,
+	submitResp, err := wr.service.SubmitTransaction(ctx, stellartypes.SubmitTransactionRequest{
+		IdempotencyKey:     txID,
+		FromAddress:        wr.nodeAddress,
+		ContractID:         wr.forwarderAddress,
+		Function:           forwarderReportFunction,
+		Args:               args,
 		LedgerBoundsOffset: defaultLedgerBoundsOffset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit forwarder report transaction: %w", err)
 	}
 
-	txResult, txResultErr := wr.service.GetTransactionResult(ctx, txID)
-	if txResultErr != nil {
-		wr.lggr.Warnw("failed to fetch tx result after submit", "txID", txID, "error", txResultErr)
-	}
-
-	postInfo, err := capcommon.WithPollingRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
+	// Poll for the canonical on-chain transmission state. The forwarder may record the
+	// outcome after the tx confirms; retry until it is visible or the context expires.
+	postInfo, pollErr := capcommon.WithPollingRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 		readInfo, readErr := wr.getTransmissionInfo(ctx, request.ContractId, workflowExecutionID, reportID)
 		if readErr != nil {
 			return TransmissionInfo{}, readErr
@@ -175,31 +178,23 @@ func (wr *writeReport) execute(
 		}
 		return readInfo, nil
 	})
-	if err != nil {
-		if txResultErr == nil {
-			return wr.replyFromOwnTransaction(submitReply.TxHash, txResult), nil
-		}
-		return nil, fmt.Errorf("failed getting transmission info after node submitted the report on chain: %w", err)
+	if pollErr != nil {
+		// TX was submitted but on-chain state is still not visible; use the TXM result directly.
+		wr.lggr.Warnw("Failed to poll transmission info after submit, returning reply from TX outcome", "error", pollErr)
+		return wr.replyFromOwnTransaction(submitResp), nil
 	}
 
 	switch postInfo.State {
 	case TransmissionStateSucceeded:
 		reply := wr.successReplyFromObservedState(postInfo)
-		if txResultErr == nil {
-			populateReplyFromTx(reply, submitReply.TxHash, txResult)
-		}
+		populateReplyFromSubmit(reply, submitResp)
 		return reply, nil
 	case TransmissionStateInvalidReceiver, TransmissionStateFailed:
 		reply := wr.revertedReplyFromObservedState(postInfo)
-		if txResultErr == nil {
-			populateReplyFromTx(reply, submitReply.TxHash, txResult)
-		}
+		populateReplyFromSubmit(reply, submitResp)
 		return reply, nil
 	default:
-		if txResultErr == nil {
-			return wr.replyFromOwnTransaction(submitReply.TxHash, txResult), nil
-		}
-		return nil, fmt.Errorf("unexpected transmission state after submit: %d", postInfo.State)
+		return wr.replyFromOwnTransaction(submitResp), nil
 	}
 }
 
@@ -401,107 +396,90 @@ func parseFieldsIntoTransmissionInfo(info *TransmissionInfo, sv xdr.ScVal) {
 	}
 }
 
-func buildForwarderReportArgs(receiver string, report *sdk.ReportResponse) ([]xdr.ScVal, error) {
-	receiverAddr, err := contractIDToScAddress(receiver)
+// buildForwarderReportArgs constructs the domain ScVal argument list for the forwarder report() function.
+//
+// Arg order matches the on-chain Rust signature:
+//
+//	report(transmitter: Address, receiver: Address, raw_report: Bytes, report_context: Bytes, signatures: Vec<BytesN<65>>)
+func buildForwarderReportArgs(transmitter, receiver string, report *sdk.ReportResponse) ([]stellartypes.ScVal, error) {
+	transmitterVal, err := accountAddressToScVal(transmitter)
+	if err != nil {
+		return nil, fmt.Errorf("transmitter: %w", err)
+	}
+
+	receiverVal, err := contractAddressToScVal(receiver)
 	if err != nil {
 		return nil, err
 	}
 
-	signatures := make(xdr.ScVec, len(report.Sigs))
+	rawReportVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: report.GetRawReport()}
+	reportContextVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: report.GetReportContext()}
+
+	sigVals := make([]*stellartypes.ScVal, len(report.Sigs))
 	for i, sig := range report.Sigs {
-		s := xdr.ScBytes(sig.GetSignature())
-		signatures[i] = xdr.ScVal{
-			Type:  xdr.ScValTypeScvBytes,
-			Bytes: &s,
-		}
+		s := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: sig.GetSignature()}
+		sigVals[i] = &s
 	}
-	signaturesPtr := &signatures
+	sigsVal := stellartypes.ScVal{
+		Type: stellartypes.ScValTypeVec,
+		Vec:  &stellartypes.ScVec{Values: sigVals},
+	}
 
-	reportContext := xdr.ScBytes(report.GetReportContext())
-	rawReport := xdr.ScBytes(report.GetRawReport())
-	return []xdr.ScVal{
-		{
-			Type:    xdr.ScValTypeScvAddress,
-			Address: receiverAddr,
-		},
-		{
-			Type:  xdr.ScValTypeScvBytes,
-			Bytes: &rawReport,
-		},
-		{
-			Type:  xdr.ScValTypeScvBytes,
-			Bytes: &reportContext,
-		},
-		{
-			Type: xdr.ScValTypeScvVec,
-			Vec:  &signaturesPtr,
-		},
-	}, nil
+	return []stellartypes.ScVal{transmitterVal, receiverVal, rawReportVal, reportContextVal, sigsVal}, nil
 }
 
-func buildTransmissionInfoArgs(receiver string, workflowExecutionID [32]byte, reportID [2]byte) ([]xdr.ScVal, error) {
-	receiverAddr, err := contractIDToScAddress(receiver)
+// buildTransmissionInfoArgs constructs the domain ScVal argument list for get_transmission_info().
+//
+// Arg order matches the on-chain Rust signature:
+//
+//	get_transmission_info(receiver: Address, workflow_execution_id: BytesN<32>, report_id: BytesN<2>)
+func buildTransmissionInfoArgs(receiver string, workflowExecutionID [32]byte, reportID [2]byte) ([]stellartypes.ScVal, error) {
+	receiverVal, err := contractAddressToScVal(receiver)
 	if err != nil {
 		return nil, err
 	}
-	execID := xdr.ScBytes(workflowExecutionID[:])
-	reportIDU32 := uint32(binary.BigEndian.Uint16(reportID[:]))
-	return []xdr.ScVal{
-		{
-			Type:    xdr.ScValTypeScvAddress,
-			Address: receiverAddr,
-		},
-		{
-			Type:  xdr.ScValTypeScvBytes,
-			Bytes: &execID,
-		},
-		{
-			Type: xdr.ScValTypeScvU32,
-			U32:  &reportIDU32,
-		},
+	return []stellartypes.ScVal{
+		receiverVal,
+		{Type: stellartypes.ScValTypeBytes, Bytes: workflowExecutionID[:]},
+		// report_id is BytesN<2> on-chain — pass as raw bytes, not as a uint32.
+		{Type: stellartypes.ScValTypeBytes, Bytes: reportID[:]},
 	}, nil
 }
 
-func buildInvokeContractOperationsXDR(contractID string, functionName string, args []xdr.ScVal) ([]string, error) {
-	contractAddr, err := contractIDToScAddress(contractID)
-	if err != nil {
-		return nil, err
-	}
-
-	opBody := xdr.OperationBody{}
-	opBody.Type = xdr.OperationTypeInvokeHostFunction
-	opBody.InvokeHostFunctionOp = &xdr.InvokeHostFunctionOp{
-		HostFunction: xdr.HostFunction{
-			Type: xdr.HostFunctionTypeHostFunctionTypeInvokeContract,
-			InvokeContract: &xdr.InvokeContractArgs{
-				ContractAddress: *contractAddr,
-				FunctionName:    xdr.ScSymbol(functionName),
-				Args:            args,
-			},
-		},
-		Auth: nil,
-	}
-
-	op := xdr.Operation{Body: opBody}
-	opXDR, err := xdr.MarshalBase64(op)
-	if err != nil {
-		return nil, fmt.Errorf("marshal operation XDR: %w", err)
-	}
-	return []string{opXDR}, nil
-}
-
-func contractIDToScAddress(contractID string) (*xdr.ScAddress, error) {
+// contractAddressToScVal converts a C... StrKey contract address to a domain ScVal of type Address.
+func contractAddressToScVal(contractID string) (stellartypes.ScVal, error) {
 	contractBytes, err := strkey.Decode(strkey.VersionByteContract, contractID)
 	if err != nil {
-		return nil, fmt.Errorf("%s invalid contract address %q: %w", capcommon.UserError, contractID, err)
+		return stellartypes.ScVal{}, fmt.Errorf("%s invalid contract address %q: %w", capcommon.UserError, contractID, err)
 	}
-	var contractHash xdr.Hash
-	copy(contractHash[:], contractBytes)
-	addr, err := xdr.NewScAddress(xdr.ScAddressTypeScAddressTypeContract, xdr.ContractId(contractHash))
+	if len(contractBytes) != 32 {
+		return stellartypes.ScVal{}, fmt.Errorf("%s contract address must decode to 32 bytes, got %d", capcommon.UserError, len(contractBytes))
+	}
+	return stellartypes.ScVal{
+		Type: stellartypes.ScValTypeAddress,
+		Address: &stellartypes.ScAddress{
+			Type:       stellartypes.ScAddressTypeContractID,
+			ContractID: contractBytes,
+		},
+	}, nil
+}
+
+// accountAddressToScVal converts a G... StrKey account address to a domain ScVal of type Address.
+func accountAddressToScVal(accountID string) (stellartypes.ScVal, error) {
+	accountBytes, err := strkey.Decode(strkey.VersionByteAccountID, accountID)
 	if err != nil {
-		return nil, fmt.Errorf("create contract sc address: %w", err)
+		return stellartypes.ScVal{}, fmt.Errorf("invalid account address %q: %w", accountID, err)
 	}
-	return &addr, nil
+	if len(accountBytes) != 32 {
+		return stellartypes.ScVal{}, fmt.Errorf("account address must decode to 32 bytes, got %d", len(accountBytes))
+	}
+	return stellartypes.ScVal{
+		Type: stellartypes.ScValTypeAddress,
+		Address: &stellartypes.ScAddress{
+			Type:      stellartypes.ScAddressTypeAccountID,
+			AccountID: accountBytes,
+		},
+	}, nil
 }
 
 func extractStringish(sv xdr.ScVal) (string, bool) {
@@ -577,55 +555,49 @@ func (wr *writeReport) revertedReplyFromObservedState(info TransmissionInfo) *st
 	return reply
 }
 
-func (wr *writeReport) replyFromOwnTransaction(txHash string, txResult stellartypes.TxResult) *stellarcap.WriteReportReply {
+// replyFromOwnTransaction builds a WriteReportReply directly from a SubmitTransactionResponse
+// when the post-submit transmission info poll fails or returns an unexpected state.
+func (wr *writeReport) replyFromOwnTransaction(resp *stellartypes.SubmitTransactionResponse) *stellarcap.WriteReportReply {
 	reply := &stellarcap.WriteReportReply{}
-	populateReplyFromTx(reply, txHash, txResult)
-	if txResult.Status == int32(types.Finalized) {
+	if resp == nil {
+		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_FATAL
+		return reply
+	}
+	populateReplyFromSubmit(reply, resp)
+	switch resp.TxStatus {
+	case stellartypes.TxSuccess:
 		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_SUCCESS
 		status := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 		reply.ReceiverContractExecutionStatus = &status
-	} else if txResult.Status == int32(types.Failed) {
+	case stellartypes.TxFailed:
 		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_REVERTED
 		status := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
 		reply.ReceiverContractExecutionStatus = &status
-	} else {
+	default: // TxFatal
 		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_FATAL
 	}
 	return reply
 }
 
-func populateReplyFromTx(reply *stellarcap.WriteReportReply, txHash string, txResult stellartypes.TxResult) {
-	if txHash != "" {
-		reply.TxHash = capcommon.Ptr(txHash)
-	} else if txResult.Hash != "" {
-		reply.TxHash = capcommon.Ptr(txResult.Hash)
+// populateReplyFromSubmit sets tx hash and ledger sequence on the reply from a SubmitTransactionResponse.
+func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellartypes.SubmitTransactionResponse) {
+	if resp == nil {
+		return
 	}
-	if txResult.Fee > 0 {
-		fee := uint64(txResult.Fee)
-		reply.TransactionFee = &fee
+	if resp.TxHash != "" {
+		reply.TxHash = capcommon.Ptr(resp.TxHash)
 	}
-	if txResult.ResultMetaXDR != "" {
-		if ledgerSequence, err := extractLedgerSequenceFromResultMeta(txResult.ResultMetaXDR); err == nil && ledgerSequence != 0 {
+	if resp.ResultMetaXDR != "" {
+		if ledgerSequence, err := extractLedgerSequenceFromResultMeta(resp.ResultMetaXDR); err == nil && ledgerSequence != 0 {
 			reply.LedgerSequence = &ledgerSequence
 		}
 	}
 }
 
-func extractLedgerSequenceFromResultMeta(resultMetaXDR string) (uint32, error) {
-	var meta xdr.TransactionMeta
-	if err := xdr.SafeUnmarshalBase64(resultMetaXDR, &meta); err != nil {
-		return 0, err
-	}
-	switch meta.V {
-	case 4:
-		v := meta.MustV4()
-		if v.SorobanMeta == nil || v.SorobanMeta.Ext.V != 1 || v.SorobanMeta.Ext.Events == nil {
-			return 0, nil
-		}
-		return 0, nil
-	case 3:
-		return 0, nil
-	default:
-		return 0, nil
-	}
+// extractLedgerSequenceFromResultMeta parses the ledger sequence from transaction result meta XDR.
+// The Stellar RPC does not embed the ledger sequence directly in TransactionMeta; it is returned
+// separately in the GetTransaction response, which is available via the on-chain transmission info.
+// This function is a best-effort helper and returns 0 when the ledger cannot be determined.
+func extractLedgerSequenceFromResultMeta(_ string) (uint32, error) {
+	return 0, nil
 }

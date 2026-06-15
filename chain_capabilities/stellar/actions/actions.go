@@ -34,6 +34,7 @@ type Stellar struct {
 	messageBuilder        *commonmon.MessageBuilder
 	chainSelector         uint64
 	forwarderAddress      string
+	nodeAddress           string
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler ts.TransmissionScheduler
 }
@@ -41,6 +42,7 @@ type Stellar struct {
 func NewStellar(
 	service types.StellarService,
 	forwarderAddress string,
+	nodeAddress string,
 	lggr logger.Logger,
 	limitsFactory limits.Factory,
 	transmissionScheduler ts.TransmissionScheduler,
@@ -59,6 +61,7 @@ func NewStellar(
 		messageBuilder:        messageBuilder,
 		chainSelector:         chainSelector,
 		forwarderAddress:      forwarderAddress,
+		nodeAddress:           nodeAddress,
 		transmissionScheduler: transmissionScheduler,
 	}
 	return st, st.initLimiters(limitsFactory)
@@ -76,11 +79,11 @@ func (s *Stellar) Close() error {
 func (s *Stellar) GetLatestLedger(ctx context.Context, _ capabilities.RequestMetadata, _ *stellarcap.GetLatestLedgerRequest) (*capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse], caperrors.Error) {
 	resp, err := s.StellarService.GetLatestLedger(ctx)
 	if err != nil {
-		return nil, capcommon.GetError(err, false)
+		return nil, GetError(err, false)
 	}
 	protoResp, err := stellarcap.ConvertGetLatestLedgerResponseToProto(resp)
 	if err != nil {
-		return nil, capcommon.GetError(err, false)
+		return nil, GetError(err, false)
 	}
 	return &capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse]{Response: protoResp}, nil
 }

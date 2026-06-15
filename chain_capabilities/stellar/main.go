@@ -199,6 +199,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.Stellar, err = actions.NewStellar(
 		stellarService,
 		cfg.CREForwarderAddress,
+		cfg.NodeAddress,
 		c.lggr,
 		c.limitsFactory,
 		scheduler,
