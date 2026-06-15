@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
@@ -21,6 +20,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"

@@ -11,15 +11,18 @@ import (
 	chainselectors "github.com/smartcontractkit/chain-selectors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
+
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
-	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	stellarcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"

@@ -7,7 +7,7 @@ import (
 )
 
 type Config struct {
-	CREForwarderAddress           string        `json:"creForwarderAddress"`
+	CREForwarderAddress string `json:"creForwarderAddress"`
 	// NodeAddress is the G... StrKey of the node's Stellar signing account.
 	// It is passed as the transmitter argument to the on-chain forwarder report() call
 	// and must be registered as a valid forwarder in the KeystoneForwarder contract.

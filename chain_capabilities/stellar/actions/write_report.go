@@ -13,10 +13,8 @@ import (
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 
-	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
-	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
-	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -26,6 +24,9 @@ import (
 	types "github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 )
 
 const (
@@ -393,6 +394,7 @@ func parseFieldsIntoTransmissionInfo(info *TransmissionInfo, sv xdr.ScVal) {
 				}
 			}
 		}
+	default:
 	}
 }
 
@@ -527,7 +529,7 @@ func extractBool(sv xdr.ScVal) *bool {
 	if sv.Type != xdr.ScValTypeScvBool || sv.B == nil {
 		return nil
 	}
-	b := bool(*sv.B)
+	b := *sv.B
 	return &b
 }
 
