@@ -36,6 +36,7 @@ type connectorHandler struct {
 	lggr                     logger.Logger
 	gatewayConnector         core.GatewayConnector
 	config                   ServiceConfig
+	capabilityDonID          uint32 // authoritative sending DON ID; 0 = unknown, falls back to WorkflowDONID
 	requestCache             *requestCache
 	workflowStore            *workflowStore
 	gatewayMetadataPublisher GatewayMetadataPublisher
@@ -45,12 +46,13 @@ type connectorHandler struct {
 	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32,
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics, orgResolver orgresolver.OrgResolver) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
 		config:                   config,
+		capabilityDonID:          capabilityDonID,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
@@ -290,6 +292,18 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		displayWorkflowName = workflowMetadata.WorkflowName
 	}
 
+	// Emit the *sending* capability DON ID. The HTTP trigger plugin runs on a
+	// capability DON, separate from the consumer workflow's DON. The workflow
+	// service needs the sender's DON to resolve on-chain quorum params (N, F).
+	// See CRE-4409. capabilityDonID is 0 when the host could not resolve it
+	// authoritatively (a multi-DON job-spec node, or a core node that pre-dates
+	// CRE-4409); in that case we fall back to WorkflowDONID. This fallback is
+	// permanent, not transitional, since the job-spec boot path is still supported.
+	donIDForEvent := h.capabilityDonID
+	if donIDForEvent == 0 {
+		donIDForEvent = workflowMetadata.WorkflowDONID
+	}
+
 	labeler := custmsg.NewLabeler().With(
 		events.KeyTriggerID, req.ID,
 		events.KeyWorkflowID, workflowMetadata.WorkflowID,
@@ -299,7 +313,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
-		events.KeyDonID, strconv.Itoa(int(workflowMetadata.WorkflowDONID)),
+		events.KeyDonID, strconv.Itoa(int(donIDForEvent)),
 	)
 
 	// Try to fetch organization ID if org resolver is available

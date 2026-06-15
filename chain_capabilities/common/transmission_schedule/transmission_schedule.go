@@ -93,20 +93,30 @@ func transmissionScheduleSeed(transmissionID string) [16]byte {
 	return key
 }
 
-func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, lggr logger.Logger, isLocal bool) (capabilities.DON, error) {
+// InitMyDON resolves the DON this capability plugin process is running for by
+// looking up DONsForCapability in the capabilities registry.
+//
+// authoritativeDonID is the on-chain DON ID this plugin process was spawned for,
+// as provided by the host via StandardCapabilitiesDependencies.CapabilityDonID.
+//
+//   - If authoritativeDonID is nonzero (post-CRE-4409 path), the function finds
+//     the DON with that exact ID in the registry response. No peer-membership
+//     filter is applied: the host already established which DON this process
+//     serves, so there is no ambiguity even when a node belongs to multiple DONs
+//     running the same capability. Returns an error only if the ID is not found
+//     at all (genuine registry inconsistency).
+//   - If authoritativeDonID is 0 (legacy path), the function falls back to
+//     filtering by local PeerID: returns the first matched DON and logs a warning
+//     if multiple DONs match. This happens on a core node that pre-dates CRE-4409,
+//     or on the job-spec boot path where the host cannot disambiguate. Because
+//     both boot paths remain supported, this branch is permanent.
+func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, authoritativeDonID uint32, lggr logger.Logger, isLocal bool) (capabilities.DON, error) {
 	if isLocal {
 		return capabilities.DON{}, nil
 	}
 	if registry == nil {
 		return capabilities.DON{}, fmt.Errorf("capabilities registry is nil")
 	}
-	localNode, err := registry.LocalNode(ctx)
-	if err != nil {
-		lggr.Errorw("failed to get local node", "error", err)
-		return capabilities.DON{}, fmt.Errorf("failed to receiver local node: %w", err)
-	}
-
-	var dons []capabilities.DON
 
 	donsWithNodes, err := registry.DONsForCapability(ctx, capabilityID)
 	if err != nil {
@@ -114,26 +124,52 @@ func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabili
 		return capabilities.DON{}, fmt.Errorf("failed getting dons for capability: %w", err)
 	}
 
+	// Post-CRE-4409 path: host injected the authoritative DON ID, so look it up
+	// directly. No peer-membership filter — a node may serve multiple DONs for
+	// the same capability and the host already resolved which one this process is.
+	if authoritativeDonID != 0 {
+		for _, d := range donsWithNodes {
+			if d.DON.ID == authoritativeDonID {
+				return d.DON, nil
+			}
+		}
+		lggr.Errorw("authoritative DON ID not found in registry; registry/membership inconsistency",
+			"capabilityID", capabilityID, "authoritativeDonID", authoritativeDonID)
+		return capabilities.DON{}, fmt.Errorf("authoritative DON ID %d not found for capability %s", authoritativeDonID, capabilityID)
+	}
+
+	// Legacy path: filter by local PeerID to find which DON(s) this node belongs to.
+	localNode, err := registry.LocalNode(ctx)
+	if err != nil {
+		lggr.Errorw("failed to get local node", "error", err)
+		return capabilities.DON{}, fmt.Errorf("failed to get local node: %w", err)
+	}
+
+	var matched []capabilities.DON
 	for _, d := range donsWithNodes {
 		for _, n := range d.Nodes {
-			if n.PeerID.String() == localNode.PeerID.String() {
-				dons = append(dons, d.DON)
+			if n.PeerID != nil && n.PeerID.String() == localNode.PeerID.String() {
+				matched = append(matched, d.DON)
+				break
 			}
 		}
 	}
 
-	if len(dons) == 0 {
+	if len(matched) == 0 {
 		lggr.Errorw("no DON found for local peer", "peerID", localNode.PeerID.String(), "capabilityID", capabilityID)
 		return capabilities.DON{}, errors.New("failed to find don for my peer ID: " + localNode.PeerID.String())
 	}
 
-	if len(dons) > 1 {
-		for _, d := range dons {
-			lggr.Errorf("received more than one don for capability id: %s don id: %d don name: %s", capabilityID, d.ID, d.Name)
+	if len(matched) > 1 {
+		ids := make([]uint32, 0, len(matched))
+		for _, d := range matched {
+			ids = append(ids, d.ID)
 		}
+		lggr.Warnw("node belongs to multiple DONs for capability; using first match (ambiguous without authoritative DON ID)",
+			"capabilityID", capabilityID, "matchedIDs", ids)
 	}
 
-	return dons[0], nil
+	return matched[0], nil
 }
 
 func InitialiseTransmissionScheduler(

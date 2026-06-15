@@ -54,6 +54,12 @@ type LogTriggerService struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
+	// capabilityDonID is the on-chain DON ID of this capability DON.
+	// Used to label emitted events with the sending DON ID, distinct from the
+	// consumer workflow's DON ID carried in RequestMetadata.WorkflowDonID. Zero
+	// means unknown; the labeler then falls back to WorkflowDonID.
+	capabilityDonID uint32
+
 	triggers                        LogTriggerStore
 	logTriggerPollInterval          time.Duration
 	logTriggerSendChannelBufferSize uint64
@@ -68,6 +74,7 @@ type LogTriggerService struct {
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, capabilityID string,
+	capabilityDonID uint32,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
@@ -103,6 +110,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr:                            lggr,
 		beholderProcessor:               beholderProcessor,
 		messageBuilder:                  messageBuilder,
+		capabilityDonID:                 capabilityDonID,
 		triggers:                        store,
 		logTriggerPollInterval:          logTriggerPollInterval,
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
@@ -475,8 +483,18 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowName, displayWorkflowName,
 		)
 
-		// add DON metadata if available
-		if telemetryContext.WorkflowDonID != 0 {
+		// Emit the *sending* capability DON ID. The trigger plugin runs on a capability
+		// DON (e.g. chain_capabilities_zone-a), separate from the consumer workflow's
+		// DON carried in RequestMetadata.WorkflowDonID. The workflow service needs the
+		// sender's DON to resolve on-chain quorum params (N, F). See CRE-4409.
+		// capabilityDonID is 0 when the host could not resolve it authoritatively
+		// (a multi-DON job-spec node, or a core node that pre-dates CRE-4409); in
+		// that case we fall back to WorkflowDonID. This fallback is permanent, not
+		// transitional, since the job-spec boot path is still supported.
+		switch {
+		case lts.capabilityDonID != 0:
+			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(lts.capabilityDonID)))
+		case telemetryContext.WorkflowDonID != 0:
 			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)))
 		}
 		if telemetryContext.WorkflowDonConfigVersion != 0 {
