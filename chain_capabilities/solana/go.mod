@@ -6,7 +6,7 @@ require (
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/google/go-cmp v0.7.0
 	github.com/mr-tron/base58 v1.2.0
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260609124022-2749e4a32bfb
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260615195421-fb87220e503f
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb
 	github.com/smartcontractkit/chain-selectors v1.0.100
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260602135221-cc7a5b50532a
@@ -197,5 +197,3 @@ require (
 )
 
 replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
-
-replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common
