@@ -16,13 +16,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
+	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
 )
 
 const (
@@ -32,12 +33,17 @@ const (
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
 
+// connectorHandler implements resourcemanager.Meterable: it owns the
+// workflowStore and the base metering identity, so it both emits lifecycle
+// edges inline and reports the absolute state of active registrations on the
+// ResourceManager's snapshot tick.
+var _ resourcemanager.Meterable = &connectorHandler{}
+
 type connectorHandler struct {
 	services.StateMachine
 	lggr                     logger.Logger
 	gatewayConnector         core.GatewayConnector
 	config                   ServiceConfig
-	capabilityDonID          uint32 // authoritative sending DON ID; 0 = unknown, falls back to WorkflowDONID
 	requestCache             *requestCache
 	workflowStore            *workflowStore
 	gatewayMetadataPublisher GatewayMetadataPublisher
@@ -45,22 +51,34 @@ type connectorHandler struct {
 	wg                       sync.WaitGroup
 	stopChan                 services.StopChan
 	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
+	resourceManager          *resourcemanager.ResourceManager
+	// baseIdentity is the six-dimension + resource/resource_type metering
+	// identity for this trigger LOOP, built once at Initialise. The
+	// per-workflow resource_id is derived per emission via WithResourceID.
+	baseIdentity resourcemanager.ResourceIdentity
+	// unregisterMeterable removes this handler from the ResourceManager's
+	// snapshot registry; set on Start, called on Close.
+	unregisterMeterable func()
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32,
-	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics,
-	orgResolver orgresolver.OrgResolver, limitsFactory limits.Factory) (*connectorHandler, error) {
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
+	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics, orgResolver orgresolver.OrgResolver,
+	resourceManager *resourcemanager.ResourceManager, baseIdentity resourcemanager.ResourceIdentity) (*connectorHandler, error) {
+	if resourceManager == nil {
+		resourceManager = resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{})
+	}
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
 		config:                   config,
-		capabilityDonID:          capabilityDonID,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
 		metrics:                  metrics,
 		stopChan:                 make(chan struct{}),
 		orgResolver:              orgResolver,
+		resourceManager:          resourceManager,
+		baseIdentity:             baseIdentity,
 	}, nil
 }
 
@@ -69,6 +87,13 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	h.wg.Add(1)
 	go h.startRequestCacheCleanup(ctx)
 	return h.StartOnce(HandlerName, func() error {
+		// Start the ResourceManager as a sub-service (it owns the snapshot
+		// tick) and register this handler as the snapshotted Meterable. The RM
+		// is fail-open and disabled by default, so this never gates startup.
+		if err := h.resourceManager.Start(ctx); err != nil {
+			return err
+		}
+		h.unregisterMeterable = h.resourceManager.Register(h)
 		return h.gatewayConnector.AddHandler(ctx, []string{
 			gateway_common.MethodWorkflowExecute,
 			gateway_common.MethodPullWorkflowMetadata,
@@ -103,8 +128,25 @@ func (h *connectorHandler) Close() error {
 	return h.StopOnce(HandlerName, func() error {
 		close(h.stopChan)
 		h.wg.Wait()
-		return nil
+		// Drain RELEASEs for every still-active workflow so reservations do not
+		// leak past shutdown, then unregister from the snapshot tick and stop
+		// the ResourceManager. Order matters: release before unregister/close so
+		// the final edges are emitted while emission is still wired up.
+		h.releaseActiveWorkflows(context.Background())
+		if h.unregisterMeterable != nil {
+			h.unregisterMeterable()
+		}
+		return h.resourceManager.Close()
 	})
+}
+
+// releaseActiveWorkflows emits a RELEASE for each workflow still active in the
+// store at shutdown. It is fail-open: emission never blocks or fails close.
+func (h *connectorHandler) releaseActiveWorkflows(ctx context.Context) {
+	for _, w := range h.workflowStore.getWorkflows() {
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE,
+			w.workflowSelector.WorkflowID, w.metadata.WorkflowDONID)
+	}
 }
 
 func (h *connectorHandler) HealthReport() map[string]error {
@@ -146,12 +188,88 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
 	workflow := newWorkflowWithMetadata(input.WorkflowSelector, authorizedKeys, sendCh, input.Metadata)
-	if err := h.workflowStore.upsertWorkflow(workflow); err != nil {
+	prevWorkflowID, replaced, err := h.workflowStore.upsertWorkflow(workflow)
+	if err != nil {
 		return fmt.Errorf("failed to register workflow (ID: %s, Owner: %s, Name: %s): %w",
 			input.WorkflowSelector.WorkflowID, input.WorkflowSelector.WorkflowOwner, input.WorkflowSelector.WorkflowName, err)
 	}
+	newWorkflowID := input.WorkflowSelector.WorkflowID
+	workflowDONID := input.Metadata.WorkflowDONID
+	switch {
+	case !replaced:
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID)
+	case prevWorkflowID == newWorkflowID:
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_UPDATE, newWorkflowID, workflowDONID)
+	default:
+		// Version update: the same owner/name/tag reference now resolves to a
+		// new workflow ID. Release the previous workflow's reservation before
+		// reserving the new one so the old reservation does not leak.
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, prevWorkflowID, workflowDONID)
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID)
+	}
 	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
+}
+
+// emitMeterRecord emits a meter record for one workflow registration
+// operation. resource_id is the workflow ID (HTTP registrations are
+// workflow-scoped, so there is no shared physical resource); the workflow ID
+// also doubles as the event identity, so a repeated emission for the same
+// workflow and action dedups downstream. The workflow_id is recoverable from
+// resource_id and the owner is resolved downstream, so no label metadata is
+// attached. Emission is fail-open and never affects the registration outcome.
+func (h *connectorHandler) emitMeterRecord(ctx context.Context, action meteringpb.MeterAction, workflowID string, workflowDONID uint32) {
+	identity := h.identityForWorkflow(workflowID, workflowDONID)
+	h.resourceManager.EmitMeterRecord(ctx, identity, action,
+		resourcemanager.NewUtilization(identity, action, 1, workflowID))
+}
+
+// identityForWorkflow derives the per-workflow metering identity: the base
+// identity with resource_id set to the workflow ID, and DONID resolved per
+// registration when the host did not inject a capability DON.
+func (h *connectorHandler) identityForWorkflow(workflowID string, workflowDONID uint32) resourcemanager.ResourceIdentity {
+	identity := h.baseIdentity.WithResourceID(workflowID)
+	identity.DONID = h.donID(workflowDONID)
+	return identity
+}
+
+// donID returns the DON identifier for an emission. It prefers the
+// host-injected capability DON captured in the base identity (capabilities#619)
+// and falls back to the per-registration workflow DON when the host did not
+// populate one (CapabilityDonID == 0 at Initialise).
+func (h *connectorHandler) donID(workflowDONID uint32) string {
+	if h.baseIdentity.DONID != "" {
+		return h.baseIdentity.DONID
+	}
+	if workflowDONID != 0 {
+		return strconv.FormatUint(uint64(workflowDONID), 10)
+	}
+	return ""
+}
+
+// ResourceIdentity returns the HTTP trigger's base metering identity (six
+// dimensions + resource / resource_type). The per-workflow resource_id is
+// populated by GetUtilization. It implements resourcemanager.Meterable.
+func (h *connectorHandler) ResourceIdentity() resourcemanager.ResourceIdentity {
+	return h.baseIdentity
+}
+
+// GetUtilization returns the absolute state of currently active HTTP workflow
+// registrations, one SnapshotEntry per workflow, for the ResourceManager's
+// snapshot tick. It is a cheap read-snapshot of in-memory state (a read-locked
+// copy from the workflow store) and holds no lock across I/O. It implements
+// resourcemanager.Meterable.
+func (h *connectorHandler) GetUtilization(ctx context.Context) []resourcemanager.SnapshotEntry {
+	workflows := h.workflowStore.getWorkflows()
+	entries := make([]resourcemanager.SnapshotEntry, 0, len(workflows))
+	for _, w := range workflows {
+		workflowID := w.workflowSelector.WorkflowID
+		entries = append(entries, resourcemanager.SnapshotEntry{
+			Identity: h.identityForWorkflow(workflowID, w.metadata.WorkflowDONID),
+			Value:    1,
+		})
+	}
+	return entries
 }
 
 func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKey) ([]gateway_common.AuthorizedKey, error) {
@@ -181,10 +299,17 @@ func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKe
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
+	// Snapshot the workflow DON before removal; it is needed for the meter
+	// record's identity DON fallback.
+	var workflowDONID uint32
+	if w, ok := h.workflowStore.getWorkflowByID(workflowID); ok {
+		workflowDONID = w.metadata.WorkflowDONID
+	}
 	err := h.workflowStore.removeWorkflow(workflowID)
 	if err != nil {
 		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
 	}
+	h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, workflowID, workflowDONID)
 	h.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }
@@ -294,17 +419,13 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		displayWorkflowName = workflowMetadata.WorkflowName
 	}
 
-	// Emit the *sending* capability DON ID. The HTTP trigger plugin runs on a
-	// capability DON, separate from the consumer workflow's DON. The workflow
-	// service needs the sender's DON to resolve on-chain quorum params (N, F).
-	// See CRE-4409. capabilityDonID is 0 when the host could not resolve it
-	// authoritatively (a multi-DON job-spec node, or a core node that pre-dates
-	// CRE-4409); in that case we fall back to WorkflowDONID. This fallback is
-	// permanent, not transitional, since the job-spec boot path is still supported.
-	donIDForEvent := h.capabilityDonID
-	if donIDForEvent == 0 {
-		donIDForEvent = workflowMetadata.WorkflowDONID
-	}
+	// Resolve the *sending* capability DON ID once (CRE-4409). h.donID applies
+	// contract rule 8: the authoritative host-injected CapDONID (carried on
+	// baseIdentity) wins, and the consumer workflow's WorkflowDONID is used only
+	// when CapDONID is 0. This is the SAME resolver the metering identity uses
+	// (identityForWorkflow -> donID), so the event label and the meter record
+	// cannot diverge.
+	donIDForEvent := h.donID(workflowMetadata.WorkflowDONID)
 
 	labeler := custmsg.NewLabeler().With(
 		events.KeyTriggerID, req.ID,
@@ -315,7 +436,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
-		events.KeyDonID, strconv.Itoa(int(donIDForEvent)),
+		events.KeyDonID, donIDForEvent,
 	)
 
 	// Try to fetch organization ID if org resolver is available

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -28,11 +29,13 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -160,9 +163,19 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
-	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, capabilityDonID, processor, messageBuilder,
+	// The ResourceManager owns the snapshot tick; the LogTriggerService starts it
+	// as a sub-service and registers itself, so it must be configured with a
+	// snapshot interval here. Identity/snapshots are gated by the same metering
+	// env flag as MeterRecords.
+	resourceManager := resourcemanager.NewResourceManager(c.lggr, resourcemanager.ResourceManagerConfig{
+		Enabled:          meterRecordsEnabled(c.lggr),
+		Emitter:          beholder.GetEmitter(),
+		SnapshotInterval: resourcemanager.DefaultSnapshotInterval,
+	})
+	baseIdentity := newBaseMeteringIdentity(dependencies)
+	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
-		dependencies.OrgResolver, dependencies.TriggerEventStore)
+		dependencies.OrgResolver, dependencies.TriggerEventStore, resourceManager, baseIdentity, c.chainSelector)
 	if err != nil {
 		return fmt.Errorf("error when creating trigger: %w", err)
 	}
@@ -195,6 +208,62 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
+}
+
+// defaultMeteringProduct is the fallback metering product dimension used when
+// the host did not inject one via the standardized Initialise channel (a legacy
+// node or a boot path not yet updated). The other deployment dimensions
+// (environment, zone, node_id) have no meaningful constant and are left empty
+// in that case, as documented on StandardCapabilitiesDependencies.
+const defaultMeteringProduct = "cre"
+
+// newBaseMeteringIdentity builds the EVM log trigger's base metering identity
+// from the host-injected dependencies. It carries the six coarse dimensions
+// plus the service-level resource/resource_type; the per-resource ResourceID is
+// set per emit/snapshot. DONID is the capability DON when the host injected one
+// (deps.CapabilityDonID); when 0, it is left empty here and resolved per emit
+// from the consumer's WorkflowDonID (see LogTriggerService.resolveDONID). This
+// reads deps.CapabilityDonID at the Initialise layer so the change is orthogonal
+// to capabilities#619's NewLogTriggerService signature edit.
+func newBaseMeteringIdentity(deps core.StandardCapabilitiesDependencies) resourcemanager.ResourceIdentity {
+	product := deps.Product
+	if product == "" {
+		product = defaultMeteringProduct
+	}
+	var donID string
+	if deps.CapabilityDonID != 0 {
+		donID = strconv.FormatUint(uint64(deps.CapabilityDonID), 10)
+	}
+	return resourcemanager.ResourceIdentity{
+		Product:      product,
+		Environment:  deps.Environment,
+		Zone:         deps.Zone,
+		DONID:        donID,
+		NodeID:       deps.NodeID,
+		Service:      trigger.MeteringService,
+		Resource:     trigger.MeteringResource,
+		ResourceType: trigger.MeteringResourceType,
+	}
+}
+
+// meterRecordsEnabledEnvVar gates MeterRecord emission; the name is the
+// cross-producer convention for the metering rollout (SHARED-2718).
+const meterRecordsEnabledEnvVar = "CL_METER_RECORDS_ENABLED"
+
+// meterRecordsEnabled reads the metering gate from the environment. Unset or
+// unparseable values disable emission; metering config must never prevent the
+// capability from starting.
+func meterRecordsEnabled(lggr logger.Logger) bool {
+	v := os.Getenv(meterRecordsEnabledEnvVar)
+	if v == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(v)
+	if err != nil {
+		lggr.Warnw("Invalid value for "+meterRecordsEnabledEnvVar+", meter record emission disabled", "value", v, "error", err)
+		return false
+	}
+	return enabled
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {

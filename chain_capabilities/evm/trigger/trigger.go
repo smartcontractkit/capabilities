@@ -12,8 +12,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
-
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -23,6 +21,7 @@ import (
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
@@ -34,6 +33,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
+	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
@@ -43,6 +43,22 @@ const (
 	defaultSendChannelBufferSize = 1000
 	defaultLimitQueryLogSize     = 1000
 )
+
+// Metering identity constants for the EVM log trigger (SHARED-2711). These are
+// the service-level dimensions of the base ResourceIdentity: Service is the
+// stable service constant (it must not encode deployment environment or zone,
+// which ride on the structured identity's coarse dimensions), Resource is the
+// resource pool, and ResourceType is the billing unit converted to credits.
+const (
+	MeteringService      = "evm-log-trigger"
+	MeteringResource     = "log_filters"
+	MeteringResourceType = "log_filter_addresses"
+)
+
+// LogTriggerService is a resourcemanager.Meterable: it is registered with the
+// ResourceManager at start so the manager's snapshot tick polls its active
+// filters.
+var _ resourcemanager.Meterable = (*LogTriggerService)(nil)
 
 type LogTriggerService struct {
 	services.Service
@@ -55,12 +71,17 @@ type LogTriggerService struct {
 	lggr              logger.Logger
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
-
-	// capabilityDonID is the on-chain DON ID of this capability DON.
-	// Used to label emitted events with the sending DON ID, distinct from the
-	// consumer workflow's DON ID carried in RequestMetadata.WorkflowDonID. Zero
-	// means unknown; the labeler then falls back to WorkflowDonID.
-	capabilityDonID uint32
+	resourceManager   *resourcemanager.ResourceManager
+	// baseIdentity is the producer's base metering identity: the six coarse
+	// dimensions plus service/resource/resource_type, built once at Initialise.
+	// The per-resource ResourceID is set per emit/snapshot via WithResourceID.
+	// When the host did not inject a capability DON ID, baseIdentity.DONID is
+	// empty and is filled per-emit from the consumer's WorkflowDonID.
+	baseIdentity  resourcemanager.ResourceIdentity
+	chainSelector string // decimal chain selector, the chain label on meter records
+	// rmUnregister removes this service from the ResourceManager's snapshot
+	// registry; it is set when the RM is started in start and invoked in close.
+	rmUnregister func()
 
 	triggers                        LogTriggerStore
 	logTriggerPollInterval          time.Duration
@@ -76,13 +97,15 @@ type LogTriggerService struct {
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, capabilityID string,
-	capabilityDonID uint32,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
 	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
 	orgResolver orgresolver.OrgResolver,
-	triggerEventStore capabilities.EventStore) (*LogTriggerService, error) {
+	triggerEventStore capabilities.EventStore,
+	resourceManager *resourcemanager.ResourceManager,
+	baseIdentity resourcemanager.ResourceIdentity,
+	chainSelector uint64) (*LogTriggerService, error) {
 	if capabilityID == "" {
 		return nil, fmt.Errorf("capabilityID must be non-empty")
 	}
@@ -112,7 +135,9 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr:                            lggr,
 		beholderProcessor:               beholderProcessor,
 		messageBuilder:                  messageBuilder,
-		capabilityDonID:                 capabilityDonID,
+		resourceManager:                 resourceManager,
+		baseIdentity:                    baseIdentity,
+		chainSelector:                   strconv.FormatUint(chainSelector, 10),
 		triggers:                        store,
 		logTriggerPollInterval:          logTriggerPollInterval,
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
@@ -121,6 +146,9 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	}
 	if lts.orgResolver == nil {
 		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
+	}
+	if lts.resourceManager == nil {
+		lts.lggr.Warn("ResourceManager is nil, EVM log trigger capability will not emit meter records")
 	}
 	if err := lts.initLimiters(limitsFactory); err != nil {
 		return nil, err
@@ -173,12 +201,47 @@ func (lts *LogTriggerService) start(ctx context.Context) error {
 	ticker := services.NewTicker(duration)
 	lts.lggr.Infof("Starting clean up of failed log poller filters every %s seconds", duration)
 	lts.srvcEng.GoTick(ticker, lts.cleanUpStaleFilters)
+
+	// The ResourceManager owns the snapshot tick: start it as a sub-service of
+	// this service and Register ourselves so its tick polls GetUtilization. We
+	// never run our own snapshot loop. The RM is fail-open and starting it must
+	// not gate the trigger service, so a start error is logged, not returned.
+	if lts.resourceManager != nil {
+		if err := lts.resourceManager.Start(ctx); err != nil {
+			lts.lggr.Errorw("failed to start metering ResourceManager; snapshots disabled", "err", err)
+		} else {
+			lts.rmUnregister = lts.resourceManager.Register(lts)
+		}
+	}
 	return nil
 }
 
 func (lts *LogTriggerService) close() error {
 	lts.baseTrigger.Stop()
+	// On graceful shutdown, release every still-active filter so a clean stop is
+	// not seen downstream as a leaked reservation. These releases reuse each
+	// filter's stashed physicalFilterID + reserved count, so they dedup against
+	// any user-facing RELEASE on the identical idempotency key.
+	lts.releaseActiveFiltersOnClose(context.Background())
+	if lts.rmUnregister != nil {
+		lts.rmUnregister()
+	}
+	if lts.resourceManager != nil {
+		return lts.resourceManager.Close()
+	}
 	return nil
+}
+
+// releaseActiveFiltersOnClose emits a RELEASE MeterRecord for every filter still
+// present in the store at shutdown, carrying the reserved address count. It runs
+// before the ResourceManager is unregistered/closed.
+func (lts *LogTriggerService) releaseActiveFiltersOnClose(ctx context.Context) {
+	if lts.resourceManager == nil {
+		return
+	}
+	for _, state := range lts.triggers.ReadAll() {
+		lts.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, state.filter, state.reservedAddressCount)
+	}
 }
 
 func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
@@ -215,7 +278,14 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 		if err := lts.EVMService.UnregisterLogTracking(ctx, filterID); err != nil {
 			summary := fmt.Sprintf("failed to unregister log-tracking from the clean up thread: '%v' source triggerID: %s", err, filterID)
 			monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(telemetryContext, summary, err.Error()))
+			continue
 		}
+		// This is log-poller filter hygiene only; it emits no MeterRecord. An
+		// orphaned filter has no trigger state, so it is already absent from
+		// GetUtilization and therefore from subsequent Snapshots. Billing
+		// reconciles the lost reservation by that absence (the snapshot liveness
+		// mechanism), not by a synthetic cleanup RELEASE. We never expect, nor
+		// design around, orphan cleanup as a metering event.
 	}
 }
 
@@ -295,6 +365,21 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		Topic4:    t4,
 	}
 
+	expressions, confidence := lts.createLogRequest(ctx, addresses, sigs, t2, t3, t4, input.GetConfidence())
+
+	// Build the filter's metering identity once from the already-converted
+	// inputs: a workflow-independent content hash and the resolved DON ID. It is
+	// stashed on the trigger state so every later path (unregister, cleanup,
+	// snapshot, close) reproduces the same identity without the request input.
+	loggedFilter := filter{
+		filterID:             filterID,
+		physicalFilterID:     physicalFilterID(lts.chainSelector, addresses, sigs, t2, t3, t4),
+		reservedAddressCount: int64(len(addresses)),
+		donID:                lts.resolveDONID(meta.WorkflowDonID),
+		expressions:          expressions,
+		confidence:           confidence,
+	}
+
 	if err = lts.EVMService.RegisterLogTracking(ctx, filterQuery); err != nil {
 		registerError := fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
 			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
@@ -309,7 +394,9 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 		return nil, caperrors.NewPublicSystemError(registerError, caperrors.Unavailable)
 	}
-	expressions, confidence := lts.createLogRequest(ctx, addresses, sigs, t2, t3, t4, input.GetConfidence())
+	// RESERVE only after RegisterLogTracking succeeds: a failed registration
+	// holds no addresses, so it must not be billed (see the no-reserve test).
+	lts.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, loggedFilter, loggedFilter.reservedAddressCount)
 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
@@ -323,11 +410,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 			cancelFunc:              cancel,
 			lastBlock:               fromBlock,
 			unfinalizedSentEventIDs: make(map[string]*big.Int),
-			filter: filter{
-				filterID:    filterID,
-				expressions: expressions,
-				confidence:  confidence,
-			},
+			filter:                  loggedFilter,
 		})
 		ctx = meta.ContextWithCRE(ctx)
 		lts.startPolling(ctx, telemetryContext, triggerID, input, logCh)
@@ -376,6 +459,75 @@ func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, trigg
 
 func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + SuffixLogTriggerFilterID
+}
+
+// resolveDONID returns the metering DON ID for an emit, applying the
+// capabilities#619 0->WorkflowDonID rule: when the host injected a capability
+// DON ID, baseIdentity.DONID is non-empty and used as-is; otherwise the
+// consumer workflow's DON ID (from the request metadata) is the documented
+// fallback. The result is stashed on the filter at registration so the
+// unregister/cleanup/snapshot/close paths reproduce the same identity without
+// the request. Empty when neither source is known.
+func (lts *LogTriggerService) resolveDONID(workflowDonID uint32) string {
+	if lts.baseIdentity.DONID != "" {
+		return lts.baseIdentity.DONID
+	}
+	if workflowDonID != 0 {
+		return strconv.FormatUint(uint64(workflowDonID), 10)
+	}
+	return ""
+}
+
+// identity returns the base metering identity with its DON ID and ResourceID
+// set for one resource. donID is the value stashed on the filter at
+// registration (see resolveDONID); resourceID is the physical filter content
+// hash (empty when unrecoverable, e.g. an orphaned filter).
+func (lts *LogTriggerService) identity(donID, resourceID string) resourcemanager.ResourceIdentity {
+	id := lts.baseIdentity
+	id.DONID = donID
+	id.ResourceID = resourceID
+	return id
+}
+
+// emitMeterRecord emits a MeterRecord for a filter whose full state is known
+// (register/unregister/close). The physical filter content hash is both the
+// ResourceID and the RESERVE/RELEASE event identity, so a register retry and a
+// later unregister/cleanup of the same physical filter dedup on an identical
+// idempotency key. The resource is fully identified by its ResourceIdentity;
+// there is no separate label metadata. Emission is fail-open and must never
+// gate the path that calls it.
+func (lts *LogTriggerService) emitMeterRecord(ctx context.Context, action meteringpb.MeterAction, f filter, value int64) {
+	if lts.resourceManager == nil {
+		return
+	}
+	identity := lts.identity(f.donID, f.physicalFilterID)
+	lts.resourceManager.EmitMeterRecord(ctx, identity, action,
+		resourcemanager.NewUtilization(identity, action, value, f.physicalFilterID))
+}
+
+// ResourceIdentity implements resourcemanager.Meterable: it returns the
+// producer's base identity (the six coarse dimensions plus
+// service/resource/resource_type). The per-resource DON ID and ResourceID are
+// populated per active filter by GetUtilization.
+func (lts *LogTriggerService) ResourceIdentity() resourcemanager.ResourceIdentity {
+	return lts.baseIdentity
+}
+
+// GetUtilization implements resourcemanager.Meterable: it returns one snapshot
+// entry per currently active log filter for the snapshot tick. It is a cheap
+// in-memory read — triggers.ReadAll already returns a copy — with no I/O and no
+// lock held across the loop, as the snapshot contract requires (R6).
+func (lts *LogTriggerService) GetUtilization(_ context.Context) []resourcemanager.SnapshotEntry {
+	triggers := lts.triggers.ReadAll()
+	entries := make([]resourcemanager.SnapshotEntry, 0, len(triggers))
+	for _, state := range triggers {
+		f := state.filter
+		entries = append(entries, resourcemanager.SnapshotEntry{
+			Identity: lts.identity(f.donID, f.physicalFilterID),
+			Value:    f.reservedAddressCount,
+		})
+	}
+	return entries
 }
 
 func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext monitoring.TelemetryContext, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
@@ -496,19 +648,14 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowName, displayWorkflowName,
 		)
 
-		// Emit the *sending* capability DON ID. The trigger plugin runs on a capability
-		// DON (e.g. chain_capabilities_zone-a), separate from the consumer workflow's
-		// DON carried in RequestMetadata.WorkflowDonID. The workflow service needs the
-		// sender's DON to resolve on-chain quorum params (N, F). See CRE-4409.
-		// capabilityDonID is 0 when the host could not resolve it authoritatively
-		// (a multi-DON job-spec node, or a core node that pre-dates CRE-4409); in
-		// that case we fall back to WorkflowDonID. This fallback is permanent, not
-		// transitional, since the job-spec boot path is still supported.
-		switch {
-		case lts.capabilityDonID != 0:
-			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(lts.capabilityDonID)))
-		case telemetryContext.WorkflowDonID != 0:
-			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)))
+		// Emit the *sending* capability DON ID (CRE-4409). resolveDONID applies
+		// contract rule 8: the authoritative host-injected CapDONID (carried on
+		// baseIdentity) wins, and the consumer workflow's WorkflowDonID is used
+		// only when CapDONID is 0. This is the SAME resolver the metering
+		// identity uses (filter.donID is set from resolveDONID at registration),
+		// so the event label and the meter record cannot diverge.
+		if donID := lts.resolveDONID(telemetryContext.WorkflowDonID); donID != "" {
+			labeler = labeler.With(events.KeyDonID, donID)
 		}
 		if telemetryContext.WorkflowDonConfigVersion != 0 {
 			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.WorkflowDonConfigVersion)))
@@ -589,7 +736,7 @@ func (lts *LogTriggerService) deliverLogReliably(
 	}
 
 	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
-	deliverCtx := capcommon.ContextWithOrgForDelivery(ctx, lts.lggr, lts.orgResolver, telemetryContext.RequestMetadata)
+	deliverCtx := lts.contextWithOrgForDelivery(ctx, telemetryContext.RequestMetadata)
 	if err := lts.baseTrigger.DeliverEvent(deliverCtx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
@@ -743,6 +890,13 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	trigger.cancelFunc()
 	lts.triggers.Delete(triggerID)
 	lts.baseTrigger.UnregisterTrigger(triggerID)
+	// The reservation ends with the trigger state, which is the only holder of
+	// the reserved address count and the physical filter identity. Both are
+	// reused from the stashed filter so this RELEASE carries the same value and
+	// identity as its RESERVE. If UnregisterLogTracking fails below, the filter
+	// is orphaned at the log poller and the stale-filter cleanup unregisters it
+	// later (silently — metering already emitted this RELEASE here).
+	lts.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, trigger.filter, trigger.reservedAddressCount)
 
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {

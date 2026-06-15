@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -20,6 +24,39 @@ import (
 )
 
 const ServiceName = "HTTPTriggerCapability"
+
+// Metering identity constants for the HTTP trigger. Service is the stable
+// service constant (it must not encode environment or zone); Resource and
+// ResourceType identify the HTTP workflow-registration pool and its billing
+// unit.
+const (
+	meterService      = "http-trigger"
+	meterResource     = "http_workflows"
+	meterResourceType = "operations"
+	// meterProductFallback is used when the host did not inject a Product
+	// dimension (legacy node or a boot path not yet updated).
+	meterProductFallback = "cre"
+)
+
+// meterRecordsEnabledEnvVar gates MeterRecord emission; the name is the
+// cross-producer convention for the metering rollout (SHARED-2718).
+const meterRecordsEnabledEnvVar = "CL_METER_RECORDS_ENABLED"
+
+// meterRecordsEnabled reads the metering gate from the environment. Unset or
+// unparseable values disable emission; metering config must never prevent the
+// capability from starting.
+func meterRecordsEnabled(lggr logger.Logger) bool {
+	v := os.Getenv(meterRecordsEnabledEnvVar)
+	if v == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(v)
+	if err != nil {
+		lggr.Warnw("Invalid value for "+meterRecordsEnabledEnvVar+", meter record emission disabled", "value", v, "error", err)
+		return false
+	}
+	return enabled
+}
 
 var _ server.HTTPCapability = &service{}
 
@@ -85,16 +122,48 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	// dependencies.CapabilityDonID is the on-chain DON ID this plugin process
-	// serves, used to label emitted events with the *sending* DON. Zero means the
-	// host could not resolve it authoritatively (a multi-DON job-spec node, or a
-	// core node that pre-dates CRE-4409); the handler then falls back to
-	// RequestMetadata.WorkflowDONID. See CRE-4409.
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, dependencies.CapabilityDonID, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory)
+	resourceManager := resourcemanager.NewResourceManager(s.lggr, resourcemanager.ResourceManagerConfig{
+		Enabled:          meterRecordsEnabled(s.lggr),
+		Emitter:          beholder.GetEmitter(),
+		SnapshotInterval: resourcemanager.DefaultSnapshotInterval,
+	})
+	baseIdentity := baseMeterIdentity(dependencies)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, resourceManager, baseIdentity)
 	if err != nil {
 		return err
 	}
 	return s.Start(ctx)
+}
+
+// baseMeterIdentity builds the HTTP trigger's base metering identity from the
+// host-injected dependencies. The six coarse dimensions plus the service-level
+// resource / resource_type are fixed here; the per-workflow resource_id is set
+// per emission via ResourceIdentity.WithResourceID.
+//
+// DONID is the capability DON the trigger LOOP was spawned for
+// (deps.CapabilityDonID, host-injected via capabilities#619). When the host has
+// not populated it (0), DONID is left empty here and resolved per registration
+// from the workflow DON at emit time (see connectorHandler.donID). Product
+// falls back to a constant when the host did not inject one.
+func baseMeterIdentity(deps core.StandardCapabilitiesDependencies) resourcemanager.ResourceIdentity {
+	product := deps.Product
+	if product == "" {
+		product = meterProductFallback
+	}
+	var donID string
+	if deps.CapabilityDonID != 0 {
+		donID = strconv.FormatUint(uint64(deps.CapabilityDonID), 10)
+	}
+	return resourcemanager.ResourceIdentity{
+		Product:      product,
+		Environment:  deps.Environment,
+		Zone:         deps.Zone,
+		DONID:        donID,
+		NodeID:       deps.NodeID,
+		Service:      meterService,
+		Resource:     meterResource,
+		ResourceType: meterResourceType,
+	}
 }
 
 func (s *service) Start(ctx context.Context) error {
