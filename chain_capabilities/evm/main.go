@@ -135,7 +135,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
-		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, cfg.IsLocaL)
+		// The transmission scheduler needs this DON's membership/quorum. Pass the
+		// authoritative DON ID so a multi-DON node selects the correct DON; when it
+		// is 0, InitMyDON keeps its legacy "first matched DON" behavior.
+		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, c.lggr, cfg.IsLocaL)
 		if err != nil {
 			return fmt.Errorf("failed to init DON: %w", err)
 		}
