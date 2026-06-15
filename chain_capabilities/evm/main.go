@@ -119,6 +119,20 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
+	// capabilityDonID is the on-chain DON ID of the capability DON this plugin
+	// process serves, used to label emitted trigger events with the *sending*
+	// DON ID. The host (chainlink) resolves it authoritatively and injects it via
+	// dependencies.CapabilityDonID at Initialise time:
+	//   - syncer boot path: always populated;
+	//   - job-spec boot path: populated when unambiguous, otherwise 0 (e.g. a node
+	//     that belongs to multiple DONs running this capability, or a core node
+	//     that pre-dates CRE-4409).
+	// When it is 0 the trigger service falls back to the consumer workflow's DON
+	// ID (see trigger.NewLogTriggerService). We deliberately do NOT re-resolve it
+	// from the registry here: that lookup cannot disambiguate multi-DON nodes and
+	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
+	capabilityDonID := dependencies.CapabilityDonID
+
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
 		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, cfg.IsLocaL)
@@ -127,6 +141,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		}
 		c.DON = &myDON
 		c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
+
 		scheduler, err = ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, cfg.IsLocaL)
 		if err != nil {
 			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
@@ -142,7 +157,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
-	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, processor, messageBuilder,
+	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, capabilityDonID, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
 		dependencies.OrgResolver, dependencies.TriggerEventStore)
 	if err != nil {
