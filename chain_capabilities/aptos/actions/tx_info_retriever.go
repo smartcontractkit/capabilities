@@ -122,12 +122,12 @@ func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 // GetFailedTransmissionInfo. GasUsed and GasUnitPrice come from the matched
 // UserTransaction and can be used to compute the fee in octas (GasUsed * GasUnitPrice).
 type TransmissionTxInfo struct {
-	TxHash       string
-	GasUsed      uint64
-	GasUnitPrice uint64
-	MaxGasAmount uint64
-	VmStatus     string
-	BlockTimestamp  uint64
+	TxHash         string
+	GasUsed        uint64
+	GasUnitPrice   uint64
+	MaxGasAmount   uint64
+	VmStatus       string
+	BlockTimestamp uint64
 }
 
 // scanResult holds the output of scanTransactions: a matching tx hash (if found)
@@ -200,7 +200,11 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				GasUnitPrice: userTx.GasUnitPrice,
 				MaxGasAmount: userTx.MaxGasAmount,
 				VmStatus:     userTx.VmStatus,
-				BlockTimestamp:  uint64(userTx.Timestamp),
+			}
+			if userTx.Timestamp < 0 {
+				thr.lggr.Warnw("Invalid negative timestamp, skipping timestamp", "txHash", userTx.Hash, "timestamp", userTx.Timestamp)
+			} else {
+				res.BlockTimestamp = uint64(userTx.Timestamp)
 			}
 			return res
 		}

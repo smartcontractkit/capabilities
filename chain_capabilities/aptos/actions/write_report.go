@@ -81,20 +81,20 @@ func (s *Aptos) WriteReport(
 }
 
 type writeReport struct {
-	forwarderClient        CREForwarderClient
-	forwarderAddress       aptos_sdk.AccountAddress
-	aptosService           types.AptosService
-	lggr                   logger.SugaredLogger
-	p2pConfig              map[string]string
-	chainSelector          uint64
-	maxGasAmountLimit      limits.BoundLimiter[uint64]
-	reportSizeLimit                limits.BoundLimiter[commoncfg.Size]
+	forwarderClient                 CREForwarderClient
+	forwarderAddress                aptos_sdk.AccountAddress
+	aptosService                    types.AptosService
+	lggr                            logger.SugaredLogger
+	p2pConfig                       map[string]string
+	chainSelector                   uint64
+	maxGasAmountLimit               limits.BoundLimiter[uint64]
+	reportSizeLimit                 limits.BoundLimiter[commoncfg.Size]
 	writeReportBlockTimestampActive limits.RangeLimiter[commoncfg.Timestamp]
-	executionTimestamp             time.Time
-	transmissionScheduler          ts.TransmissionScheduler
-	txSearchStartingBuffer time.Duration
-	beholderProcessor      beholder.ProtoProcessor
-	messageBuilder         *monitoring.MessageBuilder
+	executionTimestamp              time.Time
+	transmissionScheduler           ts.TransmissionScheduler
+	txSearchStartingBuffer          time.Duration
+	beholderProcessor               beholder.ProtoProcessor
+	messageBuilder                  *monitoring.MessageBuilder
 }
 
 func (s *Aptos) executeWriteReport(
@@ -104,20 +104,20 @@ func (s *Aptos) executeWriteReport(
 	telemetryContext monitoring.TelemetryContext,
 ) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr := &writeReport{
-		forwarderClient:        s.forwarderClient,
-		forwarderAddress:       s.forwarderAddress,
-		aptosService:           s.AptosService,
-		lggr:                   s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
-		p2pConfig:              s.p2pConfig,
-		chainSelector:          s.chainSelector,
-		maxGasAmountLimit:              s.maxGasAmountLimit,
-		reportSizeLimit:                s.reportSizeLimit,
+		forwarderClient:                 s.forwarderClient,
+		forwarderAddress:                s.forwarderAddress,
+		aptosService:                    s.AptosService,
+		lggr:                            s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		p2pConfig:                       s.p2pConfig,
+		chainSelector:                   s.chainSelector,
+		maxGasAmountLimit:               s.maxGasAmountLimit,
+		reportSizeLimit:                 s.reportSizeLimit,
 		writeReportBlockTimestampActive: s.writeReportBlockTimestampActive,
-		executionTimestamp:             metadata.ExecutionTimestamp,
-		transmissionScheduler:          s.transmissionScheduler,
-		txSearchStartingBuffer: s.txSearchStartingBuffer,
-		beholderProcessor:      s.beholderProcessor,
-		messageBuilder:         s.messageBuilder,
+		executionTimestamp:              metadata.ExecutionTimestamp,
+		transmissionScheduler:           s.transmissionScheduler,
+		txSearchStartingBuffer:          s.txSearchStartingBuffer,
+		beholderProcessor:               s.beholderProcessor,
+		messageBuilder:                  s.messageBuilder,
 	}
 	return wr.execute(ctx, request, metadata, telemetryContext)
 }
@@ -422,6 +422,10 @@ func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (
 	var txData userTxData
 	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
 		return 0, 0, "", 0, fmt.Errorf("failed to unmarshal transaction data: %w", err)
+	}
+	if txData.Timestamp < 0 {
+		wr.lggr.Warnw("Invalid negative timestamp, skipping timestamp", "txHash", txHash, "timestamp", txData.Timestamp)
+		return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, 0, nil
 	}
 	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, uint64(txData.Timestamp), nil
 }
