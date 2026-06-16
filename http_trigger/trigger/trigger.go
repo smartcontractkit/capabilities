@@ -34,6 +34,7 @@ type WorkflowRegistrationMetadata struct {
 	WorkflowRegistryAddress       string
 	EngineVersion                 string
 	WorkflowDONID                 uint32
+	ReferenceID                   string
 	// DecodedWorkflowName is the human-readable workflow name
 	DecodedWorkflowName string
 }
@@ -89,7 +90,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	// host could not resolve it authoritatively (a multi-DON job-spec node, or a
 	// core node that pre-dates CRE-4409); the handler then falls back to
 	// RequestMetadata.WorkflowDONID. See CRE-4409.
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, dependencies.CapabilityDonID, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, dependencies.CapabilityDonID, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory)
 	if err != nil {
 		return err
 	}
@@ -153,6 +154,7 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			WorkflowRegistryAddress:       metadata.WorkflowRegistryAddress,
 			EngineVersion:                 metadata.EngineVersion,
 			WorkflowDONID:                 metadata.WorkflowDonID,
+			ReferenceID:                   metadata.ReferenceID,
 			DecodedWorkflowName:           metadata.DecodedWorkflowName,
 		},
 	}
