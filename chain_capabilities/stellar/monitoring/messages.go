@@ -3,12 +3,14 @@ package monitoring
 import (
 	"strconv"
 
-	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
-	"go.opentelemetry.io/otel/attribute"
+
+	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 )
 
 // MessageBuilder constructs telemetry messages for Stellar calls.
