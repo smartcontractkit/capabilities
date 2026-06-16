@@ -89,7 +89,7 @@ type writeReport struct {
 	chainSelector          uint64
 	maxGasAmountLimit      limits.BoundLimiter[uint64]
 	reportSizeLimit                limits.BoundLimiter[commoncfg.Size]
-	writeReportTxTimestampActive   limits.RangeLimiter[commoncfg.Timestamp]
+	writeReportBlockTimestampActive limits.RangeLimiter[commoncfg.Timestamp]
 	executionTimestamp             time.Time
 	transmissionScheduler          ts.TransmissionScheduler
 	txSearchStartingBuffer time.Duration
@@ -112,7 +112,7 @@ func (s *Aptos) executeWriteReport(
 		chainSelector:          s.chainSelector,
 		maxGasAmountLimit:              s.maxGasAmountLimit,
 		reportSizeLimit:                s.reportSizeLimit,
-		writeReportTxTimestampActive:   s.writeReportTxTimestampActive,
+		writeReportBlockTimestampActive: s.writeReportBlockTimestampActive,
 		executionTimestamp:             metadata.ExecutionTimestamp,
 		transmissionScheduler:          s.transmissionScheduler,
 		txSearchStartingBuffer: s.txSearchStartingBuffer,
@@ -203,7 +203,7 @@ func (wr *writeReport) execute(
 			TxHash:                          &txResult.TxHash,
 			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			TransactionFee:                  &feeOctas,
-			TxTimestamp:                     wr.maybeTxTimestamp(ctx, txResult.TxTimestamp),
+			BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, txResult.BlockTimestamp),
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
@@ -235,7 +235,7 @@ func (wr *writeReport) execute(
 	// avoids stale-fullnode false negatives.
 	var ownMeteringMetadata capabilities.ResponseMetadata
 	var pinnedLedgerVersion *uint64
-	ownLedgerVersion, ownFeeInOctas, ownVMStatus, ownTxTimestamp, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
+	ownLedgerVersion, ownFeeInOctas, ownVMStatus, ownBlockTimestamp, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
@@ -295,7 +295,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &successResult.TxHash,
 				TransactionFee:                  &feeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
-				TxTimestamp:                     wr.maybeTxTimestamp(ctx, successResult.TxTimestamp),
+				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, successResult.BlockTimestamp),
 			}, meteringMetadata, nil
 		case aptostypes.TxSuccess:
 			return &aptoscap.WriteReportReply{
@@ -303,7 +303,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &txReply.TxHash,
 				TransactionFee:                  &ownFeeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
-				TxTimestamp:                     wr.maybeTxTimestamp(ctx, ownTxTimestamp),
+				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, ownBlockTimestamp),
 			}, ownMeteringMetadata, nil
 		default:
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %v", txReply.TxStatus)
@@ -321,7 +321,7 @@ func (wr *writeReport) execute(
 			TransactionFee:                  &ownFeeInOctas,
 			ErrorMessage:                    ptrIfNonEmpty(ownVMStatus),
 			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVMStatus, wr.forwarderAddress),
-			TxTimestamp:                     wr.maybeTxTimestamp(ctx, ownTxTimestamp),
+			BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, ownBlockTimestamp),
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
@@ -364,7 +364,7 @@ func (wr *writeReport) execute(
 				TransactionFee:                  &feeOctas,
 				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
 				ReceiverContractExecutionStatus: recvStatus,
-				TxTimestamp:                     wr.maybeTxTimestamp(ctx, failedResult.TxTimestamp),
+				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, failedResult.BlockTimestamp),
 			}, replyMeta, nil
 		}
 
@@ -426,19 +426,19 @@ func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (
 	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, uint64(txData.Timestamp), nil
 }
 
-func (wr *writeReport) includeTxTimestampInReply(ctx context.Context) bool {
-	if wr.writeReportTxTimestampActive == nil {
+func (wr *writeReport) includeBlockTimestampInReply(ctx context.Context) bool {
+	if wr.writeReportBlockTimestampActive == nil {
 		return false
 	}
 	if wr.executionTimestamp.IsZero() {
 		wr.lggr.Errorw("ExecutionTimestamp is zero")
 	}
-	return wr.writeReportTxTimestampActive.Check(ctx, commoncfg.NewTimestamp(wr.executionTimestamp)) == nil
+	return wr.writeReportBlockTimestampActive.Check(ctx, commoncfg.NewTimestamp(wr.executionTimestamp)) == nil
 }
 
-func (wr *writeReport) maybeTxTimestamp(ctx context.Context, ts uint64) *uint64 {
-	if !wr.includeTxTimestampInReply(ctx) {
-		wr.lggr.Debugw("WriteReport tx timestamp feature flag is inactive; omitting tx_timestamp from reply")
+func (wr *writeReport) maybeBlockTimestamp(ctx context.Context, ts uint64) *uint64 {
+	if !wr.includeBlockTimestampInReply(ctx) {
+		wr.lggr.Debugw("WriteReport block timestamp feature flag is inactive; omitting block_timestamp from reply")
 		return nil
 	}
 	return &ts

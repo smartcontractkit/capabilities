@@ -39,7 +39,7 @@ type Aptos struct {
 	chainSelector          uint64
 	maxGasAmountLimit              limits.BoundLimiter[uint64]
 	reportSizeLimit                limits.BoundLimiter[commoncfg.Size]
-	writeReportTxTimestampActive   limits.RangeLimiter[commoncfg.Timestamp]
+	writeReportBlockTimestampActive limits.RangeLimiter[commoncfg.Timestamp]
 	transmissionScheduler          ts.TransmissionScheduler
 	txSearchStartingBuffer time.Duration
 	beholderProcessor      beholder.ProtoProcessor
@@ -85,12 +85,12 @@ func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 		return
 	}
 
-	a.writeReportTxTimestampActive, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureAptosWriteReportTxTimestampActivePeriod)
+	a.writeReportBlockTimestampActive, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureAptosWriteReportBlockTimestampActivePeriod)
 	return
 }
 
 func (a *Aptos) Close() error {
-	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit, a.writeReportTxTimestampActive)
+	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit, a.writeReportBlockTimestampActive)
 }
 
 func (a *Aptos) AccountAPTBalance(

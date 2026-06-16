@@ -127,7 +127,7 @@ type TransmissionTxInfo struct {
 	GasUnitPrice uint64
 	MaxGasAmount uint64
 	VmStatus     string
-	TxTimestamp  uint64
+	BlockTimestamp  uint64
 }
 
 // scanResult holds the output of scanTransactions: a matching tx hash (if found)
@@ -192,7 +192,7 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				"gasUnitPrice", userTx.GasUnitPrice,
 				"maxGasAmount", userTx.MaxGasAmount,
 				"vmStatus", userTx.VmStatus,
-				"txTimestamp", userTx.Timestamp,
+				"blockTimestamp", userTx.Timestamp,
 			)
 			res.TransmissionTxInfo = TransmissionTxInfo{
 				TxHash:       userTx.Hash,
@@ -200,7 +200,7 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				GasUnitPrice: userTx.GasUnitPrice,
 				MaxGasAmount: userTx.MaxGasAmount,
 				VmStatus:     userTx.VmStatus,
-				TxTimestamp:  uint64(userTx.Timestamp),
+				BlockTimestamp:  uint64(userTx.Timestamp),
 			}
 			return res
 		}

@@ -39,7 +39,7 @@ import (
 const testChainSelector = uint64(1)
 const testGasUsed = uint64(500)
 const testGasUnitPrice = uint64(100)
-const testTxTimestampMicro = int64(1_700_000_000_123_456) // deterministic micros timestamp
+const testBlockTimestampMicro = int64(1_700_000_000_123_456) // deterministic micros timestamp
 
 var testExecutionTimestamp = time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
 
@@ -58,14 +58,14 @@ func validateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMet
 	require.Empty(t, meteringNodeDetail.Peer2PeerID)
 }
 
-func requireReplyTxTimestamp(t *testing.T, reply *aptoscap.WriteReportReply, expected uint64) {
+func requireReplyBlockTimestamp(t *testing.T, reply *aptoscap.WriteReportReply, expected uint64) {
 	t.Helper()
-	require.NotNil(t, reply.TxTimestamp)
-	require.Equal(t, expected, *reply.TxTimestamp)
+	require.NotNil(t, reply.BlockTimestamp)
+	require.Equal(t, expected, *reply.BlockTimestamp)
 }
 
-func enableWriteReportTxTimestampFeatureFlag(a *Aptos) {
-	a.writeReportTxTimestampActive = limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
+func enableWriteReportBlockTimestampFeatureFlag(a *Aptos) {
+	a.writeReportBlockTimestampActive = limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
 		Lower: commoncfg.NewTimestamp(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)),
 		Upper: commoncfg.NewTimestamp(time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)),
 	})
@@ -98,7 +98,7 @@ func newTestHelper(t *testing.T) *testHelper {
 		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
-	enableWriteReportTxTimestampFeatureFlag(a)
+	enableWriteReportBlockTimestampFeatureFlag(a)
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
 }
 
@@ -144,7 +144,7 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
-	enableWriteReportTxTimestampFeatureFlag(a)
+	enableWriteReportBlockTimestampFeatureFlag(a)
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}, node0Addr
 }
 
@@ -283,12 +283,12 @@ func (h *testHelper) mockTransmission(info TransmissionInfo) *mock.Call {
 
 // mockTransactionByHash sets TransactionByHash to return gas data for the given tx hash.
 func (h *testHelper) mockTransactionByHash(txHash string, gasUsed, gasUnitPrice uint64) {
-	h.mockTransactionByHashWithVmStatus(txHash, true, gasUsed, gasUnitPrice, testTxTimestampMicro, "Executed successfully")
+	h.mockTransactionByHashWithVmStatus(txHash, true, gasUsed, gasUnitPrice, testBlockTimestampMicro, "Executed successfully")
 }
 
 // mockTransactionByHashFailed sets TransactionByHash to return a failed tx with the given VmStatus.
 func (h *testHelper) mockTransactionByHashFailed(txHash string, gasUsed, gasUnitPrice uint64, vmStatus string) {
-	h.mockTransactionByHashWithVmStatus(txHash, false, gasUsed, gasUnitPrice, testTxTimestampMicro, vmStatus)
+	h.mockTransactionByHashWithVmStatus(txHash, false, gasUsed, gasUnitPrice, testBlockTimestampMicro, vmStatus)
 }
 
 func (h *testHelper) mockTransactionByHashWithVmStatus(txHash string, success bool, gasUsed, gasUnitPrice uint64, timestampMicro int64, vmStatus string) {
@@ -405,7 +405,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xabc", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
-		requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+		requireReplyBlockTimestamp(t, result.Response, uint64(testBlockTimestampMicro))
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
@@ -419,7 +419,7 @@ func TestWriteReport_Execute(t *testing.T) {
 			Return(TransmissionInfo{Success: false}, nil).Once()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
 		// TransactionByHash returns Version=42, which must flow through to the post-submit pin.
-		txData := fmt.Sprintf(`{"Hash":%q,"Success":true,"GasUsed":%d,"GasUnitPrice":%d,"Timestamp":%d,"VmStatus":"Executed successfully"}`, "0xabc", testGasUsed, testGasUnitPrice, testTxTimestampMicro)
+		txData := fmt.Sprintf(`{"Hash":%q,"Success":true,"GasUsed":%d,"GasUnitPrice":%d,"Timestamp":%d,"VmStatus":"Executed successfully"}`, "0xabc", testGasUsed, testGasUnitPrice, testBlockTimestampMicro)
 		h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: "0xabc"}).Return(
 			&aptostypes.TransactionByHashReply{
 				Transaction: &aptostypes.Transaction{Data: []byte(txData), Version: &expectedVersion},
@@ -431,7 +431,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+		requireReplyBlockTimestamp(t, result.Response, uint64(testBlockTimestampMicro))
 		h.forwarderClient.AssertExpectations(t)
 	})
 
@@ -451,7 +451,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xalready", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
-		requireReplyTxTimestamp(t, result.Response, uint64(txTs))
+		requireReplyBlockTimestamp(t, result.Response, uint64(txTs))
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
@@ -507,7 +507,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xreal", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
-		requireReplyTxTimestamp(t, result.Response, uint64(realTxTs))
+		requireReplyBlockTimestamp(t, result.Response, uint64(realTxTs))
 	})
 
 	t.Run("Submit fails at node0 - returns own hash with ErrorMessage", func(t *testing.T) {
@@ -529,7 +529,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)", *result.Response.ErrorMessage)
 		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
 		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+		requireReplyBlockTimestamp(t, result.Response, uint64(testBlockTimestampMicro))
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
@@ -568,7 +568,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Equal(t, "Move abort", *result.Response.ErrorMessage)
 		require.Nil(t, result.Response.ReceiverContractExecutionStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(node0TxTs))
+		requireReplyBlockTimestamp(t, result.Response, uint64(node0TxTs))
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 
@@ -592,7 +592,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
 		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
 		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(node0RevertTxTs))
+		requireReplyBlockTimestamp(t, result.Response, uint64(node0RevertTxTs))
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 }
@@ -626,7 +626,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		require.Equal(t, "0xnode0oog", *result.Response.TxHash)
 		require.Equal(t, "Out of gas", *result.Response.ErrorMessage)
 		require.Nil(t, result.Response.ReceiverContractExecutionStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(node0TxTs))
+		requireReplyBlockTimestamp(t, result.Response, uint64(node0TxTs))
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 
@@ -648,7 +648,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+		requireReplyBlockTimestamp(t, result.Response, uint64(testBlockTimestampMicro))
 	})
 
 	t.Run("Position 0 - skip pre-submission check entirely", func(t *testing.T) {
@@ -664,7 +664,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+		requireReplyBlockTimestamp(t, result.Response, uint64(testBlockTimestampMicro))
 		h.forwarderClient.AssertNotCalled(t, "GetTransmitterTransactions", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
@@ -695,7 +695,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 			messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		}
 		require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
-		enableWriteReportTxTimestampFeatureFlag(a)
+		enableWriteReportBlockTimestampFeatureFlag(a)
 		h := &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
 
 		// Permanent false — initial poll waits for stageTimer, then proceeds to submit
@@ -706,7 +706,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
-		requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+		requireReplyBlockTimestamp(t, result.Response, uint64(testBlockTimestampMicro))
 		// Pre-submission check skipped because orderedTransmitters[0] is empty
 		h.forwarderClient.AssertNotCalled(t, "GetTransmitterTransactions", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
@@ -791,25 +791,25 @@ func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
 	})
 }
 
-func TestWriteReport_TxTimestampFeatureFlag(t *testing.T) {
+func TestWriteReport_BlockTimestampFeatureFlag(t *testing.T) {
 	t.Parallel()
 
 	activeFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	activeUntil := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	testCases := []struct {
-		name               string
-		executionTimestamp time.Time
-		expectTxTimestamp  bool
+		name                 string
+		executionTimestamp   time.Time
+		expectBlockTimestamp bool
 	}{
 		{
-			name:               "inactive flag omits tx_timestamp",
-			executionTimestamp: activeFrom.Add(-time.Second),
-			expectTxTimestamp:  false,
+			name:                 "inactive flag omits block_timestamp",
+			executionTimestamp:   activeFrom.Add(-time.Second),
+			expectBlockTimestamp: false,
 		},
 		{
-			name:               "active flag includes tx_timestamp",
-			executionTimestamp: activeFrom,
-			expectTxTimestamp:  true,
+			name:                 "active flag includes block_timestamp",
+			executionTimestamp:   activeFrom,
+			expectBlockTimestamp: true,
 		},
 	}
 
@@ -818,7 +818,7 @@ func TestWriteReport_TxTimestampFeatureFlag(t *testing.T) {
 			t.Parallel()
 
 			h := newTestHelper(t)
-			h.aptos.writeReportTxTimestampActive = limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
+			h.aptos.writeReportBlockTimestampActive = limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
 				Lower: commoncfg.NewTimestamp(activeFrom),
 				Upper: commoncfg.NewTimestamp(activeUntil),
 			})
@@ -834,39 +834,13 @@ func TestWriteReport_TxTimestampFeatureFlag(t *testing.T) {
 			result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 			require.Nil(t, capErr)
 			require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
-			if tc.expectTxTimestamp {
-				requireReplyTxTimestamp(t, result.Response, uint64(testTxTimestampMicro))
+			if tc.expectBlockTimestamp {
+				requireReplyBlockTimestamp(t, result.Response, uint64(testBlockTimestampMicro))
 			} else {
-				require.Nil(t, result.Response.TxTimestamp)
+				require.Nil(t, result.Response.BlockTimestamp)
 			}
 		})
 	}
-}
-
-func TestGetTxnInfoFromChain_ReturnsTimestamp(t *testing.T) {
-	t.Parallel()
-
-	mockService := mocks.NewAptosService(t)
-	lggr := logger.Test(t)
-	wr := &writeReport{
-		aptosService: mockService,
-		lggr:         logger.Sugared(lggr),
-	}
-
-	txHash := "0xabc"
-	committedVersion := uint64(42)
-	txData := fmt.Sprintf(`{"Hash":%q,"Success":true,"GasUsed":%d,"GasUnitPrice":%d,"Timestamp":%d,"VmStatus":"Executed successfully"}`, txHash, testGasUsed, testGasUnitPrice, testTxTimestampMicro)
-	mockService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: txHash}).Return(
-		&aptostypes.TransactionByHashReply{
-			Transaction: &aptostypes.Transaction{Data: []byte(txData), Version: &committedVersion},
-		}, nil)
-
-	version, feeOctas, vmStatus, txTimestamp, err := wr.getTxnInfoFromChain(t.Context(), txHash)
-	require.NoError(t, err)
-	require.Equal(t, committedVersion, version)
-	require.Equal(t, testGasUsed*testGasUnitPrice, feeOctas)
-	require.Equal(t, "Executed successfully", vmStatus)
-	require.Equal(t, uint64(testTxTimestampMicro), txTimestamp)
 }
 
 func TestReceiverContractExecutionStatusFromFailedVmStatus(t *testing.T) {
