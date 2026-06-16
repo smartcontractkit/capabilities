@@ -70,6 +70,8 @@ type LogTriggerService struct {
 	eventRateLimit             limits.RateLimiter
 	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
 	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
+
+	multiTriggerFlag limits.RangeLimiter[commoncfg.Timestamp]
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
@@ -156,6 +158,10 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 		return
 	}
 	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
+	if err != nil {
+		return
+	}
+	lts.multiTriggerFlag, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
 	return
 }
 
@@ -439,6 +445,13 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	var needsUpdate bool
 	sentCount := 0
 
+	triggerIndex, err := workflows.GetTriggerIndexFromReferenceID(telemetryContext.ReferenceID)
+	if err != nil {
+		lts.lggr.Warnw("failed to get trigger index from reference ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "refID", telemetryContext.ReferenceID)
+		// continue with execution even if we can't get trigger index
+		triggerIndex = 0
+	}
+
 	for _, log := range logs {
 		if log == nil {
 			lts.lggr.Errorf("Received nil log for triggerID: %s, skipping", triggerID)
@@ -464,12 +477,22 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id)
-		if err != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+		var workflowExecutionID string
+		var execIDErr error
+		isLegacyExecutionID := true
+		// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
+		if lts.multiTriggerFlag.Check(ctx, commoncfg.NewTimestamp(time.Now())) == nil {
+			workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
+			isLegacyExecutionID = false
+		} else { // legacy behavior
+			workflowExecutionID, execIDErr = workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id) //nolint:staticcheck
+		}
+		if execIDErr != nil {
+			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "isLegacyExecutionID", isLegacyExecutionID, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
 			workflowExecutionID = ""
 		}
+		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID, "isLegacyExecutionID", isLegacyExecutionID)
 
 		displayWorkflowName := telemetryContext.DecodedWorkflowName
 		if displayWorkflowName == "" {
