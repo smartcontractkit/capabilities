@@ -7,10 +7,6 @@ import (
 	"strings"
 	"time"
 
-	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
-	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
-	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -19,9 +15,13 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 // Stellar implements the CRE capability actions for the Stellar chain

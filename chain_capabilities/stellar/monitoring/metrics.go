@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	commoncapbeholder "github.com/smartcontractkit/capabilities/libs/monitoring"
-
 	commonbeholder "github.com/smartcontractkit/chainlink-common/pkg/beholder"
+
+	commoncapbeholder "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 func ns(name string) string { return fmt.Sprintf("stellar_capability_%s", name) }
