@@ -348,9 +348,9 @@ func (wr *writeReport) execute(
 				wr.lggr.Debugw("No matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Debugw("Found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus)
+			wr.lggr.Debugw("Found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VMStatus)
 			feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
-			recvStatus := receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress)
+			recvStatus := receiverContractExecutionStatusFromFailedVMStatus(failedResult.VMStatus, wr.forwarderAddress)
 
 			// charge the user for the failed txs if it was reverted on user contract
 			var replyMeta capabilities.ResponseMetadata
@@ -362,7 +362,7 @@ func (wr *writeReport) execute(
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:                          &failedResult.TxHash,
 				TransactionFee:                  &feeOctas,
-				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
+				ErrorMessage:                    ptrIfNonEmpty(failedResult.VMStatus),
 				ReceiverContractExecutionStatus: recvStatus,
 				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, failedResult.BlockTimestamp),
 			}, replyMeta, nil
@@ -378,7 +378,7 @@ func (wr *writeReport) execute(
 // buildPreSubmissionFatalReply evaluates node 0's failed tx and returns a fatal reply
 // if we should NOT submit, or (nil, empty) if we should proceed to submit.
 func (wr *writeReport) buildPreSubmissionFatalReply(failedResult TransmissionTxInfo, ourMaxGasAmount uint64) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata) {
-	if isOutOfGas(failedResult.VmStatus) && ourMaxGasAmount > failedResult.MaxGasAmount {
+	if isOutOfGas(failedResult.VMStatus) && ourMaxGasAmount > failedResult.MaxGasAmount {
 		// We have more gas headroom than node 0 — proceed to submit.
 		return nil, capabilities.ResponseMetadata{}
 	}
@@ -390,8 +390,8 @@ func (wr *writeReport) buildPreSubmissionFatalReply(failedResult TransmissionTxI
 		TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 		TxHash:                          &failedResult.TxHash,
 		TransactionFee:                  &feeOctas,
-		ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
-		ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress),
+		ErrorMessage:                    ptrIfNonEmpty(failedResult.VMStatus),
+		ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VMStatus, wr.forwarderAddress),
 	}, capabilities.ResponseMetadata{}
 }
 
@@ -425,9 +425,9 @@ func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (
 	}
 	if txData.Timestamp < 0 {
 		wr.lggr.Warnw("Invalid negative timestamp, skipping timestamp", "txHash", txHash, "timestamp", txData.Timestamp)
-		return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, 0, nil
+		return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VMStatus, 0, nil
 	}
-	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, uint64(txData.Timestamp), nil
+	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VMStatus, uint64(txData.Timestamp), nil
 }
 
 func (wr *writeReport) includeBlockTimestampInReply(ctx context.Context) bool {

@@ -283,15 +283,15 @@ func (h *testHelper) mockTransmission(info TransmissionInfo) *mock.Call {
 
 // mockTransactionByHash sets TransactionByHash to return gas data for the given tx hash.
 func (h *testHelper) mockTransactionByHash(txHash string, gasUsed, gasUnitPrice uint64) {
-	h.mockTransactionByHashWithVmStatus(txHash, true, gasUsed, gasUnitPrice, testBlockTimestampMicro, "Executed successfully")
+	h.mockTransactionByHashWithVMStatus(txHash, true, gasUsed, gasUnitPrice, testBlockTimestampMicro, "Executed successfully")
 }
 
 // mockTransactionByHashFailed sets TransactionByHash to return a failed tx with the given VmStatus.
 func (h *testHelper) mockTransactionByHashFailed(txHash string, gasUsed, gasUnitPrice uint64, vmStatus string) {
-	h.mockTransactionByHashWithVmStatus(txHash, false, gasUsed, gasUnitPrice, testBlockTimestampMicro, vmStatus)
+	h.mockTransactionByHashWithVMStatus(txHash, false, gasUsed, gasUnitPrice, testBlockTimestampMicro, vmStatus)
 }
 
-func (h *testHelper) mockTransactionByHashWithVmStatus(txHash string, success bool, gasUsed, gasUnitPrice uint64, timestampMicro int64, vmStatus string) {
+func (h *testHelper) mockTransactionByHashWithVMStatus(txHash string, success bool, gasUsed, gasUnitPrice uint64, timestampMicro int64, vmStatus string) {
 	txData := fmt.Sprintf(`{"Hash":%q,"Success":%t,"GasUsed":%d,"GasUnitPrice":%d,"Timestamp":%d,"VmStatus":%q}`, txHash, success, gasUsed, gasUnitPrice, timestampMicro, vmStatus)
 	committedVersion := uint64(1)
 	h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: txHash}).Return(

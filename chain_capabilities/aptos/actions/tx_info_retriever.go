@@ -38,7 +38,7 @@ type userTxData struct {
 	GasUsed        uint64          `json:"GasUsed"`
 	GasUnitPrice   uint64          `json:"GasUnitPrice"`
 	MaxGasAmount   uint64          `json:"MaxGasAmount"`
-	VmStatus       string          `json:"VmStatus"`
+	VMStatus       string          `json:"VmStatus"`
 	Payload        json.RawMessage `json:"Payload"`
 }
 
@@ -126,7 +126,7 @@ type TransmissionTxInfo struct {
 	GasUsed        uint64
 	GasUnitPrice   uint64
 	MaxGasAmount   uint64
-	VmStatus       string
+	VMStatus       string
 	BlockTimestamp uint64
 }
 
@@ -191,7 +191,7 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				"gasUsed", userTx.GasUsed,
 				"gasUnitPrice", userTx.GasUnitPrice,
 				"maxGasAmount", userTx.MaxGasAmount,
-				"vmStatus", userTx.VmStatus,
+				"vmStatus", userTx.VMStatus,
 				"blockTimestamp", userTx.Timestamp,
 			)
 			res.TransmissionTxInfo = TransmissionTxInfo{
@@ -199,7 +199,7 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				GasUsed:      userTx.GasUsed,
 				GasUnitPrice: userTx.GasUnitPrice,
 				MaxGasAmount: userTx.MaxGasAmount,
-				VmStatus:     userTx.VmStatus,
+				VMStatus:     userTx.VMStatus,
 			}
 			if userTx.Timestamp < 0 {
 				thr.lggr.Warnw("Invalid negative timestamp, skipping timestamp", "txHash", userTx.Hash, "timestamp", userTx.Timestamp)
