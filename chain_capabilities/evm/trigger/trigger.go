@@ -54,6 +54,12 @@ type LogTriggerService struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
+	// capabilityDonID is the on-chain DON ID of this capability DON.
+	// Used to label emitted events with the sending DON ID, distinct from the
+	// consumer workflow's DON ID carried in RequestMetadata.WorkflowDonID. Zero
+	// means unknown; the labeler then falls back to WorkflowDonID.
+	capabilityDonID uint32
+
 	triggers                        LogTriggerStore
 	logTriggerPollInterval          time.Duration
 	logTriggerSendChannelBufferSize uint64
@@ -64,10 +70,13 @@ type LogTriggerService struct {
 	eventRateLimit             limits.RateLimiter
 	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
 	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
+
+	multiTriggerFlag limits.RangeLimiter[commoncfg.Timestamp]
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, capabilityID string,
+	capabilityDonID uint32,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
@@ -103,6 +112,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr:                            lggr,
 		beholderProcessor:               beholderProcessor,
 		messageBuilder:                  messageBuilder,
+		capabilityDonID:                 capabilityDonID,
 		triggers:                        store,
 		logTriggerPollInterval:          logTriggerPollInterval,
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
@@ -148,6 +158,10 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 		return
 	}
 	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
+	if err != nil {
+		return
+	}
+	lts.multiTriggerFlag, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
 	return
 }
 
@@ -431,6 +445,13 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	var needsUpdate bool
 	sentCount := 0
 
+	triggerIndex, err := workflows.GetTriggerIndexFromReferenceID(telemetryContext.ReferenceID)
+	if err != nil {
+		lts.lggr.Warnw("failed to get trigger index from reference ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "refID", telemetryContext.ReferenceID)
+		// continue with execution even if we can't get trigger index
+		triggerIndex = 0
+	}
+
 	for _, log := range logs {
 		if log == nil {
 			lts.lggr.Errorf("Received nil log for triggerID: %s, skipping", triggerID)
@@ -456,12 +477,22 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id)
-		if err != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+		var workflowExecutionID string
+		var execIDErr error
+		isLegacyExecutionID := true
+		// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
+		if lts.multiTriggerFlag.Check(ctx, commoncfg.NewTimestamp(time.Now())) == nil {
+			workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
+			isLegacyExecutionID = false
+		} else { // legacy behavior
+			workflowExecutionID, execIDErr = workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id) //nolint:staticcheck
+		}
+		if execIDErr != nil {
+			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "isLegacyExecutionID", isLegacyExecutionID, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
 			workflowExecutionID = ""
 		}
+		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID, "isLegacyExecutionID", isLegacyExecutionID)
 
 		displayWorkflowName := telemetryContext.DecodedWorkflowName
 		if displayWorkflowName == "" {
@@ -475,8 +506,18 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowName, displayWorkflowName,
 		)
 
-		// add DON metadata if available
-		if telemetryContext.WorkflowDonID != 0 {
+		// Emit the *sending* capability DON ID. The trigger plugin runs on a capability
+		// DON (e.g. chain_capabilities_zone-a), separate from the consumer workflow's
+		// DON carried in RequestMetadata.WorkflowDonID. The workflow service needs the
+		// sender's DON to resolve on-chain quorum params (N, F). See CRE-4409.
+		// capabilityDonID is 0 when the host could not resolve it authoritatively
+		// (a multi-DON job-spec node, or a core node that pre-dates CRE-4409); in
+		// that case we fall back to WorkflowDonID. This fallback is permanent, not
+		// transitional, since the job-spec boot path is still supported.
+		switch {
+		case lts.capabilityDonID != 0:
+			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(lts.capabilityDonID)))
+		case telemetryContext.WorkflowDonID != 0:
 			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)))
 		}
 		if telemetryContext.WorkflowDonConfigVersion != 0 {
