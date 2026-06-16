@@ -7,6 +7,11 @@ import (
 	"strings"
 	"time"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
@@ -14,10 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 
-	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
-	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
-	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 )
@@ -25,10 +27,11 @@ import (
 // Stellar implements the CRE capability actions for the Stellar chain
 type Stellar struct {
 	types.StellarService
-	handler        chainconsensus.RequestHandler
-	lggr           logger.SugaredLogger
-	messageBuilder *commonmon.MessageBuilder
-	chainSelector  uint64
+	handler           chainconsensus.RequestHandler
+	lggr              logger.SugaredLogger
+	messageBuilder    *monitoring.MessageBuilder
+	beholderProcessor beholder.ProtoProcessor
+	chainSelector     uint64
 }
 
 // NewStellar builds the Stellar capability actions.
@@ -37,14 +40,16 @@ func NewStellar(
 	lggr logger.Logger,
 	chainSelector uint64,
 	handler chainconsensus.RequestHandler,
-	messageBuilder *commonmon.MessageBuilder,
+	messageBuilder *monitoring.MessageBuilder,
+	beholderProcessor beholder.ProtoProcessor,
 ) (*Stellar, error) {
 	return &Stellar{
-		StellarService: service,
-		handler:        handler,
-		lggr:           logger.Sugared(lggr),
-		messageBuilder: messageBuilder,
-		chainSelector:  chainSelector,
+		StellarService:    service,
+		handler:           handler,
+		lggr:              logger.Sugared(lggr),
+		messageBuilder:    messageBuilder,
+		beholderProcessor: beholderProcessor,
+		chainSelector:     chainSelector,
 	}, nil
 }
 
@@ -56,7 +61,7 @@ func (s *Stellar) ReadContract(
 ) (*capabilities.ResponseAndMetadata[*stellarcap.ReadContractResponse], caperrors.Error) {
 	request, err := stellarcap.ConvertReadContractRequestFromProto(input)
 	if err != nil {
-		return nil, NewUserError(fmt.Errorf("invalid request: %w", err), caperrors.InvalidArgument)
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("invalid request: %w", err), caperrors.InvalidArgument)
 	}
 
 	tc := commonmon.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
@@ -68,6 +73,8 @@ func (s *Stellar) ReadContract(
 		"argsCount", len(request.Args),
 	)
 	lggr.Debug("Received ReadContract request")
+
+	monitoring.EmitInitiated(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildReadContractInitiated(tc, request))
 
 	cReq := ctypes.NewVolatileRequest(
 		metadata.WorkflowExecutionID,
@@ -90,14 +97,15 @@ func (s *Stellar) ReadContract(
 
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*stellarcap.ReadContractResponse](ctx, s.handler, cReq)
 	if err != nil {
-		return nil, getReadError(lggr, fmt.Errorf("failed to ReadContract: %w", err))
+		capErr := capcommon.GetError(err, isUserError(fmt.Errorf("failed to ReadContract: %w", err)))
+		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
+			s.messageBuilder.BuildReadContractError(tc, request, "Failed to ReadContract", capErr))
+		return nil, capErr
 	}
 
 	resp := responseAndMetadata.Response
-	lggr.Debugw("Successfully handled ReadContract",
-		"ledgerSequence", resp.GetLedgerSequence(),
-		"resultByteLength", len(resp.GetResult()),
-	)
+	monitoring.LogAndEmitSuccess(ctx, "Successfully handled ReadContract", s.lggr, s.beholderProcessor,
+		s.messageBuilder.BuildReadContractSuccess(tc, request, uint64(len(resp.GetResult())), resp.GetLedgerSequence()))
 	return responseAndMetadata, nil
 }
 
@@ -117,25 +125,6 @@ func (s *Stellar) WriteReport(
 	return nil, caperrors.NewPublicSystemError(errors.New("unimplemented"), caperrors.Unknown)
 }
 
-func getReadError(lggr logger.SugaredLogger, err error) caperrors.Error {
-	if err == nil {
-		return nil
-	}
-
-	isUserErr := isUserError(err)
-	capErr := GetError(err, isUserErr)
-
-	lggr = lggr.With("error", err)
-	const msg = "Read operation failed"
-	if isUserErr {
-		lggr.Debug(msg)
-	} else {
-		lggr.Error(msg)
-	}
-
-	return capErr
-}
-
 func isUserError(err error) bool {
 	return !errors.Is(err, context.DeadlineExceeded) && !isStellarNodeInfraError(err)
 }
@@ -146,6 +135,3 @@ func isUserError(err error) bool {
 func isStellarNodeInfraError(err error) bool {
 	return errors.Is(err, multinode.ErrNodeError) || strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
-
-var GetError = capcommon.GetError
-var NewUserError = caperrors.NewPublicUserError
