@@ -182,9 +182,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to create stellar monitoring metrics: %w", err)
 	}
-	processor, err := monitoring.NewProcessor(c.lggr, metrics)
-	if err != nil {
-		return fmt.Errorf("failed to create stellar monitoring proto processor: %w", err)
+	processor := &monitoring.Processor{
+		Lggr:    c.lggr,
+		Metrics: metrics,
 	}
 
 	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
