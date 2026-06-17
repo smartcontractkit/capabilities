@@ -8,7 +8,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb
 	github.com/smartcontractkit/chain-selectors v1.0.100
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260506112908-f0d993b5bd6d
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260526195338-adcf8013a1b7
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260616114954-8b52f3f386f2
 )
 
 require (
@@ -90,7 +90,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260601211238-9f526774fef0
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260616152732-f567bdca923a
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260601211238-9f526774fef0 // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b // indirect
