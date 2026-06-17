@@ -167,6 +167,37 @@ func Test_ReportSupportsAptosSigningAndHashing(t *testing.T) {
 	require.True(t, strings.HasSuffix(string(result.Response.RawReport), "somerandom-payload"))
 }
 
+func Test_ReportSupportsStellarSigningAndHashing(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
+	require.NoError(t, err)
+
+	oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		OracleFactory: oracleFactory,
+	})
+	require.NoError(t, err)
+
+	servicetest.Run(t, capability)
+
+	metadata := newRequestMetaData()
+
+	// Stellar reuses the same ed25519 / blake2b_256 signing scheme as Aptos.
+	input := &sdk.ReportRequest{
+		EncodedPayload: []byte("somerandom-payload"),
+		EncoderName:    "stellar",
+		SigningAlgo:    "ed25519",
+		HashingAlgo:    "blake2b_256",
+	}
+
+	result, err := capability.Report(ctx, metadata, input)
+	require.NoError(t, err)
+	require.True(t, strings.HasSuffix(string(result.Response.RawReport), "somerandom-payload"))
+}
+
 func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
