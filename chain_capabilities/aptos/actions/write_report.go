@@ -432,6 +432,7 @@ func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (
 
 func (wr *writeReport) includeBlockTimestampInReply(ctx context.Context) bool {
 	if wr.writeReportBlockTimestampActive == nil {
+		wr.lggr.Errorw("WriteReport block timestamp feature flag is nil")
 		return false
 	}
 	if wr.executionTimestamp.IsZero() {
