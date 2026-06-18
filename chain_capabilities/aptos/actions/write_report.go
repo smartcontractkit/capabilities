@@ -438,6 +438,7 @@ func (wr *writeReport) includeBlockTimestampInReply(ctx context.Context) bool {
 	if wr.executionTimestamp.IsZero() {
 		wr.lggr.Errorw("ExecutionTimestamp is zero")
 	}
+	wr.lggr.Debugw("Checking write report block timestamp active period", "executionTimestamp", wr.executionTimestamp)
 	return wr.writeReportBlockTimestampActive.Check(ctx, commoncfg.NewTimestamp(wr.executionTimestamp)) == nil
 }
 
