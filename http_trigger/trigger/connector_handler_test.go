@@ -15,6 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
@@ -189,11 +190,13 @@ func setupWithTriggerChannelBuffer(t *testing.T, lggr logger.Logger, triggerChBu
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -593,11 +596,13 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 
@@ -710,11 +715,13 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 
@@ -869,11 +876,13 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 
@@ -1045,11 +1054,13 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 

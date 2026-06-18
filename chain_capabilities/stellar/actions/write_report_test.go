@@ -24,10 +24,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
-	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 // ─── constants ───────────────────────────────────────────────────────────────
@@ -70,7 +70,8 @@ func newWriteReportHelper(t *testing.T) *writeReportHelper {
 		forwarderAddress:      testForwarderAddress,
 		nodeAddress:           testNodeAddress,
 		transmissionScheduler: scheduler,
-		messageBuilder:        commonmon.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     nopBeholderProcessor{},
 		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))

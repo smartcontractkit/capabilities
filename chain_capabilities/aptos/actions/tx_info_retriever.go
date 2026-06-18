@@ -38,7 +38,7 @@ type userTxData struct {
 	GasUsed        uint64          `json:"GasUsed"`
 	GasUnitPrice   uint64          `json:"GasUnitPrice"`
 	MaxGasAmount   uint64          `json:"MaxGasAmount"`
-	VmStatus       string          `json:"VmStatus"`
+	VMStatus       string          `json:"VmStatus"`
 	Payload        json.RawMessage `json:"Payload"`
 }
 
@@ -122,11 +122,12 @@ func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 // GetFailedTransmissionInfo. GasUsed and GasUnitPrice come from the matched
 // UserTransaction and can be used to compute the fee in octas (GasUsed * GasUnitPrice).
 type TransmissionTxInfo struct {
-	TxHash       string
-	GasUsed      uint64
-	GasUnitPrice uint64
-	MaxGasAmount uint64
-	VmStatus     string
+	TxHash         string
+	GasUsed        uint64
+	GasUnitPrice   uint64
+	MaxGasAmount   uint64
+	VMStatus       string
+	BlockTimestamp uint64
 }
 
 // scanResult holds the output of scanTransactions: a matching tx hash (if found)
@@ -190,14 +191,20 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				"gasUsed", userTx.GasUsed,
 				"gasUnitPrice", userTx.GasUnitPrice,
 				"maxGasAmount", userTx.MaxGasAmount,
-				"vmStatus", userTx.VmStatus,
+				"vmStatus", userTx.VMStatus,
+				"blockTimestamp", userTx.Timestamp,
 			)
 			res.TransmissionTxInfo = TransmissionTxInfo{
 				TxHash:       userTx.Hash,
 				GasUsed:      userTx.GasUsed,
 				GasUnitPrice: userTx.GasUnitPrice,
 				MaxGasAmount: userTx.MaxGasAmount,
-				VmStatus:     userTx.VmStatus,
+				VMStatus:     userTx.VMStatus,
+			}
+			if userTx.Timestamp < 0 {
+				thr.lggr.Warnw("Invalid negative timestamp, skipping timestamp", "txHash", userTx.Hash, "timestamp", userTx.Timestamp)
+			} else {
+				res.BlockTimestamp = uint64(userTx.Timestamp)
 			}
 			return res
 		}

@@ -17,6 +17,7 @@ import (
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -27,6 +28,7 @@ import (
 
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
 
@@ -152,6 +154,7 @@ type SolanaLogTriggerService struct {
 	maxLogsKept             int64
 	eventRateLimit          limits.RateLimiter
 	eventPayloadSizeLimiter limits.BoundLimiter[commoncfg.Size]
+	orgResolver             orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 
 	baseTrigger *capabilities.BaseTriggerCapability[*solanacappb.Log]
 }
@@ -169,6 +172,7 @@ type LogTriggerServiceOpts struct {
 	LimitsFactory                   limits.Factory
 	TriggerEventStore               capabilities.EventStore
 	CapabilityID                    string
+	OrgResolver                     orgresolver.OrgResolver
 }
 
 func NewLogTriggerService(opts LogTriggerServiceOpts) (*SolanaLogTriggerService, error) {
@@ -212,6 +216,10 @@ func NewLogTriggerService(opts LogTriggerServiceOpts) (*SolanaLogTriggerService,
 		logTriggerSendChannelBufferSize: opts.LogTriggerSendChannelBufferSize,
 		retention:                       opts.Retention,
 		maxLogsKept:                     opts.MaxLogsKept,
+		orgResolver:                     opts.OrgResolver,
+	}
+	if lts.orgResolver == nil {
+		lts.lggr.Warn("OrgResolver is nil, Solana log trigger capability will not be able to fetch organization ID")
 	}
 
 	if err := lts.initLimiters(opts.LimitsFactory); err != nil {
@@ -578,7 +586,8 @@ func (lts *SolanaLogTriggerService) deliverLogReliably(
 	}
 
 	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
-	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
+	deliverCtx := capcommon.ContextWithOrgForDelivery(ctx, lts.lggr, lts.orgResolver, telemetryContext.RequestMetadata)
+	if err := lts.baseTrigger.DeliverEvent(deliverCtx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
 		lts.logAndEmitEventDroppedError(ctx, telemetryContext, triggerID, log, summary, err.Error(), false)

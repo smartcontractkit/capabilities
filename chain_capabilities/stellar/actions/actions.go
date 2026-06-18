@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
@@ -22,6 +23,7 @@ import (
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
@@ -31,7 +33,8 @@ type Stellar struct {
 	types.StellarService
 	handler               chainconsensus.RequestHandler
 	lggr                  logger.SugaredLogger
-	messageBuilder        *commonmon.MessageBuilder
+	messageBuilder        *monitoring.MessageBuilder
+	beholderProcessor     beholder.ProtoProcessor
 	chainSelector         uint64
 	forwarderAddress      string
 	nodeAddress           string
@@ -48,7 +51,8 @@ func NewStellar(
 	transmissionScheduler ts.TransmissionScheduler,
 	chainSelector uint64,
 	handler chainconsensus.RequestHandler,
-	messageBuilder *commonmon.MessageBuilder,
+	messageBuilder *monitoring.MessageBuilder,
+	beholderProcessor beholder.ProtoProcessor,
 ) (*Stellar, error) {
 	if service == nil {
 		return nil, fmt.Errorf("stellar service is required")
@@ -59,6 +63,7 @@ func NewStellar(
 		handler:               handler,
 		lggr:                  logger.Sugared(lggr),
 		messageBuilder:        messageBuilder,
+		beholderProcessor:     beholderProcessor,
 		chainSelector:         chainSelector,
 		forwarderAddress:      forwarderAddress,
 		nodeAddress:           nodeAddress,
@@ -96,7 +101,7 @@ func (s *Stellar) ReadContract(
 ) (*capabilities.ResponseAndMetadata[*stellarcap.ReadContractResponse], caperrors.Error) {
 	request, err := stellarcap.ConvertReadContractRequestFromProto(input)
 	if err != nil {
-		return nil, NewUserError(fmt.Errorf("invalid request: %w", err), caperrors.InvalidArgument)
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("invalid request: %w", err), caperrors.InvalidArgument)
 	}
 
 	tc := commonmon.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
@@ -108,6 +113,8 @@ func (s *Stellar) ReadContract(
 		"argsCount", len(request.Args),
 	)
 	lggr.Debug("Received ReadContract request")
+
+	monitoring.EmitInitiated(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildReadContractInitiated(tc, request))
 
 	cReq := ctypes.NewVolatileRequest(
 		metadata.WorkflowExecutionID,
@@ -130,14 +137,15 @@ func (s *Stellar) ReadContract(
 
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*stellarcap.ReadContractResponse](ctx, s.handler, cReq)
 	if err != nil {
-		return nil, getReadError(lggr, fmt.Errorf("failed to ReadContract: %w", err))
+		capErr := capcommon.GetError(err, isUserError(fmt.Errorf("failed to ReadContract: %w", err)))
+		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
+			s.messageBuilder.BuildReadContractError(tc, request, "Failed to ReadContract", capErr))
+		return nil, capErr
 	}
 
 	resp := responseAndMetadata.Response
-	lggr.Debugw("Successfully handled ReadContract",
-		"ledgerSequence", resp.GetLedgerSequence(),
-		"resultByteLength", len(resp.GetResult()),
-	)
+	monitoring.LogAndEmitSuccess(ctx, "Successfully handled ReadContract", s.lggr, s.beholderProcessor,
+		s.messageBuilder.BuildReadContractSuccess(tc, request, uint64(len(resp.GetResult())), resp.GetLedgerSequence()))
 	return responseAndMetadata, nil
 }
 
@@ -147,25 +155,6 @@ func (s *Stellar) isUserErrorWriteReport(err error) bool {
 
 func (s *Stellar) Info() (capabilities.CapabilityInfo, error) {
 	return capabilities.CapabilityInfo{}, nil
-}
-
-func getReadError(lggr logger.SugaredLogger, err error) caperrors.Error {
-	if err == nil {
-		return nil
-	}
-
-	isUserErr := isUserError(err)
-	capErr := GetError(err, isUserErr)
-
-	lggr = lggr.With("error", err)
-	const msg = "Read operation failed"
-	if isUserErr {
-		lggr.Debug(msg)
-	} else {
-		lggr.Error(msg)
-	}
-
-	return capErr
 }
 
 func isUserError(err error) bool {

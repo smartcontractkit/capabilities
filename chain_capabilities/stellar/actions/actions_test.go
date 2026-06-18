@@ -20,10 +20,18 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 
 	"github.com/smartcontractkit/chainlink-framework/multinode"
+	"google.golang.org/protobuf/proto"
 
-	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
+
+// nopBeholderProcessor is a no-op beholder.ProtoProcessor for tests (avoids pulling the
+// common/test package's transitive telemetry deps).
+type nopBeholderProcessor struct{}
+
+func (nopBeholderProcessor) Process(context.Context, proto.Message, ...any) error { return nil }
 
 type mockedStellar struct {
 	stellarService *mocks.StellarService
@@ -36,11 +44,12 @@ func newMockedStellar(t *testing.T) *mockedStellar {
 	mockStellarService := mocks.NewStellarService(t)
 	lggr := logger.Test(t)
 	service := &Stellar{
-		StellarService: mockStellarService,
-		chainSelector:  1,
-		lggr:           logger.Sugared(lggr),
-		messageBuilder: commonmon.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		handler:        testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:    mockStellarService,
+		chainSelector:     1,
+		lggr:              logger.Sugared(lggr),
+		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor: nopBeholderProcessor{},
+		handler:           testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 
 	return &mockedStellar{

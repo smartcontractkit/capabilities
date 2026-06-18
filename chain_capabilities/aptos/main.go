@@ -230,7 +230,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, false)
+	// TODO(CRE-4409 follow-up): use dependencies.CapabilityDonID once Aptos
+	// starts emitting KeyDonID events.
+	// Until then, passing 0 preserves the legacy "first matched DON" behavior.
+	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, 0, c.lggr, false)
 	if err != nil {
 		c.lggr.Errorw("failed to init DON", "error", err)
 		return fmt.Errorf("failed to init DON: %w", err)

@@ -31,18 +31,19 @@ import (
 
 type Aptos struct {
 	types.AptosService
-	ConsensusHandler       chainconsensus.RequestHandler
-	forwarderClient        CREForwarderClient
-	forwarderAddress       aptos_sdk.AccountAddress
-	lggr                   logger.SugaredLogger
-	p2pConfig              map[string]string
-	chainSelector          uint64
-	maxGasAmountLimit      limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler  ts.TransmissionScheduler
-	txSearchStartingBuffer time.Duration
-	beholderProcessor      beholder.ProtoProcessor
-	messageBuilder         *monitoring.MessageBuilder
+	ConsensusHandler                chainconsensus.RequestHandler
+	forwarderClient                 CREForwarderClient
+	forwarderAddress                aptos_sdk.AccountAddress
+	lggr                            logger.SugaredLogger
+	p2pConfig                       map[string]string
+	chainSelector                   uint64
+	maxGasAmountLimit               limits.BoundLimiter[uint64]
+	reportSizeLimit                 limits.BoundLimiter[commoncfg.Size]
+	writeReportBlockTimestampActive limits.RangeLimiter[commoncfg.Timestamp]
+	transmissionScheduler           ts.TransmissionScheduler
+	txSearchStartingBuffer          time.Duration
+	beholderProcessor               beholder.ProtoProcessor
+	messageBuilder                  *monitoring.MessageBuilder
 }
 
 func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler chainconsensus.RequestHandler, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
@@ -83,11 +84,13 @@ func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 	if err != nil {
 		return
 	}
+
+	a.writeReportBlockTimestampActive, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureAptosWriteReportBlockTimestampActivePeriod)
 	return
 }
 
 func (a *Aptos) Close() error {
-	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit)
+	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit, a.writeReportBlockTimestampActive)
 }
 
 func (a *Aptos) AccountAPTBalance(

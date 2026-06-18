@@ -12,16 +12,15 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
-
 	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
-	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
-	"github.com/smartcontractkit/capabilities/libs/loopserver"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	stellarcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar/server"
@@ -157,7 +156,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
-		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, cfg.IsLocal)
+		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, dependencies.CapabilityDonID, c.lggr, cfg.IsLocal)
 		if err != nil {
 			return fmt.Errorf("failed to init DON: %w", err)
 		}
@@ -198,7 +197,16 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		nodeAddress = localNode.PeerID.String()
 	}
 
-	messageBuilder := commonmon.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
+	metrics, err := monitoring.NewMetrics()
+	if err != nil {
+		return fmt.Errorf("failed to create stellar monitoring metrics: %w", err)
+	}
+	processor := &monitoring.Processor{
+		Lggr:    c.lggr,
+		Metrics: metrics,
+	}
+
+	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
 	c.Stellar, err = actions.NewStellar(
 		stellarService,
 		cfg.CREForwarderAddress,
@@ -209,6 +217,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.chainSelector,
 		c.consensusHandler,
 		messageBuilder,
+		processor,
 	)
 	if err != nil {
 		return err

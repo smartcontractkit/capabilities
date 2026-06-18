@@ -81,18 +81,20 @@ func (s *Aptos) WriteReport(
 }
 
 type writeReport struct {
-	forwarderClient        CREForwarderClient
-	forwarderAddress       aptos_sdk.AccountAddress
-	aptosService           types.AptosService
-	lggr                   logger.SugaredLogger
-	p2pConfig              map[string]string
-	chainSelector          uint64
-	maxGasAmountLimit      limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler  ts.TransmissionScheduler
-	txSearchStartingBuffer time.Duration
-	beholderProcessor      beholder.ProtoProcessor
-	messageBuilder         *monitoring.MessageBuilder
+	forwarderClient                 CREForwarderClient
+	forwarderAddress                aptos_sdk.AccountAddress
+	aptosService                    types.AptosService
+	lggr                            logger.SugaredLogger
+	p2pConfig                       map[string]string
+	chainSelector                   uint64
+	maxGasAmountLimit               limits.BoundLimiter[uint64]
+	reportSizeLimit                 limits.BoundLimiter[commoncfg.Size]
+	writeReportBlockTimestampActive limits.RangeLimiter[commoncfg.Timestamp]
+	executionTimestamp              time.Time
+	transmissionScheduler           ts.TransmissionScheduler
+	txSearchStartingBuffer          time.Duration
+	beholderProcessor               beholder.ProtoProcessor
+	messageBuilder                  *monitoring.MessageBuilder
 }
 
 func (s *Aptos) executeWriteReport(
@@ -102,18 +104,20 @@ func (s *Aptos) executeWriteReport(
 	telemetryContext monitoring.TelemetryContext,
 ) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr := &writeReport{
-		forwarderClient:        s.forwarderClient,
-		forwarderAddress:       s.forwarderAddress,
-		aptosService:           s.AptosService,
-		lggr:                   s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
-		p2pConfig:              s.p2pConfig,
-		chainSelector:          s.chainSelector,
-		maxGasAmountLimit:      s.maxGasAmountLimit,
-		reportSizeLimit:        s.reportSizeLimit,
-		transmissionScheduler:  s.transmissionScheduler,
-		txSearchStartingBuffer: s.txSearchStartingBuffer,
-		beholderProcessor:      s.beholderProcessor,
-		messageBuilder:         s.messageBuilder,
+		forwarderClient:                 s.forwarderClient,
+		forwarderAddress:                s.forwarderAddress,
+		aptosService:                    s.AptosService,
+		lggr:                            s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		p2pConfig:                       s.p2pConfig,
+		chainSelector:                   s.chainSelector,
+		maxGasAmountLimit:               s.maxGasAmountLimit,
+		reportSizeLimit:                 s.reportSizeLimit,
+		writeReportBlockTimestampActive: s.writeReportBlockTimestampActive,
+		executionTimestamp:              metadata.ExecutionTimestamp,
+		transmissionScheduler:           s.transmissionScheduler,
+		txSearchStartingBuffer:          s.txSearchStartingBuffer,
+		beholderProcessor:               s.beholderProcessor,
+		messageBuilder:                  s.messageBuilder,
 	}
 	return wr.execute(ctx, request, metadata, telemetryContext)
 }
@@ -199,6 +203,7 @@ func (wr *writeReport) execute(
 			TxHash:                          &txResult.TxHash,
 			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			TransactionFee:                  &feeOctas,
+			BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, txResult.BlockTimestamp),
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
@@ -230,7 +235,7 @@ func (wr *writeReport) execute(
 	// avoids stale-fullnode false negatives.
 	var ownMeteringMetadata capabilities.ResponseMetadata
 	var pinnedLedgerVersion *uint64
-	ownLedgerVersion, ownFeeInOctas, ownVMStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
+	ownLedgerVersion, ownFeeInOctas, ownVMStatus, ownBlockTimestamp, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
@@ -290,6 +295,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &successResult.TxHash,
 				TransactionFee:                  &feeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
+				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, successResult.BlockTimestamp),
 			}, meteringMetadata, nil
 		case aptostypes.TxSuccess:
 			return &aptoscap.WriteReportReply{
@@ -297,6 +303,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &txReply.TxHash,
 				TransactionFee:                  &ownFeeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
+				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, ownBlockTimestamp),
 			}, ownMeteringMetadata, nil
 		default:
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %v", txReply.TxStatus)
@@ -314,6 +321,7 @@ func (wr *writeReport) execute(
 			TransactionFee:                  &ownFeeInOctas,
 			ErrorMessage:                    ptrIfNonEmpty(ownVMStatus),
 			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVMStatus, wr.forwarderAddress),
+			BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, ownBlockTimestamp),
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
@@ -340,9 +348,9 @@ func (wr *writeReport) execute(
 				wr.lggr.Debugw("No matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Debugw("Found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus)
+			wr.lggr.Debugw("Found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VMStatus)
 			feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
-			recvStatus := receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress)
+			recvStatus := receiverContractExecutionStatusFromFailedVMStatus(failedResult.VMStatus, wr.forwarderAddress)
 
 			// charge the user for the failed txs if it was reverted on user contract
 			var replyMeta capabilities.ResponseMetadata
@@ -354,8 +362,9 @@ func (wr *writeReport) execute(
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:                          &failedResult.TxHash,
 				TransactionFee:                  &feeOctas,
-				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
+				ErrorMessage:                    ptrIfNonEmpty(failedResult.VMStatus),
 				ReceiverContractExecutionStatus: recvStatus,
+				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, failedResult.BlockTimestamp),
 			}, replyMeta, nil
 		}
 
@@ -369,7 +378,7 @@ func (wr *writeReport) execute(
 // buildPreSubmissionFatalReply evaluates node 0's failed tx and returns a fatal reply
 // if we should NOT submit, or (nil, empty) if we should proceed to submit.
 func (wr *writeReport) buildPreSubmissionFatalReply(failedResult TransmissionTxInfo, ourMaxGasAmount uint64) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata) {
-	if isOutOfGas(failedResult.VmStatus) && ourMaxGasAmount > failedResult.MaxGasAmount {
+	if isOutOfGas(failedResult.VMStatus) && ourMaxGasAmount > failedResult.MaxGasAmount {
 		// We have more gas headroom than node 0 — proceed to submit.
 		return nil, capabilities.ResponseMetadata{}
 	}
@@ -381,8 +390,8 @@ func (wr *writeReport) buildPreSubmissionFatalReply(failedResult TransmissionTxI
 		TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 		TxHash:                          &failedResult.TxHash,
 		TransactionFee:                  &feeOctas,
-		ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
-		ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress),
+		ErrorMessage:                    ptrIfNonEmpty(failedResult.VMStatus),
+		ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VMStatus, wr.forwarderAddress),
 	}, capabilities.ResponseMetadata{}
 }
 
@@ -394,27 +403,49 @@ func isOutOfGas(vmStatus string) bool {
 
 // getTxnInfoFromChain returns the committed ledger version, fee in octas (gasUsed * gasUnitPrice),
 // and VM status for a submitted tx, looked up via AptosService.TransactionByHash.
-func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, uint64, string, error) {
+func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, uint64, string, uint64, error) {
 	reply, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*aptostypes.TransactionByHashReply, error) {
 		return wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: txHash})
 	})
 	if err != nil {
-		return 0, 0, "", fmt.Errorf("failed to get transaction by hash: %w", err)
+		return 0, 0, "", 0, fmt.Errorf("failed to get transaction by hash: %w", err)
 	}
 	if reply == nil || reply.Transaction == nil {
-		return 0, 0, "", fmt.Errorf("transaction by hash %s returned empty reply", txHash)
+		return 0, 0, "", 0, fmt.Errorf("transaction by hash %s returned empty reply", txHash)
 	}
 	if reply.Transaction.Version == nil {
-		return 0, 0, "", fmt.Errorf("transaction %s has no committed ledger version", txHash)
+		return 0, 0, "", 0, fmt.Errorf("transaction %s has no committed ledger version", txHash)
 	}
 	if reply.Transaction.Data == nil {
-		return *reply.Transaction.Version, 0, "", fmt.Errorf("transaction %s has nil data", txHash)
+		return *reply.Transaction.Version, 0, "", 0, fmt.Errorf("transaction %s has nil data", txHash)
 	}
 	var txData userTxData
 	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
-		return 0, 0, "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
+		return 0, 0, "", 0, fmt.Errorf("failed to unmarshal transaction data: %w", err)
 	}
-	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, nil
+	if txData.Timestamp < 0 {
+		wr.lggr.Warnw("Invalid negative timestamp, skipping timestamp", "txHash", txHash, "timestamp", txData.Timestamp)
+		return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VMStatus, 0, nil
+	}
+	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VMStatus, uint64(txData.Timestamp), nil
+}
+
+func (wr *writeReport) includeBlockTimestampInReply(ctx context.Context) bool {
+	if wr.writeReportBlockTimestampActive == nil {
+		return false
+	}
+	if wr.executionTimestamp.IsZero() {
+		wr.lggr.Errorw("ExecutionTimestamp is zero")
+	}
+	return wr.writeReportBlockTimestampActive.Check(ctx, commoncfg.NewTimestamp(wr.executionTimestamp)) == nil
+}
+
+func (wr *writeReport) maybeBlockTimestamp(ctx context.Context, ts uint64) *uint64 {
+	if !wr.includeBlockTimestampInReply(ctx) {
+		wr.lggr.Debugw("WriteReport block timestamp feature flag is inactive; omitting block_timestamp from reply")
+		return nil
+	}
+	return &ts
 }
 
 func ptrIfNonEmpty(s string) *string {
