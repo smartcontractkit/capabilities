@@ -1,0 +1,34 @@
+syntax = "proto3";
+package chain_capabilities.stellar;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring;monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+// ReadContractRequest intentionally captures only the small, non-sensitive subset of the
+// capability request that is useful for monitoring (no raw argument values).
+message ReadContractRequest {
+  string contract_id = 1;
+  string function = 2;
+  uint64 args_count = 3;
+  string source_account = 4;
+}
+
+message ReadContractInitiated {
+  ReadContractRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message ReadContractSuccess {
+  ReadContractRequest req = 1;
+  uint64 result_len = 2;
+  uint32 ledger_sequence = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message ReadContractError {
+  ReadContractRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  bool is_user_error = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}

@@ -20,7 +20,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
-	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
@@ -29,6 +28,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 const (
@@ -178,8 +178,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		nodeAddress = localNode.PeerID.String()
 	}
 
-	messageBuilder := commonmon.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
-	c.Stellar, err = actions.NewStellar(stellarService, c.lggr, c.chainSelector, c.consensusHandler, messageBuilder)
+	metrics, err := monitoring.NewMetrics()
+	if err != nil {
+		return fmt.Errorf("failed to create stellar monitoring metrics: %w", err)
+	}
+	processor := &monitoring.Processor{
+		Lggr:    c.lggr,
+		Metrics: metrics,
+	}
+
+	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
+	c.Stellar, err = actions.NewStellar(stellarService, c.lggr, c.chainSelector, c.consensusHandler, messageBuilder, processor)
 	if err != nil {
 		return err
 	}
