@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260618141753-ec9afe00558a
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260618182632-7a1ff6408df5
 	github.com/stellar/go-stellar-sdk v0.5.0
 )
 
