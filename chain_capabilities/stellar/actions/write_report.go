@@ -27,6 +27,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 )
 
 const (
@@ -88,8 +89,14 @@ func (s *Stellar) WriteReport(
 		return nil, GetError(err, s.isUserErrorWriteReport(err))
 	}
 
+	var meteringMeta capabilities.ResponseMetadata
+	if reply.TransactionFee != nil {
+		meteringMeta = metering.GetResponseMetadataWriteReport(*reply.TransactionFee, s.chainSelector)
+	}
+
 	return &capabilities.ResponseAndMetadata[*stellarcap.WriteReportReply]{
-		Response: reply,
+		Response:         reply,
+		ResponseMetadata: meteringMeta,
 	}, nil
 }
 
@@ -117,9 +124,9 @@ func (wr *writeReport) execute(
 	case TransmissionStateSucceeded:
 		return wr.successReplyFromObservedState(info), nil
 	case TransmissionStateInvalidReceiver:
-		return wr.revertedReplyFromObservedState(info), nil
+		return wr.revertedReplyFromObservedState(info, "receiver contract cannot accept reports: not a Wasm contract or missing on_report function"), nil
 	case TransmissionStateFailed:
-		return wr.revertedReplyFromObservedState(info), nil
+		return wr.revertedReplyFromObservedState(info, "receiver contract execution failed"), nil
 	case TransmissionStateNotAttempted:
 	default:
 		return nil, fmt.Errorf("unexpected transmission state: %d", info.State)
@@ -190,8 +197,12 @@ func (wr *writeReport) execute(
 		reply := wr.successReplyFromObservedState(postInfo)
 		populateReplyFromSubmit(reply, submitResp)
 		return reply, nil
-	case TransmissionStateInvalidReceiver, TransmissionStateFailed:
-		reply := wr.revertedReplyFromObservedState(postInfo)
+	case TransmissionStateInvalidReceiver:
+		reply := wr.revertedReplyFromObservedState(postInfo, "receiver contract cannot accept reports: not a Wasm contract or missing on_report function")
+		populateReplyFromSubmit(reply, submitResp)
+		return reply, nil
+	case TransmissionStateFailed:
+		reply := wr.revertedReplyFromObservedState(postInfo, "receiver contract execution failed")
 		populateReplyFromSubmit(reply, submitResp)
 		return reply, nil
 	default:
@@ -207,7 +218,7 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 		return errors.New("nil SignedReport in WriteReportRequest")
 	}
 	if request.ContractId == "" {
-		return errors.New("contract_id is required")
+		return errors.New("contracId is required")
 	}
 	if _, err := strkey.Decode(strkey.VersionByteContract, request.ContractId); err != nil {
 		return fmt.Errorf("%s invalid receiver contract address: %w", capcommon.UserError, err)
@@ -545,7 +556,7 @@ func (wr *writeReport) successReplyFromObservedState(info TransmissionInfo) *ste
 	return reply
 }
 
-func (wr *writeReport) revertedReplyFromObservedState(info TransmissionInfo) *stellarcap.WriteReportReply {
+func (wr *writeReport) revertedReplyFromObservedState(info TransmissionInfo, errorMsg string) *stellarcap.WriteReportReply {
 	reply := &stellarcap.WriteReportReply{
 		TxStatus: stellarcap.TxStatus_TX_STATUS_REVERTED,
 	}
@@ -553,6 +564,9 @@ func (wr *writeReport) revertedReplyFromObservedState(info TransmissionInfo) *st
 	reply.ReceiverContractExecutionStatus = &status
 	if info.LedgerSequence != 0 {
 		reply.LedgerSequence = capcommon.Ptr(info.LedgerSequence)
+	}
+	if errorMsg != "" {
+		reply.ErrorMessage = capcommon.Ptr(errorMsg)
 	}
 	return reply
 }
@@ -575,19 +589,25 @@ func (wr *writeReport) replyFromOwnTransaction(resp *stellartypes.SubmitTransact
 		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_REVERTED
 		status := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
 		reply.ReceiverContractExecutionStatus = &status
+		if resp.Error != "" {
+			reply.ErrorMessage = capcommon.Ptr("on-chain transaction failed: " + resp.Error)
+		}
 	default: // TxFatal
 		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_FATAL
 	}
 	return reply
 }
 
-// populateReplyFromSubmit sets tx hash and ledger sequence on the reply from a SubmitTransactionResponse.
+// populateReplyFromSubmit sets tx hash, ledger sequence, and fee on the reply from a SubmitTransactionResponse.
 func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellartypes.SubmitTransactionResponse) {
 	if resp == nil {
 		return
 	}
 	if resp.TxHash != "" {
 		reply.TxHash = capcommon.Ptr(resp.TxHash)
+	}
+	if resp.TransactionFee != nil {
+		reply.TransactionFee = resp.TransactionFee
 	}
 	if resp.ResultMetaXDR != "" {
 		if ledgerSequence, err := extractLedgerSequenceFromResultMeta(resp.ResultMetaXDR); err == nil && ledgerSequence != 0 {

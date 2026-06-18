@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260610122030-760451629cfd
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260618141753-ec9afe00558a
 	github.com/stellar/go-stellar-sdk v0.5.0
 )
 
@@ -81,7 +81,7 @@ require (
 	github.com/smartcontractkit/chain-selectors v1.0.100
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260601211238-9f526774fef0 // indirect
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260609153034-c8423a41ef9a
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260618082634-432eb85805e7
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b // indirect
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e // indirect
