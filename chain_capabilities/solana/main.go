@@ -220,7 +220,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Warn("Initialising solana oracle required for chain reads is disabled")
 	}
 
-	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector, c.id, c.consensusHandler)
+	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector, c.consensusHandler)
 	if err != nil {
 		return err
 	}

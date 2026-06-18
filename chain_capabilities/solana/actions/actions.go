@@ -42,8 +42,6 @@ type Solana struct {
 	transmissionInfoProvider TransmissionInfoProvider
 	lggr                     logger.SugaredLogger
 	chainSelector            uint64
-	capabilityID             string
-	actionMetrics            capmon.ActionMetrics
 	txComputeLimit           limits.BoundLimiter[uint32]
 	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
 	beholderProcessor        beholder.ProtoProcessor
@@ -54,7 +52,7 @@ type Solana struct {
 
 func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder,
 	beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory,
-	transmissionScheduler ts.TransmissionScheduler, chainSelector uint64, capabilityID string,
+	transmissionScheduler ts.TransmissionScheduler, chainSelector uint64,
 	handler chainconsensus.RequestHandler,
 ) (*Solana, error) {
 	client := newForwarderClient(s, lggr, cfg.CREForwarderAddress, cfg.CREForwarderState, cfg.Transmitter)
@@ -66,8 +64,6 @@ func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, m
 		readsEnabled:             cfg.ReadsEnabled,
 		SolanaService:            s,
 		chainSelector:            chainSelector,
-		capabilityID:             capabilityID,
-		actionMetrics:            capmon.NewActionMetrics(capabilityID),
 		lggr:                     logger.Sugared(lggr),
 		forwarderClient:          client,
 		transmissionInfoProvider: provider,
@@ -423,14 +419,8 @@ func (s *Solana) GetProgramAccounts(
 
 func (s *Solana) MonitoringContext() capmon.MonitoringContext {
 	return capmon.MonitoringContext{
-		Logger:  s.lggr,
-		Metrics: s.actionMetrics,
-		ExecCtx: func(metadata capabilities.RequestMetadata, tsStart time.Time) *capmon.ExecutionContext {
-			return s.messageBuilder.BuildV2ExecutionContext(monitoring.TelemetryContext{
-				TsStart:         tsStart.UnixMilli(),
-				RequestMetadata: metadata,
-			})
-		},
+		Logger:            s.lggr,
+		MetricsAttributes: s.messageBuilder.CapabilityMetricsAttributes,
 	}
 }
 

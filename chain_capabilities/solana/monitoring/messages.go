@@ -37,27 +37,15 @@ func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.Capabilit
 	}
 }
 
-// BuildV2ExecutionContext builds the v2 monitoring ExecutionContext used by the
-// generated server (--with-monitoring) action lifecycle events.
-func (m *MessageBuilder) BuildV2ExecutionContext(tc TelemetryContext) *capmon.ExecutionContext {
-	ec := m.BuildExecutionContext(tc)
-	return &capmon.ExecutionContext{
-		MetaSourceId:                   ec.MetaSourceId,
-		MetaChainFamilyName:            ec.MetaChainFamilyName,
-		MetaChainId:                    ec.MetaChainId,
-		MetaNetworkName:                ec.MetaNetworkName,
-		MetaNetworkNameFull:            ec.MetaNetworkNameFull,
-		MetaWorkflowId:                 ec.MetaWorkflowId,
-		MetaWorkflowOwner:              ec.MetaWorkflowOwner,
-		MetaWorkflowExecutionId:        ec.MetaWorkflowExecutionId,
-		MetaWorkflowName:               ec.MetaWorkflowName,
-		MetaWorkflowDonId:              ec.MetaWorkflowDonId,
-		MetaWorkflowDonConfigVersion:   ec.MetaWorkflowDonConfigVersion,
-		MetaReferenceId:                ec.MetaReferenceId,
-		MetaCapabilityType:             ec.MetaCapabilityType,
-		MetaCapabilityId:               ec.MetaCapabilityId,
-		MetaCapabilityTimestampStart:   ec.MetaCapabilityTimestampStart,
-		MetaCapabilityTimestampEmit:    ec.MetaCapabilityTimestampEmit,
+// CapabilityMetricsAttributes returns capability-scoped OTel labels for v2 action metrics.
+func (m *MessageBuilder) CapabilityMetricsAttributes() []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String(capmon.LabelChainFamilyName, capmon.ValOrUnknown(m.ChainInfo.FamilyName)),
+		attribute.String(capmon.LabelChainID, capmon.ValOrUnknown(m.ChainInfo.ChainID)),
+		attribute.String(capmon.LabelNetworkName, capmon.ValOrUnknown(m.ChainInfo.NetworkName)),
+		attribute.String(capmon.LabelNetworkNameFull, capmon.ValOrUnknown(m.ChainInfo.NetworkNameFull)),
+		attribute.String(capmon.LabelCapabilityType, capmon.ValOrUnknown(string(m.CapInfo.CapabilityType))),
+		attribute.String(capmon.LabelCapabilityID, capmon.ValOrUnknown(m.CapInfo.ID)),
 	}
 }
 
