@@ -97,7 +97,7 @@ func newTestHelper(t *testing.T) *testHelper {
 		beholderProcessor:      commontest.NopBeholderProcessor{},
 		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
-	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
+	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}, lggr))
 	enableWriteReportBlockTimestampFeatureFlag(a)
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
 }
@@ -143,7 +143,7 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 		beholderProcessor:      commontest.NopBeholderProcessor{},
 		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
-	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
+	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}, lggr))
 	enableWriteReportBlockTimestampFeatureFlag(a)
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}, node0Addr
 }
@@ -694,7 +694,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 			beholderProcessor: commontest.NopBeholderProcessor{},
 			messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		}
-		require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
+		require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}, lggr))
 		enableWriteReportBlockTimestampFeatureFlag(a)
 		h := &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
 
