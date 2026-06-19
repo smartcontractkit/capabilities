@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
@@ -710,4 +711,289 @@ func TestGetTransmissionID_InvalidReceiver(t *testing.T) {
 	_, _, _, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid receiver contract address")
+}
+
+func TestWriteReport_EmptyNodeAddress(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	h.stellar.nodeAddress = ""
+	_, reqMeta, req := newWRReportFixture(t)
+
+	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+
+	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+	require.NotNil(t, capErr)
+	require.Contains(t, capErr.Error(), "node address is not configured")
+}
+
+func TestWriteReport_UnsupportedReportMetadataVersion(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	rm, reqMeta, req := newWRReportFixture(t)
+	rm.Version = 2
+	encoded, err := rm.Encode()
+	require.NoError(t, err)
+	req.Report.RawReport = encoded
+
+	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+	require.NotNil(t, capErr)
+	require.Contains(t, capErr.Error(), "unsupported report metadata version")
+}
+
+func TestGetTransmissionInfo(t *testing.T) {
+	t.Parallel()
+
+	newWR := func(t *testing.T) (*writeReportHelper, *writeReport, [32]byte, [2]byte) {
+		t.Helper()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		_, workflowExecutionID, reportID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+		require.NoError(t, err)
+		wr := &writeReport{
+			service:          h.svc,
+			lggr:             h.stellar.lggr,
+			forwarderAddress: testForwarderAddress,
+		}
+		return h, wr, workflowExecutionID, reportID
+	}
+
+	t.Run("missing entry treated as not attempted", func(t *testing.T) {
+		t.Parallel()
+		h, wr, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+			Return(stellartypes.ReadContractResponse{Error: "entry missing"}, nil).Once()
+
+		info, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		require.NoError(t, err)
+		require.Equal(t, TransmissionStateNotAttempted, info.State)
+	})
+
+	t.Run("not found treated as not attempted", func(t *testing.T) {
+		t.Parallel()
+		h, wr, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+			Return(stellartypes.ReadContractResponse{Error: "transmission not found"}, nil).Once()
+
+		info, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		require.NoError(t, err)
+		require.Equal(t, TransmissionStateNotAttempted, info.State)
+	})
+
+	t.Run("empty result treated as not attempted", func(t *testing.T) {
+		t.Parallel()
+		h, wr, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+			Return(stellartypes.ReadContractResponse{}, nil).Once()
+
+		info, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		require.NoError(t, err)
+		require.Equal(t, TransmissionStateNotAttempted, info.State)
+	})
+
+	t.Run("non-missing forwarder error is propagated", func(t *testing.T) {
+		t.Parallel()
+		h, wr, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+			Return(stellartypes.ReadContractResponse{Error: "contract trap"}, nil).Once()
+
+		_, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "forwarder read failed")
+	})
+}
+
+func TestPollTransmissionInfo_WithQueuePosition(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	lggr := logger.Test(t)
+	myPeerID := p2ptypes.PeerID{2}
+	scheduler := ts.NewTransmissionScheduler(
+		myPeerID,
+		[]p2ptypes.PeerID{{1}, myPeerID, {3}},
+		50*time.Millisecond,
+		0,
+		lggr,
+	)
+	h.stellar.transmissionScheduler = scheduler
+
+	wr := &writeReport{
+		service:               h.svc,
+		lggr:                  h.stellar.lggr,
+		forwarderAddress:      testForwarderAddress,
+		transmissionScheduler: scheduler,
+	}
+
+	_, reqMeta, req := newWRReportFixture(t)
+	_, workflowExecutionID, reportID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		Return(transmissionResp(succeededXDR(t)), nil)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	info, err := wr.pollTransmissionInfo(ctx, req.ContractId, workflowExecutionID, reportID, 1)
+	require.NoError(t, err)
+	require.Equal(t, TransmissionStateSucceeded, info.State)
+}
+
+func TestParseFieldsIntoTransmissionInfo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("vec with state and transmitter", func(t *testing.T) {
+		t.Parallel()
+		state := xdr.Uint32(TransmissionStateSucceeded)
+		stateVal := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: &state}
+		accountID := xdr.MustAddress(testNodeAddress)
+		txrVal := xdr.ScVal{
+			Type: xdr.ScValTypeScvAddress,
+			Address: &xdr.ScAddress{
+				Type:      xdr.ScAddressTypeScAddressTypeAccount,
+				AccountId: &accountID,
+			},
+		}
+		vec := xdr.ScVec{stateVal, txrVal}
+		vecPtr := &vec
+		sv := xdr.ScVal{Type: xdr.ScValTypeScvVec, Vec: &vecPtr}
+
+		info := TransmissionInfo{}
+		parseFieldsIntoTransmissionInfo(&info, sv)
+		require.Equal(t, TransmissionStateSucceeded, info.State)
+		require.Equal(t, testNodeAddress, info.Transmitter)
+	})
+
+	t.Run("map with state transmitter and flags", func(t *testing.T) {
+		t.Parallel()
+		state := xdr.Uint32(TransmissionStateInvalidReceiver)
+		stateVal := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: &state}
+		stateKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: func() *xdr.ScSymbol { s := xdr.ScSymbol("state"); return &s }()}
+		invalid := true
+		invalidVal := xdr.ScVal{Type: xdr.ScValTypeScvBool, B: &invalid}
+		invalidKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: func() *xdr.ScSymbol { s := xdr.ScSymbol("invalid_receiver"); return &s }()}
+		scMap := xdr.ScMap{
+			{Key: stateKey, Val: stateVal},
+			{Key: invalidKey, Val: invalidVal},
+		}
+		mapPtr := &scMap
+		sv := xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &mapPtr}
+
+		info := TransmissionInfo{}
+		parseFieldsIntoTransmissionInfo(&info, sv)
+		require.Equal(t, TransmissionStateInvalidReceiver, info.State)
+		require.True(t, info.InvalidReceiver)
+	})
+}
+
+func TestXDRExtractHelpers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("extractStringish symbol and string", func(t *testing.T) {
+		t.Parallel()
+		sym := xdr.ScSymbol("state")
+		symVal := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &sym}
+		out, ok := extractStringish(symVal)
+		require.True(t, ok)
+		require.Equal(t, "state", out)
+
+		str := xdr.ScString("transmitter")
+		strVal := xdr.ScVal{Type: xdr.ScValTypeScvString, Str: &str}
+		out, ok = extractStringish(strVal)
+		require.True(t, ok)
+		require.Equal(t, "transmitter", out)
+	})
+
+	t.Run("extractAddressString account and contract", func(t *testing.T) {
+		t.Parallel()
+		accountID := xdr.MustAddress(testNodeAddress)
+		accountVal := xdr.ScVal{
+			Type: xdr.ScValTypeScvAddress,
+			Address: &xdr.ScAddress{
+				Type:      xdr.ScAddressTypeScAddressTypeAccount,
+				AccountId: &accountID,
+			},
+		}
+		out, ok := extractAddressString(accountVal)
+		require.True(t, ok)
+		require.Equal(t, testNodeAddress, out)
+
+		contractBytes, err := strkey.Decode(strkey.VersionByteContract, testForwarderAddress)
+		require.NoError(t, err)
+		var contractID xdr.ContractId
+		copy(contractID[:], contractBytes)
+		contractVal := xdr.ScVal{
+			Type: xdr.ScValTypeScvAddress,
+			Address: &xdr.ScAddress{
+				Type:       xdr.ScAddressTypeScAddressTypeContract,
+				ContractId: &contractID,
+			},
+		}
+		out, ok = extractAddressString(contractVal)
+		require.True(t, ok)
+		require.Equal(t, testForwarderAddress, out)
+	})
+
+	t.Run("extractBool", func(t *testing.T) {
+		t.Parallel()
+		b := true
+		val := xdr.ScVal{Type: xdr.ScValTypeScvBool, B: &b}
+		require.NotNil(t, extractBool(val))
+		require.True(t, *extractBool(val))
+	})
+}
+
+func TestReplyFromOwnTransaction(t *testing.T) {
+	t.Parallel()
+	wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
+
+	t.Run("nil response is fatal", func(t *testing.T) {
+		t.Parallel()
+		reply := wr.replyFromOwnTransaction(nil)
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, reply.TxStatus)
+	})
+
+	t.Run("tx fatal maps to fatal status", func(t *testing.T) {
+		t.Parallel()
+		reply := wr.replyFromOwnTransaction(&stellartypes.SubmitTransactionResponse{
+			TxStatus: stellartypes.TxFatal,
+			TxHash:   testTxHash,
+		})
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, reply.TxStatus)
+		require.NotNil(t, reply.TxHash)
+	})
+}
+
+func TestBuildForwarderReportArgs_InvalidTransmitter(t *testing.T) {
+	t.Parallel()
+	_, _, req := newWRReportFixture(t)
+	_, err := buildForwarderReportArgs("not-a-valid-address", testReceiverAddress, req.Report)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "transmitter")
+}
+
+func TestWriteReport_TxFatalSubmitFallback(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	_, reqMeta, req := newWRReportFixture(t)
+
+	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		Return(simulationSuccessResp(), nil).Once()
+	h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+		Return(&stellartypes.SubmitTransactionResponse{
+			TxStatus: stellartypes.TxFatal,
+			TxHash:   testTxHash,
+		}, nil).Once()
+	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		Return(transmissionResp(notAttemptedXDR(t)), nil)
+
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
+	defer cancel()
+
+	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
+	require.Nil(t, capErr)
+	require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
+	require.NotNil(t, result.Response.TxHash)
 }

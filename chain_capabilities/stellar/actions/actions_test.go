@@ -15,6 +15,7 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
@@ -25,6 +26,7 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 )
 
 // nopBeholderProcessor is a no-op beholder.ProtoProcessor for tests (avoids pulling the
@@ -63,6 +65,92 @@ func validReadContractRequest() *stellarcap.ReadContractRequest {
 		ContractId: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
 		Function:   "balance",
 	}
+}
+
+func TestNewStellar(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil service", func(t *testing.T) {
+		t.Parallel()
+		lggr := logger.Test(t)
+		_, err := NewStellar(
+			nil,
+			"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+			lggr,
+			limits.Factory{Logger: lggr},
+			ts.TransmissionScheduler{},
+			1,
+			testConsensusHandler{handle: runVolatileHashableHandle},
+			monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			nopBeholderProcessor{},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "stellar service is required")
+	})
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		lggr := logger.Test(t)
+		svc := mocks.NewStellarService(t)
+		st, err := NewStellar(
+			svc,
+			"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+			lggr,
+			limits.Factory{Logger: lggr},
+			ts.TransmissionScheduler{},
+			1,
+			testConsensusHandler{handle: runVolatileHashableHandle},
+			monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			nopBeholderProcessor{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, st)
+		require.NoError(t, st.Close())
+	})
+}
+
+func TestGetLatestLedger(t *testing.T) {
+	t.Parallel()
+
+	t.Run("happy path", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedStellar(t)
+		helper.stellarService.EXPECT().
+			GetLatestLedger(mock.Anything).
+			Return(stellartypes.GetLatestLedgerResponse{
+				Sequence:        123,
+				LedgerCloseTime: 1_700_000_000,
+			}, nil).
+			Once()
+
+		resp, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, uint32(123), resp.Response.GetSequence())
+		require.Equal(t, int64(1_700_000_000), resp.Response.GetLedgerCloseTime())
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedStellar(t)
+		helper.stellarService.EXPECT().
+			GetLatestLedger(mock.Anything).
+			Return(stellartypes.GetLatestLedgerResponse{}, errors.New("node unavailable")).
+			Once()
+
+		_, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
+		require.Error(t, err)
+	})
+}
+
+func TestStellar_Info(t *testing.T) {
+	t.Parallel()
+	helper := newMockedStellar(t)
+	info, err := helper.stellar.Info()
+	require.NoError(t, err)
+	require.Equal(t, capabilities.CapabilityInfo{}, info)
 }
 
 func TestReadContract(t *testing.T) {
