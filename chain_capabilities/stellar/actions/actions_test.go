@@ -25,8 +25,8 @@ import (
 
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 // nopBeholderProcessor is a no-op beholder.ProtoProcessor for tests (avoids pulling the
