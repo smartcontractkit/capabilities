@@ -598,7 +598,7 @@ func (wr *writeReport) replyFromOwnTransaction(resp *stellartypes.SubmitTransact
 	return reply
 }
 
-// populateReplyFromSubmit sets tx hash, ledger sequence, and fee on the reply from a SubmitTransactionResponse.
+// populateReplyFromSubmit sets tx hash, fee, block timestamp, and ledger sequence on the reply from a SubmitTransactionResponse.
 func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellartypes.SubmitTransactionResponse) {
 	if resp == nil {
 		return
@@ -608,6 +608,9 @@ func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellarty
 	}
 	if resp.TransactionFee != nil {
 		reply.TransactionFee = resp.TransactionFee
+	}
+	if resp.BlockTimestamp != nil {
+		reply.BlockTimestamp = resp.BlockTimestamp
 	}
 	if resp.ResultMetaXDR != "" {
 		if ledgerSequence, err := extractLedgerSequenceFromResultMeta(resp.ResultMetaXDR); err == nil && ledgerSequence != 0 {

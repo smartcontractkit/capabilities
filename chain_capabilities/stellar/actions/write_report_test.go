@@ -45,6 +45,8 @@ const (
 
 	testTxHash = "abc123txhash"
 	testFee    = uint64(5_000) // stroops
+	// Ledger close time in microseconds (1_700_000_000 unix seconds).
+	testBlockTimestamp = uint64(1_700_000_000_000_000)
 )
 
 // ─── helper builders ─────────────────────────────────────────────────────────
@@ -165,11 +167,19 @@ func simulationSuccessResp() stellartypes.ReadContractResponse {
 
 func successSubmitResp() *stellartypes.SubmitTransactionResponse {
 	fee := testFee
+	ts := testBlockTimestamp
 	return &stellartypes.SubmitTransactionResponse{
 		TxStatus:       stellartypes.TxSuccess,
 		TxHash:         testTxHash,
 		TransactionFee: &fee,
+		BlockTimestamp: &ts,
 	}
+}
+
+func requireReplyBlockTimestamp(t *testing.T, reply *stellarcap.WriteReportReply, expected uint64) {
+	t.Helper()
+	require.NotNil(t, reply.BlockTimestamp)
+	require.Equal(t, expected, *reply.BlockTimestamp)
 }
 
 // ─── metering assertion ───────────────────────────────────────────────────────
@@ -343,6 +353,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		// No hash or fee: forwarder doesn't store tx hash, and this node didn't spend gas.
 		require.Nil(t, result.Response.TxHash)
 		require.Nil(t, result.Response.TransactionFee)
+		require.Nil(t, result.Response.BlockTimestamp)
 		// No billing metering: this node observed, not submitted.
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
@@ -363,6 +374,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.Equal(t, &rcReverted, result.Response.ReceiverContractExecutionStatus)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "not a Wasm contract or missing on_report")
+		require.Nil(t, result.Response.BlockTimestamp)
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
@@ -380,6 +392,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_REVERTED, result.Response.TxStatus)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "receiver contract execution failed")
+		require.Nil(t, result.Response.BlockTimestamp)
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
@@ -459,6 +472,7 @@ func TestWriteReport_HappyPath(t *testing.T) {
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testFee, *result.Response.TransactionFee)
+		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
 		// Billing metering is populated because this node submitted.
 		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 	})
@@ -512,6 +526,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testFee, *result.Response.TransactionFee)
+		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
 		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 	})
 
@@ -537,6 +552,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testFee, *result.Response.TransactionFee)
+		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "not a Wasm contract or missing on_report")
 		// This node spent gas → billing metering is populated.
