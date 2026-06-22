@@ -14,7 +14,6 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -34,6 +33,7 @@ const (
 	forwarderReportFunction              = "report"
 	forwarderGetTransmissionInfoFunction = "get_transmission_info"
 	defaultLedgerBoundsOffset            = uint32(20)
+	ocrSignatureLen                      = 65
 )
 
 type TransmissionState uint32
@@ -218,7 +218,7 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 		return errors.New("nil SignedReport in WriteReportRequest")
 	}
 	if request.ContractId == "" {
-		return errors.New("contracId is required")
+		return errors.New("contractId is required")
 	}
 	if _, err := strkey.Decode(strkey.VersionByteContract, request.ContractId); err != nil {
 		return fmt.Errorf("%s invalid receiver contract address: %w", capcommon.UserError, err)
@@ -226,8 +226,13 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("%s signed report must contain at least one signature", capcommon.UserError)
 	}
+	for i, sig := range request.Report.Sigs {
+		if len(sig.GetSignature()) != ocrSignatureLen {
+			return fmt.Errorf("%s signature %d has invalid length: got %d, want %d", capcommon.UserError, i, len(sig.GetSignature()), ocrSignatureLen)
+		}
+	}
 
-	reportMetadata, _, err := ocrtypes.Decode(request.Report.RawReport)
+	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
 		return fmt.Errorf("%s failed to decode report metadata: %w", capcommon.UserError, err)
 	}
@@ -598,7 +603,8 @@ func (wr *writeReport) replyFromOwnTransaction(resp *stellartypes.SubmitTransact
 	return reply
 }
 
-// populateReplyFromSubmit sets tx hash, fee, block timestamp, and ledger sequence on the reply from a SubmitTransactionResponse.
+// populateReplyFromSubmit sets tx hash, fee, and block timestamp on the reply from a SubmitTransactionResponse.
+// Ledger sequence on submit paths is populated from get_transmission_info (post-submit poll), not from ResultMetaXDR.
 func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellartypes.SubmitTransactionResponse) {
 	if resp == nil {
 		return
@@ -612,17 +618,4 @@ func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellarty
 	if resp.BlockTimestamp != nil {
 		reply.BlockTimestamp = resp.BlockTimestamp
 	}
-	if resp.ResultMetaXDR != "" {
-		if ledgerSequence, err := extractLedgerSequenceFromResultMeta(resp.ResultMetaXDR); err == nil && ledgerSequence != 0 {
-			reply.LedgerSequence = &ledgerSequence
-		}
-	}
-}
-
-// extractLedgerSequenceFromResultMeta parses the ledger sequence from transaction result meta XDR.
-// The Stellar RPC does not embed the ledger sequence directly in TransactionMeta; it is returned
-// separately in the GetTransaction response, which is available via the on-chain transmission info.
-// This function is a best-effort helper and returns 0 when the ledger cannot be determined.
-func extractLedgerSequenceFromResultMeta(_ string) (uint32, error) {
-	return 0, nil
 }

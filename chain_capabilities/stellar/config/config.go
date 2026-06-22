@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/stellar/go-stellar-sdk/strkey"
 )
 
 type Config struct {
@@ -33,6 +35,31 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	if cfg.ChainID == "" {
 		return fmt.Errorf("chainId is required")
 	}
+	if cfg.CREForwarderAddress == "" {
+		return fmt.Errorf("creForwarderAddress is required")
+	}
+	if err := validateContractStrKey(cfg.CREForwarderAddress); err != nil {
+		return fmt.Errorf("creForwarderAddress: %w", err)
+	}
+	if cfg.NodeAddress != "" {
+		if err := validateAccountStrKey(cfg.NodeAddress); err != nil {
+			return fmt.Errorf("nodeAddress: %w", err)
+		}
+	}
 	*c = Config(cfg)
+	return nil
+}
+
+func validateContractStrKey(address string) error {
+	if _, err := strkey.Decode(strkey.VersionByteContract, address); err != nil {
+		return fmt.Errorf("invalid contract address %q: %w", address, err)
+	}
+	return nil
+}
+
+func validateAccountStrKey(address string) error {
+	if _, err := strkey.Decode(strkey.VersionByteAccountID, address); err != nil {
+		return fmt.Errorf("invalid account address %q: %w", address, err)
+	}
 	return nil
 }

@@ -60,6 +60,47 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 		require.Contains(t, err.Error(), "chainId is required")
 	})
 
+	t.Run("missing creForwarderAddress", func(t *testing.T) {
+		t.Parallel()
+		input := `{"network":"stellar","chainId":"stellar-testnet"}`
+
+		var cfg Config
+		err := json.Unmarshal([]byte(input), &cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "creForwarderAddress is required")
+	})
+
+	t.Run("invalid creForwarderAddress", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"network":"stellar",
+			"chainId":"stellar-testnet",
+			"creForwarderAddress":"GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"
+		}`
+
+		var cfg Config
+		err := json.Unmarshal([]byte(input), &cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "creForwarderAddress")
+		require.Contains(t, err.Error(), "invalid contract address")
+	})
+
+	t.Run("invalid nodeAddress", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"network":"stellar",
+			"chainId":"stellar-testnet",
+			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"nodeAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+		}`
+
+		var cfg Config
+		err := json.Unmarshal([]byte(input), &cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "nodeAddress")
+		require.Contains(t, err.Error(), "invalid account address")
+	})
+
 	t.Run("invalid json", func(t *testing.T) {
 		t.Parallel()
 		var cfg Config

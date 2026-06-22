@@ -118,7 +118,7 @@ func newWRReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMe
 }
 
 func wrTestSigs() []*workflowpb.AttributedSignature {
-	sig := make([]byte, 32)
+	sig := make([]byte, ocrSignatureLen)
 	sig[0] = 0xAB
 	return []*workflowpb.AttributedSignature{{Signature: sig}, {Signature: sig}}
 }
@@ -221,7 +221,7 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, err := h.stellar.WriteReport(t.Context(), capabilities.RequestMetadata{},
 			&stellarcap.WriteReportRequest{Report: &workflowpb.ReportResponse{Sigs: wrTestSigs()}})
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "contracId is required")
+		require.Contains(t, err.Error(), "contractId is required")
 	})
 
 	t.Run("invalid contract_id (G… account, not C… contract)", func(t *testing.T) {
@@ -245,6 +245,18 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
 		require.Contains(t, err.Error(), "signed report must contain at least one signature")
+	})
+
+	t.Run("invalid signature length", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		req.Report.Sigs = []*workflowpb.AttributedSignature{{Signature: make([]byte, 32)}}
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "signature 0 has invalid length")
+		require.Contains(t, err.Error(), "want 65")
 	})
 
 	t.Run("report metadata cannot be decoded", func(t *testing.T) {
