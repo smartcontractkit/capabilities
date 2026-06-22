@@ -279,39 +279,71 @@ func getTransmissionID(workflowExecutionID string, request *stellarcap.WriteRepo
 	return transmissionID, rawExecutionID, reportID, nil
 }
 
+// pollTransmissionInfo returns the forwarder transmission state at this point in the
+// DON schedule. Nodes with queuePosition > 0 wait until queuePosition×DeltaStage before
+// submitting, polling with exponential backoff so an earlier peer's success or terminal
+// failure can be observed without spending fees on a duplicate submit.
 func (wr *writeReport) pollTransmissionInfo(
 	ctx context.Context,
 	receiver string,
 	workflowExecutionID [32]byte,
 	reportID [2]byte,
 	queuePosition int,
-) (TransmissionInfo, error) {
+) (lastValidInfo TransmissionInfo, err error) {
 	if queuePosition <= 0 {
 		return capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 			return wr.getTransmissionInfo(ctx, receiver, workflowExecutionID, reportID)
 		})
 	}
 
-	timer := time.NewTimer(time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage)
-	defer timer.Stop()
-	ticker := time.NewTicker(wr.transmissionScheduler.DeltaStage / 3)
-	defer ticker.Stop()
+	delay := time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage
+	wr.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
+
+	attempt := 0
+	stageTimer := time.NewTimer(delay)
+	hadSuccessfulPoll := false
+	defer stageTimer.Stop()
 
 	for {
+		if info, infoErr := wr.getTransmissionInfo(ctx, receiver, workflowExecutionID, reportID); infoErr != nil {
+			wr.lggr.Debugw("GetTransmissionInfo failed during polling", "error", infoErr, "attempt", attempt)
+		} else {
+			hadSuccessfulPoll = true
+			lastValidInfo = info
+			switch lastValidInfo.State {
+			case TransmissionStateSucceeded, TransmissionStateInvalidReceiver, TransmissionStateFailed:
+				return lastValidInfo, nil
+			case TransmissionStateNotAttempted:
+			default:
+				wr.lggr.Warnw("Unexpected transmission state during polling, continuing", "state", lastValidInfo.State)
+			}
+		}
+
+		wait := (100 * time.Millisecond) << min(attempt, 5)
+		if wait > 2*time.Second {
+			wait = 2 * time.Second
+		}
+		attempt++
+
 		select {
 		case <-ctx.Done():
-			return TransmissionInfo{}, ctx.Err()
-		case <-ticker.C:
-			info, err := wr.getTransmissionInfo(ctx, receiver, workflowExecutionID, reportID)
-			if err != nil {
-				wr.lggr.Debugw("failed to poll transmission info, retrying", "error", err)
-				continue
+			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
+		case <-stageTimer.C:
+			if lastValidInfo.State == TransmissionStateNotAttempted {
+				if finalInfo, finalErr := wr.getTransmissionInfo(ctx, receiver, workflowExecutionID, reportID); finalErr == nil {
+					hadSuccessfulPoll = true
+					lastValidInfo = finalInfo
+				} else {
+					wr.lggr.Debugw("Final GetTransmissionInfo at delta stage boundary failed", "error", finalErr)
+				}
 			}
-			if info.State != TransmissionStateNotAttempted {
-				return info, nil
+			if !hadSuccessfulPoll {
+				wr.lggr.Errorw("All GetTransmissionInfo polls failed during delta stage window, cannot determine transmission state")
+				return TransmissionInfo{}, fmt.Errorf("all GetTransmissionInfo polls failed during delta stage window")
 			}
-		case <-timer.C:
-			return wr.getTransmissionInfo(ctx, receiver, workflowExecutionID, reportID)
+			wr.lggr.Infow("Delta stage has passed, returning transmission info", "state", lastValidInfo.State, "attempts", attempt)
+			return lastValidInfo, nil
+		case <-time.After(wait):
 		}
 	}
 }

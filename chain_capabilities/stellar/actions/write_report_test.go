@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -831,40 +833,183 @@ func TestGetTransmissionInfo(t *testing.T) {
 	})
 }
 
-func TestPollTransmissionInfo_WithQueuePosition(t *testing.T) {
-	t.Parallel()
-	h := newWriteReportHelper(t)
+func newPollTransmissionInfoHarness(t *testing.T, deltaStage time.Duration) (
+	*writeReport,
+	*mocks.StellarService,
+	string,
+	[32]byte,
+	[2]byte,
+) {
+	t.Helper()
 	lggr := logger.Test(t)
-	myPeerID := p2ptypes.PeerID{2}
+	mockSvc := mocks.NewStellarService(t)
+	myPeerID := p2ptypes.PeerID{1}
 	scheduler := ts.NewTransmissionScheduler(
 		myPeerID,
-		[]p2ptypes.PeerID{{1}, myPeerID, {3}},
-		50*time.Millisecond,
+		[]p2ptypes.PeerID{{1}, {2}, {3}},
+		deltaStage,
 		0,
 		lggr,
 	)
-	h.stellar.transmissionScheduler = scheduler
-
 	wr := &writeReport{
-		service:               h.svc,
-		lggr:                  h.stellar.lggr,
+		service:               mockSvc,
+		lggr:                  logger.Sugared(lggr),
 		forwarderAddress:      testForwarderAddress,
 		transmissionScheduler: scheduler,
 	}
-
 	_, reqMeta, req := newWRReportFixture(t)
 	_, workflowExecutionID, reportID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
 	require.NoError(t, err)
+	return wr, mockSvc, req.ContractId, workflowExecutionID, reportID
+}
 
-	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-		Return(transmissionResp(succeededXDR(t)), nil)
+func expectTransmissionInfoPoll(mockSvc *mocks.StellarService, xdrResult string, err error) {
+	mockSvc.EXPECT().
+		ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+			return req.Function == forwarderGetTransmissionInfoFunction
+		})).
+		Return(transmissionResp(xdrResult), err).
+		Once()
+}
 
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
+func expectTransmissionInfoPollMaybe(mockSvc *mocks.StellarService, xdrResult string, err error) {
+	mockSvc.EXPECT().
+		ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+			return req.Function == forwarderGetTransmissionInfoFunction
+		})).
+		Return(transmissionResp(xdrResult), err).
+		Maybe()
+}
 
-	info, err := wr.pollTransmissionInfo(ctx, req.ContractId, workflowExecutionID, reportID, 1)
-	require.NoError(t, err)
-	require.Equal(t, TransmissionStateSucceeded, info.State)
+func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	t.Run("terminal states return immediately without waiting for delta stage", func(t *testing.T) {
+		cases := []struct {
+			name  string
+			state TransmissionState
+			xdr   func(t *testing.T) string
+		}{
+			{"succeeded", TransmissionStateSucceeded, succeededXDR},
+			{"invalid receiver", TransmissionStateInvalidReceiver, invalidReceiverXDR},
+			{"failed", TransmissionStateFailed, failedXDR},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				for _, queuePosition := range []int{1, 2, 3} {
+					t.Run("queue position "+strconv.Itoa(queuePosition), func(t *testing.T) {
+						t.Parallel()
+						wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 5*time.Second)
+						expectTransmissionInfoPoll(mockSvc, tc.xdr(t), nil)
+
+						start := time.Now()
+						info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, queuePosition)
+						require.NoError(t, err)
+						require.Equal(t, tc.state, info.State)
+						require.Less(t, time.Since(start), 500*time.Millisecond)
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("not attempted waits until delta stage then returns", func(t *testing.T) {
+		t.Parallel()
+		const queuePosition = 2
+		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 150*time.Millisecond)
+		expectTransmissionInfoPollMaybe(mockSvc, notAttemptedXDR(t), nil)
+
+		start := time.Now()
+		info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, queuePosition)
+		require.NoError(t, err)
+		require.Equal(t, TransmissionStateNotAttempted, info.State)
+		require.GreaterOrEqual(t, time.Since(start), 100*time.Millisecond)
+	})
+
+	t.Run("position zero uses quick retry", func(t *testing.T) {
+		t.Parallel()
+		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 5*time.Second)
+		expectTransmissionInfoPoll(mockSvc, succeededXDR(t), nil)
+
+		info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 0)
+		require.NoError(t, err)
+		require.Equal(t, TransmissionStateSucceeded, info.State)
+	})
+}
+
+func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("timer boundary read catches late success", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 150*time.Millisecond)
+		var chainStateUpdated atomic.Bool
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			chainStateUpdated.Store(true)
+		}()
+
+		mockSvc.EXPECT().
+			ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+				return req.Function == forwarderGetTransmissionInfoFunction
+			})).
+			RunAndReturn(func(context.Context, stellartypes.ReadContractRequest) (stellartypes.ReadContractResponse, error) {
+				if chainStateUpdated.Load() {
+					return transmissionResp(succeededXDR(t)), nil
+				}
+				return transmissionResp(notAttemptedXDR(t)), nil
+			}).
+			Maybe()
+
+		info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 1)
+		require.NoError(t, err)
+		require.True(t, chainStateUpdated.Load())
+		require.Equal(t, TransmissionStateSucceeded, info.State)
+	})
+
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 50*time.Millisecond)
+		var rpcCalls atomic.Int64
+		mockSvc.EXPECT().
+			ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+				return req.Function == forwarderGetTransmissionInfoFunction
+			})).
+			RunAndReturn(func(context.Context, stellartypes.ReadContractRequest) (stellartypes.ReadContractResponse, error) {
+				rpcCalls.Add(1)
+				return stellartypes.ReadContractResponse{}, errors.New("rpc unavailable")
+			}).
+			Maybe()
+
+		_, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 2)
+		require.Greater(t, rpcCalls.Load(), int64(0))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "all GetTransmissionInfo polls failed during delta stage window")
+	})
+
+	t.Run("context cancel returns timeout error", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithCancel(t.Context())
+		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 5*time.Second)
+		expectTransmissionInfoPollMaybe(mockSvc, notAttemptedXDR(t), nil)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			cancel()
+		}()
+
+		_, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 2)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "timed out waiting for transmission info")
+	})
 }
 
 func TestParseFieldsIntoTransmissionInfo(t *testing.T) {
