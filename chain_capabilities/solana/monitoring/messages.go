@@ -12,8 +12,8 @@ import (
 	"github.com/mr-tron/base58"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 
