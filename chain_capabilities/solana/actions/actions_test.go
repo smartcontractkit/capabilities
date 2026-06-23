@@ -54,7 +54,10 @@ func TestGetAccountInfoWithOpts(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
 
-		_, err := helper.solana.GetAccountInfoWithOpts(t.Context(), testRequestMetadata("weid", "step-id"), &solcap.GetAccountInfoWithOptsRequest{
+		_, err := helper.solana.GetAccountInfoWithOpts(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid",
+			ReferenceID:         "step-id",
+		}, &solcap.GetAccountInfoWithOptsRequest{
 			Account: solana.NewWallet().PublicKey().Bytes(),
 		})
 		require.Error(t, err)
@@ -152,11 +155,13 @@ func TestGetAccountInfoWithOpts(t *testing.T) {
 			},
 		}
 
-		meta := testRequestMetadata("weid", "step-id")
-		ctx, cancel := context.WithCancel(meta.ContextWithCRE(t.Context()))
+		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		_, err = helper.solana.GetAccountInfoWithOpts(ctx, meta, &solcap.GetAccountInfoWithOptsRequest{
+		_, err = helper.solana.GetAccountInfoWithOpts(ctx, capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid",
+			ReferenceID:         "step-id",
+		}, &solcap.GetAccountInfoWithOptsRequest{
 			Account: accountKey.PublicKey().Bytes(),
 		})
 		require.Error(t, err)
@@ -335,7 +340,9 @@ func TestGetBalance(t *testing.T) {
 	t.Run("reads disabled", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
-		_, err := helper.solana.GetBalance(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetBalanceRequest{Addr: solana.NewWallet().PublicKey().Bytes()})
+		_, err := helper.solana.GetBalance(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetBalanceRequest{Addr: solana.NewWallet().PublicKey().Bytes()})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "reads are not available")
 	})
@@ -343,8 +350,9 @@ func TestGetBalance(t *testing.T) {
 	t.Run("invalid addr", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		ctx, meta := testReadCall(t, "weid", "ref")
-		_, err := helper.solana.GetBalance(ctx, meta, &solcap.GetBalanceRequest{Addr: []byte{1, 2, 3}})
+		_, err := helper.solana.GetBalance(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetBalanceRequest{Addr: []byte{1, 2, 3}})
 		require.Error(t, err)
 		var capErr caperrors.Error
 		require.True(t, errors.As(err, &capErr))
@@ -364,8 +372,9 @@ func TestGetBalance(t *testing.T) {
 			})).
 			Return(&soltypes.GetBalanceReply{Value: 1_000_000}, nil).Once()
 
-		ctx, meta := testReadCall(t, "weid", "ref")
-		resp, err := helper.solana.GetBalance(ctx, meta, &solcap.GetBalanceRequest{Addr: key.PublicKey().Bytes()})
+		resp, err := helper.solana.GetBalance(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetBalanceRequest{Addr: key.PublicKey().Bytes()})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, uint64(1_000_000), resp.Response.Value)
@@ -383,8 +392,9 @@ func TestGetBalance(t *testing.T) {
 			GetBalance(mock.Anything, mock.Anything).
 			Return((*soltypes.GetBalanceReply)(nil), svcErr).Once()
 
-		ctx, meta := testReadCall(t, "weid", "ref")
-		_, err = helper.solana.GetBalance(ctx, meta, &solcap.GetBalanceRequest{Addr: key.PublicKey().Bytes()})
+		_, err = helper.solana.GetBalance(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetBalanceRequest{Addr: key.PublicKey().Bytes()})
 		require.Error(t, err)
 		require.ErrorContains(t, err, svcErr.Error())
 	})
@@ -398,7 +408,9 @@ func TestGetMultipleAccountsWithOpts(t *testing.T) {
 	t.Run("reads disabled", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
-		_, err := helper.solana.GetMultipleAccountsWithOpts(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetMultipleAccountsWithOptsRequest{
+		_, err := helper.solana.GetMultipleAccountsWithOpts(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetMultipleAccountsWithOptsRequest{
 			Accounts: [][]byte{solana.NewWallet().PublicKey().Bytes()},
 		})
 		require.Error(t, err)
@@ -470,7 +482,9 @@ func TestGetProgramAccounts(t *testing.T) {
 	t.Run("reads disabled", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
-		_, err := helper.solana.GetProgramAccounts(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetProgramAccountsRequest{Program: solana.NewWallet().PublicKey().Bytes()})
+		_, err := helper.solana.GetProgramAccounts(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetProgramAccountsRequest{Program: solana.NewWallet().PublicKey().Bytes()})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "reads are not available")
 	})
@@ -600,7 +614,9 @@ func TestGetTransaction(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
 		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
-		_, err := helper.solana.GetTransaction(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetTransactionRequest{Signature: validSig()})
+		_, err := helper.solana.GetTransaction(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetTransactionRequest{Signature: validSig()})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "reads are not available")
 	})
@@ -660,7 +676,10 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("reads disabled", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
-		_, err := helper.solana.GetSignatureStatuses(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetSignatureStatusesRequest{Sigs: [][]byte{validSig()}})
+		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
+		_, err := helper.solana.GetSignatureStatuses(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetSignatureStatusesRequest{Sigs: [][]byte{validSig()}})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "reads are not available")
 	})
@@ -668,6 +687,7 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("invalid signature", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
+		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
 		ctx, meta := testReadCall(t, "weid", "ref")
 		_, err := helper.solana.GetSignatureStatuses(ctx, meta, &solcap.GetSignatureStatusesRequest{Sigs: [][]byte{{1, 2, 3}}})
 		require.Error(t, err)
@@ -679,6 +699,7 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
+		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
 
 		conf := uint64(10)
 		serviceReply := &soltypes.GetSignatureStatusesReply{
@@ -702,6 +723,7 @@ func TestGetSignatureStatuses(t *testing.T) {
 	t.Run("service error", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
+		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
 		svcErr := errors.New("sig lookup failed")
 
 		helper.solanaService.EXPECT().
@@ -724,7 +746,9 @@ func TestGetBlock(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
 		helper.solana.handler = testConsensusHandler{handle: runECHashableHandle}
-		_, err := helper.solana.GetBlock(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetBlockRequest{Slot: 1})
+		_, err := helper.solana.GetBlock(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetBlockRequest{Slot: 1})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "reads are not available")
 	})
@@ -790,7 +814,9 @@ func TestGetSlotHeight(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
 		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
-		_, err := helper.solana.GetSlotHeight(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetSlotHeightRequest{})
+		_, err := helper.solana.GetSlotHeight(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetSlotHeightRequest{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "reads are not available")
 	})
@@ -799,8 +825,9 @@ func TestGetSlotHeight(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
 		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
-		ctx, meta := testReadCall(t, "weid", "ref")
-		_, err := helper.solana.GetSlotHeight(ctx, meta, &solcap.GetSlotHeightRequest{Commitment: solcap.CommitmentType(999)})
+		_, err := helper.solana.GetSlotHeight(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetSlotHeightRequest{Commitment: solcap.CommitmentType(999)})
 		require.Error(t, err)
 		var capErr caperrors.Error
 		require.True(t, errors.As(err, &capErr))
@@ -817,8 +844,9 @@ func TestGetSlotHeight(t *testing.T) {
 			GetSlotHeight(mock.Anything, mock.Anything).
 			Return(&soltypes.GetSlotHeightReply{Height: height}, nil).Once()
 
-		ctx, meta := testReadCall(t, "weid", "ref")
-		resp, err := helper.solana.GetSlotHeight(ctx, meta, &solcap.GetSlotHeightRequest{Commitment: solcap.CommitmentType_COMMITMENT_TYPE_CONFIRMED})
+		resp, err := helper.solana.GetSlotHeight(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetSlotHeightRequest{Commitment: solcap.CommitmentType_COMMITMENT_TYPE_CONFIRMED})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, height, resp.Response.Height)
@@ -834,8 +862,9 @@ func TestGetSlotHeight(t *testing.T) {
 			GetSlotHeight(mock.Anything, mock.Anything).
 			Return((*soltypes.GetSlotHeightReply)(nil), svcErr).Once()
 
-		ctx, meta := testReadCall(t, "weid", "ref")
-		_, err := helper.solana.GetSlotHeight(ctx, meta, &solcap.GetSlotHeightRequest{})
+		_, err := helper.solana.GetSlotHeight(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetSlotHeightRequest{})
 		require.Error(t, err)
 		require.ErrorContains(t, err, svcErr.Error())
 	})
@@ -849,7 +878,10 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("reads disabled", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, false)
-		_, err := helper.solana.GetFeeForMessage(t.Context(), testRequestMetadata("weid", "ref"), &solcap.GetFeeForMessageRequest{Message: "someMsg"})
+		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
+		_, err := helper.solana.GetFeeForMessage(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetFeeForMessageRequest{Message: "someMsg"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "reads are not available")
 	})
@@ -857,8 +889,10 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("invalid commitment", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
-		ctx, meta := testReadCall(t, "weid", "ref")
-		_, err := helper.solana.GetFeeForMessage(ctx, meta, &solcap.GetFeeForMessageRequest{
+		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
+		_, err := helper.solana.GetFeeForMessage(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetFeeForMessageRequest{
 			Message:    "someMsg",
 			Commitment: solcap.CommitmentType(999),
 		})
@@ -871,16 +905,18 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
+		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
 
 		const fee uint64 = 5000
 		helper.solanaService.EXPECT().
 			GetFeeForMessage(mock.Anything, mock.MatchedBy(func(req soltypes.GetFeeForMessageRequest) bool {
 				return req.Message == "someMsg"
 			})).
-			Return(&soltypes.GetFeeForMessageReply{Fee: fee, Slot: 42}, nil).Once()
+			Return(&soltypes.GetFeeForMessageReply{Fee: fee}, nil).Once()
 
-		ctx, meta := testReadCall(t, "weid", "ref")
-		resp, err := helper.solana.GetFeeForMessage(ctx, meta, &solcap.GetFeeForMessageRequest{Message: "someMsg"})
+		resp, err := helper.solana.GetFeeForMessage(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetFeeForMessageRequest{Message: "someMsg"})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, fee, resp.Response.Fee)
@@ -889,14 +925,16 @@ func TestGetFeeForMessage(t *testing.T) {
 	t.Run("service error", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)
+		helper.solana.handler = testConsensusHandler{handle: runAggregatableHandle}
 		svcErr := errors.New("fee estimation failed")
 
 		helper.solanaService.EXPECT().
 			GetFeeForMessage(mock.Anything, mock.Anything).
 			Return((*soltypes.GetFeeForMessageReply)(nil), svcErr).Once()
 
-		ctx, meta := testReadCall(t, "weid", "ref")
-		_, err := helper.solana.GetFeeForMessage(ctx, meta, &solcap.GetFeeForMessageRequest{Message: "someMsg"})
+		_, err := helper.solana.GetFeeForMessage(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetFeeForMessageRequest{Message: "someMsg"})
 		require.Error(t, err)
 		require.ErrorContains(t, err, svcErr.Error())
 	})

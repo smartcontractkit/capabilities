@@ -21,12 +21,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
@@ -86,7 +88,6 @@ func (s *Solana) GetAccountInfoWithOpts(
 	if !s.readsEnabled {
 		return nil, caperrors.NewPublicSystemError(errors.New("reads are not available"), caperrors.Internal)
 	}
-	// TODO: implement metrics on higher level PLEX-2918
 	// TODO: implement billing once generalized PLEX-3022
 	request, err := solcap.ConvertGetAccountInfoRequestFromProto(input)
 	if err != nil {
@@ -94,7 +95,6 @@ func (s *Solana) GetAccountInfoWithOpts(
 	}
 	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetAccountInfoWithOpts request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetAccountInfoWithOptsReply, uint64, error) {
 		rawResponse, err := s.SolanaService.GetAccountInfoWithOpts(ctx, request)
 		if err != nil {
@@ -116,7 +116,6 @@ func (s *Solana) GetAccountInfoWithOpts(
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetAccountInfoWithOpts: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetAccountInfoWithOpts")
 	return responseAndMetadata, nil
 }
 
@@ -133,7 +132,6 @@ func (s *Solana) GetBalance(
 	}
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetBalance request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetBalanceReply, uint64, error) {
 		rawResponse, err := s.SolanaService.GetBalance(ctx, request)
 		if err != nil {
@@ -145,14 +143,13 @@ func (s *Solana) GetBalance(
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
-		return response, rawResponse.Slot, nil
+		return response, 0, nil
 	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetBalanceReply](ctx, s.handler, cReq)
 	if err != nil {
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetBalance: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetBalance")
 	return responseAndMetadata, nil
 }
 
@@ -169,7 +166,6 @@ func (s *Solana) GetBlock(
 	}
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetBlock request")
 	cReq := ctypes.NewECHashableRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetBlockReply, error) {
 		rawResponse, err := s.SolanaService.GetBlock(ctx, *request)
 		if err != nil {
@@ -191,7 +187,6 @@ func (s *Solana) GetBlock(
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetBlock: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetBlock")
 	return responseAndMetadata, nil
 }
 
@@ -208,27 +203,29 @@ func (s *Solana) GetFeeForMessage(
 	}
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetFeeForMessage request")
-	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetFeeForMessageReply, uint64, error) {
+	cReq := ctypes.NewAggregatableRequest(commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID), func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
 		rawResponse, err := s.SolanaService.GetFeeForMessage(ctx, *request)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 
-		response, err := solcap.ConvertGetFeeForMessageReplyToProto(rawResponse)
-		if err != nil {
-			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
-		}
-
-		return response, rawResponse.Slot, nil
-	}, lggr)
-	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetFeeForMessageReply](ctx, s.handler, cReq)
+		return &ctypes.AggregatableObservation{
+			Method: ctypes.AggregationMethodFPlusOneHighest,
+			Value: &valuespb.Decimal{
+				Coefficient: valuespb.NewBigIntFromInt(new(big.Int).SetUint64(rawResponse.Fee)),
+				Exponent:    0,
+			},
+		}, nil
+	})
+	aggregatedFee, err := chainconsensus.ReadDecimal(ctx, s.handler, cReq)
 	if err != nil {
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetFeeForMessage: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetFeeForMessage")
-	return responseAndMetadata, nil
+	return &capabilities.ResponseAndMetadata[*solcap.GetFeeForMessageReply]{
+		Response:         &solcap.GetFeeForMessageReply{Fee: aggregatedFee.BigInt().Uint64()},
+		ResponseMetadata: metering.GetResponseMetadata(metering.GetAccountInfo),
+	}, nil
 }
 
 func (s *Solana) GetMultipleAccountsWithOpts(
@@ -247,7 +244,6 @@ func (s *Solana) GetMultipleAccountsWithOpts(
 	}
 	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetMultipleAccountsWithOpts request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetMultipleAccountsWithOptsReply, uint64, error) {
 		rawResponse, err := s.SolanaService.GetMultipleAccountsWithOpts(ctx, *request)
 		if err != nil {
@@ -269,7 +265,6 @@ func (s *Solana) GetMultipleAccountsWithOpts(
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetMultipleAccountsWithOpts: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetMultipleAccountsWithOpts")
 	return responseAndMetadata, nil
 }
 
@@ -289,31 +284,27 @@ func (s *Solana) GetSignatureStatuses(
 	}
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetSignatureStatuses request")
-	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetSignatureStatusesReply, uint64, error) {
+	cReq := ctypes.NewECHashableRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetSignatureStatusesReply, error) {
 		rawResponse, err := s.SolanaService.GetSignatureStatuses(ctx, *request)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 
 		response, err := solcap.ConvertGetSignatureStatusesReplyToProto(rawResponse)
 		if err != nil {
-			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
-		var maxSlot uint64
-		for _, r := range rawResponse.Results {
-			maxSlot = max(maxSlot, r.Slot)
+		if err = s.checkReadPayloadSize(ctx, response); err != nil {
+			return nil, NewUserError(err)
 		}
-
-		return response, maxSlot, nil
-	}, lggr)
+		return response, nil
+	})
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetSignatureStatusesReply](ctx, s.handler, cReq)
 	if err != nil {
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetSignatureStatuses: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetSignatureStatuses")
 	return responseAndMetadata, nil
 }
 
@@ -330,7 +321,6 @@ func (s *Solana) GetSlotHeight(
 	}
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetSlotHeight request")
 	cReq := ctypes.NewAggregatableRequest(commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID), func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
 		rawResponse, err := s.SolanaService.GetSlotHeight(ctx, request)
 		if err != nil {
@@ -350,7 +340,6 @@ func (s *Solana) GetSlotHeight(
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetSlotHeight: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetSlotHeight")
 	return &capabilities.ResponseAndMetadata[*solcap.GetSlotHeightReply]{
 		Response:         &solcap.GetSlotHeightReply{Height: aggregatedHeight.BigInt().Uint64()},
 		ResponseMetadata: metering.GetResponseMetadata(metering.GetAccountInfo),
@@ -370,7 +359,6 @@ func (s *Solana) GetTransaction(
 	}
 	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetTransaction request")
 	cReq := ctypes.NewECHashableRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetTransactionReply, error) {
 		rawResponse, err := s.SolanaService.GetTransaction(ctx, request)
 		if err != nil {
@@ -392,7 +380,6 @@ func (s *Solana) GetTransaction(
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetTransaction: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetTransaction")
 	return responseAndMetadata, nil
 }
 
@@ -409,22 +396,22 @@ func (s *Solana) GetProgramAccounts(
 	}
 	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetProgramAccounts request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetProgramAccountsReply, uint64, error) {
 		rawResponse, err := s.SolanaService.GetProgramAccounts(ctx, *request)
 		if err != nil {
 			return nil, 0, err
 		}
 
+		// getProgramAccounts does not guarantee ordering across RPC nodes.
+		// Sort by pubkey so all nodes produce an identical hash.
+		slices.SortFunc(rawResponse.Value, func(a, b *soltypes.KeyedAccount) int {
+			return bytes.Compare(a.Pubkey[:], b.Pubkey[:])
+		})
+
 		response, err := solcap.ConvertGetProgramAccountsReplyToProto(rawResponse)
 		if err != nil {
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
-		// getProgramAccounts does not guarantee ordering across RPC nodes.
-		// Sort by pubkey so all nodes produce an identical hash.
-		slices.SortFunc(response.Value, func(a, b *solcap.KeyedAccount) int {
-			return bytes.Compare(a.Pubkey[:], b.Pubkey[:])
-		})
 
 		if err = s.checkReadPayloadSize(ctx, response); err != nil {
 			return nil, 0, NewUserError(err)
@@ -436,8 +423,14 @@ func (s *Solana) GetProgramAccounts(
 		return nil, getReadError(lggr, fmt.Errorf("failed to GetProgramAccounts: %w", err))
 	}
 
-	lggr.Debugw("Successfully handled GetProgramAccounts")
 	return responseAndMetadata, nil
+}
+
+func (s *Solana) MonitoringContext() capmon.MonitoringContext {
+	return capmon.MonitoringContext{
+		Logger:            s.lggr,
+		MetricsAttributes: s.messageBuilder.CapabilityMetricsAttributes,
+	}
 }
 
 func (s *Solana) initLimiters(limitsFactory limits.Factory) (err error) {
