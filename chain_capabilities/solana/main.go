@@ -103,6 +103,9 @@ func (c *capabilityGRPCService) Close() error {
 	if c.triggerService != nil {
 		closers = append(closers, c.triggerService)
 	}
+	if c.Solana != nil {
+		closers = append(closers, c.Solana)
+	}
 	return services.CloseAll(closers...)
 }
 

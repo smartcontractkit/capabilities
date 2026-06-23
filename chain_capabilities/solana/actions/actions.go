@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
@@ -21,6 +23,7 @@ import (
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -42,6 +45,8 @@ type Solana struct {
 	chainSelector            uint64
 	txComputeLimit           limits.BoundLimiter[uint32]
 	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
+	readPayloadSizeLimiter   limits.BoundLimiter[commoncfg.Size]
+	batchItemLimit           limits.BoundLimiter[int]
 	beholderProcessor        beholder.ProtoProcessor
 	messageBuilder           *monitoring.MessageBuilder
 	transmissionScheduler    ts.TransmissionScheduler
@@ -101,7 +106,9 @@ func (s *Solana) GetAccountInfoWithOpts(
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
-		// TODO PLEX-3061: limit response size
+		if err = s.checkReadPayloadSize(ctx, response); err != nil {
+			return nil, 0, NewUserError(err)
+		}
 		return response, rawResponse.Slot, nil
 	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetAccountInfoWithOptsReply](ctx, s.handler, cReq)
@@ -174,6 +181,9 @@ func (s *Solana) GetBlock(
 			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
+		if err = s.checkReadPayloadSize(ctx, response); err != nil {
+			return nil, NewUserError(err)
+		}
 		return response, nil
 	})
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetBlockReply](ctx, s.handler, cReq)
@@ -232,6 +242,9 @@ func (s *Solana) GetMultipleAccountsWithOpts(
 	if err != nil {
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
 	}
+	if err := s.validateBatchItemCount(ctx, len(input.GetAccounts())); err != nil {
+		return nil, NewUserError(err)
+	}
 	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
 	lggr.Debugw("Received GetMultipleAccountsWithOpts request")
@@ -246,6 +259,9 @@ func (s *Solana) GetMultipleAccountsWithOpts(
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
+		if err = s.checkReadPayloadSize(ctx, response); err != nil {
+			return nil, 0, NewUserError(err)
+		}
 		return response, rawResponse.Slot, nil
 	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetMultipleAccountsWithOptsReply](ctx, s.handler, cReq)
@@ -267,6 +283,9 @@ func (s *Solana) GetSignatureStatuses(
 	request, err := solcap.ConvertGetSignatureStatusesRequestFromProto(input)
 	if err != nil {
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
+	}
+	if err := s.validateBatchItemCount(ctx, len(input.GetSigs())); err != nil {
+		return nil, NewUserError(err)
 	}
 
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
@@ -363,6 +382,9 @@ func (s *Solana) GetTransaction(
 			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
+		if err = s.checkReadPayloadSize(ctx, response); err != nil {
+			return nil, NewUserError(err)
+		}
 		return response, nil
 	})
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetTransactionReply](ctx, s.handler, cReq)
@@ -404,6 +426,9 @@ func (s *Solana) GetProgramAccounts(
 			return bytes.Compare(a.Pubkey[:], b.Pubkey[:])
 		})
 
+		if err = s.checkReadPayloadSize(ctx, response); err != nil {
+			return nil, 0, NewUserError(err)
+		}
 		return response, 0, nil
 	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetProgramAccountsReply](ctx, s.handler, cReq)
@@ -426,7 +451,30 @@ func (s *Solana) initLimiters(limitsFactory limits.Factory) (err error) {
 	if err != nil {
 		return
 	}
+
+	s.readPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.Solana.PayloadSizeLimit)
+	if err != nil {
+		return
+	}
+
+	s.batchItemLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.Solana.BatchItemLimit)
 	return
+}
+
+func (s *Solana) Close() error {
+	return services.CloseAll(s.reportSizeLimit, s.txComputeLimit, s.readPayloadSizeLimiter, s.batchItemLimit)
+}
+
+func (s *Solana) checkReadPayloadSize(ctx context.Context, msg proto.Message) error {
+	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return s.readPayloadSizeLimiter.Check(ctx, commoncfg.SizeOf(b))
+}
+
+func (s *Solana) validateBatchItemCount(ctx context.Context, count int) error {
+	return s.batchItemLimit.Check(ctx, count)
 }
 
 func getReadError(lggr logger.SugaredLogger, err error) caperrors.Error {
