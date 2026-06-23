@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1256,6 +1257,126 @@ func TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths(t *testing.T) {
 	t.Run("flag inactive uses legacy EncodeExecutionID", func(t *testing.T) {
 		run(t, false)
 	})
+}
+
+// blockingOrgResolver blocks the first Get call until release is closed, simulating
+// slow org-resolver I/O inside the cron task callback before nextRun is advanced.
+type blockingOrgResolver struct {
+	firstBlocked chan struct{}
+	release      chan struct{}
+	getCount     atomic.Int32
+	once         sync.Once
+}
+
+func (r *blockingOrgResolver) Get(ctx context.Context, owner string) (string, error) {
+	if r.getCount.Add(1) == 1 {
+		r.once.Do(func() { close(r.firstBlocked) })
+		select {
+		case <-r.release:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	return "test-org-id", nil
+}
+
+func (r *blockingOrgResolver) Start(ctx context.Context) error  { return nil }
+func (r *blockingOrgResolver) Close() error                     { return nil }
+func (r *blockingOrgResolver) HealthReport() map[string]error   { return map[string]error{} }
+func (r *blockingOrgResolver) Ready() error                     { return nil }
+func (r *blockingOrgResolver) Name() string                     { return "BlockingOrgResolver" }
+
+var _ orgresolver.OrgResolver = (*blockingOrgResolver)(nil)
+
+// TestCronTrigger_DelayedDuplicateEventWhenCallbackBlocks ensures a cron trigger does not
+// deliver duplicate trigger event IDs when the task callback blocks (e.g. on org resolver I/O).
+func TestCronTrigger_DelayedDuplicateEventWhenCallbackBlocks(t *testing.T) {
+	const testWorkflowID = "00c0de5771c4f20ed242bedd2de9d3fdf9a0fbe5d03aefca9bdb29013a28de36"
+	const testTriggerID = testWorkflowID + "|cron-0"
+
+	releaseFirst := make(chan struct{})
+	orgResolver := &blockingOrgResolver{
+		firstBlocked: make(chan struct{}),
+		release:      releaseFirst,
+	}
+
+	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+
+	ts, err := NewTriggerService(logger.Nop(), clockwork.NewRealClock(), limits.Factory{})
+	require.NoError(t, err)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config:      string(triggerConfig),
+		OrgResolver: orgResolver,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, ts.Close()) })
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:    testWorkflowID,
+		WorkflowOwner: "0x0000000000000000000000000000000000000001",
+		ReferenceID:   workflows.GetTriggerReferenceID(0),
+	}
+	callback, capErr := ts.RegisterTrigger(t.Context(), testTriggerID, metadata, &crontypedapi.Config{Schedule: everySecond})
+	require.Nil(t, capErr)
+
+	eventsCh := make(chan capabilities.TriggerAndId[*crontypedapi.Payload], 4)
+	collectDone := make(chan struct{})
+	go func() {
+		defer close(collectDone)
+		for event := range callback {
+			eventsCh <- event
+		}
+		close(eventsCh)
+	}()
+
+	select {
+	case <-orgResolver.firstBlocked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for first cron task to block in org resolver")
+	}
+
+	// While the first task is still blocked, no trigger event should be delivered.
+	select {
+	case event := <-eventsCh:
+		t.Fatalf("unexpected trigger event while callback is blocked: %s", event.Id)
+	case <-time.After(1 * time.Second):
+	}
+
+	close(releaseFirst)
+
+	var events []capabilities.TriggerAndId[*crontypedapi.Payload]
+	select {
+	case event := <-eventsCh:
+		events = append(events, event)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for trigger event after blocked callback completes")
+	}
+
+	// Fixed window: keep reading so duplicate IDs cannot slip through after the first event.
+	collectUntil := time.After(2 * time.Second)
+collectLoop:
+	for {
+		select {
+		case event, ok := <-eventsCh:
+			if !ok {
+				break collectLoop
+			}
+			events = append(events, event)
+		case <-collectUntil:
+			break collectLoop
+		}
+	}
+
+	seenEventIDs := make(map[string]struct{}, len(events))
+	for _, event := range events {
+		_, duplicate := seenEventIDs[event.Id]
+		require.False(t, duplicate, "trigger event ID %s was delivered more than once", event.Id)
+		seenEventIDs[event.Id] = struct{}{}
+	}
+
+	require.Nil(t, ts.UnregisterTrigger(t.Context(), testTriggerID, metadata, &crontypedapi.Config{Schedule: everySecond}))
+	<-collectDone
 }
 
 func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
