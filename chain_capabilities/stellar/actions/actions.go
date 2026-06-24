@@ -17,6 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
@@ -31,21 +32,21 @@ import (
 // Stellar implements the CRE capability actions for the Stellar chain.
 type Stellar struct {
 	types.StellarService
-	handler               chainconsensus.RequestHandler
-	lggr                  logger.SugaredLogger
-	messageBuilder        *monitoring.MessageBuilder
-	beholderProcessor     beholder.ProtoProcessor
-	chainSelector         uint64
-	forwarderAddress      string
-	nodeAddress           string
-	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler ts.TransmissionScheduler
+	handler                  chainconsensus.RequestHandler
+	lggr                     logger.SugaredLogger
+	messageBuilder           *monitoring.MessageBuilder
+	beholderProcessor        beholder.ProtoProcessor
+	chainSelector            uint64
+	forwarderClient          CREForwarderClient
+	forwarderLookbackLedgers int64
+	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
+	transmissionScheduler    ts.TransmissionScheduler
 }
 
 func NewStellar(
 	service types.StellarService,
 	forwarderAddress string,
-	nodeAddress string,
+	forwarderLookbackLedgers int64,
 	lggr logger.Logger,
 	limitsFactory limits.Factory,
 	transmissionScheduler ts.TransmissionScheduler,
@@ -59,15 +60,15 @@ func NewStellar(
 	}
 
 	st := &Stellar{
-		StellarService:        service,
-		handler:               handler,
-		lggr:                  logger.Sugared(lggr),
-		messageBuilder:        messageBuilder,
-		beholderProcessor:     beholderProcessor,
-		chainSelector:         chainSelector,
-		forwarderAddress:      forwarderAddress,
-		nodeAddress:           nodeAddress,
-		transmissionScheduler: transmissionScheduler,
+		StellarService:           service,
+		handler:                  handler,
+		lggr:                     logger.Sugared(lggr),
+		messageBuilder:           messageBuilder,
+		beholderProcessor:        beholderProcessor,
+		chainSelector:            chainSelector,
+		forwarderClient:          newForwarderClient(service, lggr, forwarderAddress, forwarderLookbackLedgers),
+		forwarderLookbackLedgers: forwarderLookbackLedgers,
+		transmissionScheduler:    transmissionScheduler,
 	}
 	return st, st.initLimiters(limitsFactory)
 }
@@ -99,7 +100,7 @@ func (s *Stellar) ReadContract(
 	metadata capabilities.RequestMetadata,
 	input *stellarcap.ReadContractRequest,
 ) (*capabilities.ResponseAndMetadata[*stellarcap.ReadContractResponse], caperrors.Error) {
-	request, err := stellarcap.ConvertReadContractRequestFromProto(input)
+	request, err := convertReadContractRequestFromProto(input)
 	if err != nil {
 		return nil, caperrors.NewPublicUserError(fmt.Errorf("invalid request: %w", err), caperrors.InvalidArgument)
 	}
@@ -121,13 +122,13 @@ func (s *Stellar) ReadContract(
 		metadata.ReferenceID,
 		metering.GetResponseMetadata(metering.ReadContract),
 		func(ctx context.Context) (*stellarcap.ReadContractResponse, uint64, error) {
-			response, err := s.StellarService.ReadContract(ctx, request)
+			response, err := s.StellarService.SimulateTransaction(ctx, request)
 			if err != nil {
 				return nil, 0, err
 			}
 
 			return &stellarcap.ReadContractResponse{
-				Result:         response.Result,
+				Result:         response.ReturnValueXDR,
 				LedgerSequence: response.LedgerSequence,
 				Error:          response.Error,
 			}, uint64(response.LedgerSequence), nil
@@ -147,6 +148,34 @@ func (s *Stellar) ReadContract(
 	monitoring.LogAndEmitSuccess(ctx, "Successfully handled ReadContract", s.lggr, s.beholderProcessor,
 		s.messageBuilder.BuildReadContractSuccess(tc, request, uint64(len(resp.GetResult())), resp.GetLedgerSequence()))
 	return responseAndMetadata, nil
+}
+
+func convertReadContractRequestFromProto(p *stellarcap.ReadContractRequest) (stellartypes.SimulateTransactionRequest, error) {
+	if p == nil {
+		return stellartypes.SimulateTransactionRequest{}, fmt.Errorf("readContractRequest is nil")
+	}
+	if p.GetContractId() == "" {
+		return stellartypes.SimulateTransactionRequest{}, fmt.Errorf("contractID is required")
+	}
+	if p.GetFunction() == "" {
+		return stellartypes.SimulateTransactionRequest{}, fmt.Errorf("function is required")
+	}
+
+	pArgs := p.GetArgs()
+	args := make([]stellartypes.ScVal, len(pArgs))
+	for i, psv := range pArgs {
+		sv, err := stellarcap.ProtoToScVal(psv)
+		if err != nil {
+			return stellartypes.SimulateTransactionRequest{}, fmt.Errorf("args[%d]: %w", i, err)
+		}
+		args[i] = sv
+	}
+	return stellartypes.SimulateTransactionRequest{
+		ContractID:    p.GetContractId(),
+		Function:      p.GetFunction(),
+		Args:          args,
+		SourceAccount: p.GetSourceAccount(),
+	}, nil
 }
 
 func (s *Stellar) isUserErrorWriteReport(err error) bool {

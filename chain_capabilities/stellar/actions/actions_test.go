@@ -76,7 +76,7 @@ func TestNewStellar(t *testing.T) {
 		_, err := NewStellar(
 			nil,
 			"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-			"GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+			100,
 			lggr,
 			limits.Factory{Logger: lggr},
 			ts.TransmissionScheduler{},
@@ -96,7 +96,7 @@ func TestNewStellar(t *testing.T) {
 		st, err := NewStellar(
 			svc,
 			"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-			"GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
+			100,
 			lggr,
 			limits.Factory{Logger: lggr},
 			ts.TransmissionScheduler{},
@@ -178,9 +178,9 @@ func TestReadContract(t *testing.T) {
 		const ledgerSeq uint32 = 52_000
 		const result = "AAAAAwAAAAA=" // base64 XDR
 		helper.stellarService.EXPECT().
-			ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{
-				Result:         result,
+			SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{
+				ReturnValueXDR: result,
 				LedgerSequence: ledgerSeq,
 			}, nil).
 			Once()
@@ -202,8 +202,8 @@ func TestReadContract(t *testing.T) {
 		// Plain errors (e.g. invalid input surfaced by the relayer) default to user errors.
 		expectedErr := errors.New("failed to decode contract id")
 		helper.stellarService.EXPECT().
-			ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{}, expectedErr).
+			SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{}, expectedErr).
 			Once()
 
 		_, err := helper.stellar.ReadContract(t.Context(), capabilities.RequestMetadata{
@@ -223,10 +223,10 @@ func TestReadContract(t *testing.T) {
 
 		// Errors tagged by the relayer with multinode.ErrNodeError must survive the
 		// observation-error serialization round trip and stay classified as infra/system.
-		expectedErr := fmt.Errorf("failed to read contract: %w", multinode.ErrNodeError)
+		expectedErr := fmt.Errorf("failed to simulate transaction: %w", multinode.ErrNodeError)
 		helper.stellarService.EXPECT().
-			ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{}, expectedErr).
+			SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{}, expectedErr).
 			Once()
 
 		_, err := helper.stellar.ReadContract(t.Context(), capabilities.RequestMetadata{

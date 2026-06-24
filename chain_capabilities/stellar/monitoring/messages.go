@@ -26,14 +26,14 @@ func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.Capabilit
 	}
 }
 
-func (m *MessageBuilder) BuildReadContractInitiated(tc commonmon.TelemetryContext, req stellartypes.ReadContractRequest) *ReadContractInitiated {
+func (m *MessageBuilder) BuildReadContractInitiated(tc commonmon.TelemetryContext, req stellartypes.SimulateTransactionRequest) *ReadContractInitiated {
 	return &ReadContractInitiated{
 		Req:              convertReadContractRequest(req),
 		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
-func (m *MessageBuilder) BuildReadContractSuccess(tc commonmon.TelemetryContext, req stellartypes.ReadContractRequest, resultLen uint64, ledgerSequence uint32) *ReadContractSuccess {
+func (m *MessageBuilder) BuildReadContractSuccess(tc commonmon.TelemetryContext, req stellartypes.SimulateTransactionRequest, resultLen uint64, ledgerSequence uint32) *ReadContractSuccess {
 	return &ReadContractSuccess{
 		Req:              convertReadContractRequest(req),
 		ResultLen:        resultLen,
@@ -42,7 +42,7 @@ func (m *MessageBuilder) BuildReadContractSuccess(tc commonmon.TelemetryContext,
 	}
 }
 
-func (m *MessageBuilder) BuildReadContractError(tc commonmon.TelemetryContext, req stellartypes.ReadContractRequest, summary string, err caperrors.Error) commonmon.ErrorMessage {
+func (m *MessageBuilder) BuildReadContractError(tc commonmon.TelemetryContext, req stellartypes.SimulateTransactionRequest, summary string, err caperrors.Error) commonmon.ErrorMessage {
 	return &ReadContractError{
 		Req:              convertReadContractRequest(req),
 		Summary:          summary,
@@ -54,7 +54,7 @@ func (m *MessageBuilder) BuildReadContractError(tc commonmon.TelemetryContext, r
 
 // convertReadContractRequest extracts the non-sensitive subset of the request for telemetry
 // (raw argument values are intentionally omitted; only the count is recorded).
-func convertReadContractRequest(req stellartypes.ReadContractRequest) *ReadContractRequest {
+func convertReadContractRequest(req stellartypes.SimulateTransactionRequest) *ReadContractRequest {
 	return &ReadContractRequest{
 		ContractId:    req.ContractID,
 		Function:      req.Function,

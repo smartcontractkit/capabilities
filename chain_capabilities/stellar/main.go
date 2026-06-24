@@ -36,9 +36,10 @@ const CapabilityName = "stellar"
 
 const (
 	// Default values for optional Stellar consensus/read settings when not provided in config.
-	defaultObservationPollPeriod = 3 * time.Second
-	defaultPollerWorkersCount    = 10
-	defaultUnknownRequestsTTL    = 10 * time.Second
+	defaultObservationPollPeriod    = 3 * time.Second
+	defaultPollerWorkersCount       = 10
+	defaultUnknownRequestsTTL       = 10 * time.Second
+	defaultForwarderLookbackLedgers = int64(100)
 )
 
 // capabilityGRPCService is the top-level server wrapping the Stellar capability.
@@ -140,6 +141,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to get stellar service: %w", err)
 	}
+	if _, err = stellarService.GetSigningAccount(ctx); err != nil {
+		return fmt.Errorf("stellar relayer has no signing account: %w", err)
+	}
 
 	if err = c.setSelector(cfg); err != nil {
 		return err
@@ -210,7 +214,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.Stellar, err = actions.NewStellar(
 		stellarService,
 		cfg.CREForwarderAddress,
-		cfg.NodeAddress,
+		cfg.ForwarderLookbackLedgers,
 		c.lggr,
 		c.limitsFactory,
 		scheduler,
@@ -264,6 +268,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.UnknownRequestsTTL == 0 {
 		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+	if cfg.ForwarderLookbackLedgers == 0 {
+		cfg.ForwarderLookbackLedgers = defaultForwarderLookbackLedgers
+		c.lggr.Infof("ForwarderLookbackLedgers is zero, setting to %d.", cfg.ForwarderLookbackLedgers)
 	}
 
 	return &cfg, nil

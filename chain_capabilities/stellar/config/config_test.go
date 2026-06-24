@@ -18,7 +18,6 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 			"chainId":"stellar-testnet",
 			"network":"stellar",
 			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-			"nodeAddress":"GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
 			"deltaStage":1000000000,
 			"observationPollerWorkersCount":17,
 			"observationPollPeriod":2000000000,
@@ -32,7 +31,6 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 		assert.Equal(t, "stellar-testnet", cfg.ChainID)
 		assert.Equal(t, "stellar", cfg.Network)
 		assert.Equal(t, "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC", cfg.CREForwarderAddress)
-		assert.Equal(t, "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7", cfg.NodeAddress)
 		assert.EqualValues(t, 17, cfg.ObservationPollerWorkersCount)
 		assert.Equal(t, time.Second, cfg.DeltaStage)
 		assert.Equal(t, 2*time.Second, cfg.ObservationPollPeriod)
@@ -83,22 +81,6 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "creForwarderAddress")
 		require.Contains(t, err.Error(), "invalid contract address")
-	})
-
-	t.Run("invalid nodeAddress", func(t *testing.T) {
-		t.Parallel()
-		input := `{
-			"network":"stellar",
-			"chainId":"stellar-testnet",
-			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-			"nodeAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
-		}`
-
-		var cfg Config
-		err := json.Unmarshal([]byte(input), &cfg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "nodeAddress")
-		require.Contains(t, err.Error(), "invalid account address")
 	})
 
 	t.Run("invalid json", func(t *testing.T) {

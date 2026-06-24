@@ -69,18 +69,28 @@ func newWriteReportHelper(t *testing.T) *writeReportHelper {
 		myPeerID, []p2ptypes.PeerID{myPeerID}, 100*time.Millisecond, 0, lggr)
 
 	s := &Stellar{
-		StellarService:        mockSvc,
-		lggr:                  logger.Sugared(lggr),
-		chainSelector:         testWRChainSelector,
-		forwarderAddress:      testForwarderAddress,
-		nodeAddress:           testNodeAddress,
-		transmissionScheduler: scheduler,
-		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		beholderProcessor:     nopBeholderProcessor{},
-		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:           mockSvc,
+		lggr:                     logger.Sugared(lggr),
+		chainSelector:            testWRChainSelector,
+		forwarderClient:          newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		forwarderLookbackLedgers: 100,
+		transmissionScheduler:    scheduler,
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:        nopBeholderProcessor{},
+		handler:                  testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))
 	return &writeReportHelper{svc: mockSvc, stellar: s}
+}
+
+func signingAccountResp() stellartypes.GetSigningAccountResponse {
+	return stellartypes.GetSigningAccountResponse{AccountAddress: testNodeAddress}
+}
+
+func (h *writeReportHelper) expectSigningAccount(t *testing.T) {
+	t.Helper()
+	h.svc.EXPECT().GetSigningAccount(mock.Anything).
+		Return(signingAccountResp(), nil).Once()
 }
 
 // newWRReportFixture generates a self-consistent (metadata, RequestMetadata, WriteReportRequest) triple.
@@ -159,12 +169,8 @@ func failedXDR(t *testing.T) string {
 	return buildTransmissionInfoXDR(t, TransmissionStateFailed)
 }
 
-func transmissionResp(xdrResult string) stellartypes.ReadContractResponse {
-	return stellartypes.ReadContractResponse{Result: xdrResult, LedgerSequence: 100}
-}
-
-func simulationSuccessResp() stellartypes.ReadContractResponse {
-	return stellartypes.ReadContractResponse{} // empty result = no error = simulation passed
+func transmissionResp(xdrResult string) stellartypes.SimulateTransactionResponse {
+	return stellartypes.SimulateTransactionResponse{Success: true, ReturnValueXDR: xdrResult, LedgerSequence: 100}
 }
 
 func successSubmitResp() *stellartypes.SubmitTransactionResponse {
@@ -176,6 +182,84 @@ func successSubmitResp() *stellartypes.SubmitTransactionResponse {
 		TransactionFee: &fee,
 		BlockTimestamp: &ts,
 	}
+}
+
+func marshalScValXDR(t *testing.T, sv xdr.ScVal) string {
+	t.Helper()
+	b64, err := xdr.MarshalBase64(sv)
+	require.NoError(t, err)
+	return b64
+}
+
+func symbolTopicXDR(t *testing.T, s string) string {
+	t.Helper()
+	sym := xdr.ScSymbol(s)
+	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &sym})
+}
+
+func contractAddressTopicXDR(t *testing.T, contractID string) string {
+	t.Helper()
+	contractBytes, err := strkey.Decode(strkey.VersionByteContract, contractID)
+	require.NoError(t, err)
+	xdrBytes := make([]byte, 0, 36)
+	xdrBytes = append(xdrBytes, 0, 0, 0, 1)
+	xdrBytes = append(xdrBytes, contractBytes...)
+	var addr xdr.ScAddress
+	require.NoError(t, addr.UnmarshalBinary(xdrBytes))
+	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvAddress, Address: &addr})
+}
+
+func bytesTopicXDR(t *testing.T, b []byte) string {
+	t.Helper()
+	scBytes := xdr.ScBytes(b)
+	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvBytes, Bytes: &scBytes})
+}
+
+func boolValueXDR(t *testing.T, b bool) string {
+	t.Helper()
+	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvBool, B: &b})
+}
+
+func reportProcessedEventsForFixture(t *testing.T, rm ocrtypes.Metadata, receiver string, success bool) stellartypes.GetEventsResponse {
+	t.Helper()
+	execID, err := hex.DecodeString(rm.ExecutionID)
+	require.NoError(t, err)
+	require.Len(t, execID, 32)
+	reportID, err := hex.DecodeString(rm.ReportID)
+	require.NoError(t, err)
+	require.Len(t, reportID, 2)
+
+	eventName := reportProcessedTopicPrefix
+	receiverVal, err := contractAddressToScVal(receiver)
+	require.NoError(t, err)
+
+	return stellartypes.GetEventsResponse{
+		Events: []stellartypes.EventInfo{{
+			Ledger:          100,
+			TransactionHash: testTxHash,
+			Topics: []stellartypes.ScVal{
+				{Type: stellartypes.ScValTypeSymbol, Symbol: &eventName},
+				receiverVal,
+				{Type: stellartypes.ScValTypeBytes, Bytes: execID},
+				{Type: stellartypes.ScValTypeBytes, Bytes: reportID},
+			},
+			Value: stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
+		}},
+	}
+}
+
+func (h *writeReportHelper) expectObservedTxHashLookup(t *testing.T, rm ocrtypes.Metadata, receiver string, eventSuccess bool) {
+	t.Helper()
+	h.svc.EXPECT().GetLatestLedger(mock.Anything).
+		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
+	h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
+		Return(reportProcessedEventsForFixture(t, rm, receiver, eventSuccess), nil).Once()
+	h.svc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
+		Return(stellartypes.GetTransactionResponse{
+			FeeStroops:      testFee,
+			LedgerSequence:  100,
+			LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
+		}, nil).Once()
 }
 
 func requireReplyBlockTimestamp(t *testing.T, reply *stellarcap.WriteReportReply, expected uint64) {
@@ -327,7 +411,7 @@ func TestWriteReport_Validation(t *testing.T) {
 		require.NoError(t, err2)
 
 		// Pre-submit poll: NotAttempted so code reaches the size check.
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 
 		req := &stellarcap.WriteReportRequest{
@@ -353,21 +437,22 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 	t.Run("already succeeded - returns success with no submit and no metering", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
+		rm, reqMeta, req := newWRReportFixture(t)
 
-		// Only get_transmission_info is called; no simulation or submit.
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(succeededXDR(t)), nil).Once()
+		h.expectObservedTxHashLookup(t, rm, req.ContractId, true)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		rcSuccess := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 		require.Equal(t, &rcSuccess, result.Response.ReceiverContractExecutionStatus)
-		// No hash or fee: forwarder doesn't store tx hash, and this node didn't spend gas.
-		require.Nil(t, result.Response.TxHash)
-		require.Nil(t, result.Response.TransactionFee)
-		require.Nil(t, result.Response.BlockTimestamp)
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		require.NotNil(t, result.Response.TransactionFee)
+		require.Equal(t, testFee, *result.Response.TransactionFee)
+		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
 		// No billing metering: this node observed, not submitted.
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
@@ -376,10 +461,11 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 	t.Run("already failed - InvalidReceiver - terminal error message, no submit", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
+		rm, reqMeta, req := newWRReportFixture(t)
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(invalidReceiverXDR(t)), nil).Once()
+		h.expectObservedTxHashLookup(t, rm, req.ContractId, false)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -388,7 +474,9 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.Equal(t, &rcReverted, result.Response.ReceiverContractExecutionStatus)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "not a Wasm contract or missing on_report")
-		require.Nil(t, result.Response.BlockTimestamp)
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
@@ -396,61 +484,22 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 	t.Run("already failed - receiver revert - error message, no submit", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
+		rm, reqMeta, req := newWRReportFixture(t)
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(failedXDR(t)), nil).Once()
+		h.expectObservedTxHashLookup(t, rm, req.ContractId, false)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_REVERTED, result.Response.TxStatus)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "receiver contract execution failed")
-		require.Nil(t, result.Response.BlockTimestamp)
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
-	})
-}
-
-// ─── Simulation (pre-submit forwarder check) tests ───────────────────────────
-
-func TestWriteReport_Simulation(t *testing.T) {
-	t.Parallel()
-
-	t.Run("forwarder simulation revert - user error, no submit", func(t *testing.T) {
-		t.Parallel()
-		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
-
-		// Call 1: get_transmission_info → NotAttempted
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		// Call 2: simulation (report) → forwarder revert
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{Error: "Error(WasmVm): wrong DON config"}, nil).Once()
-
-		_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
-		require.NotNil(t, capErr)
-		require.Contains(t, capErr.Error(), "forwarder simulation failed")
-		require.Contains(t, capErr.Error(), "wrong DON config")
-		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
-	})
-
-	t.Run("simulation RPC error - propagated as error", func(t *testing.T) {
-		t.Parallel()
-		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
-
-		// Call 1: get_transmission_info → NotAttempted
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		// Call 2: simulation RPC failure
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{}, errors.New("connection refused")).Once()
-
-		_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
-		require.NotNil(t, capErr)
-		require.Contains(t, capErr.Error(), "failed to simulate forwarder report call")
 	})
 }
 
@@ -463,18 +512,16 @@ func TestWriteReport_HappyPath(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t)
 
 		// Call 1: pre-submit get_transmission_info → NotAttempted
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		// Call 2: forwarder simulation → success
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(simulationSuccessResp(), nil).Once()
 		// TXM submit → success with fee
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(successSubmitResp(), nil).Once()
 		// Call 3: post-submit get_transmission_info → Succeeded
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(succeededXDR(t)), nil).Once()
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
@@ -501,11 +548,10 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t)
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(simulationSuccessResp(), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(nil, errors.New("TXM: context deadline exceeded")).Once()
 
@@ -518,15 +564,14 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t)
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(simulationSuccessResp(), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(successSubmitResp(), nil).Once()
 		// Post-submit poll always returns NotAttempted → times out → fallback.
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
@@ -548,14 +593,13 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t)
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(simulationSuccessResp(), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(successSubmitResp(), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(invalidReceiverXDR(t)), nil).Once()
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
@@ -577,14 +621,13 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t)
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(simulationSuccessResp(), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(successSubmitResp(), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(failedXDR(t)), nil).Once()
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
@@ -601,6 +644,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t)
 
 		fee := uint64(0)
 		failedResp := &stellartypes.SubmitTransactionResponse{
@@ -610,14 +654,12 @@ func TestWriteReport_Submit(t *testing.T) {
 			TransactionFee: &fee,
 		}
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(simulationSuccessResp(), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(failedResp, nil).Once()
 		// Post-submit poll stays NotAttempted → context deadline triggers fallback.
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
@@ -636,6 +678,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t)
 
 		fee := uint64(0)
 		// Our node's submission "fails" (another node already succeeded), but
@@ -647,14 +690,12 @@ func TestWriteReport_Submit(t *testing.T) {
 			TransactionFee: &fee,
 		}
 
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(simulationSuccessResp(), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(myResp, nil).Once()
 		// Post-submit: another node already succeeded.
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(succeededXDR(t)), nil).Once()
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
@@ -743,18 +784,19 @@ func TestGetTransmissionID_InvalidReceiver(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid receiver contract address")
 }
 
-func TestWriteReport_EmptyNodeAddress(t *testing.T) {
+func TestWriteReport_NoSigningAccount(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
-	h.stellar.nodeAddress = ""
 	_, reqMeta, req := newWRReportFixture(t)
 
-	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+	h.svc.EXPECT().GetSigningAccount(mock.Anything).
+		Return(stellartypes.GetSigningAccountResponse{}, errors.New("keystore has no accounts")).Once()
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
-	require.Contains(t, capErr.Error(), "node address is not configured")
+	require.Contains(t, capErr.Error(), "failed to resolve signing account")
 }
 
 func TestWriteReport_UnsupportedReportMetadataVersion(t *testing.T) {
@@ -774,62 +816,57 @@ func TestWriteReport_UnsupportedReportMetadataVersion(t *testing.T) {
 func TestGetTransmissionInfo(t *testing.T) {
 	t.Parallel()
 
-	newWR := func(t *testing.T) (*writeReportHelper, *writeReport, [32]byte, [2]byte) {
+	newWR := func(t *testing.T) (*writeReportHelper, CREForwarderClient, [32]byte, [2]byte) {
 		t.Helper()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
 		_, workflowExecutionID, reportID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
 		require.NoError(t, err)
-		wr := &writeReport{
-			service:          h.svc,
-			lggr:             h.stellar.lggr,
-			forwarderAddress: testForwarderAddress,
-		}
-		return h, wr, workflowExecutionID, reportID
+		return h, h.stellar.forwarderClient, workflowExecutionID, reportID
 	}
 
 	t.Run("missing entry treated as not attempted", func(t *testing.T) {
 		t.Parallel()
-		h, wr, workflowExecutionID, reportID := newWR(t)
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{Error: "entry missing"}, nil).Once()
+		h, fc, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{Error: "entry missing"}, nil).Once()
 
-		info, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		info, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
 		require.NoError(t, err)
 		require.Equal(t, TransmissionStateNotAttempted, info.State)
 	})
 
 	t.Run("not found treated as not attempted", func(t *testing.T) {
 		t.Parallel()
-		h, wr, workflowExecutionID, reportID := newWR(t)
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{Error: "transmission not found"}, nil).Once()
+		h, fc, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{Error: "transmission not found"}, nil).Once()
 
-		info, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		info, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
 		require.NoError(t, err)
 		require.Equal(t, TransmissionStateNotAttempted, info.State)
 	})
 
 	t.Run("empty result treated as not attempted", func(t *testing.T) {
 		t.Parallel()
-		h, wr, workflowExecutionID, reportID := newWR(t)
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{}, nil).Once()
+		h, fc, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{}, nil).Once()
 
-		info, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		info, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
 		require.NoError(t, err)
 		require.Equal(t, TransmissionStateNotAttempted, info.State)
 	})
 
 	t.Run("non-missing forwarder error is propagated", func(t *testing.T) {
 		t.Parallel()
-		h, wr, workflowExecutionID, reportID := newWR(t)
-		h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-			Return(stellartypes.ReadContractResponse{Error: "contract trap"}, nil).Once()
+		h, fc, workflowExecutionID, reportID := newWR(t)
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{Error: "contract trap"}, nil).Once()
 
-		_, err := wr.getTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		_, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "forwarder read failed")
+		require.Contains(t, err.Error(), "forwarder simulation failed")
 	})
 }
 
@@ -853,8 +890,8 @@ func newPollTransmissionInfoHarness(t *testing.T, deltaStage time.Duration) (
 	)
 	wr := &writeReport{
 		service:               mockSvc,
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
 		lggr:                  logger.Sugared(lggr),
-		forwarderAddress:      testForwarderAddress,
 		transmissionScheduler: scheduler,
 	}
 	_, reqMeta, req := newWRReportFixture(t)
@@ -865,7 +902,7 @@ func newPollTransmissionInfoHarness(t *testing.T, deltaStage time.Duration) (
 
 func expectTransmissionInfoPoll(mockSvc *mocks.StellarService, xdrResult string, err error) {
 	mockSvc.EXPECT().
-		ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+		SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
 			return req.Function == forwarderGetTransmissionInfoFunction
 		})).
 		Return(transmissionResp(xdrResult), err).
@@ -874,7 +911,7 @@ func expectTransmissionInfoPoll(mockSvc *mocks.StellarService, xdrResult string,
 
 func expectTransmissionInfoPollMaybe(mockSvc *mocks.StellarService, xdrResult string, err error) {
 	mockSvc.EXPECT().
-		ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+		SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
 			return req.Function == forwarderGetTransmissionInfoFunction
 		})).
 		Return(transmissionResp(xdrResult), err).
@@ -955,10 +992,10 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 		}()
 
 		mockSvc.EXPECT().
-			ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+			SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
 				return req.Function == forwarderGetTransmissionInfoFunction
 			})).
-			RunAndReturn(func(context.Context, stellartypes.ReadContractRequest) (stellartypes.ReadContractResponse, error) {
+			RunAndReturn(func(context.Context, stellartypes.SimulateTransactionRequest) (stellartypes.SimulateTransactionResponse, error) {
 				if chainStateUpdated.Load() {
 					return transmissionResp(succeededXDR(t)), nil
 				}
@@ -980,12 +1017,12 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 50*time.Millisecond)
 		var rpcCalls atomic.Int64
 		mockSvc.EXPECT().
-			ReadContract(mock.Anything, mock.MatchedBy(func(req stellartypes.ReadContractRequest) bool {
+			SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
 				return req.Function == forwarderGetTransmissionInfoFunction
 			})).
-			RunAndReturn(func(context.Context, stellartypes.ReadContractRequest) (stellartypes.ReadContractResponse, error) {
+			RunAndReturn(func(context.Context, stellartypes.SimulateTransactionRequest) (stellartypes.SimulateTransactionResponse, error) {
 				rpcCalls.Add(1)
-				return stellartypes.ReadContractResponse{}, errors.New("rpc unavailable")
+				return stellartypes.SimulateTransactionResponse{}, errors.New("rpc unavailable")
 			}).
 			Maybe()
 
@@ -1149,17 +1186,16 @@ func TestWriteReport_TxFatalSubmitFallback(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
 	_, reqMeta, req := newWRReportFixture(t)
+	h.expectSigningAccount(t)
 
-	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
-		Return(simulationSuccessResp(), nil).Once()
 	h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 		Return(&stellartypes.SubmitTransactionResponse{
 			TxStatus: stellartypes.TxFatal,
 			TxHash:   testTxHash,
 		}, nil).Once()
-	h.svc.EXPECT().ReadContract(mock.Anything, mock.Anything).
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil)
 
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
