@@ -471,8 +471,8 @@ github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-202606
 github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260615195421-fb87220e503f/go.mod h1:gp/Xrw5nvPswONfr48WKWvAoTTg+Xv/tlk0SRrru8Qw=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb h1:TskymCV/uP2plDgR2PDqGdavIXnR/rK+wxelqAW5u+s=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb/go.mod h1:LS7F8U2YZNc0Vt8f6SVWUUigGLxdxZMpyC7VCcUTagg=
-github.com/smartcontractkit/chain-selectors v1.0.103 h1:PpvIinn1TIDT7nh/P5KLQunRk0Kp1IR6moP2IGvlP58=
-github.com/smartcontractkit/chain-selectors v1.0.103/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
+github.com/smartcontractkit/chain-selectors v1.0.104 h1:/n9pPGM5W/+r1eHoWZv4VwX9LNS1af4+ICyhM8zKRNM=
+github.com/smartcontractkit/chain-selectors v1.0.104/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
 github.com/smartcontractkit/chainlink-common v0.11.2-0.20260619153749-934b00c44d37 h1:ZZlU2e+hVC1Y8VAczVNGZBM3rU3HSqkOCn2KZHHV7gc=
 github.com/smartcontractkit/chainlink-common v0.11.2-0.20260619153749-934b00c44d37/go.mod h1:paOB/6dy57owHtOGzhgaRBWRDT5BEWfnJF5M7sgkcro=
 github.com/smartcontractkit/chainlink-common/keystore v1.1.1-0.20260529092756-a94bc8ce96d6 h1:fWsYxxj35fp1/6YZngoTsOTMLqDie4N5X0osAOdhUTE=
