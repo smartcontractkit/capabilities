@@ -122,7 +122,7 @@ func (s *Stellar) ReadContract(
 		metadata.ReferenceID,
 		metering.GetResponseMetadata(metering.ReadContract),
 		func(ctx context.Context) (*stellarcap.ReadContractResponse, uint64, error) {
-			response, err := s.StellarService.SimulateTransaction(ctx, request)
+			response, err := s.SimulateTransaction(ctx, request)
 			if err != nil {
 				return nil, 0, err
 			}

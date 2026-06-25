@@ -194,7 +194,8 @@ func (fc *forwarderClient) startLedger(ctx context.Context) (uint32, error) {
 	if int64(latest.Sequence) <= fc.forwarderLookbackLedgers {
 		return 1, nil
 	}
-	return latest.Sequence - uint32(fc.forwarderLookbackLedgers), nil
+	start := int64(latest.Sequence) - fc.forwarderLookbackLedgers
+	return uint32(start), nil //nolint:gosec // G115: start is positive and at most latest.Sequence (uint32)
 }
 
 func (fc *forwarderClient) resolveSigningAccount(ctx context.Context) (string, error) {

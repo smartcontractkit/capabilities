@@ -184,42 +184,6 @@ func successSubmitResp() *stellartypes.SubmitTransactionResponse {
 	}
 }
 
-func marshalScValXDR(t *testing.T, sv xdr.ScVal) string {
-	t.Helper()
-	b64, err := xdr.MarshalBase64(sv)
-	require.NoError(t, err)
-	return b64
-}
-
-func symbolTopicXDR(t *testing.T, s string) string {
-	t.Helper()
-	sym := xdr.ScSymbol(s)
-	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &sym})
-}
-
-func contractAddressTopicXDR(t *testing.T, contractID string) string {
-	t.Helper()
-	contractBytes, err := strkey.Decode(strkey.VersionByteContract, contractID)
-	require.NoError(t, err)
-	xdrBytes := make([]byte, 0, 36)
-	xdrBytes = append(xdrBytes, 0, 0, 0, 1)
-	xdrBytes = append(xdrBytes, contractBytes...)
-	var addr xdr.ScAddress
-	require.NoError(t, addr.UnmarshalBinary(xdrBytes))
-	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvAddress, Address: &addr})
-}
-
-func bytesTopicXDR(t *testing.T, b []byte) string {
-	t.Helper()
-	scBytes := xdr.ScBytes(b)
-	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvBytes, Bytes: &scBytes})
-}
-
-func boolValueXDR(t *testing.T, b bool) string {
-	t.Helper()
-	return marshalScValXDR(t, xdr.ScVal{Type: xdr.ScValTypeScvBool, B: &b})
-}
-
 func reportProcessedEventsForFixture(t *testing.T, rm ocrtypes.Metadata, receiver string, success bool) stellartypes.GetEventsResponse {
 	t.Helper()
 	execID, err := hex.DecodeString(rm.ExecutionID)
