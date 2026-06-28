@@ -789,28 +789,6 @@ func TestGetTransmissionInfo(t *testing.T) {
 		return h, h.stellar.forwarderClient, workflowExecutionID, reportID
 	}
 
-	t.Run("missing entry treated as not attempted", func(t *testing.T) {
-		t.Parallel()
-		h, fc, workflowExecutionID, reportID := newWR(t)
-		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
-			Return(stellartypes.SimulateTransactionResponse{Error: "entry missing"}, nil).Once()
-
-		info, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
-		require.NoError(t, err)
-		require.Equal(t, TransmissionStateNotAttempted, info.State)
-	})
-
-	t.Run("not found treated as not attempted", func(t *testing.T) {
-		t.Parallel()
-		h, fc, workflowExecutionID, reportID := newWR(t)
-		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
-			Return(stellartypes.SimulateTransactionResponse{Error: "transmission not found"}, nil).Once()
-
-		info, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
-		require.NoError(t, err)
-		require.Equal(t, TransmissionStateNotAttempted, info.State)
-	})
-
 	t.Run("empty result treated as not attempted", func(t *testing.T) {
 		t.Parallel()
 		h, fc, workflowExecutionID, reportID := newWR(t)
@@ -822,7 +800,7 @@ func TestGetTransmissionInfo(t *testing.T) {
 		require.Equal(t, TransmissionStateNotAttempted, info.State)
 	})
 
-	t.Run("non-missing forwarder error is propagated", func(t *testing.T) {
+	t.Run("forwarder simulation error is propagated", func(t *testing.T) {
 		t.Parallel()
 		h, fc, workflowExecutionID, reportID := newWR(t)
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).

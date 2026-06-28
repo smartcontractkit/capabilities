@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 
@@ -96,7 +95,6 @@ func (fc *forwarderClient) InvokeOnReport(
 	}
 
 	submitResp, err := fc.SubmitTransaction(ctx, stellartypes.SubmitTransactionRequest{
-		IdempotencyKey:     uuid.NewString(),
 		ContractID:         fc.forwarderAddress,
 		Function:           forwarderReportFunction,
 		Args:               args,
@@ -128,9 +126,6 @@ func (fc *forwarderClient) GetTransmissionInfo(
 		return TransmissionInfo{}, err
 	}
 	if resp.Error != "" {
-		if strings.Contains(strings.ToLower(resp.Error), "missing") || strings.Contains(strings.ToLower(resp.Error), "not found") {
-			return TransmissionInfo{State: TransmissionStateNotAttempted}, nil
-		}
 		return TransmissionInfo{}, fmt.Errorf("forwarder simulation failed: %s", resp.Error)
 	}
 	if resp.ReturnValueXDR == "" {
