@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260625132156-206b9c7d7f94
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260628120702-23aa6e0ed0bf
 	github.com/stellar/go-stellar-sdk v0.5.0
 )
 
@@ -36,7 +36,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/uuid v1.6.0
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grafana/otel-profiling-go v0.5.1 // indirect
 	github.com/grafana/pyroscope-go v1.2.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
