@@ -194,12 +194,12 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, gatewayReq.Hash())
 	if err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to establish connection to gateway: %w", err)
 	}
-	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, lggr)
+	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
