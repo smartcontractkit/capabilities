@@ -37,11 +37,6 @@ type writeReport struct {
 	transmissionScheduler    ts.TransmissionScheduler
 }
 
-type writeReportExecuteResult struct {
-	response *stellarcap.WriteReportReply
-	billNode bool
-}
-
 func (s *Stellar) WriteReport(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
@@ -63,18 +58,13 @@ func (s *Stellar) WriteReport(
 		transmissionScheduler:    s.transmissionScheduler,
 	}
 
-	result, err := wr.execute(ctx, metadata, input)
+	reply, meteringMeta, err := wr.execute(ctx, metadata, input)
 	if err != nil {
 		return nil, GetError(err, s.isUserErrorWriteReport(err))
 	}
 
-	var meteringMeta capabilities.ResponseMetadata
-	if result.billNode && result.response.TransactionFee != nil {
-		meteringMeta = metering.GetResponseMetadataWriteReport(*result.response.TransactionFee, s.chainSelector)
-	}
-
 	return &capabilities.ResponseAndMetadata[*stellarcap.WriteReportReply]{
-		Response:         result.response,
+		Response:         reply,
 		ResponseMetadata: meteringMeta,
 	}, nil
 }
@@ -83,17 +73,17 @@ func (wr *writeReport) execute(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
 	request *stellarcap.WriteReportRequest,
-) (writeReportExecuteResult, error) {
+) (*stellarcap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	ctx = contexts.WithChainSelector(ctx, wr.chainSelector)
 
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
-		return writeReportExecuteResult{}, err
+		return nil, capabilities.ResponseMetadata{}, err
 	}
 
 	scheduleKey, err := transmissionID.ScheduleKey()
 	if err != nil {
-		return writeReportExecuteResult{}, err
+		return nil, capabilities.ResponseMetadata{}, err
 	}
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(hex.EncodeToString(scheduleKey[:]))
@@ -103,7 +93,7 @@ func (wr *writeReport) execute(
 
 	info, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 	if err != nil {
-		return writeReportExecuteResult{}, fmt.Errorf("failed to get transmission info: %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
 	switch info.State {
@@ -111,24 +101,24 @@ func (wr *writeReport) execute(
 		txHash, hashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if hashErr != nil {
 			wr.lggr.Errorw("Returning without a transmission attempt - prior transmission succeeded, but failed to retrieve its tx hash", "error", hashErr)
-			return writeReportExecuteResult{}, hashErr
+			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
 		reply := wr.successReplyFromObservedState(info)
 		if err := wr.populateReplyFromTx(ctx, reply, txHash); err != nil {
-			return writeReportExecuteResult{}, err
+			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return observedWriteReportResult(reply), nil
+		return reply, capabilities.ResponseMetadata{}, nil
 	case TransmissionStateInvalidReceiver:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
 			wr.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash", "error", hashErr)
-			return writeReportExecuteResult{}, hashErr
+			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
 		reply := wr.revertedReplyFromObservedState(info, "receiver contract cannot accept reports: not a Wasm contract or missing on_report function")
 		if err := wr.populateReplyFromTx(ctx, reply, txHash); err != nil {
-			return writeReportExecuteResult{}, fmt.Errorf("%s receiver contract cannot accept reports: not a Wasm contract or missing on_report function: additional error while fetching tx details: %w", capcommon.UserError, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s receiver contract cannot accept reports: not a Wasm contract or missing on_report function: additional error while fetching tx details: %w", capcommon.UserError, err)
 		}
-		return observedWriteReportResult(reply), nil
+		return reply, capabilities.ResponseMetadata{}, nil
 	case TransmissionStateFailed:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -137,25 +127,25 @@ func (wr *writeReport) execute(
 			} else {
 				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission failed, but failed to retrieve its tx hash", "error", hashErr)
 			}
-			return writeReportExecuteResult{}, hashErr
+			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
 		reply := wr.revertedReplyFromObservedState(info, "receiver contract execution failed")
 		if err := wr.populateReplyFromTx(ctx, reply, txHash); err != nil {
-			return writeReportExecuteResult{}, fmt.Errorf("%s receiver contract execution failed: additional error while fetching tx details: %w", capcommon.UserError, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s receiver contract execution failed: additional error while fetching tx details: %w", capcommon.UserError, err)
 		}
-		return observedWriteReportResult(reply), nil
+		return reply, capabilities.ResponseMetadata{}, nil
 	case TransmissionStateNotAttempted:
 	default:
-		return writeReportExecuteResult{}, fmt.Errorf("unexpected transmission state: %d", info.State)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected transmission state: %d", info.State)
 	}
 
 	if err := wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
-		return writeReportExecuteResult{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
 	submitResp, err := wr.forwarderClient.InvokeOnReport(ctx, request.ContractId, request.Report)
 	if err != nil {
-		return writeReportExecuteResult{}, err
+		return nil, capabilities.ResponseMetadata{}, err
 	}
 
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
@@ -173,24 +163,26 @@ func (wr *writeReport) execute(
 	if pollErr != nil {
 		// TX was submitted but on-chain state is still not visible; use the TXM result directly.
 		wr.lggr.Warnw("Failed to poll transmission info after submit, returning reply from TX outcome", "error", pollErr)
-		return submittedWriteReportResult(wr.replyFromOwnTransaction(submitResp)), nil
+		reply := wr.replyFromOwnTransaction(submitResp)
+		return reply, wr.meteringFromReply(reply), nil
 	}
 
 	switch postInfo.State {
 	case TransmissionStateSucceeded:
 		reply := wr.successReplyFromObservedState(postInfo)
 		populateReplyFromSubmit(reply, submitResp)
-		return submittedWriteReportResult(reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateInvalidReceiver:
 		reply := wr.revertedReplyFromObservedState(postInfo, "receiver contract cannot accept reports: not a Wasm contract or missing on_report function")
 		populateReplyFromSubmit(reply, submitResp)
-		return submittedWriteReportResult(reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateFailed:
 		reply := wr.revertedReplyFromObservedState(postInfo, "receiver contract execution failed")
 		populateReplyFromSubmit(reply, submitResp)
-		return submittedWriteReportResult(reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	default:
-		return submittedWriteReportResult(wr.replyFromOwnTransaction(submitResp)), nil
+		reply := wr.replyFromOwnTransaction(submitResp)
+		return reply, wr.meteringFromReply(reply), nil
 	}
 }
 
@@ -322,12 +314,11 @@ func (wr *writeReport) pollTransmissionInfo(
 	}
 }
 
-func observedWriteReportResult(reply *stellarcap.WriteReportReply) writeReportExecuteResult {
-	return writeReportExecuteResult{response: reply, billNode: false}
-}
-
-func submittedWriteReportResult(reply *stellarcap.WriteReportReply) writeReportExecuteResult {
-	return writeReportExecuteResult{response: reply, billNode: true}
+func (wr *writeReport) meteringFromReply(reply *stellarcap.WriteReportReply) capabilities.ResponseMetadata {
+	if reply == nil || reply.TransactionFee == nil {
+		return capabilities.ResponseMetadata{}
+	}
+	return metering.GetResponseMetadataWriteReport(*reply.TransactionFee, wr.chainSelector)
 }
 
 func (wr *writeReport) populateReplyFromTx(ctx context.Context, reply *stellarcap.WriteReportReply, txHash string) error {
