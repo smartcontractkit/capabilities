@@ -55,6 +55,10 @@ func (t TransmissionID) WorkflowExecutionIDHex() string {
 	return hex.EncodeToString(t.WorkflowExecutionID[:])
 }
 
+func (t TransmissionID) InvalidReceiverMessage() string {
+	return "receiver contract cannot accept reports: not a Wasm contract or missing on_report function"
+}
+
 // LogAttrs returns compact fields for structured logging.
 func (t TransmissionID) LogAttrs() []any {
 	return []any{

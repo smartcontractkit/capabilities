@@ -237,18 +237,32 @@ func reportProcessedEventsForFixture(t *testing.T, rm ocrtypes.Metadata, receive
 	}
 }
 
-func (h *writeReportHelper) expectObservedTxHashLookup(t *testing.T, rm ocrtypes.Metadata, receiver string, eventSuccess bool) {
+func (h *writeReportHelper) expectGetTransaction(t *testing.T) {
 	t.Helper()
-	h.svc.EXPECT().GetLatestLedger(mock.Anything).
-		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
-	h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
-		Return(reportProcessedEventsForFixture(t, rm, receiver, eventSuccess), nil).Once()
 	h.svc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
 		Return(stellartypes.GetTransactionResponse{
 			FeeStroops:      testFee,
 			LedgerSequence:  100,
 			LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
 		}, nil).Once()
+}
+
+func (h *writeReportHelper) expectObservedTxHashLookup(t *testing.T, rm ocrtypes.Metadata, receiver string, eventSuccess bool) {
+	t.Helper()
+	h.svc.EXPECT().GetLatestLedger(mock.Anything).
+		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
+	h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
+		Return(reportProcessedEventsForFixture(t, rm, receiver, eventSuccess), nil).Once()
+	h.expectGetTransaction(t)
+}
+
+func (h *writeReportHelper) expectPostSubmitSuccessTxLookup(t *testing.T, rm ocrtypes.Metadata, receiver string) {
+	t.Helper()
+	h.svc.EXPECT().GetLatestLedger(mock.Anything).
+		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
+	h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
+		Return(reportProcessedEventsForFixture(t, rm, receiver, true), nil).Once()
+	h.expectGetTransaction(t)
 }
 
 func requireReplyBlockTimestamp(t *testing.T, reply *stellarcap.WriteReportReply, expected uint64) {
@@ -500,7 +514,7 @@ func TestWriteReport_HappyPath(t *testing.T) {
 	t.Run("fresh submit succeeds - reply contains hash, fee and metering", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
+		rm, reqMeta, req := newWRReportFixture(t)
 		h.expectSigningAccount(t)
 
 		// Call 1: pre-submit get_transmission_info → NotAttempted
@@ -512,6 +526,7 @@ func TestWriteReport_HappyPath(t *testing.T) {
 		// Call 3: post-submit get_transmission_info → Succeeded
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(succeededXDR(t)), nil).Once()
+		h.expectPostSubmitSuccessTxLookup(t, rm, req.ContractId)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -590,11 +605,12 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(successSubmitResp(), nil).Once()
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(invalidReceiverXDR(t)), nil).Once()
+		h.expectGetTransaction(t)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_REVERTED, result.Response.TxStatus)
-		// hash and fee come from submit response via populateReplyFromSubmit.
+		// hash and fee come from GetTransaction via buildRevertReplyFromTx.
 		require.NotNil(t, result.Response.TxHash)
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
@@ -618,6 +634,7 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(successSubmitResp(), nil).Once()
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(failedXDR(t)), nil).Once()
+		h.expectGetTransaction(t)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -666,7 +683,7 @@ func TestWriteReport_Submit(t *testing.T) {
 	t.Run("submit superseded by prior success - post-submit succeeds", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
+		rm, reqMeta, req := newWRReportFixture(t)
 		h.expectSigningAccount(t)
 
 		fee := uint64(0)
@@ -686,6 +703,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		// Post-submit: another node already succeeded.
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(succeededXDR(t)), nil).Once()
+		h.expectPostSubmitSuccessTxLookup(t, rm, req.ContractId)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)

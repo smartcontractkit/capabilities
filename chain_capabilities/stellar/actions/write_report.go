@@ -25,7 +25,11 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 )
 
-const ocrSignatureLen = 65
+const (
+	ocrSignatureLen = 65
+
+	unknownIssueExecutingReceiverContractMessage = "receiver contract execution failed"
+)
 
 type writeReport struct {
 	service                  types.StellarService
@@ -103,20 +107,17 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("Returning without a transmission attempt - prior transmission succeeded, but failed to retrieve its tx hash", "error", hashErr)
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
-		reply := wr.successReplyFromObservedState(info)
-		if err := wr.populateReplyFromTx(ctx, reply, txHash); err != nil {
-			return nil, capabilities.ResponseMetadata{}, err
-		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		reply, err := wr.buildSuccessReply(ctx, txHash)
+		return reply, capabilities.ResponseMetadata{}, err
 	case TransmissionStateInvalidReceiver:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
 			wr.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash", "error", hashErr)
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
-		reply := wr.revertedReplyFromObservedState(info, "receiver contract cannot accept reports: not a Wasm contract or missing on_report function")
-		if err := wr.populateReplyFromTx(ctx, reply, txHash); err != nil {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s receiver contract cannot accept reports: not a Wasm contract or missing on_report function: additional error while fetching tx details: %w", capcommon.UserError, err)
+		reply, err := wr.buildRevertReplyFromTx(ctx, txHash, info, transmissionID)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	case TransmissionStateFailed:
@@ -129,9 +130,9 @@ func (wr *writeReport) execute(
 			}
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
-		reply := wr.revertedReplyFromObservedState(info, "receiver contract execution failed")
-		if err := wr.populateReplyFromTx(ctx, reply, txHash); err != nil {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s receiver contract execution failed: additional error while fetching tx details: %w", capcommon.UserError, err)
+		reply, err := wr.buildRevertReplyFromTx(ctx, txHash, info, transmissionID)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	case TransmissionStateNotAttempted:
@@ -169,16 +170,30 @@ func (wr *writeReport) execute(
 
 	switch postInfo.State {
 	case TransmissionStateSucceeded:
-		reply := wr.successReplyFromObservedState(postInfo)
-		populateReplyFromSubmit(reply, submitResp)
-		return reply, wr.meteringFromReply(reply), nil
-	case TransmissionStateInvalidReceiver:
-		reply := wr.revertedReplyFromObservedState(postInfo, "receiver contract cannot accept reports: not a Wasm contract or missing on_report function")
-		populateReplyFromSubmit(reply, submitResp)
-		return reply, wr.meteringFromReply(reply), nil
-	case TransmissionStateFailed:
-		reply := wr.revertedReplyFromObservedState(postInfo, "receiver contract execution failed")
-		populateReplyFromSubmit(reply, submitResp)
+		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
+		reply, err := wr.buildSuccessReply(ctx, txHash)
+		return reply, wr.meteringFromReply(reply), err
+	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
+		txHash := submitResp.TxHash
+		if queuePosition > 0 {
+			originalTxHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
+			if err != nil {
+				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
+					wr.lggr.Errorw("Made a new transmission attempt - unexpected successful transmission while state is failed", "error", err)
+				} else {
+					wr.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve the first transmission tx hash", "error", err, "txHash", txHash)
+				}
+				return nil, capabilities.ResponseMetadata{}, err
+			}
+			txHash = originalTxHash
+		}
+		reply, err := wr.buildRevertReplyFromTx(ctx, txHash, postInfo, transmissionID)
+		if err != nil {
+			return nil, wr.meteringFromReply(reply), revertReplyBuildError(postInfo, transmissionID, err)
+		}
 		return reply, wr.meteringFromReply(reply), nil
 	default:
 		reply := wr.replyFromOwnTransaction(submitResp)
@@ -321,53 +336,62 @@ func (wr *writeReport) meteringFromReply(reply *stellarcap.WriteReportReply) cap
 	return metering.GetResponseMetadataWriteReport(*reply.TransactionFee, wr.chainSelector)
 }
 
-func (wr *writeReport) populateReplyFromTx(ctx context.Context, reply *stellarcap.WriteReportReply, txHash string) error {
+func (wr *writeReport) buildSuccessReply(ctx context.Context, txHash string) (*stellarcap.WriteReportReply, error) {
+	return wr.replyFromTransaction(ctx, txHash, stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+}
+
+func (wr *writeReport) buildRevertReplyFromTx(ctx context.Context, txHash string, transmissionInfo TransmissionInfo, transmissionID TransmissionID) (*stellarcap.WriteReportReply, error) {
+	errorMessage := revertReason(transmissionInfo, transmissionID)
+	return wr.replyFromTransaction(ctx, txHash, stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, &errorMessage)
+}
+
+func revertReason(transmissionInfo TransmissionInfo, transmissionID TransmissionID) string {
+	if transmissionInfo.State == TransmissionStateInvalidReceiver {
+		return transmissionID.InvalidReceiverMessage()
+	}
+	return unknownIssueExecutingReceiverContractMessage
+}
+
+func revertReplyBuildError(transmissionInfo TransmissionInfo, transmissionID TransmissionID, err error) error {
+	return fmt.Errorf("%s %s: this is the root cause, but an additional error occurred while fetching more info: %w", capcommon.UserError, revertReason(transmissionInfo, transmissionID), err)
+}
+
+func (wr *writeReport) replyFromTransaction(ctx context.Context, txHash string, receiverStatus stellarcap.ReceiverContractExecutionStatus, errorMessage *string) (*stellarcap.WriteReportReply, error) {
 	txResp, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (stellartypes.GetTransactionResponse, error) {
 		return wr.service.GetTransaction(ctx, stellartypes.GetTransactionRequest{TxHash: txHash})
 	})
 	if err != nil {
-		return fmt.Errorf("failed to get transaction for tx hash %s: %w", txHash, err)
+		return nil, fmt.Errorf("failed to get transaction for tx hash %s: %w", txHash, err)
 	}
-	reply.TxHash = capcommon.Ptr(txHash)
+
+	message := errorMessage
+	if receiverStatus == stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
+		message = capcommon.Ptr(unknownIssueExecutingReceiverContractMessage)
+	}
+
+	txStatus := stellarcap.TxStatus_TX_STATUS_SUCCESS
+	if receiverStatus == stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED {
+		txStatus = stellarcap.TxStatus_TX_STATUS_REVERTED
+	}
+
+	reply := &stellarcap.WriteReportReply{
+		TxHash:                          capcommon.Ptr(txHash),
+		TxStatus:                        txStatus,
+		ReceiverContractExecutionStatus: &receiverStatus,
+		ErrorMessage:                    message,
+	}
 	if txResp.FeeStroops > 0 {
 		fee := txResp.FeeStroops
 		reply.TransactionFee = &fee
 	}
 	if txResp.LedgerCloseTime > 0 {
-		ts := uint64(txResp.LedgerCloseTime) * 1_000_000
-		reply.BlockTimestamp = &ts
+		blockTimestamp := uint64(txResp.LedgerCloseTime) * 1_000_000
+		reply.BlockTimestamp = &blockTimestamp
 	}
-	if reply.LedgerSequence == nil && txResp.LedgerSequence > 0 {
+	if txResp.LedgerSequence > 0 {
 		reply.LedgerSequence = capcommon.Ptr(txResp.LedgerSequence)
 	}
-	return nil
-}
-
-func (wr *writeReport) successReplyFromObservedState(info TransmissionInfo) *stellarcap.WriteReportReply {
-	reply := &stellarcap.WriteReportReply{
-		TxStatus: stellarcap.TxStatus_TX_STATUS_SUCCESS,
-	}
-	status := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
-	reply.ReceiverContractExecutionStatus = &status
-	if info.LedgerSequence != 0 {
-		reply.LedgerSequence = capcommon.Ptr(info.LedgerSequence)
-	}
-	return reply
-}
-
-func (wr *writeReport) revertedReplyFromObservedState(info TransmissionInfo, errorMsg string) *stellarcap.WriteReportReply {
-	reply := &stellarcap.WriteReportReply{
-		TxStatus: stellarcap.TxStatus_TX_STATUS_REVERTED,
-	}
-	status := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
-	reply.ReceiverContractExecutionStatus = &status
-	if info.LedgerSequence != 0 {
-		reply.LedgerSequence = capcommon.Ptr(info.LedgerSequence)
-	}
-	if errorMsg != "" {
-		reply.ErrorMessage = capcommon.Ptr(errorMsg)
-	}
-	return reply
+	return reply, nil
 }
 
 // replyFromOwnTransaction builds a WriteReportReply directly from a SubmitTransactionResponse
