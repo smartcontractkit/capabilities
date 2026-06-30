@@ -142,7 +142,7 @@ func (wr *writeReport) execute(
 		return reply, capabilities.ResponseMetadata{}, nil
 	case TransmissionStateNotAttempted:
 	default:
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected transmission state: %d", info.State)
+		return nil, capabilities.ResponseMetadata{}, invalidTransmissionStateError(info.State)
 	}
 
 	if err := wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
@@ -211,8 +211,8 @@ func (wr *writeReport) execute(
 		}
 		return reply, wr.meteringFromReply(reply), nil
 	default:
-		reply := wr.replyFromOwnTransaction(submitResp)
-		return reply, wr.meteringFromReply(reply), nil
+		wr.lggr.Errorw("Invalid transmission state after submit", "state", postInfo.State, "localTxStatus", submitResp.TxStatus)
+		return nil, capabilities.ResponseMetadata{}, invalidTransmissionStateError(postInfo.State)
 	}
 }
 
@@ -349,6 +349,10 @@ func (wr *writeReport) meteringFromReply(reply *stellarcap.WriteReportReply) cap
 		return capabilities.ResponseMetadata{}
 	}
 	return metering.GetResponseMetadataWriteReport(*reply.TransactionFee, wr.chainSelector)
+}
+
+func invalidTransmissionStateError(state TransmissionState) error {
+	return fmt.Errorf("unexpected transmission state: %d", state)
 }
 
 func (wr *writeReport) buildSuccessReply(ctx context.Context, txHash string) (*stellarcap.WriteReportReply, error) {

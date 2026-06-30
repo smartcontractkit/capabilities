@@ -265,6 +265,15 @@ func (h *writeReportHelper) expectPostSubmitSuccessTxLookup(t *testing.T, rm ocr
 	h.expectGetTransaction(t)
 }
 
+// expectEventTxHashLookupUnavailable makes GetSuccessfulTransmissionHash fail so poll-timeout
+// paths can fall back to the local TXM submit response.
+func (h *writeReportHelper) expectEventTxHashLookupUnavailable(t *testing.T) {
+	t.Helper()
+	h.svc.EXPECT().GetLatestLedger(mock.Anything).
+		Return(stellartypes.GetLatestLedgerResponse{}, errors.New("events unavailable")).
+		Maybe()
+}
+
 func requireReplyBlockTimestamp(t *testing.T, reply *stellarcap.WriteReportReply, expected uint64) {
 	t.Helper()
 	require.NotNil(t, reply.BlockTimestamp)
@@ -574,9 +583,10 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(successSubmitResp(), nil).Once()
-		// Post-submit poll always returns NotAttempted → times out → fallback.
+		// Post-submit poll always returns NotAttempted → times out → TXM fallback.
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
+		h.expectEventTxHashLookupUnavailable(t)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 		defer cancel()
@@ -664,9 +674,10 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(failedResp, nil).Once()
-		// Post-submit poll stays NotAttempted → context deadline triggers fallback.
+		// Post-submit poll stays NotAttempted → context deadline triggers TXM fallback.
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
+		h.expectEventTxHashLookupUnavailable(t)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 		defer cancel()
@@ -1004,6 +1015,13 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 	})
 }
 
+func TestInvalidTransmissionStateError(t *testing.T) {
+	t.Parallel()
+	err := invalidTransmissionStateError(TransmissionState(99))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected transmission state: 99")
+}
+
 func TestReplyFromOwnTransaction(t *testing.T) {
 	t.Parallel()
 	wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
@@ -1040,6 +1058,7 @@ func TestWriteReport_TxFatalSubmitFallback(t *testing.T) {
 		}, nil).Once()
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil)
+	h.expectEventTxHashLookupUnavailable(t)
 
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 	defer cancel()
