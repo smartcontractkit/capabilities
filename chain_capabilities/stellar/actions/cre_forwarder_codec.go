@@ -117,10 +117,10 @@ func decodeContractTransmissionInfo(sv xdr.ScVal) (TransmissionState, string, er
 	}
 
 	var (
-		state              TransmissionState
-		transmitter        string
-		hasState           bool
-		hasTransmitter     bool
+		state          TransmissionState
+		transmitter    string
+		hasState       bool
+		hasTransmitter bool
 	)
 
 	for _, entry := range **sv.Map {
