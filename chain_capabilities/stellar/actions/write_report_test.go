@@ -136,18 +136,44 @@ func wrTestSigs() []*workflowpb.AttributedSignature {
 
 // ─── XDR helpers ─────────────────────────────────────────────────────────────
 
-// buildTransmissionInfoXDR returns a base64-encoded XDR ScVal{scvU32=state}.
-// This is what the Stellar forwarder returns from get_transmission_info.
-// We use the stellar SDK's MarshalBase64 so the encoding is verifiable by SafeUnmarshalBase64.
+// buildTransmissionInfoXDR returns base64-encoded XDR for the TransmissionInfo struct
+// returned by get_transmission_info: { state: u32, transmitter: Option<Address> }.
 func buildTransmissionInfoXDR(t *testing.T, state TransmissionState) string {
 	t.Helper()
-	v := xdr.Uint32(state)
-	sv := xdr.ScVal{
-		Type: xdr.ScValTypeScvU32,
-		U32:  &v,
+	return marshalTransmissionInfoXDR(t, state, nil)
+}
+
+func marshalTransmissionInfoXDR(t *testing.T, state TransmissionState, transmitter *string) string {
+	t.Helper()
+	stateU32 := xdr.Uint32(state)
+	stateVal := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: &stateU32}
+	stateSym := xdr.ScSymbol("state")
+	stateKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &stateSym}
+
+	var txrVal xdr.ScVal
+	if transmitter == nil {
+		txrVal = xdr.ScVal{Type: xdr.ScValTypeScvVoid}
+	} else {
+		accountID := xdr.MustAddress(*transmitter)
+		txrVal = xdr.ScVal{
+			Type: xdr.ScValTypeScvAddress,
+			Address: &xdr.ScAddress{
+				Type:      xdr.ScAddressTypeScAddressTypeAccount,
+				AccountId: &accountID,
+			},
+		}
 	}
+	txrSym := xdr.ScSymbol("transmitter")
+	txrKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &txrSym}
+
+	scMap := xdr.ScMap{
+		{Key: stateKey, Val: stateVal},
+		{Key: txrKey, Val: txrVal},
+	}
+	mapPtr := &scMap
+	sv := xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &mapPtr}
 	b64, err := xdr.MarshalBase64(sv)
-	require.NoError(t, err, "XDR encode transmission state")
+	require.NoError(t, err, "XDR encode transmission info struct")
 	return b64
 }
 

@@ -3,7 +3,6 @@ package actions
 import (
 	"testing"
 
-	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/stretchr/testify/require"
 
@@ -48,108 +47,77 @@ func TestDecodeQueryTransmissionInfo(t *testing.T) {
 	})
 }
 
-func TestParseFieldsIntoTransmissionInfo(t *testing.T) {
+func TestDecodeContractTransmissionInfo(t *testing.T) {
 	t.Parallel()
 
-	t.Run("vec with state and transmitter", func(t *testing.T) {
+	t.Run("not attempted with void transmitter", func(t *testing.T) {
 		t.Parallel()
-		state := xdr.Uint32(TransmissionStateSucceeded)
-		stateVal := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: &state}
-		accountID := xdr.MustAddress(testNodeAddress)
-		txrVal := xdr.ScVal{
-			Type: xdr.ScValTypeScvAddress,
-			Address: &xdr.ScAddress{
-				Type:      xdr.ScAddressTypeScAddressTypeAccount,
-				AccountId: &accountID,
-			},
-		}
-		vec := xdr.ScVec{stateVal, txrVal}
-		vecPtr := &vec
-		sv := xdr.ScVal{Type: xdr.ScValTypeScvVec, Vec: &vecPtr}
-
-		info := TransmissionInfo{}
-		parseFieldsIntoTransmissionInfo(&info, sv)
-		require.Equal(t, TransmissionStateSucceeded, info.State)
-		require.Equal(t, testNodeAddress, info.Transmitter)
+		xdrResult := marshalTransmissionInfoXDR(t, TransmissionStateNotAttempted, nil)
+		state, transmitter, err := decodeContractTransmissionInfo(mustUnmarshalScVal(t, xdrResult))
+		require.NoError(t, err)
+		require.Equal(t, TransmissionStateNotAttempted, state)
+		require.Empty(t, transmitter)
 	})
 
-	t.Run("map with state transmitter and flags", func(t *testing.T) {
+	t.Run("succeeded with transmitter address", func(t *testing.T) {
+		t.Parallel()
+		txr := testNodeAddress
+		xdrResult := marshalTransmissionInfoXDR(t, TransmissionStateSucceeded, &txr)
+		state, transmitter, err := decodeContractTransmissionInfo(mustUnmarshalScVal(t, xdrResult))
+		require.NoError(t, err)
+		require.Equal(t, TransmissionStateSucceeded, state)
+		require.Equal(t, testNodeAddress, transmitter)
+	})
+
+	t.Run("rejects bare u32 state encoding", func(t *testing.T) {
+		t.Parallel()
+		v := xdr.Uint32(TransmissionStateSucceeded)
+		sv := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: &v}
+		_, _, err := decodeContractTransmissionInfo(sv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "expected struct map")
+	})
+
+	t.Run("rejects unexpected struct fields", func(t *testing.T) {
 		t.Parallel()
 		state := xdr.Uint32(TransmissionStateInvalidReceiver)
 		stateVal := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: &state}
-		stateKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: func() *xdr.ScSymbol { s := xdr.ScSymbol("state"); return &s }()}
+		stateSym := xdr.ScSymbol("state")
+		stateKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &stateSym}
 		invalid := true
 		invalidVal := xdr.ScVal{Type: xdr.ScValTypeScvBool, B: &invalid}
-		invalidKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: func() *xdr.ScSymbol { s := xdr.ScSymbol("invalid_receiver"); return &s }()}
+		invalidSym := xdr.ScSymbol("invalid_receiver")
+		invalidKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &invalidSym}
+		voidVal := xdr.ScVal{Type: xdr.ScValTypeScvVoid}
+		txrSym := xdr.ScSymbol("transmitter")
+		txrKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &txrSym}
 		scMap := xdr.ScMap{
 			{Key: stateKey, Val: stateVal},
 			{Key: invalidKey, Val: invalidVal},
+			{Key: txrKey, Val: voidVal},
 		}
 		mapPtr := &scMap
 		sv := xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &mapPtr}
 
-		info := TransmissionInfo{}
-		parseFieldsIntoTransmissionInfo(&info, sv)
-		require.Equal(t, TransmissionStateInvalidReceiver, info.State)
-		require.True(t, info.InvalidReceiver)
+		_, _, err := decodeContractTransmissionInfo(sv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unexpected field")
+	})
+
+	t.Run("rejects invalid state value", func(t *testing.T) {
+		t.Parallel()
+		xdrResult := marshalTransmissionInfoXDR(t, TransmissionState(99), nil)
+		_, _, err := decodeContractTransmissionInfo(mustUnmarshalScVal(t, xdrResult))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid state")
 	})
 }
 
-func TestXDRExtractHelpers(t *testing.T) {
-	t.Parallel()
-
-	t.Run("extractStringish symbol and string", func(t *testing.T) {
-		t.Parallel()
-		sym := xdr.ScSymbol("state")
-		symVal := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &sym}
-		out, ok := extractStringish(symVal)
-		require.True(t, ok)
-		require.Equal(t, "state", out)
-
-		str := xdr.ScString("transmitter")
-		strVal := xdr.ScVal{Type: xdr.ScValTypeScvString, Str: &str}
-		out, ok = extractStringish(strVal)
-		require.True(t, ok)
-		require.Equal(t, "transmitter", out)
-	})
-
-	t.Run("extractAddressString account and contract", func(t *testing.T) {
-		t.Parallel()
-		accountID := xdr.MustAddress(testNodeAddress)
-		accountVal := xdr.ScVal{
-			Type: xdr.ScValTypeScvAddress,
-			Address: &xdr.ScAddress{
-				Type:      xdr.ScAddressTypeScAddressTypeAccount,
-				AccountId: &accountID,
-			},
-		}
-		out, ok := extractAddressString(accountVal)
-		require.True(t, ok)
-		require.Equal(t, testNodeAddress, out)
-
-		contractBytes, err := strkey.Decode(strkey.VersionByteContract, testForwarderAddress)
-		require.NoError(t, err)
-		var contractID xdr.ContractId
-		copy(contractID[:], contractBytes)
-		contractVal := xdr.ScVal{
-			Type: xdr.ScValTypeScvAddress,
-			Address: &xdr.ScAddress{
-				Type:       xdr.ScAddressTypeScAddressTypeContract,
-				ContractId: &contractID,
-			},
-		}
-		out, ok = extractAddressString(contractVal)
-		require.True(t, ok)
-		require.Equal(t, testForwarderAddress, out)
-	})
-
-	t.Run("extractBool", func(t *testing.T) {
-		t.Parallel()
-		b := true
-		val := xdr.ScVal{Type: xdr.ScValTypeScvBool, B: &b}
-		require.NotNil(t, extractBool(val))
-		require.True(t, *extractBool(val))
-	})
+func mustUnmarshalScVal(t *testing.T, b64 string) xdr.ScVal {
+	t.Helper()
+	var sv xdr.ScVal
+	require.NoError(t, xdr.SafeUnmarshalBase64(b64, &sv))
+	return sv
 }
 
 func TestEncodeReport_InvalidTransmitter(t *testing.T) {

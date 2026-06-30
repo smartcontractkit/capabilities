@@ -2,7 +2,6 @@ package actions
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -91,11 +90,85 @@ func (c *creForwarderCodecImpl) DecodeQueryTransmissionInfo(returnValueXDR strin
 		return TransmissionInfo{}, fmt.Errorf("decode transmission info result XDR: %w", err)
 	}
 
-	info := TransmissionInfo{State: TransmissionStateNotAttempted, LedgerSequence: ledgerSequence}
-	parseFieldsIntoTransmissionInfo(&info, sv)
-	info.Success = info.State == TransmissionStateSucceeded
-	info.InvalidReceiver = info.State == TransmissionStateInvalidReceiver
-	return info, nil
+	state, transmitter, err := decodeContractTransmissionInfo(sv)
+	if err != nil {
+		return TransmissionInfo{}, err
+	}
+
+	return TransmissionInfo{
+		State:           state,
+		Transmitter:     transmitter,
+		LedgerSequence:  ledgerSequence,
+		Success:         state == TransmissionStateSucceeded,
+		InvalidReceiver: state == TransmissionStateInvalidReceiver,
+	}, nil
+}
+
+// decodeContractTransmissionInfo decodes the TransmissionInfo struct returned by
+// get_transmission_info:
+//
+//	struct TransmissionInfo {
+//	    state: TransmissionState,       // u32 enum
+//	    transmitter: Option<Address>,
+//	}
+func decodeContractTransmissionInfo(sv xdr.ScVal) (TransmissionState, string, error) {
+	if sv.Type != xdr.ScValTypeScvMap || sv.Map == nil || *sv.Map == nil {
+		return 0, "", fmt.Errorf("transmission info: expected struct map, got %v", sv.Type)
+	}
+
+	var (
+		state              TransmissionState
+		transmitter        string
+		hasState           bool
+		hasTransmitter     bool
+	)
+
+	for _, entry := range **sv.Map {
+		keySym, ok := entry.Key.GetSym()
+		if !ok {
+			return 0, "", fmt.Errorf("transmission info: map key is not symbol")
+		}
+
+		switch string(keySym) {
+		case "state":
+			if hasState {
+				return 0, "", fmt.Errorf("transmission info: duplicate state field")
+			}
+			hasState = true
+			u32, ok := entry.Val.GetU32()
+			if !ok {
+				return 0, "", fmt.Errorf("transmission info: state is not u32")
+			}
+			if uint32(u32) > uint32(TransmissionStateFailed) {
+				return 0, "", fmt.Errorf("transmission info: invalid state %d", u32)
+			}
+			state = TransmissionState(u32)
+		case "transmitter":
+			if hasTransmitter {
+				return 0, "", fmt.Errorf("transmission info: duplicate transmitter field")
+			}
+			hasTransmitter = true
+			if entry.Val.Type == xdr.ScValTypeScvVoid {
+				continue
+			}
+			txr, ok := addressFromScVal(entry.Val)
+			if !ok {
+				return 0, "", fmt.Errorf("transmission info: transmitter is not void or address")
+			}
+			transmitter = txr
+		default:
+			return 0, "", fmt.Errorf("transmission info: unexpected field %q", keySym)
+		}
+	}
+
+	if !hasState {
+		return 0, "", fmt.Errorf("transmission info: missing state field")
+	}
+	if !hasTransmitter {
+		return 0, "", fmt.Errorf("transmission info: missing transmitter field")
+	}
+
+	return state, transmitter, nil
 }
 
 func (c *creForwarderCodecImpl) EncodeReportProcessedTopicFilter(transmissionID TransmissionID) (stellartypes.TopicFilter, error) {
@@ -112,59 +185,6 @@ func (c *creForwarderCodecImpl) EncodeReportProcessedTopicFilter(transmissionID 
 			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.ReportID[:]}},
 		},
 	}, nil
-}
-
-func parseFieldsIntoTransmissionInfo(info *TransmissionInfo, sv xdr.ScVal) {
-	switch sv.Type {
-	case xdr.ScValTypeScvU32:
-		if sv.U32 != nil {
-			info.State = TransmissionState(*sv.U32)
-		}
-	case xdr.ScValTypeScvI32:
-		if sv.I32 != nil && *sv.I32 >= 0 {
-			info.State = TransmissionState(*sv.I32)
-		}
-	case xdr.ScValTypeScvVec:
-		if sv.Vec == nil || *sv.Vec == nil {
-			return
-		}
-		vec := **sv.Vec
-		if len(vec) > 0 {
-			parseFieldsIntoTransmissionInfo(info, vec[0])
-		}
-		if len(vec) > 1 {
-			if txr, ok := extractAddressString(vec[1]); ok {
-				info.Transmitter = txr
-			}
-		}
-	case xdr.ScValTypeScvMap:
-		if sv.Map == nil || *sv.Map == nil {
-			return
-		}
-		for _, entry := range **sv.Map {
-			key, ok := extractStringish(entry.Key)
-			if !ok {
-				continue
-			}
-			switch strings.ToLower(key) {
-			case "state":
-				parseFieldsIntoTransmissionInfo(info, entry.Val)
-			case "transmitter":
-				if txr, ok := extractAddressString(entry.Val); ok {
-					info.Transmitter = txr
-				}
-			case "success":
-				if b := extractBool(entry.Val); b != nil {
-					info.Success = *b
-				}
-			case "invalid_receiver", "invalidreceiver":
-				if b := extractBool(entry.Val); b != nil {
-					info.InvalidReceiver = *b
-				}
-			}
-		}
-	default:
-	}
 }
 
 func contractAddressToScVal(contractID string) (stellartypes.ScVal, error) {
@@ -201,24 +221,7 @@ func accountAddressToScVal(accountID string) (stellartypes.ScVal, error) {
 	}, nil
 }
 
-func extractStringish(sv xdr.ScVal) (string, bool) {
-	switch sv.Type {
-	case xdr.ScValTypeScvSymbol:
-		if sv.Sym == nil {
-			return "", false
-		}
-		return string(*sv.Sym), true
-	case xdr.ScValTypeScvString:
-		if sv.Str == nil {
-			return "", false
-		}
-		return string(*sv.Str), true
-	default:
-		return "", false
-	}
-}
-
-func extractAddressString(sv xdr.ScVal) (string, bool) {
+func addressFromScVal(sv xdr.ScVal) (string, bool) {
 	if sv.Type != xdr.ScValTypeScvAddress || sv.Address == nil {
 		return "", false
 	}
@@ -240,12 +243,4 @@ func extractAddressString(sv xdr.ScVal) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func extractBool(sv xdr.ScVal) *bool {
-	if sv.Type != xdr.ScValTypeScvBool || sv.B == nil {
-		return nil
-	}
-	b := *sv.B
-	return &b
 }
