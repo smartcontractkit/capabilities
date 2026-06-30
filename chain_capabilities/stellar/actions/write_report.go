@@ -192,19 +192,20 @@ func (wr *writeReport) execute(
 		reply, err := wr.buildSuccessReply(ctx, txHash)
 		return reply, wr.meteringFromReply(reply), err
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
-		txHash := submitResp.TxHash
-		if queuePosition > 0 {
-			originalTxHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
-			if err != nil {
-				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
-					wr.lggr.Errorw("Made a new transmission attempt - unexpected successful transmission while state is failed", "error", err)
-				} else {
-					wr.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve the first transmission tx hash", "error", err, "txHash", txHash)
-				}
-				return nil, capabilities.ResponseMetadata{}, err
+		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
+		if err != nil {
+			if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
+				wr.lggr.Errorw("Made a new transmission attempt - unexpected successful transmission while state is failed", "error", err)
+			} else {
+				wr.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve failed transmission tx hash", "error", err, "localTxHash", submitResp.TxHash)
 			}
-			txHash = originalTxHash
+			return nil, capabilities.ResponseMetadata{}, err
 		}
+		if submitResp.TxHash != "" && submitResp.TxHash != txHash {
+			wr.lggr.Infow("Made a new transmission attempt - transmission failed, but local submit hash differs from canonical failed transmission",
+				"localTxHash", submitResp.TxHash, "txHash", txHash)
+		}
+		wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", txHash, "transmissionState", postInfo.State)
 		reply, err := wr.buildRevertReplyFromTx(ctx, txHash, postInfo, transmissionID)
 		if err != nil {
 			return nil, wr.meteringFromReply(reply), revertReplyBuildError(postInfo, transmissionID, err)
