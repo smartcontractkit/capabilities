@@ -2,13 +2,19 @@ package actions
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+
+	"github.com/stellar/go-stellar-sdk/strkey"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 )
 
 const (
@@ -34,13 +40,54 @@ type TransmissionInfo struct {
 	InvalidReceiver bool
 }
 
+// TransmissionID uniquely identifies a forwarder transmission (receiver + report components).
+type TransmissionID struct {
+	Receiver            string
+	WorkflowExecutionID [32]byte
+	ReportID            [2]byte
+}
+
+func (t TransmissionID) ReportIDHex() string {
+	return hex.EncodeToString(t.ReportID[:])
+}
+
+func (t TransmissionID) WorkflowExecutionIDHex() string {
+	return hex.EncodeToString(t.WorkflowExecutionID[:])
+}
+
+// LogAttrs returns compact fields for structured logging.
+func (t TransmissionID) LogAttrs() []any {
+	return []any{
+		"receiver", t.Receiver,
+		"reportID", t.ReportIDHex(),
+		"workflowExecutionID", t.WorkflowExecutionIDHex(),
+	}
+}
+
+// ScheduleKey returns the SHA-256 key used to seed the transmission schedule permutation.
+func (t TransmissionID) ScheduleKey() ([32]byte, error) {
+	receiverBytes, err := strkey.Decode(strkey.VersionByteContract, t.Receiver)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("%s invalid receiver contract address: %w", capcommon.UserError, err)
+	}
+
+	hash := sha256.New()
+	hash.Write(receiverBytes)
+	hash.Write(t.WorkflowExecutionID[:])
+	hash.Write(t.ReportID[:])
+
+	var scheduleKey [32]byte
+	copy(scheduleKey[:], hash.Sum(nil))
+	return scheduleKey, nil
+}
+
 // CREForwarderClient abstracts interaction with the Stellar CRE forwarder contract.
 type CREForwarderClient interface {
 	// InvokeOnReport resolves the relayer signing account, builds forwarder args, and submits via TXM.
 	InvokeOnReport(ctx context.Context, receiver string, report *sdk.ReportResponse) (*stellartypes.SubmitTransactionResponse, error)
 	// GetTransmissionInfo queries the forwarder for transmission state.
-	GetTransmissionInfo(ctx context.Context, receiver string, workflowExecutionID [32]byte, reportID [2]byte) (TransmissionInfo, error)
-	GetReportProcessedEvents(ctx context.Context, receiver string, workflowExecutionID [32]byte, reportID [2]byte) ([]ReportProcessedEvent, error)
+	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
+	GetReportProcessedEvents(ctx context.Context, transmissionID TransmissionID) ([]ReportProcessedEvent, error)
 	ForwarderAddress() string
 }
 
@@ -104,15 +151,9 @@ func (fc *forwarderClient) InvokeOnReport(
 
 func (fc *forwarderClient) GetTransmissionInfo(
 	ctx context.Context,
-	receiver string,
-	workflowExecutionID [32]byte,
-	reportID [2]byte,
+	transmissionID TransmissionID,
 ) (TransmissionInfo, error) {
-	args, err := fc.forwarderCodec.EncodeQueryTransmissionInputs(QueryTransmissionInputs{
-		Receiver:            receiver,
-		WorkflowExecutionID: workflowExecutionID,
-		ReportID:            reportID,
-	})
+	args, err := fc.forwarderCodec.EncodeQueryTransmissionInputs(transmissionID)
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
@@ -137,15 +178,13 @@ func (fc *forwarderClient) GetTransmissionInfo(
 
 func (fc *forwarderClient) GetReportProcessedEvents(
 	ctx context.Context,
-	receiver string,
-	workflowExecutionID [32]byte,
-	reportID [2]byte,
+	transmissionID TransmissionID,
 ) ([]ReportProcessedEvent, error) {
 	startLedger, err := fc.startLedger(ctx)
 	if err != nil {
 		return nil, err
 	}
-	topicFilter, err := fc.forwarderCodec.EncodeReportProcessedTopicFilter(receiver, workflowExecutionID, reportID)
+	topicFilter, err := fc.forwarderCodec.EncodeReportProcessedTopicFilter(transmissionID)
 	if err != nil {
 		return nil, err
 	}

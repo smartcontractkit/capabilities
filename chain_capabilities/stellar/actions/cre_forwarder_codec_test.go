@@ -168,7 +168,7 @@ func TestEncodeQueryTransmissionInputs(t *testing.T) {
 	workflowExecutionID[0] = 0xAB
 	reportID[0] = 0x01
 
-	args, err := codec.EncodeQueryTransmissionInputs(QueryTransmissionInputs{
+	args, err := codec.EncodeQueryTransmissionInputs(TransmissionID{
 		Receiver:            testReceiverAddress,
 		WorkflowExecutionID: workflowExecutionID,
 		ReportID:            reportID,

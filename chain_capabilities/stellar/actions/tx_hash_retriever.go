@@ -20,26 +20,20 @@ const (
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
 
 type TxHashRetriever struct {
-	forwarderClient     CREForwarderClient
-	receiver            string
-	workflowExecutionID [32]byte
-	reportID            [2]byte
-	lggr                logger.SugaredLogger
+	forwarderClient CREForwarderClient
+	transmissionID  TransmissionID
+	lggr            logger.SugaredLogger
 }
 
 func NewTxHashRetriever(
 	forwarderClient CREForwarderClient,
 	lggr logger.SugaredLogger,
-	receiver string,
-	workflowExecutionID [32]byte,
-	reportID [2]byte,
+	transmissionID TransmissionID,
 ) TxHashRetriever {
 	return TxHashRetriever{
-		forwarderClient:     forwarderClient,
-		receiver:            receiver,
-		workflowExecutionID: workflowExecutionID,
-		reportID:            reportID,
-		lggr:                lggr,
+		forwarderClient: forwarderClient,
+		transmissionID:  transmissionID,
+		lggr:            lggr,
 	}
 }
 
@@ -110,9 +104,10 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 	}
 
 	r.lggr.Debugw("Returning earliest failed transmission",
-		"txCount", len(details),
-		"selectedTxHash", details[earliestIdx].txHash,
-		"receiver", r.receiver,
+		append([]any{
+			"txCount", len(details),
+			"selectedTxHash", details[earliestIdx].txHash,
+		}, r.transmissionID.LogAttrs()...)...,
 	)
 
 	return details[earliestIdx].txHash, len(details), nil
@@ -120,7 +115,7 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 
 func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context) (eventDetailsList, error) {
 	events, err := capcommon.WithPollingRetry(ctx, r.lggr, func(ctx context.Context) ([]ReportProcessedEvent, error) {
-		events, fetchErr := r.forwarderClient.GetReportProcessedEvents(ctx, r.receiver, r.workflowExecutionID, r.reportID)
+		events, fetchErr := r.forwarderClient.GetReportProcessedEvents(ctx, r.transmissionID)
 		if fetchErr != nil {
 			return nil, fetchErr
 		}

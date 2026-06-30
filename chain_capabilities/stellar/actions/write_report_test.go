@@ -675,8 +675,8 @@ func TestGetTransmissionID_Determinism(t *testing.T) {
 	_, _, req := newWRReportFixture(t)
 	execID := hex.EncodeToString(commontest.RandomBytes(32))
 
-	id1, _, _, err1 := getTransmissionID(execID, req)
-	id2, _, _, err2 := getTransmissionID(execID, req)
+	id1, err1 := getTransmissionID(execID, req)
+	id2, err2 := getTransmissionID(execID, req)
 	require.NoError(t, err1)
 	require.NoError(t, err2)
 	require.Equal(t, id1, id2, "transmission ID must be deterministic for identical inputs")
@@ -689,11 +689,15 @@ func TestGetTransmissionID_DifferentInputsDifferentIDs(t *testing.T) {
 	_, _, req2 := newWRReportFixture(t)
 	execID := hex.EncodeToString(commontest.RandomBytes(32))
 
-	id1, _, _, err1 := getTransmissionID(execID, req1)
-	id2, _, _, err2 := getTransmissionID(execID, req2)
+	id1, err1 := getTransmissionID(execID, req1)
+	id2, err2 := getTransmissionID(execID, req2)
 	require.NoError(t, err1)
 	require.NoError(t, err2)
-	require.NotEqual(t, id1, id2, "different receivers must produce different transmission IDs")
+	key1, err := id1.ScheduleKey()
+	require.NoError(t, err)
+	key2, err := id2.ScheduleKey()
+	require.NoError(t, err)
+	require.NotEqual(t, key1, key2, "different receivers must produce different schedule keys")
 }
 
 func TestGetTransmissionID_InvalidReceiver(t *testing.T) {
@@ -704,7 +708,9 @@ func TestGetTransmissionID_InvalidReceiver(t *testing.T) {
 	_ = rm
 	req.ContractId = testNodeAddress // G… StrKey — not a contract address
 
-	_, _, _, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+	_, err = transmissionID.ScheduleKey()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid receiver contract address")
 }
@@ -741,33 +747,33 @@ func TestWriteReport_UnsupportedReportMetadataVersion(t *testing.T) {
 func TestGetTransmissionInfo(t *testing.T) {
 	t.Parallel()
 
-	newWR := func(t *testing.T) (*writeReportHelper, CREForwarderClient, [32]byte, [2]byte) {
+	newWR := func(t *testing.T) (*writeReportHelper, CREForwarderClient, TransmissionID) {
 		t.Helper()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
-		_, workflowExecutionID, reportID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+		transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
 		require.NoError(t, err)
-		return h, h.stellar.forwarderClient, workflowExecutionID, reportID
+		return h, h.stellar.forwarderClient, transmissionID
 	}
 
 	t.Run("empty result treated as not attempted", func(t *testing.T) {
 		t.Parallel()
-		h, fc, workflowExecutionID, reportID := newWR(t)
+		h, fc, transmissionID := newWR(t)
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(stellartypes.SimulateTransactionResponse{}, nil).Once()
 
-		info, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		info, err := fc.GetTransmissionInfo(t.Context(), transmissionID)
 		require.NoError(t, err)
 		require.Equal(t, TransmissionStateNotAttempted, info.State)
 	})
 
 	t.Run("forwarder simulation error is propagated", func(t *testing.T) {
 		t.Parallel()
-		h, fc, workflowExecutionID, reportID := newWR(t)
+		h, fc, transmissionID := newWR(t)
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(stellartypes.SimulateTransactionResponse{Error: "contract trap"}, nil).Once()
 
-		_, err := fc.GetTransmissionInfo(t.Context(), testReceiverAddress, workflowExecutionID, reportID)
+		_, err := fc.GetTransmissionInfo(t.Context(), transmissionID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "forwarder simulation failed")
 	})
@@ -776,9 +782,7 @@ func TestGetTransmissionInfo(t *testing.T) {
 func newPollTransmissionInfoHarness(t *testing.T, deltaStage time.Duration) (
 	*writeReport,
 	*mocks.StellarService,
-	string,
-	[32]byte,
-	[2]byte,
+	TransmissionID,
 ) {
 	t.Helper()
 	lggr := logger.Test(t)
@@ -798,9 +802,9 @@ func newPollTransmissionInfoHarness(t *testing.T, deltaStage time.Duration) (
 		transmissionScheduler: scheduler,
 	}
 	_, reqMeta, req := newWRReportFixture(t)
-	_, workflowExecutionID, reportID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
 	require.NoError(t, err)
-	return wr, mockSvc, req.ContractId, workflowExecutionID, reportID
+	return wr, mockSvc, transmissionID
 }
 
 func expectTransmissionInfoPoll(mockSvc *mocks.StellarService, xdrResult string, err error) {
@@ -841,11 +845,11 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 				for _, queuePosition := range []int{1, 2, 3} {
 					t.Run("queue position "+strconv.Itoa(queuePosition), func(t *testing.T) {
 						t.Parallel()
-						wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 5*time.Second)
+						wr, mockSvc, transmissionID := newPollTransmissionInfoHarness(t, 5*time.Second)
 						expectTransmissionInfoPoll(mockSvc, tc.xdr(t), nil)
 
 						start := time.Now()
-						info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, queuePosition)
+						info, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 						require.NoError(t, err)
 						require.Equal(t, tc.state, info.State)
 						require.Less(t, time.Since(start), 500*time.Millisecond)
@@ -858,11 +862,11 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 	t.Run("not attempted waits until delta stage then returns", func(t *testing.T) {
 		t.Parallel()
 		const queuePosition = 2
-		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 150*time.Millisecond)
+		wr, mockSvc, transmissionID := newPollTransmissionInfoHarness(t, 150*time.Millisecond)
 		expectTransmissionInfoPollMaybe(mockSvc, notAttemptedXDR(t), nil)
 
 		start := time.Now()
-		info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, queuePosition)
+		info, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 		require.NoError(t, err)
 		require.Equal(t, TransmissionStateNotAttempted, info.State)
 		require.GreaterOrEqual(t, time.Since(start), 100*time.Millisecond)
@@ -870,10 +874,10 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 
 	t.Run("position zero uses quick retry", func(t *testing.T) {
 		t.Parallel()
-		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 5*time.Second)
+		wr, mockSvc, transmissionID := newPollTransmissionInfoHarness(t, 5*time.Second)
 		expectTransmissionInfoPoll(mockSvc, succeededXDR(t), nil)
 
-		info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 0)
+		info, err := wr.pollTransmissionInfo(ctx, transmissionID, 0)
 		require.NoError(t, err)
 		require.Equal(t, TransmissionStateSucceeded, info.State)
 	})
@@ -887,7 +891,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 
-		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 150*time.Millisecond)
+		wr, mockSvc, transmissionID := newPollTransmissionInfoHarness(t, 150*time.Millisecond)
 		var chainStateUpdated atomic.Bool
 		go func() {
 			time.Sleep(120 * time.Millisecond)
@@ -906,7 +910,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 			}).
 			Maybe()
 
-		info, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 1)
+		info, err := wr.pollTransmissionInfo(ctx, transmissionID, 1)
 		require.NoError(t, err)
 		require.True(t, chainStateUpdated.Load())
 		require.Equal(t, TransmissionStateSucceeded, info.State)
@@ -917,7 +921,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 
-		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 50*time.Millisecond)
+		wr, mockSvc, transmissionID := newPollTransmissionInfoHarness(t, 50*time.Millisecond)
 		var rpcCalls atomic.Int64
 		mockSvc.EXPECT().
 			SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
@@ -929,7 +933,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 			}).
 			Maybe()
 
-		_, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 2)
+		_, err := wr.pollTransmissionInfo(ctx, transmissionID, 2)
 		require.Greater(t, rpcCalls.Load(), int64(0))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "all GetTransmissionInfo polls failed during delta stage window")
@@ -938,7 +942,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 	t.Run("context cancel returns timeout error", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithCancel(t.Context())
-		wr, mockSvc, receiver, workflowExecutionID, reportID := newPollTransmissionInfoHarness(t, 5*time.Second)
+		wr, mockSvc, transmissionID := newPollTransmissionInfoHarness(t, 5*time.Second)
 		expectTransmissionInfoPollMaybe(mockSvc, notAttemptedXDR(t), nil)
 
 		go func() {
@@ -946,7 +950,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 			cancel()
 		}()
 
-		_, err := wr.pollTransmissionInfo(ctx, receiver, workflowExecutionID, reportID, 2)
+		_, err := wr.pollTransmissionInfo(ctx, transmissionID, 2)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "timed out waiting for transmission info")
 	})

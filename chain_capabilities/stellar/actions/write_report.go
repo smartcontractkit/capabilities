@@ -2,7 +2,6 @@ package actions
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -87,23 +86,22 @@ func (wr *writeReport) execute(
 ) (writeReportExecuteResult, error) {
 	ctx = contexts.WithChainSelector(ctx, wr.chainSelector)
 
-	transmissionID, workflowExecutionID, reportID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
+	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
 		return writeReportExecuteResult{}, err
 	}
 
-	queuePosition := wr.transmissionScheduler.GetQueuePosition(hex.EncodeToString(transmissionID[:]))
-	wr.lggr = wr.lggr.With("queuePosition", queuePosition, "forwarder", wr.forwarderClient.ForwarderAddress(), "receiver", request.ContractId)
+	scheduleKey, err := transmissionID.ScheduleKey()
+	if err != nil {
+		return writeReportExecuteResult{}, err
+	}
 
-	txHashRetriever := NewTxHashRetriever(
-		wr.forwarderClient,
-		wr.lggr,
-		request.ContractId,
-		workflowExecutionID,
-		reportID,
-	)
+	queuePosition := wr.transmissionScheduler.GetQueuePosition(hex.EncodeToString(scheduleKey[:]))
+	wr.lggr = wr.lggr.With(append([]any{"queuePosition", queuePosition, "forwarder", wr.forwarderClient.ForwarderAddress()}, transmissionID.LogAttrs()...)...)
 
-	info, err := wr.pollTransmissionInfo(ctx, request.ContractId, workflowExecutionID, reportID, queuePosition)
+	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID)
+
+	info, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 	if err != nil {
 		return writeReportExecuteResult{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
@@ -163,7 +161,7 @@ func (wr *writeReport) execute(
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
 	postInfo, pollErr := capcommon.WithPollingRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
-		readInfo, readErr := wr.forwarderClient.GetTransmissionInfo(ctx, request.ContractId, workflowExecutionID, reportID)
+		readInfo, readErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		if readErr != nil {
 			return TransmissionInfo{}, readErr
 		}
@@ -244,25 +242,17 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 	return nil
 }
 
-func getTransmissionID(workflowExecutionID string, request *stellarcap.WriteReportRequest) ([32]byte, [32]byte, [2]byte, error) {
+func getTransmissionID(workflowExecutionID string, request *stellarcap.WriteReportRequest) (TransmissionID, error) {
 	rawExecutionID, reportID, err := capcommon.ParseTransmissionComponents(workflowExecutionID, request.Report.RawReport)
 	if err != nil {
-		return [32]byte{}, [32]byte{}, [2]byte{}, err
+		return TransmissionID{}, err
 	}
 
-	receiverBytes, err := strkey.Decode(strkey.VersionByteContract, request.ContractId)
-	if err != nil {
-		return [32]byte{}, [32]byte{}, [2]byte{}, fmt.Errorf("%s invalid receiver contract address: %w", capcommon.UserError, err)
-	}
-
-	hash := sha256.New()
-	hash.Write(receiverBytes)
-	hash.Write(rawExecutionID[:])
-	hash.Write(reportID[:])
-
-	var transmissionID [32]byte
-	copy(transmissionID[:], hash.Sum(nil))
-	return transmissionID, rawExecutionID, reportID, nil
+	return TransmissionID{
+		Receiver:            request.ContractId,
+		WorkflowExecutionID: rawExecutionID,
+		ReportID:            reportID,
+	}, nil
 }
 
 // pollTransmissionInfo returns the forwarder transmission state at this point in the
@@ -271,14 +261,12 @@ func getTransmissionID(workflowExecutionID string, request *stellarcap.WriteRepo
 // failure can be observed without spending fees on a duplicate submit.
 func (wr *writeReport) pollTransmissionInfo(
 	ctx context.Context,
-	receiver string,
-	workflowExecutionID [32]byte,
-	reportID [2]byte,
+	transmissionID TransmissionID,
 	queuePosition int,
 ) (lastValidInfo TransmissionInfo, err error) {
 	if queuePosition <= 0 {
 		return capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
-			return wr.forwarderClient.GetTransmissionInfo(ctx, receiver, workflowExecutionID, reportID)
+			return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		})
 	}
 
@@ -291,7 +279,7 @@ func (wr *writeReport) pollTransmissionInfo(
 	defer stageTimer.Stop()
 
 	for {
-		if info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, receiver, workflowExecutionID, reportID); infoErr != nil {
+		if info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); infoErr != nil {
 			wr.lggr.Debugw("GetTransmissionInfo failed during polling", "error", infoErr, "attempt", attempt)
 		} else {
 			hadSuccessfulPoll = true
@@ -316,7 +304,7 @@ func (wr *writeReport) pollTransmissionInfo(
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
 			if lastValidInfo.State == TransmissionStateNotAttempted {
-				if finalInfo, finalErr := wr.forwarderClient.GetTransmissionInfo(ctx, receiver, workflowExecutionID, reportID); finalErr == nil {
+				if finalInfo, finalErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); finalErr == nil {
 					hadSuccessfulPoll = true
 					lastValidInfo = finalInfo
 				} else {

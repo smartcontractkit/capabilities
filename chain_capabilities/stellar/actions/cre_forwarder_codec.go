@@ -13,19 +13,12 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 )
 
-// QueryTransmissionInputs identifies a forwarder transmission for read queries.
-type QueryTransmissionInputs struct {
-	Receiver            string
-	WorkflowExecutionID [32]byte
-	ReportID            [2]byte
-}
-
 // CREForwarderCodec encodes and decodes Stellar CRE forwarder contract calls.
 type CREForwarderCodec interface {
 	EncodeReport(transmitter, receiver string, report *sdk.ReportResponse) ([]stellartypes.ScVal, error)
-	EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]stellartypes.ScVal, error)
+	EncodeQueryTransmissionInputs(transmissionID TransmissionID) ([]stellartypes.ScVal, error)
 	DecodeQueryTransmissionInfo(returnValueXDR string, ledgerSequence uint32) (TransmissionInfo, error)
-	EncodeReportProcessedTopicFilter(receiver string, workflowExecutionID [32]byte, reportID [2]byte) (stellartypes.TopicFilter, error)
+	EncodeReportProcessedTopicFilter(transmissionID TransmissionID) (stellartypes.TopicFilter, error)
 }
 
 type creForwarderCodecImpl struct{}
@@ -66,15 +59,15 @@ func (c *creForwarderCodecImpl) EncodeReport(transmitter, receiver string, repor
 	return []stellartypes.ScVal{transmitterVal, receiverVal, rawReportVal, reportContextVal, sigsVal}, nil
 }
 
-func (c *creForwarderCodecImpl) EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]stellartypes.ScVal, error) {
-	receiverVal, err := contractAddressToScVal(query.Receiver)
+func (c *creForwarderCodecImpl) EncodeQueryTransmissionInputs(transmissionID TransmissionID) ([]stellartypes.ScVal, error) {
+	receiverVal, err := contractAddressToScVal(transmissionID.Receiver)
 	if err != nil {
 		return nil, err
 	}
 	return []stellartypes.ScVal{
 		receiverVal,
-		{Type: stellartypes.ScValTypeBytes, Bytes: query.WorkflowExecutionID[:]},
-		{Type: stellartypes.ScValTypeBytes, Bytes: query.ReportID[:]},
+		{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.WorkflowExecutionID[:]},
+		{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.ReportID[:]},
 	}, nil
 }
 
@@ -91,9 +84,9 @@ func (c *creForwarderCodecImpl) DecodeQueryTransmissionInfo(returnValueXDR strin
 	return info, nil
 }
 
-func (c *creForwarderCodecImpl) EncodeReportProcessedTopicFilter(receiver string, workflowExecutionID [32]byte, reportID [2]byte) (stellartypes.TopicFilter, error) {
+func (c *creForwarderCodecImpl) EncodeReportProcessedTopicFilter(transmissionID TransmissionID) (stellartypes.TopicFilter, error) {
 	eventName := reportProcessedTopicPrefix
-	receiverVal, err := contractAddressToScVal(receiver)
+	receiverVal, err := contractAddressToScVal(transmissionID.Receiver)
 	if err != nil {
 		return stellartypes.TopicFilter{}, err
 	}
@@ -101,8 +94,8 @@ func (c *creForwarderCodecImpl) EncodeReportProcessedTopicFilter(receiver string
 		Segments: []stellartypes.TopicSegment{
 			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeSymbol, Symbol: &eventName}},
 			{Value: &receiverVal},
-			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: workflowExecutionID[:]}},
-			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: reportID[:]}},
+			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.WorkflowExecutionID[:]}},
+			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.ReportID[:]}},
 		},
 	}, nil
 }
