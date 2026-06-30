@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
+	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
 func TestDecodeQueryTransmissionInfo(t *testing.T) {
@@ -158,6 +159,32 @@ func TestEncodeReport_InvalidTransmitter(t *testing.T) {
 	_, err := codec.EncodeReport("not-a-valid-address", testReceiverAddress, req.Report)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "transmitter")
+}
+
+func TestEncodeReport_SanitizesNilSlices(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	report := &workflowpb.ReportResponse{
+		Sigs: []*workflowpb.AttributedSignature{{Signature: nil}},
+	}
+	args, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.NoError(t, err)
+	require.Len(t, args, 5)
+
+	require.Equal(t, stellartypes.ScValTypeBytes, args[2].Type)
+	require.NotNil(t, args[2].Bytes)
+	require.Empty(t, args[2].Bytes)
+
+	require.Equal(t, stellartypes.ScValTypeBytes, args[3].Type)
+	require.NotNil(t, args[3].Bytes)
+	require.Empty(t, args[3].Bytes)
+
+	require.Equal(t, stellartypes.ScValTypeVec, args[4].Type)
+	require.NotNil(t, args[4].Vec)
+	require.Len(t, args[4].Vec.Values, 1)
+	require.NotNil(t, args[4].Vec.Values[0].Bytes)
+	require.Empty(t, args[4].Vec.Values[0].Bytes)
 }
 
 func TestEncodeQueryTransmissionInputs(t *testing.T) {

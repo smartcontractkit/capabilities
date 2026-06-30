@@ -43,12 +43,26 @@ func (c *creForwarderCodecImpl) EncodeReport(transmitter, receiver string, repor
 		return nil, err
 	}
 
-	rawReportVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: report.GetRawReport()}
-	reportContextVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: report.GetReportContext()}
+	rawReport := report.GetRawReport()
+	if rawReport == nil {
+		rawReport = []byte{}
+	}
+	reportContext := report.GetReportContext()
+	if reportContext == nil {
+		reportContext = []byte{}
+	}
 
-	sigVals := make([]*stellartypes.ScVal, len(report.Sigs))
-	for i, sig := range report.Sigs {
-		s := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: sig.GetSignature()}
+	rawReportVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: rawReport}
+	reportContextVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: reportContext}
+
+	sigs := report.GetSigs()
+	sigVals := make([]*stellartypes.ScVal, len(sigs))
+	for i, sig := range sigs {
+		sigBytes := sig.GetSignature()
+		if sigBytes == nil {
+			sigBytes = []byte{}
+		}
+		s := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: sigBytes}
 		sigVals[i] = &s
 	}
 	sigsVal := stellartypes.ScVal{
