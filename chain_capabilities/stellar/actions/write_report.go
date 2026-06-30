@@ -95,6 +95,11 @@ func (wr *writeReport) execute(
 
 	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID)
 
+	// TODO(follow-up): Consider simulating the on_report transaction before polling when the
+	// transmission has not yet been attempted. If simulation predicts a terminal failure we
+	// could skip delta-stage polling and/or submission. Open questions: simulation may fail on
+	// only some DON nodes (stale ledger, timing), so every node must still return the same
+	// WriteReportReply and metering semantics before enabling this shortcut.
 	info, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
@@ -162,8 +167,14 @@ func (wr *writeReport) execute(
 		return readInfo, nil
 	})
 	if pollErr != nil {
-		// TX was submitted but on-chain state is still not visible; use the TXM result directly.
-		wr.lggr.Warnw("Failed to poll transmission info after submit, returning reply from TX outcome", "error", pollErr)
+		// Transmission info may lag even when ReportProcessed events are already indexed (e.g. duplicate
+		// submit where another node's tx succeeded). Prefer the canonical event hash over local TXM data.
+		wr.lggr.Warnw("Failed to poll transmission info after submit, attempting event-based tx hash lookup", "error", pollErr)
+		if txHash, lookupErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx); lookupErr == nil {
+			reply, buildErr := wr.buildSuccessReply(ctx, txHash)
+			return reply, wr.meteringFromReply(reply), buildErr
+		}
+		wr.lggr.Warnw("Failed to poll transmission info after submit, returning reply from TXM outcome", "error", pollErr)
 		reply := wr.replyFromOwnTransaction(submitResp)
 		return reply, wr.meteringFromReply(reply), nil
 	}
@@ -173,6 +184,10 @@ func (wr *writeReport) execute(
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
+		}
+		if submitResp.TxStatus != stellartypes.TxSuccess && submitResp.TxHash != "" && submitResp.TxHash != txHash {
+			wr.lggr.Infow("Made a new transmission attempt - transmission succeeded, but local submit did not confirm (likely duplicate)",
+				"localTxHash", submitResp.TxHash, "txHash", txHash)
 		}
 		reply, err := wr.buildSuccessReply(ctx, txHash)
 		return reply, wr.meteringFromReply(reply), err

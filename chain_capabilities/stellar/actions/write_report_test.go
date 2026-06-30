@@ -708,6 +708,10 @@ func TestWriteReport_Submit(t *testing.T) {
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		// Reply must use the successful on-chain tx from events, not this node's reverted submit.
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		require.NotEqual(t, "mytx", *result.Response.TxHash)
 	})
 }
 
