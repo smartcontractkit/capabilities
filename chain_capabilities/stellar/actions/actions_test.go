@@ -263,6 +263,32 @@ func TestReadContract(t *testing.T) {
 	})
 }
 
+func TestConvertReadContractRequestFromProto(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil request", func(t *testing.T) {
+		t.Parallel()
+		_, err := convertReadContractRequestFromProto(nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "nil")
+	})
+
+	t.Run("missing function", func(t *testing.T) {
+		t.Parallel()
+		_, err := convertReadContractRequestFromProto(&stellarcap.ReadContractRequest{
+			ContractId: testForwarderAddress,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "function is required")
+	})
+}
+
+func TestIsStellarNodeInfraError_MessageSubstring(t *testing.T) {
+	t.Parallel()
+	require.True(t, isStellarNodeInfraError(errors.New("wrapped: "+multinode.ErrNodeError.Error())))
+	require.False(t, isStellarNodeInfraError(errors.New("user input invalid")))
+}
+
 // testConsensusHandler simulates the consensus handler so a single node's observation is treated
 // as the agreed value (mode of one observation), exercising the volatile / F+1 / tiebreak path.
 type testConsensusHandler struct {

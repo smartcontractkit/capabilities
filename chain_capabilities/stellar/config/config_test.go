@@ -89,4 +89,17 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 		err := json.Unmarshal([]byte("{"), &cfg)
 		require.Error(t, err)
 	})
+
+	t.Run("optional forwarderLookbackLedgers", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"chainId":"stellar-testnet",
+			"network":"stellar",
+			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"forwarderLookbackLedgers":250
+		}`
+		var cfg Config
+		require.NoError(t, json.Unmarshal([]byte(input), &cfg))
+		assert.EqualValues(t, 250, cfg.ForwarderLookbackLedgers)
+	})
 }

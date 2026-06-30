@@ -173,4 +173,63 @@ func TestEncodeQueryTransmissionInputs(t *testing.T) {
 	require.Equal(t, stellartypes.ScValTypeAddress, args[0].Type)
 	require.Equal(t, workflowExecutionID[:], args[1].Bytes)
 	require.Equal(t, reportID[:], args[2].Bytes)
+
+	t.Run("invalid receiver", func(t *testing.T) {
+		t.Parallel()
+		_, err := codec.EncodeQueryTransmissionInputs(TransmissionID{Receiver: "bad"})
+		require.Error(t, err)
+	})
+}
+
+func TestEncodeReportProcessedTopicFilter(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+	var workflowExecutionID [32]byte
+	var reportID [2]byte
+	filter, err := codec.EncodeReportProcessedTopicFilter(TransmissionID{
+		Receiver:            testReceiverAddress,
+		WorkflowExecutionID: workflowExecutionID,
+		ReportID:            reportID,
+	})
+	require.NoError(t, err)
+	require.Len(t, filter.Segments, 4)
+	require.Equal(t, reportProcessedTopicPrefix, *filter.Segments[0].Value.Symbol)
+}
+
+func TestDecodeContractTransmissionInfo_Errors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("duplicate state field", func(t *testing.T) {
+		t.Parallel()
+		state := xdr.Uint32(TransmissionStateSucceeded)
+		stateVal := xdr.ScVal{Type: xdr.ScValTypeScvU32, U32: &state}
+		stateSym := xdr.ScSymbol("state")
+		stateKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &stateSym}
+		voidVal := xdr.ScVal{Type: xdr.ScValTypeScvVoid}
+		txrSym := xdr.ScSymbol("transmitter")
+		txrKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &txrSym}
+		scMap := xdr.ScMap{
+			{Key: stateKey, Val: stateVal},
+			{Key: stateKey, Val: stateVal},
+			{Key: txrKey, Val: voidVal},
+		}
+		mapPtr := &scMap
+		sv := xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &mapPtr}
+		_, _, err := decodeContractTransmissionInfo(sv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate state")
+	})
+
+	t.Run("missing state field", func(t *testing.T) {
+		t.Parallel()
+		voidVal := xdr.ScVal{Type: xdr.ScValTypeScvVoid}
+		txrSym := xdr.ScSymbol("transmitter")
+		txrKey := xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &txrSym}
+		scMap := xdr.ScMap{{Key: txrKey, Val: voidVal}}
+		mapPtr := &scMap
+		sv := xdr.ScVal{Type: xdr.ScValTypeScvMap, Map: &mapPtr}
+		_, _, err := decodeContractTransmissionInfo(sv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing state")
+	})
 }

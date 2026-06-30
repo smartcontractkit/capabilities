@@ -26,6 +26,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
@@ -1098,4 +1099,128 @@ func TestWriteReport_TxFatalSubmitFallback(t *testing.T) {
 	require.Nil(t, capErr)
 	require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 	require.NotNil(t, result.Response.TxHash)
+}
+
+func TestReplyBuilders(t *testing.T) {
+	t.Parallel()
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	t.Run("buildSuccessReply", func(t *testing.T) {
+		t.Parallel()
+		mockSvc := mocks.NewStellarService(t)
+		wr := &writeReport{service: mockSvc, lggr: logger.Sugared(logger.Test(t))}
+		mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
+			Return(stellartypes.GetTransactionResponse{
+				FeeStroops:      testFee,
+				LedgerSequence:  100,
+				LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
+			}, nil).Once()
+
+		reply, err := wr.buildSuccessReply(t.Context(), testTxHash)
+		require.NoError(t, err)
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
+		require.Equal(t, testTxHash, *reply.TxHash)
+	})
+
+	t.Run("buildRevertReplyFromTx invalid receiver", func(t *testing.T) {
+		t.Parallel()
+		mockSvc := mocks.NewStellarService(t)
+		wr := &writeReport{service: mockSvc, lggr: logger.Sugared(logger.Test(t))}
+		mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
+			Return(stellartypes.GetTransactionResponse{FeeStroops: testFee}, nil).Once()
+
+		reply, err := wr.buildRevertReplyFromTx(t.Context(), testTxHash, TransmissionInfo{State: TransmissionStateInvalidReceiver}, transmissionID)
+		require.NoError(t, err)
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_REVERTED, reply.TxStatus)
+		require.Contains(t, *reply.ErrorMessage, "not a Wasm contract")
+	})
+
+	t.Run("revertReplyBuildError", func(t *testing.T) {
+		t.Parallel()
+		buildErr := revertReplyBuildError(
+			TransmissionInfo{State: TransmissionStateFailed},
+			transmissionID,
+			errors.New("rpc down"),
+		)
+		require.Error(t, buildErr)
+		require.Contains(t, buildErr.Error(), unknownIssueExecutingReceiverContractMessage)
+	})
+
+	t.Run("meteringFromReply nil cases", func(t *testing.T) {
+		t.Parallel()
+		wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
+		require.Empty(t, wr.meteringFromReply(nil).Metering)
+		require.Empty(t, wr.meteringFromReply(&stellarcap.WriteReportReply{}).Metering)
+	})
+}
+
+func TestPopulateReplyFromSubmit(t *testing.T) {
+	t.Parallel()
+	reply := &stellarcap.WriteReportReply{}
+	populateReplyFromSubmit(reply, nil)
+	require.Nil(t, reply.TxHash)
+
+	fee := testFee
+	blockTs := testBlockTimestamp
+	populateReplyFromSubmit(reply, &stellartypes.SubmitTransactionResponse{
+		TxHash:         testTxHash,
+		TransactionFee: &fee,
+		BlockTimestamp: &blockTs,
+	})
+	require.Equal(t, testTxHash, *reply.TxHash)
+	require.Equal(t, testFee, *reply.TransactionFee)
+}
+
+func TestWriteReport_ObservedRevertReplyBuildError(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	rm, reqMeta, req := newWRReportFixture(t)
+
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(failedXDR(t)), nil).Once()
+	h.svc.EXPECT().GetLatestLedger(mock.Anything).
+		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
+	h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
+		Return(reportProcessedEventsForFixture(t, rm, req.ContractId, false), nil).Once()
+	h.svc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
+		Return(stellartypes.GetTransactionResponse{}, errors.New("rpc down")).Maybe()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	_, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
+	require.NotNil(t, capErr)
+	require.Contains(t, capErr.Error(), unknownIssueExecutingReceiverContractMessage)
+}
+
+func TestWriteReport_PostSubmitPollRecoversFromEvents(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	rm, reqMeta, req := newWRReportFixture(t)
+	h.expectSigningAccount(t)
+
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+	h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+		Return(successSubmitResp(), nil).Once()
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(notAttemptedXDR(t)), nil)
+	h.expectPostSubmitSuccessTxLookup(t, rm, req.ContractId)
+
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
+	defer cancel()
+
+	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
+	require.Nil(t, capErr)
+	require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+	require.Equal(t, testTxHash, *result.Response.TxHash)
+}
+
+func TestIsUserErrorWriteReport(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	require.True(t, h.stellar.isUserErrorWriteReport(errors.New(capcommon.UserError+" invalid receiver")))
+	require.False(t, h.stellar.isUserErrorWriteReport(errors.New("system failure")))
 }
