@@ -487,12 +487,14 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 	defer ticker.Stop()
 	defer close(logCh)
 
-	// startingBlock is the finalized block at registration. The delivery cursor only advances to the
-	// last successfully delivered log and never jumps ahead within a batch.
+	// startingBlock is the finalized block at registration. The delivery cursor only advances on
+	// successful delivery. When log poller returns sequence numbers, progression is contiguous by
+	// sequence; otherwise it falls back to block/log-index position.
 	var (
-		lastDeliveredBlock    = startingBlock
-		lastDeliveredLogIndex int64
-		hasDelivered          bool
+		lastDeliveredSequenceNum int64
+		lastDeliveredBlock       = startingBlock
+		lastDeliveredLogIndex    int64
+		hasDelivered             bool
 	)
 
 	for {
@@ -503,6 +505,7 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 		case <-ticker.C:
 			lts.lggr.Debugw("Polling for trigger logs",
 				"triggerID", triggerID,
+				"lastDeliveredSequenceNum", lastDeliveredSequenceNum,
 				"lastDeliveredBlock", lastDeliveredBlock,
 				"lastDeliveredLogIndex", lastDeliveredLogIndex,
 				"startingBlock", startingBlock,
@@ -529,7 +532,15 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 
 			sentCount := 0
 			var latestDeliveredBlock int64 = startingBlock
-			pendingLogs := pendingLogsAfterPosition(logs, lastDeliveredBlock, lastDeliveredLogIndex)
+			useSequenceCursor := logsHaveSequenceNumbers(logs)
+			pendingLogs := deliverableLogsAfterCursor(
+				logs,
+				useSequenceCursor,
+				lastDeliveredSequenceNum,
+				lastDeliveredBlock,
+				lastDeliveredLogIndex,
+				hasDelivered,
+			)
 			for _, log := range pendingLogs {
 				if log == nil {
 					lts.lggr.Warnw("Received nil log from QueryTrackedLogs, skipping", "triggerID", triggerID)
@@ -553,29 +564,64 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 
 				sentCount++
 				hasDelivered = true
-				lastDeliveredBlock = log.BlockNumber
-				lastDeliveredLogIndex = log.LogIndex
+				if useSequenceCursor {
+					lastDeliveredSequenceNum = log.SequenceNum
+				} else {
+					lastDeliveredBlock = log.BlockNumber
+					lastDeliveredLogIndex = log.LogIndex
+				}
 				if log.BlockNumber > latestDeliveredBlock {
 					latestDeliveredBlock = log.BlockNumber
 				}
 			}
 
-			successMessage := fmt.Sprintf(
-				"Finished updating delivery cursor for triggerID: %s, BlockNumber: %d, LogIndex: %d, sent logs: %d",
-				triggerID, lastDeliveredBlock, lastDeliveredLogIndex, sentCount,
-			)
+			var successMessage string
+			if useSequenceCursor {
+				successMessage = fmt.Sprintf(
+					"Finished updating delivery cursor for triggerID: %s, SequenceNum: %d, sent logs: %d",
+					triggerID, lastDeliveredSequenceNum, sentCount,
+				)
+			} else {
+				successMessage = fmt.Sprintf(
+					"Finished updating delivery cursor for triggerID: %s, BlockNumber: %d, LogIndex: %d, sent logs: %d",
+					triggerID, lastDeliveredBlock, lastDeliveredLogIndex, sentCount,
+				)
+			}
 			lts.logAndEmitSuccess(ctx, successMessage, telemetryContext, triggerID, config, sentCount, latestDeliveredBlock)
 		}
 	}
 }
 
-func pendingLogsAfterPosition(logs []*solana.Log, lastDeliveredBlock int64, lastDeliveredLogIndex int64) []*solana.Log {
+func logsHaveSequenceNumbers(logs []*solana.Log) bool {
+	for _, log := range logs {
+		if log != nil && log.SequenceNum > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func deliverableLogsAfterCursor(
+	logs []*solana.Log,
+	useSequenceCursor bool,
+	lastDeliveredSequenceNum int64,
+	lastDeliveredBlock int64,
+	lastDeliveredLogIndex int64,
+	hasDelivered bool,
+) []*solana.Log {
+	if useSequenceCursor {
+		return deliverableLogsAfterSequence(logs, lastDeliveredSequenceNum, hasDelivered)
+	}
+	return pendingLogsAfterBlockPosition(logs, lastDeliveredBlock, lastDeliveredLogIndex)
+}
+
+func pendingLogsAfterBlockPosition(logs []*solana.Log, lastDeliveredBlock int64, lastDeliveredLogIndex int64) []*solana.Log {
 	pending := make([]*solana.Log, 0, len(logs))
 	for _, log := range logs {
 		if log == nil {
 			continue
 		}
-		if isLogAtOrBeforePosition(log, lastDeliveredBlock, lastDeliveredLogIndex) {
+		if isLogAtOrBeforeBlockPosition(log, lastDeliveredBlock, lastDeliveredLogIndex) {
 			continue
 		}
 		pending = append(pending, log)
@@ -591,7 +637,7 @@ func pendingLogsAfterPosition(logs []*solana.Log, lastDeliveredBlock int64, last
 	return pending
 }
 
-func isLogAtOrBeforePosition(log *solana.Log, lastDeliveredBlock int64, lastDeliveredLogIndex int64) bool {
+func isLogAtOrBeforeBlockPosition(log *solana.Log, lastDeliveredBlock int64, lastDeliveredLogIndex int64) bool {
 	if log.BlockNumber < lastDeliveredBlock {
 		return true
 	}
@@ -599,6 +645,54 @@ func isLogAtOrBeforePosition(log *solana.Log, lastDeliveredBlock int64, lastDeli
 		return false
 	}
 	return log.LogIndex <= lastDeliveredLogIndex
+}
+
+func pendingLogsAfterSequence(logs []*solana.Log, lastDeliveredSequenceNum int64) []*solana.Log {
+	pending := make([]*solana.Log, 0, len(logs))
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		if log.SequenceNum <= lastDeliveredSequenceNum {
+			continue
+		}
+		pending = append(pending, log)
+	}
+
+	slices.SortFunc(pending, func(a, b *solana.Log) int {
+		return cmp.Compare(a.SequenceNum, b.SequenceNum)
+	})
+
+	return pending
+}
+
+// deliverableLogsAfterSequence returns logs ready to deliver in contiguous sequence order.
+// If the next expected sequence number is missing from the query result, delivery stops at the gap
+// so that later-indexed logs are not delivered before earlier ones appear in the log poller.
+func deliverableLogsAfterSequence(logs []*solana.Log, lastDeliveredSequenceNum int64, hasDelivered bool) []*solana.Log {
+	pending := pendingLogsAfterSequence(logs, lastDeliveredSequenceNum)
+	if len(pending) == 0 {
+		return nil
+	}
+
+	expectedNext := lastDeliveredSequenceNum + 1
+	if !hasDelivered {
+		expectedNext = pending[0].SequenceNum
+	}
+
+	deliverable := make([]*solana.Log, 0, len(pending))
+	for _, log := range pending {
+		if log.SequenceNum > expectedNext {
+			break
+		}
+		if log.SequenceNum < expectedNext {
+			continue
+		}
+		deliverable = append(deliverable, log)
+		expectedNext++
+	}
+
+	return deliverable
 }
 
 func getEventSig(eventName string) solana.EventSignature {

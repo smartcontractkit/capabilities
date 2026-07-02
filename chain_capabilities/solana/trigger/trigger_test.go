@@ -166,15 +166,20 @@ func createTestRequest() *solanacappb.FilterLogTriggerRequest {
 }
 
 func createTestLog(blockNumber int64, address solana.PublicKey) *solana.Log {
-	return createTestLogWithIndex(blockNumber, blockNumber, address)
+	return createTestLogWithSequence(blockNumber, blockNumber, blockNumber, address)
 }
 
 func createTestLogWithIndex(blockNumber int64, logIndex int64, address solana.PublicKey) *solana.Log {
+	return createTestLogWithSequence(blockNumber, logIndex, blockNumber, address)
+}
+
+func createTestLogWithSequence(blockNumber int64, logIndex int64, sequenceNum int64, address solana.PublicKey) *solana.Log {
 	return &solana.Log{
 		Address:     address,
 		EventSig:    testEventSig,
 		BlockNumber: blockNumber,
 		LogIndex:    logIndex,
+		SequenceNum: sequenceNum,
 		TxHash:      solana.Signature{},
 		Data:        []byte("test log data"),
 	}
@@ -395,20 +400,93 @@ func TestToLogPollerFilter(t *testing.T) {
 	})
 }
 
-func TestPendingLogsAfterPosition(t *testing.T) {
+func TestPendingLogsAfterBlockPosition(t *testing.T) {
 	t.Parallel()
 
 	logs := []*solana.Log{
-		createTestLogWithIndex(101, 1, testPublicKey),
-		createTestLogWithIndex(103, 3, testPublicKey),
-		createTestLogWithIndex(102, 2, testPublicKey),
+		createTestLogWithSequence(101, 1, 1, testPublicKey),
+		createTestLogWithSequence(103, 3, 3, testPublicKey),
+		createTestLogWithSequence(102, 2, 2, testPublicKey),
 		nil,
 	}
 
-	pending := pendingLogsAfterPosition(logs, 101, 1)
+	pending := pendingLogsAfterBlockPosition(logs, 101, 1)
 	require.Len(t, pending, 2)
 	require.Equal(t, int64(102), pending[0].BlockNumber)
 	require.Equal(t, int64(103), pending[1].BlockNumber)
+}
+
+func TestPendingLogsAfterSequence(t *testing.T) {
+	t.Parallel()
+
+	logs := []*solana.Log{
+		createTestLogWithSequence(101, 1, 1, testPublicKey),
+		createTestLogWithSequence(103, 3, 3, testPublicKey),
+		createTestLogWithSequence(102, 2, 2, testPublicKey),
+		nil,
+	}
+
+	pending := pendingLogsAfterSequence(logs, 1)
+	require.Len(t, pending, 2)
+	require.Equal(t, int64(2), pending[0].SequenceNum)
+	require.Equal(t, int64(3), pending[1].SequenceNum)
+}
+
+func TestDeliverableLogsAfterSequence(t *testing.T) {
+	t.Parallel()
+
+	t.Run("delivers contiguous sequences sorted by sequence number", func(t *testing.T) {
+		logs := []*solana.Log{
+			createTestLogWithSequence(103, 3, 2, testPublicKey),
+			createTestLogWithSequence(101, 1, 1, testPublicKey),
+		}
+
+		deliverable := deliverableLogsAfterSequence(logs, 0, false)
+		require.Len(t, deliverable, 2)
+		require.Equal(t, int64(1), deliverable[0].SequenceNum)
+		require.Equal(t, int64(2), deliverable[1].SequenceNum)
+	})
+
+	t.Run("does not skip ahead when later sequence is indexed first", func(t *testing.T) {
+		logs := []*solana.Log{
+			createTestLogWithSequence(103, 3, 2, testPublicKey),
+		}
+
+		deliverable := deliverableLogsAfterSequence(logs, 0, true)
+		require.Empty(t, deliverable)
+
+		logs = append(logs, createTestLogWithSequence(101, 1, 1, testPublicKey))
+		deliverable = deliverableLogsAfterSequence(logs, 0, true)
+		require.Len(t, deliverable, 2)
+		require.Equal(t, int64(101), deliverable[0].BlockNumber)
+		require.Equal(t, int64(103), deliverable[1].BlockNumber)
+	})
+}
+
+func TestDeliverableLogsAfterCursor(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses block cursor when sequence numbers are unset", func(t *testing.T) {
+		logs := []*solana.Log{
+			createTestLogWithSequence(101, 1, 0, testPublicKey),
+			createTestLogWithSequence(102, 2, 0, testPublicKey),
+		}
+
+		deliverable := deliverableLogsAfterCursor(logs, false, 0, 100, 0, false)
+		require.Len(t, deliverable, 2)
+		require.Equal(t, int64(101), deliverable[0].BlockNumber)
+	})
+
+	t.Run("uses sequence cursor when sequence numbers are present", func(t *testing.T) {
+		logs := []*solana.Log{
+			createTestLogWithSequence(103, 3, 2, testPublicKey),
+			createTestLogWithSequence(101, 1, 1, testPublicKey),
+		}
+
+		deliverable := deliverableLogsAfterCursor(logs, true, 0, 100, 0, false)
+		require.Len(t, deliverable, 2)
+		require.Equal(t, int64(1), deliverable[0].SequenceNum)
+	})
 }
 
 func TestBuildQueryExpressions(t *testing.T) {
