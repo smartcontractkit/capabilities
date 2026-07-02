@@ -127,6 +127,21 @@ func startPollingAsync(
 	t.Cleanup(wg.Wait)
 }
 
+func waitForLog(
+	t *testing.T,
+	logCh <-chan capabilities.TriggerAndId[*solanacappb.Log],
+	timeout time.Duration,
+) capabilities.TriggerAndId[*solanacappb.Log] {
+	t.Helper()
+	select {
+	case response := <-logCh:
+		return response
+	case <-time.After(timeout):
+		t.Fatal("Timeout waiting for log")
+		return capabilities.TriggerAndId[*solanacappb.Log]{}
+	}
+}
+
 func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 	mockSolanaService := mocks.NewSolanaService(t)
 
@@ -166,10 +181,15 @@ func createTestRequest() *solanacappb.FilterLogTriggerRequest {
 }
 
 func createTestLog(blockNumber int64, address solana.PublicKey) *solana.Log {
+	return createTestLogWithSequence(blockNumber, blockNumber, address)
+}
+
+func createTestLogWithSequence(blockNumber int64, sequenceNum int64, address solana.PublicKey) *solana.Log {
 	return &solana.Log{
 		Address:     address,
 		EventSig:    testEventSig,
 		BlockNumber: blockNumber,
+		SequenceNum: sequenceNum,
 		TxHash:      solana.Signature{},
 		Data:        []byte("test log data"),
 	}
@@ -390,13 +410,41 @@ func TestToLogPollerFilter(t *testing.T) {
 	})
 }
 
+func TestPendingLogsAfterSequence(t *testing.T) {
+	t.Parallel()
+
+	logs := []*solana.Log{
+		createTestLogWithSequence(101, 1, testPublicKey),
+		createTestLogWithSequence(103, 3, testPublicKey),
+		createTestLogWithSequence(102, 2, testPublicKey),
+		nil,
+	}
+
+	pending := pendingLogsAfterSequence(logs, 1)
+	require.Len(t, pending, 2)
+	require.Equal(t, int64(2), pending[0].SequenceNum)
+	require.Equal(t, int64(3), pending[1].SequenceNum)
+}
+
 func TestBuildQueryExpressions(t *testing.T) {
+	t.Run("omits starting block filter after first delivery", func(t *testing.T) {
+		request := createTestRequest()
+
+		withBlock, err := BuildQueryExpressions(request, 99, true)
+		require.NoError(t, err)
+		require.Len(t, withBlock, 4)
+
+		withoutBlock, err := BuildQueryExpressions(request, 99, false)
+		require.NoError(t, err)
+		require.Len(t, withoutBlock, 3)
+	})
+
 	t.Run("builds basic expressions", func(t *testing.T) {
 		request := &solanacappb.FilterLogTriggerRequest{
 			Address: testPublicKey[:],
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99)
+		expressions, err := BuildQueryExpressions(request, 99, true)
 
 		require.NoError(t, err)
 		require.Len(t, expressions, 3)
@@ -408,7 +456,7 @@ func TestBuildQueryExpressions(t *testing.T) {
 			Subkeys: testSubkeys,
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99)
+		expressions, err := BuildQueryExpressions(request, 99, true)
 
 		require.NoError(t, err)
 		require.Len(t, expressions, 4)
@@ -422,7 +470,7 @@ func TestBuildQueryExpressions(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99)
+		expressions, err := BuildQueryExpressions(request, 99, true)
 
 		require.NoError(t, err)
 		require.Len(t, expressions, 3)
@@ -447,7 +495,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99)
+		expressions, err := BuildQueryExpressions(request, 99, true)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -493,7 +541,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 49)
+		expressions, err := BuildQueryExpressions(request, 49, true)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -526,7 +574,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 0)
+		expressions, err := BuildQueryExpressions(request, 0, true)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -558,7 +606,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 0)
+		expressions, err := BuildQueryExpressions(request, 0, true)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -685,7 +733,7 @@ func TestStartPolling(t *testing.T) {
 		mockSolanaService.AssertExpectations(t)
 	})
 
-	t.Run("updates lastProcessedBlock correctly", func(t *testing.T) {
+	t.Run("updates sequence cursor on successful delivery", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		baseCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
@@ -806,7 +854,7 @@ func TestStartPolling(t *testing.T) {
 		mockSolanaService.AssertExpectations(t)
 	})
 
-	t.Run("updates lastProcessedBlock when inbox is full", func(t *testing.T) {
+	t.Run("does not advance sequence cursor when inbox is full", func(t *testing.T) {
 		mockSolanaService := mocks.NewSolanaService(t)
 		store := NewSolanaLogTriggerStore()
 
@@ -866,6 +914,46 @@ func TestStartPolling(t *testing.T) {
 		}
 
 		tests.AssertEventually(t, func() bool { return queryCallCount.Load() >= 2 })
+	})
+
+	t.Run("delivers later-ingested lower block after higher block", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+
+		meta := testRequestMetadata()
+		ctx := meta.ContextWithCRE(t.Context())
+
+		config := createTestRequest()
+		triggerID := "test-trigger"
+		startingBlock := int64(100)
+		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
+
+		// Higher block ingested first (sequence 1), lower block arrives later (sequence 2).
+		firstBatch := []*solana.Log{
+			createTestLogWithSequence(102, 1, testPublicKey),
+		}
+		secondBatch := []*solana.Log{
+			createTestLogWithSequence(101, 2, testPublicKey),
+		}
+
+		var queryCallCount atomic.Int32
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort) ([]*solana.Log, error) {
+				if queryCallCount.Add(1) == 1 {
+					return firstBatch, nil
+				}
+				return secondBatch, nil
+			}).Maybe()
+
+		telemetryContext := createTestTelemetryContext()
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
+
+		first := waitForLog(t, logCh, 100*time.Millisecond)
+		assert.Equal(t, int64(102), first.Trigger.BlockNumber)
+
+		second := waitForLog(t, logCh, 200*time.Millisecond)
+		assert.Equal(t, int64(101), second.Trigger.BlockNumber)
+
+		mockSolana.AssertExpectations(t)
 	})
 
 	t.Run("continues polling after transient errors", func(t *testing.T) {
@@ -968,7 +1056,7 @@ func TestErrorHandling(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99)
+		expressions, err := BuildQueryExpressions(request, 99, true)
 		if err != nil {
 			assert.Contains(t, err.Error(), "failed to create subkey filter")
 		} else {
@@ -978,7 +1066,7 @@ func TestErrorHandling(t *testing.T) {
 
 	t.Run("block range validation", func(t *testing.T) {
 		request := createTestRequest()
-		expressions, err := BuildQueryExpressions(request, 199)
+		expressions, err := BuildQueryExpressions(request, 199, true)
 		if err == nil {
 			assert.NotNil(t, expressions)
 		}
@@ -998,7 +1086,7 @@ func TestErrorHandling(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99)
+		expressions, err := BuildQueryExpressions(request, 99, true)
 		if err == nil {
 			assert.NotNil(t, expressions)
 		}
@@ -1006,7 +1094,7 @@ func TestErrorHandling(t *testing.T) {
 
 	t.Run("zero block range", func(t *testing.T) {
 		request := createTestRequest()
-		expressions, err := BuildQueryExpressions(request, -1)
+		expressions, err := BuildQueryExpressions(request, -1, true)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(expressions), 2)
 	})
@@ -1099,7 +1187,7 @@ func BenchmarkSolanaLogTriggerService_BuildQueryExpressions(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := BuildQueryExpressions(request, 99)
+		_, err := BuildQueryExpressions(request, 99, true)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1320,7 +1408,7 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 	t.Run("very large block numbers", func(t *testing.T) {
 		request := createTestRequest()
 
-		expressions, err := BuildQueryExpressions(request, 9223372036854775805)
+		expressions, err := BuildQueryExpressions(request, 9223372036854775805, true)
 
 		require.NoError(t, err)
 		require.NotEmpty(t, expressions)
@@ -1329,7 +1417,7 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 	t.Run("negative block numbers", func(t *testing.T) {
 		request := createTestRequest()
 
-		expressions, err := BuildQueryExpressions(request, -2)
+		expressions, err := BuildQueryExpressions(request, -2, true)
 
 		require.NoError(t, err)
 		require.NotEmpty(t, expressions)
