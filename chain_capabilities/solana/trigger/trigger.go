@@ -539,7 +539,6 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 				lastDeliveredSequenceNum,
 				lastDeliveredBlock,
 				lastDeliveredLogIndex,
-				hasDelivered,
 			)
 			for _, log := range pendingLogs {
 				if log == nil {
@@ -607,10 +606,9 @@ func deliverableLogsAfterCursor(
 	lastDeliveredSequenceNum int64,
 	lastDeliveredBlock int64,
 	lastDeliveredLogIndex int64,
-	hasDelivered bool,
 ) []*solana.Log {
 	if useSequenceCursor {
-		return deliverableLogsAfterSequence(logs, lastDeliveredSequenceNum, hasDelivered)
+		return deliverableLogsAfterSequence(logs, lastDeliveredSequenceNum)
 	}
 	return pendingLogsAfterBlockPosition(logs, lastDeliveredBlock, lastDeliveredLogIndex)
 }
@@ -669,16 +667,13 @@ func pendingLogsAfterSequence(logs []*solana.Log, lastDeliveredSequenceNum int64
 // deliverableLogsAfterSequence returns logs ready to deliver in contiguous sequence order.
 // If the next expected sequence number is missing from the query result, delivery stops at the gap
 // so that later-indexed logs are not delivered before earlier ones appear in the log poller.
-func deliverableLogsAfterSequence(logs []*solana.Log, lastDeliveredSequenceNum int64, hasDelivered bool) []*solana.Log {
+func deliverableLogsAfterSequence(logs []*solana.Log, lastDeliveredSequenceNum int64) []*solana.Log {
 	pending := pendingLogsAfterSequence(logs, lastDeliveredSequenceNum)
 	if len(pending) == 0 {
 		return nil
 	}
 
 	expectedNext := lastDeliveredSequenceNum + 1
-	if !hasDelivered {
-		expectedNext = pending[0].SequenceNum
-	}
 
 	deliverable := make([]*solana.Log, 0, len(pending))
 	for _, log := range pending {

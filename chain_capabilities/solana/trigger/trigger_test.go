@@ -135,7 +135,7 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 	lggr := logger.Test(t)
 
 	opts := LogTriggerServiceOpts{
-		SolanaService:                   mockSolanaService,
+		SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 		Logger:                          lggr,
 		BeholderProcessor:               NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -166,11 +166,11 @@ func createTestRequest() *solanacappb.FilterLogTriggerRequest {
 }
 
 func createTestLog(blockNumber int64, address solana.PublicKey) *solana.Log {
-	return createTestLogWithSequence(blockNumber, blockNumber, blockNumber, address)
+	return createTestLogWithSequence(blockNumber, blockNumber, 0, address)
 }
 
 func createTestLogWithIndex(blockNumber int64, logIndex int64, address solana.PublicKey) *solana.Log {
-	return createTestLogWithSequence(blockNumber, logIndex, blockNumber, address)
+	return createTestLogWithSequence(blockNumber, logIndex, 0, address)
 }
 
 func createTestLogWithSequence(blockNumber int64, logIndex int64, sequenceNum int64, address solana.PublicKey) *solana.Log {
@@ -441,7 +441,7 @@ func TestDeliverableLogsAfterSequence(t *testing.T) {
 			createTestLogWithSequence(101, 1, 1, testPublicKey),
 		}
 
-		deliverable := deliverableLogsAfterSequence(logs, 0, false)
+		deliverable := deliverableLogsAfterSequence(logs, 0)
 		require.Len(t, deliverable, 2)
 		require.Equal(t, int64(1), deliverable[0].SequenceNum)
 		require.Equal(t, int64(2), deliverable[1].SequenceNum)
@@ -452,14 +452,32 @@ func TestDeliverableLogsAfterSequence(t *testing.T) {
 			createTestLogWithSequence(103, 3, 2, testPublicKey),
 		}
 
-		deliverable := deliverableLogsAfterSequence(logs, 0, true)
+		deliverable := deliverableLogsAfterSequence(logs, 0)
 		require.Empty(t, deliverable)
 
 		logs = append(logs, createTestLogWithSequence(101, 1, 1, testPublicKey))
-		deliverable = deliverableLogsAfterSequence(logs, 0, true)
+		deliverable = deliverableLogsAfterSequence(logs, 0)
 		require.Len(t, deliverable, 2)
 		require.Equal(t, int64(101), deliverable[0].BlockNumber)
 		require.Equal(t, int64(103), deliverable[1].BlockNumber)
+	})
+
+	t.Run("does not jump to first pending sequence on cold start", func(t *testing.T) {
+		logs := []*solana.Log{
+			createTestLogWithSequence(103, 3, 8, testPublicKey),
+			createTestLogWithSequence(104, 4, 9, testPublicKey),
+		}
+
+		deliverable := deliverableLogsAfterSequence(logs, 0)
+		require.Empty(t, deliverable)
+
+		for seq := int64(1); seq <= 9; seq++ {
+			logs = append(logs, createTestLogWithSequence(100+seq, seq, seq, testPublicKey))
+		}
+		deliverable = deliverableLogsAfterSequence(logs, 0)
+		require.Len(t, deliverable, 9)
+		require.Equal(t, int64(1), deliverable[0].SequenceNum)
+		require.Equal(t, int64(9), deliverable[8].SequenceNum)
 	})
 }
 
@@ -472,7 +490,7 @@ func TestDeliverableLogsAfterCursor(t *testing.T) {
 			createTestLogWithSequence(102, 2, 0, testPublicKey),
 		}
 
-		deliverable := deliverableLogsAfterCursor(logs, false, 0, 100, 0, false)
+		deliverable := deliverableLogsAfterCursor(logs, false, 0, 100, 0)
 		require.Len(t, deliverable, 2)
 		require.Equal(t, int64(101), deliverable[0].BlockNumber)
 	})
@@ -483,7 +501,7 @@ func TestDeliverableLogsAfterCursor(t *testing.T) {
 			createTestLogWithSequence(101, 1, 1, testPublicKey),
 		}
 
-		deliverable := deliverableLogsAfterCursor(logs, true, 0, 100, 0, false)
+		deliverable := deliverableLogsAfterCursor(logs, true, 0, 100, 0)
 		require.Len(t, deliverable, 2)
 		require.Equal(t, int64(1), deliverable[0].SequenceNum)
 	})
@@ -754,7 +772,7 @@ func TestStartPolling(t *testing.T) {
 		store := NewSolanaLogTriggerStore()
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          logger.Nop(),
 			BeholderProcessor:               NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -866,7 +884,7 @@ func TestStartPolling(t *testing.T) {
 		// Create service with very small buffer
 		lggr := logger.Test(t)
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          lggr,
 			Triggers:                        store,
 			LogTriggerPollInterval:          1 * time.Millisecond,
@@ -923,7 +941,7 @@ func TestStartPolling(t *testing.T) {
 
 		lggr := logger.Test(t)
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          lggr,
 			Triggers:                        store,
 			LogTriggerPollInterval:          10 * time.Millisecond,
@@ -985,7 +1003,7 @@ func TestStartPolling(t *testing.T) {
 
 		lggr := logger.Test(t)
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          lggr,
 			Triggers:                        store,
 			LogTriggerPollInterval:          5 * time.Millisecond,
@@ -1280,7 +1298,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 		lggr := logger.Test(t)
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockService,
+			SolanaService:                   mocks.WrapSolanaService(mockService),
 			Logger:                          lggr,
 			Triggers:                        store,
 			LogTriggerPollInterval:          5 * time.Second,
