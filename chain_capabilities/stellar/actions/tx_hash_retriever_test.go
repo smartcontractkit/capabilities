@@ -8,27 +8,45 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 type stubForwarderClient struct {
-	events []ReportProcessedEvent
-	err    error
+	events             []ReportProcessedEvent
+	eventsErr          error
+	transmissionInfoFn func(call int) (TransmissionInfo, error)
+	invokeOnReportResp *stellartypes.SubmitTransactionResponse
+	invokeOnReportErr  error
+	transmissionCalls  int
 }
 
 func (s *stubForwarderClient) InvokeOnReport(context.Context, string, *sdk.ReportResponse) (*stellartypes.SubmitTransactionResponse, error) {
-	panic("not implemented")
+	if s.invokeOnReportErr != nil {
+		return nil, s.invokeOnReportErr
+	}
+	if s.invokeOnReportResp != nil {
+		return s.invokeOnReportResp, nil
+	}
+	panic("stubForwarderClient.InvokeOnReport not configured")
 }
 
 func (s *stubForwarderClient) GetTransmissionInfo(context.Context, TransmissionID) (TransmissionInfo, error) {
-	panic("not implemented")
+	s.transmissionCalls++
+	if s.transmissionInfoFn != nil {
+		return s.transmissionInfoFn(s.transmissionCalls)
+	}
+	panic("stubForwarderClient.GetTransmissionInfo not configured")
 }
 
 func (s *stubForwarderClient) GetReportProcessedEvents(context.Context, TransmissionID) ([]ReportProcessedEvent, error) {
-	if s.err != nil {
-		return nil, s.err
+	if s.eventsErr != nil {
+		return nil, s.eventsErr
 	}
 	return s.events, nil
 }
@@ -116,7 +134,7 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 
 	t.Run("returns error when event fetch fails", func(t *testing.T) {
 		t.Parallel()
-		client := &stubForwarderClient{err: errors.New("rpc down")}
+		client := &stubForwarderClient{eventsErr: errors.New("rpc down")}
 		retriever := NewTxHashRetriever(client, lggr, transmissionID)
 
 		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
@@ -156,6 +174,28 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 		_, err := retriever.GetFailedTransmissionHash(t.Context())
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrUnexpectedSuccessfulTransmission)
+	})
+
+	t.Run("emits unexpected success phase telemetry", func(t *testing.T) {
+		t.Parallel()
+		processor := &recordingWriteReportProcessor{}
+		client := &stubForwarderClient{events: []ReportProcessedEvent{
+			{TxHash: testTxHash, Ledger: 100, Success: true},
+		}}
+		retriever := NewTxHashRetriever(
+			client,
+			lggr,
+			transmissionID,
+			WithTxHashRetrieverMonitoring(
+				processor,
+				monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+				monitoring.TelemetryContext{},
+			),
+		)
+
+		_, err := retriever.GetFailedTransmissionHash(t.Context())
+		require.ErrorIs(t, err, ErrUnexpectedSuccessfulTransmission)
+		requireTxHashPhaseEvent(t, processor.messages, "FailedTransmission", txHashRetrievalPhase, "UnexpectedSuccess", testTxHash)
 	})
 
 	t.Run("GetFailedTransmissionHashWithCount returns count", func(t *testing.T) {

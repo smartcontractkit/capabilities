@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar/scval"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -280,6 +281,17 @@ func TestConvertReadContractRequestFromProto(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "function is required")
+	})
+
+	t.Run("invalid arg conversion", func(t *testing.T) {
+		t.Parallel()
+		_, err := convertReadContractRequestFromProto(&stellarcap.ReadContractRequest{
+			ContractId: testForwarderAddress,
+			Function:   "balance",
+			Args:       []*scval.ScVal{nil},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "args[0]")
 	})
 }
 

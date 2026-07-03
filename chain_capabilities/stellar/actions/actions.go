@@ -85,11 +85,11 @@ func (s *Stellar) Close() error {
 func (s *Stellar) GetLatestLedger(ctx context.Context, _ capabilities.RequestMetadata, _ *stellarcap.GetLatestLedgerRequest) (*capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse], caperrors.Error) {
 	resp, err := s.StellarService.GetLatestLedger(ctx)
 	if err != nil {
-		return nil, GetError(err, false)
+		return nil, capcommon.GetError(err, false)
 	}
 	protoResp, err := stellarcap.ConvertGetLatestLedgerResponseToProto(resp)
 	if err != nil {
-		return nil, GetError(err, false)
+		return nil, capcommon.GetError(err, false)
 	}
 	return &capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse]{Response: protoResp}, nil
 }
@@ -196,6 +196,3 @@ func isUserError(err error) bool {
 func isStellarNodeInfraError(err error) bool {
 	return errors.Is(err, multinode.ErrNodeError) || strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
-
-var GetError = capcommon.GetError
-var NewUserError = caperrors.NewPublicUserError
