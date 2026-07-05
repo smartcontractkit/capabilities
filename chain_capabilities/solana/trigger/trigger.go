@@ -540,6 +540,15 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 				lastDeliveredBlock,
 				lastDeliveredLogIndex,
 			)
+			lts.logPollDeliveryDiagnostics(
+				triggerID,
+				logs,
+				pendingLogs,
+				useSequenceCursor,
+				lastDeliveredSequenceNum,
+				lastDeliveredBlock,
+				lastDeliveredLogIndex,
+			)
 			for _, log := range pendingLogs {
 				if log == nil {
 					lts.lggr.Warnw("Received nil log from QueryTrackedLogs, skipping", "triggerID", triggerID)
@@ -598,6 +607,118 @@ func logsHaveSequenceNumbers(logs []*solana.Log) bool {
 		}
 	}
 	return false
+}
+
+type logBatchBounds struct {
+	minBlock int64
+	maxBlock int64
+	minSeq   int64
+	maxSeq   int64
+	count    int
+	seqCount int
+}
+
+func computeLogBatchBounds(logs []*solana.Log) logBatchBounds {
+	var bounds logBatchBounds
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		bounds.count++
+		if bounds.count == 1 {
+			bounds.minBlock = log.BlockNumber
+			bounds.maxBlock = log.BlockNumber
+			bounds.minSeq = log.SequenceNum
+			bounds.maxSeq = log.SequenceNum
+		} else {
+			if log.BlockNumber < bounds.minBlock {
+				bounds.minBlock = log.BlockNumber
+			}
+			if log.BlockNumber > bounds.maxBlock {
+				bounds.maxBlock = log.BlockNumber
+			}
+			if log.SequenceNum > 0 {
+				if bounds.seqCount == 0 {
+					bounds.minSeq = log.SequenceNum
+					bounds.maxSeq = log.SequenceNum
+				} else {
+					if log.SequenceNum < bounds.minSeq {
+						bounds.minSeq = log.SequenceNum
+					}
+					if log.SequenceNum > bounds.maxSeq {
+						bounds.maxSeq = log.SequenceNum
+					}
+				}
+				bounds.seqCount++
+			}
+		}
+	}
+	return bounds
+}
+
+func (lts *SolanaLogTriggerService) logPollDeliveryDiagnostics(
+	triggerID string,
+	queryLogs []*solana.Log,
+	pendingLogs []*solana.Log,
+	useSequenceCursor bool,
+	lastDeliveredSequenceNum int64,
+	lastDeliveredBlock int64,
+	lastDeliveredLogIndex int64,
+) {
+	batch := computeLogBatchBounds(queryLogs)
+	if batch.count == 0 {
+		return
+	}
+
+	cursorMode := "block"
+	if useSequenceCursor {
+		cursorMode = "sequence"
+	}
+
+	fields := []any{
+		"triggerID", triggerID,
+		"cursorMode", cursorMode,
+		"queryLogCount", batch.count,
+		"pendingLogCount", len(pendingLogs),
+		"queryMinBlock", batch.minBlock,
+		"queryMaxBlock", batch.maxBlock,
+		"lastDeliveredSequenceNum", lastDeliveredSequenceNum,
+		"lastDeliveredBlock", lastDeliveredBlock,
+		"lastDeliveredLogIndex", lastDeliveredLogIndex,
+	}
+	if batch.seqCount > 0 {
+		fields = append(fields, "queryMinSequenceNum", batch.minSeq, "queryMaxSequenceNum", batch.maxSeq, "querySeqCount", batch.seqCount)
+	}
+
+	if len(pendingLogs) == 0 {
+		if useSequenceCursor && lastDeliveredSequenceNum > 0 && batch.maxSeq > lastDeliveredSequenceNum+1 {
+			fields = append(fields, "stallReason", "sequence_gap")
+			lts.lggr.Warnw("Log trigger poll returned logs but none are deliverable", fields...)
+		} else if !useSequenceCursor && batch.maxBlock > lastDeliveredBlock {
+			fields = append(fields, "stallReason", "block_cursor_filter_or_ordering")
+			lts.lggr.Warnw("Log trigger poll returned logs but none are deliverable", fields...)
+		}
+		return
+	}
+
+	if !useSequenceCursor && batch.seqCount == 0 && len(pendingLogs) > 0 {
+		lts.lggr.Debugw(
+			"Log trigger using block cursor because query results have no sequence numbers",
+			fields...,
+		)
+	}
+
+	if useSequenceCursor {
+		expectedNext := lastDeliveredSequenceNum + 1
+		if pendingLogs[0].SequenceNum > expectedNext {
+			fields = append(fields,
+				"stallReason", "sequence_gap",
+				"expectedNextSequenceNum", expectedNext,
+				"nextPendingSequenceNum", pendingLogs[0].SequenceNum,
+			)
+			lts.lggr.Warnw("Log trigger waiting for missing sequence before delivery", fields...)
+		}
+	}
 }
 
 func deliverableLogsAfterCursor(
@@ -728,7 +849,14 @@ func (lts *SolanaLogTriggerService) deliverLogReliably(
 		Payload:     anyPayload,
 	}
 
-	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "logIndex", log.LogIndex, "txHash", log.TxHash)
+	lts.lggr.Infow("Sending log event to pipe",
+		"triggerID", triggerID,
+		"eventID", eventID,
+		"blockNumber", log.BlockNumber,
+		"logIndex", log.LogIndex,
+		"sequenceNum", log.SequenceNum,
+		"txHash", log.TxHash,
+	)
 	deliverCtx := capcommon.ContextWithOrgForDelivery(ctx, lts.lggr, lts.orgResolver, telemetryContext.RequestMetadata)
 	if err := lts.baseTrigger.DeliverEvent(deliverCtx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
