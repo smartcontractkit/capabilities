@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -92,6 +93,10 @@ func (s *Stellar) GetLatestLedger(ctx context.Context, metadata capabilities.Req
 	observe := func(_ context.Context, height *ctypes.ChainHeight) (*stellarcap.GetLatestLedgerResponse, error) {
 		if height == nil || height.Latest <= 0 {
 			return nil, fmt.Errorf("no agreed chain height available for GetLatestLedger consensus")
+		}
+		// stellar ledger sequences are uint32 on-chain
+		if height.Latest > math.MaxUint32 {
+			return nil, fmt.Errorf("agreed ledger sequence %d exceeds uint32", height.Latest)
 		}
 		return &stellarcap.GetLatestLedgerResponse{Sequence: uint32(height.Latest)}, nil
 	}
