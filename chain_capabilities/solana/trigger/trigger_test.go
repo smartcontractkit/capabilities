@@ -400,111 +400,20 @@ func TestToLogPollerFilter(t *testing.T) {
 	})
 }
 
-func TestPendingLogsAfterBlockPosition(t *testing.T) {
+func TestPendingLogsAfterPosition(t *testing.T) {
 	t.Parallel()
 
 	logs := []*solana.Log{
-		createTestLogWithSequence(101, 1, 1, testPublicKey),
-		createTestLogWithSequence(103, 3, 3, testPublicKey),
-		createTestLogWithSequence(102, 2, 2, testPublicKey),
+		createTestLogWithIndex(101, 1, testPublicKey),
+		createTestLogWithIndex(103, 3, testPublicKey),
+		createTestLogWithIndex(102, 2, testPublicKey),
 		nil,
 	}
 
-	pending := pendingLogsAfterBlockPosition(logs, 101, 1)
+	pending := pendingLogsAfterPosition(logs, 101, 1)
 	require.Len(t, pending, 2)
 	require.Equal(t, int64(102), pending[0].BlockNumber)
 	require.Equal(t, int64(103), pending[1].BlockNumber)
-}
-
-func TestPendingLogsAfterSequence(t *testing.T) {
-	t.Parallel()
-
-	logs := []*solana.Log{
-		createTestLogWithSequence(101, 1, 1, testPublicKey),
-		createTestLogWithSequence(103, 3, 3, testPublicKey),
-		createTestLogWithSequence(102, 2, 2, testPublicKey),
-		nil,
-	}
-
-	pending := pendingLogsAfterSequence(logs, 1)
-	require.Len(t, pending, 2)
-	require.Equal(t, int64(2), pending[0].SequenceNum)
-	require.Equal(t, int64(3), pending[1].SequenceNum)
-}
-
-func TestDeliverableLogsAfterSequence(t *testing.T) {
-	t.Parallel()
-
-	t.Run("delivers contiguous sequences sorted by sequence number", func(t *testing.T) {
-		logs := []*solana.Log{
-			createTestLogWithSequence(103, 3, 2, testPublicKey),
-			createTestLogWithSequence(101, 1, 1, testPublicKey),
-		}
-
-		deliverable := deliverableLogsAfterSequence(logs, 0)
-		require.Len(t, deliverable, 2)
-		require.Equal(t, int64(1), deliverable[0].SequenceNum)
-		require.Equal(t, int64(2), deliverable[1].SequenceNum)
-	})
-
-	t.Run("does not skip ahead when later sequence is indexed first", func(t *testing.T) {
-		logs := []*solana.Log{
-			createTestLogWithSequence(103, 3, 2, testPublicKey),
-		}
-
-		deliverable := deliverableLogsAfterSequence(logs, 0)
-		require.Empty(t, deliverable)
-
-		logs = append(logs, createTestLogWithSequence(101, 1, 1, testPublicKey))
-		deliverable = deliverableLogsAfterSequence(logs, 0)
-		require.Len(t, deliverable, 2)
-		require.Equal(t, int64(101), deliverable[0].BlockNumber)
-		require.Equal(t, int64(103), deliverable[1].BlockNumber)
-	})
-
-	t.Run("does not jump to first pending sequence on cold start", func(t *testing.T) {
-		logs := []*solana.Log{
-			createTestLogWithSequence(103, 3, 8, testPublicKey),
-			createTestLogWithSequence(104, 4, 9, testPublicKey),
-		}
-
-		deliverable := deliverableLogsAfterSequence(logs, 0)
-		require.Empty(t, deliverable)
-
-		for seq := int64(1); seq <= 9; seq++ {
-			logs = append(logs, createTestLogWithSequence(100+seq, seq, seq, testPublicKey))
-		}
-		deliverable = deliverableLogsAfterSequence(logs, 0)
-		require.Len(t, deliverable, 9)
-		require.Equal(t, int64(1), deliverable[0].SequenceNum)
-		require.Equal(t, int64(9), deliverable[8].SequenceNum)
-	})
-}
-
-func TestDeliverableLogsAfterCursor(t *testing.T) {
-	t.Parallel()
-
-	t.Run("uses block cursor when sequence numbers are unset", func(t *testing.T) {
-		logs := []*solana.Log{
-			createTestLogWithSequence(101, 1, 0, testPublicKey),
-			createTestLogWithSequence(102, 2, 0, testPublicKey),
-		}
-
-		deliverable := deliverableLogsAfterCursor(logs, false, 0, 100, 0)
-		require.Len(t, deliverable, 2)
-		require.Equal(t, int64(101), deliverable[0].BlockNumber)
-	})
-
-	t.Run("uses sequence cursor when sequence numbers are present", func(t *testing.T) {
-		logs := []*solana.Log{
-			createTestLogWithSequence(103, 3, 2, testPublicKey),
-			createTestLogWithSequence(101, 1, 1, testPublicKey),
-		}
-
-		deliverable := deliverableLogsAfterCursor(logs, true, 0, 100, 0)
-		require.Len(t, deliverable, 2)
-		require.Equal(t, int64(1), deliverable[0].SequenceNum)
-	})
 }
 
 func TestBuildQueryExpressions(t *testing.T) {
