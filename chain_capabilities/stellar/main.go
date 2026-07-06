@@ -21,6 +21,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/height"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -58,7 +59,7 @@ type capability struct {
 	requestPoller    *poller.Poller
 	consensusHandler chainconsensus.Handler
 	oracle           core.Oracle
-	blocksProvider   *blocksProvider
+	blocksProvider   *height.Provider
 	id               string
 }
 
@@ -182,9 +183,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
-	c.blocksProvider, err = newBlocksProvider(c.lggr, cfg.ObservationPollPeriod, stellarService)
+	c.blocksProvider, err = height.NewProvider(c.lggr, cfg.ObservationPollPeriod, stellarService)
 	if err != nil {
-		return fmt.Errorf("failed to create stellar block provider: %w", err)
+		return fmt.Errorf("failed to create stellar height provider: %w", err)
 	}
 	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{

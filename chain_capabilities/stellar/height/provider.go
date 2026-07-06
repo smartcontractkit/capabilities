@@ -1,4 +1,4 @@
-package main
+package height
 
 import (
 	"context"
@@ -11,34 +11,33 @@ import (
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 )
 
-// latestLedgerProvider is the subset of the Stellar chain service used to poll the
-// latest closed ledger sequence.
-type latestLedgerProvider interface {
+// LedgerProvider is the subset of the Stellar chain service used to poll the latest closed ledger sequence.
+type LedgerProvider interface {
 	GetLatestLedger(ctx context.Context) (stellartypes.GetLatestLedgerResponse, error)
 }
 
-// blocksProvider polls the latest closed Stellar ledger sequence and exposes it as the DON's common chain height for consensus reads.
-// Stellar ledgers are final once closed (no reorgs), so latest == safe == finalized == the latest ledger sequence.
-type blocksProvider struct {
+// Provider is a service that polls the latest closed Stellar ledger sequence.
+type Provider struct {
 	services.Service
 	engine *services.Engine
 
 	lggr       logger.SugaredLogger
 	pollPeriod time.Duration
-	service    latestLedgerProvider
+	service    LedgerProvider
 
 	mutex    sync.RWMutex
 	sequence int64
 }
 
-func newBlocksProvider(lggr logger.Logger, pollPeriod time.Duration, service latestLedgerProvider) (*blocksProvider, error) {
+// NewProvider builds a Stellar height provider
+func NewProvider(lggr logger.Logger, pollPeriod time.Duration, service LedgerProvider) (*Provider, error) {
 	if pollPeriod <= 0 {
-		return nil, fmt.Errorf("block provider poll period must be positive, got %s", pollPeriod)
+		return nil, fmt.Errorf("height provider poll period must be positive, got %s", pollPeriod)
 	}
 	if service == nil {
-		return nil, fmt.Errorf("block provider requires a non-nil ledger service")
+		return nil, fmt.Errorf("height provider requires a non-nil ledger service")
 	}
-	b := &blocksProvider{
+	b := &Provider{
 		pollPeriod: pollPeriod,
 		service:    service,
 	}
@@ -51,14 +50,14 @@ func newBlocksProvider(lggr logger.Logger, pollPeriod time.Duration, service lat
 	return b, nil
 }
 
-func (b *blocksProvider) start(_ context.Context) error {
+func (b *Provider) start(_ context.Context) error {
 	b.engine.Go(b.poll)
 	return nil
 }
 
-func (b *blocksProvider) close() error { return nil }
+func (b *Provider) close() error { return nil }
 
-func (b *blocksProvider) poll(ctx context.Context) {
+func (b *Provider) poll(ctx context.Context) {
 	b.pollLedger(ctx)
 	ticker := time.NewTicker(b.pollPeriod)
 	defer ticker.Stop()
@@ -72,7 +71,7 @@ func (b *blocksProvider) poll(ctx context.Context) {
 	}
 }
 
-func (b *blocksProvider) pollLedger(ctx context.Context) {
+func (b *Provider) pollLedger(ctx context.Context) {
 	resp, err := b.service.GetLatestLedger(ctx)
 	if err != nil {
 		b.lggr.Errorw("failed to poll latest ledger", "error", err)
@@ -87,11 +86,18 @@ func (b *blocksProvider) pollLedger(ctx context.Context) {
 	}
 }
 
-func (b *blocksProvider) GetLatest() int64    { return b.get() }
-func (b *blocksProvider) GetSafe() int64      { return b.get() }
-func (b *blocksProvider) GetFinalized() int64 { return b.get() }
+// GetLatest returns the latest observed ledger sequence.
+func (b *Provider) GetLatest() int64 { return b.get() }
 
-func (b *blocksProvider) get() int64 {
+// GetSafe returns the safe ledger sequence. Stellar ledgers are final on close, so
+// this equals GetLatest.
+func (b *Provider) GetSafe() int64 { return b.get() }
+
+// GetFinalized returns the finalized ledger sequence. Stellar ledgers are final on
+// close, so this equals GetLatest.
+func (b *Provider) GetFinalized() int64 { return b.get() }
+
+func (b *Provider) get() int64 {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
 	return b.sequence
