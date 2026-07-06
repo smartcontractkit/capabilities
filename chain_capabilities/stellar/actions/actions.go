@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -23,10 +24,11 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 // Stellar implements the CRE capability actions for the Stellar chain.
@@ -82,16 +84,38 @@ func (s *Stellar) Close() error {
 	return services.CloseAll(s.reportSizeLimit)
 }
 
-func (s *Stellar) GetLatestLedger(ctx context.Context, _ capabilities.RequestMetadata, _ *stellarcap.GetLatestLedgerRequest) (*capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse], caperrors.Error) {
-	resp, err := s.StellarService.GetLatestLedger(ctx)
-	if err != nil {
-		return nil, capcommon.GetError(err, false)
+// GetLatestLedger performs a consensus read of the current ledger. Each node
+// observes its latest ledger and the DON aggregates via the OCR consensus handler
+// (same path as ReadContract), keyed by the observed ledger sequence.
+func (s *Stellar) GetLatestLedger(ctx context.Context, metadata capabilities.RequestMetadata, _ *stellarcap.GetLatestLedgerRequest) (*capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse], caperrors.Error) {
+	s.lggr.Debug("Received GetLatestLedger request")
+
+	observe := func(_ context.Context, height *ctypes.ChainHeight) (*stellarcap.GetLatestLedgerResponse, error) {
+		if height == nil || height.Latest <= 0 {
+			return nil, fmt.Errorf("no agreed chain height available for GetLatestLedger consensus")
+		}
+		// stellar ledger sequences are uint32 on-chain
+		if height.Latest > math.MaxUint32 {
+			return nil, fmt.Errorf("agreed ledger sequence %d exceeds uint32", height.Latest)
+		}
+		// TODO PLEX-3243 implement a by sequence ledger fetch to populate block metadata
+		return &stellarcap.GetLatestLedgerResponse{Sequence: uint32(height.Latest)}, nil
 	}
-	protoResp, err := stellarcap.ConvertGetLatestLedgerResponseToProto(resp)
+
+	request := ctypes.NewLockableToBlockHashableRequest(
+		metadata.WorkflowExecutionID,
+		metadata.ReferenceID,
+		metering.GetResponseMetadata(metering.GetLatestLedger),
+		observe,
+	)
+
+	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport(ctx, s.handler, request)
 	if err != nil {
-		return nil, capcommon.GetError(err, false)
+		s.lggr.Errorw("Failed to GetLatestLedger", "error", err)
+		return nil, capcommon.GetError(fmt.Errorf("failed to GetLatestLedger: %w", err), false)
+
 	}
-	return &capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse]{Response: protoResp}, nil
+	return responseAndMetadata, nil
 }
 
 // ReadContract performs a consensus read of a read-only Soroban contract call.

@@ -118,28 +118,18 @@ func TestGetLatestLedger(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedStellar(t)
-		helper.stellarService.EXPECT().
-			GetLatestLedger(mock.Anything).
-			Return(stellartypes.GetLatestLedgerResponse{
-				Sequence:        123,
-				LedgerCloseTime: 1_700_000_000,
-			}, nil).
-			Once()
+		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 123})}
 
 		resp, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, uint32(123), resp.Response.GetSequence())
-		require.Equal(t, int64(1_700_000_000), resp.Response.GetLedgerCloseTime())
 	})
 
-	t.Run("service error", func(t *testing.T) {
+	t.Run("no agreed height", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedStellar(t)
-		helper.stellarService.EXPECT().
-			GetLatestLedger(mock.Anything).
-			Return(stellartypes.GetLatestLedgerResponse{}, errors.New("node unavailable")).
-			Once()
+		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 0})}
 
 		_, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
 		require.Error(t, err)
@@ -357,4 +347,50 @@ func runVolatileHashableHandle(ctx context.Context, req ctypes.Request) (<-chan 
 	ch := make(chan ctypes.Reply, 1)
 	ch <- reply
 	return ch, nil
+}
+
+// runLockableToBlockHandle locks the request to the given agreed ChainHeight (as the
+// real handler does after height agreement), then observes the resulting hashable request.
+func runLockableToBlockHandle(chainHeight *ctypes.ChainHeight) func(context.Context, ctypes.Request) (<-chan ctypes.Reply, error) {
+	return func(ctx context.Context, req ctypes.Request) (<-chan ctypes.Reply, error) {
+		if lockable, ok := req.(interface {
+			LockToABlock(*ctypes.ChainHeight) ctypes.Request
+		}); ok {
+			req = lockable.LockToABlock(chainHeight)
+		}
+
+		observableRequest, ok := req.(ctypes.ObservableRequest)
+		if !ok {
+			return nil, fmt.Errorf("request is not an ObservableRequest")
+		}
+		_ = observableRequest.CaptureObservation(ctx)
+		observation, err := observableRequest.GetOCRObservation()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get OCR observation: %w", err)
+		}
+		if observation == nil {
+			ch := make(chan ctypes.Reply, 1)
+			ch <- ctypes.Reply{Err: fmt.Errorf("no observation captured")}
+			return ch, nil
+		}
+
+		var reply ctypes.Reply
+		switch tObs := observation.Observation.(type) {
+		case *ctypes.RequestObservation_Hashable:
+			if len(tObs.Hashable) != ctypes.HashLength {
+				return nil, fmt.Errorf("unexpected hashable length: got %d, want %d", len(tObs.Hashable), ctypes.HashLength)
+			}
+			var rd ctypes.Hash
+			copy(rd[:], tObs.Hashable)
+			reply = ctypes.Reply{Value: ctypes.NewHashableRequestReport(ocrtypes.ConfigDigest{}, 0, rd, nil)}
+		case *ctypes.RequestObservation_Error:
+			reply = ctypes.Reply{Err: ctypes.ObservationError(tObs.Error).Err()}
+		default:
+			return nil, fmt.Errorf("unexpected observation type: %T", observation.Observation)
+		}
+
+		ch := make(chan ctypes.Reply, 1)
+		ch <- reply
+		return ch, nil
+	}
 }

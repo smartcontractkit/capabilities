@@ -15,6 +15,10 @@ const (
 	// TODO: PLEX-3022 - replace with actual values.
 	ReadContract SpendValueCredits = "1"
 
+	// GetLatestLedger is the placeholder spend value for a GetLatestLedger consensus read.
+	// TODO: PLEX-3022 - replace with actual values.
+	GetLatestLedger SpendValueCredits = "1"
+
 	// WriteReportSpendUnitFormat is the spend unit for write operations, parameterised by chain selector.
 	WriteReportSpendUnitFormat = "STROOP.%d"
 )
