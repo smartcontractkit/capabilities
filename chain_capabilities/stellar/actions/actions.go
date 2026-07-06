@@ -98,6 +98,7 @@ func (s *Stellar) GetLatestLedger(ctx context.Context, metadata capabilities.Req
 		if height.Latest > math.MaxUint32 {
 			return nil, fmt.Errorf("agreed ledger sequence %d exceeds uint32", height.Latest)
 		}
+		// TODO PLEX-3243 implement a by sequence ledger fetch to populate block metadata
 		return &stellarcap.GetLatestLedgerResponse{Sequence: uint32(height.Latest)}, nil
 	}
 
