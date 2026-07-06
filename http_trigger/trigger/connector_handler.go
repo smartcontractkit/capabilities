@@ -13,13 +13,11 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -47,16 +45,11 @@ type connectorHandler struct {
 	wg                       sync.WaitGroup
 	stopChan                 services.StopChan
 	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
-	multiTriggerFlag         limits.RangeLimiter[config.Timestamp]
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32,
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics,
 	orgResolver orgresolver.OrgResolver, limitsFactory limits.Factory) (*connectorHandler, error) {
-	multiTriggerFlag, err := limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create multi-trigger execution ID flag: %w", err)
-	}
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
@@ -68,7 +61,6 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		metrics:                  metrics,
 		stopChan:                 make(chan struct{}),
 		orgResolver:              orgResolver,
-		multiTriggerFlag:         multiTriggerFlag,
 	}, nil
 }
 
@@ -280,7 +272,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	}
 
 	l = logger.With(l, "workflowID", workflowMetadata.WorkflowID)
-	workflowExecutionID, isLegacyExecutionID, err := h.generateWorkflowExecutionID(ctx, workflowMetadata.WorkflowID, req.ID, workflowMetadata.ReferenceID, l)
+	workflowExecutionID, err := h.generateWorkflowExecutionID(ctx, workflowMetadata.WorkflowID, req.ID, workflowMetadata.ReferenceID, l)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
@@ -336,7 +328,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		}
 	}
 
-	l.Debugw("Triggering workflow", "isLegacyExecutionID", isLegacyExecutionID)
+	l.Debugw("Triggering workflow", "isLegacyExecutionID", false)
 	input := []byte(triggerReq.Input)
 	err = h.triggerWorkflow(ctx, workflowMetadata.WorkflowID, req.ID, gatewayID, input, triggerReq.Key)
 	if err != nil {
@@ -435,7 +427,7 @@ func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metad
 	}
 }
 
-func (h *connectorHandler) generateWorkflowExecutionID(ctx context.Context, workflowID, reqID, referenceID string, l logger.Logger) (string, bool, error) {
+func (h *connectorHandler) generateWorkflowExecutionID(ctx context.Context, workflowID, reqID, referenceID string, l logger.Logger) (string, error) {
 	triggerIndex, err := workflows.GetTriggerIndexFromReferenceID(referenceID)
 	if err != nil {
 		l.Warnw("failed to get trigger index from reference ID", "err", err, "workflowID", workflowID, "refID", referenceID)
@@ -444,21 +436,12 @@ func (h *connectorHandler) generateWorkflowExecutionID(ctx context.Context, work
 	}
 
 	strippedWorkflowID := strings.TrimPrefix(workflowID, "0x")
-	var workflowExecutionID string
-	var execIDErr error
-	isLegacyExecutionID := true
-	// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
-	if h.multiTriggerFlag.Check(ctx, config.NewTimestamp(time.Now())) == nil {
-		workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(strippedWorkflowID, reqID, triggerIndex)
-		isLegacyExecutionID = false
-	} else { // legacy behavior
-		workflowExecutionID, execIDErr = workflows.EncodeExecutionID(strippedWorkflowID, reqID) //nolint:staticcheck
-	}
+	workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(strippedWorkflowID, reqID, triggerIndex)
 	if execIDErr != nil {
-		l.Errorw("Failed to generate workflow execution ID", "error", execIDErr, "isLegacyExecutionID", isLegacyExecutionID)
-		return "", isLegacyExecutionID, execIDErr
+		l.Errorw("Failed to generate workflow execution ID", "error", execIDErr)
+		return "", execIDErr
 	}
-	return ensureHexPrefix(workflowExecutionID), isLegacyExecutionID, nil
+	return ensureHexPrefix(workflowExecutionID), nil
 }
 
 func (h *connectorHandler) handleRequestCaching(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage], workflowExecutionID string, l logger.Logger) bool {

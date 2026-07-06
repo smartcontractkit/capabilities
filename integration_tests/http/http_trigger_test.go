@@ -331,7 +331,7 @@ func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, ex
 	workflowIDFromResponse := respBody.Result.WorkflowID
 	require.Equal(t, expectedWorkflowID, workflowIDFromResponse)
 
-	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowIDFromResponse, "0x"), requestID)
+	executionID, err := workflows.GenerateExecutionIDWithTriggerIndex(strings.TrimPrefix(workflowIDFromResponse, "0x"), requestID, 0)
 	require.NoError(t, err)
 	require.Equal(t, "0x"+executionID, respBody.Result.WorkflowExecutionID)
 }
