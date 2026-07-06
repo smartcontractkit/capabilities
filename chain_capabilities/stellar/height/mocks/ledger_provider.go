@@ -6,7 +6,6 @@ import (
 	context "context"
 
 	stellar "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
-
 	mock "github.com/stretchr/testify/mock"
 )
 
