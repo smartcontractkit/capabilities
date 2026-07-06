@@ -15,3 +15,12 @@ packages:
       filename: "test_stellar_service_mock.go"
     interfaces:
       StellarService:
+  github.com/smartcontractkit/capabilities/chain_capabilities/stellar/height:
+    config:
+      dir: "{{ .InterfaceDir }}/mocks"
+      mockname: "{{ .InterfaceName }}"
+      outpkg: mocks
+      inpackage: false
+      filename: "{{ .InterfaceName | snakecase }}.go"
+    interfaces:
+      LedgerProvider:
