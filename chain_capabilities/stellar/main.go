@@ -18,6 +18,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
@@ -57,6 +58,7 @@ type capability struct {
 	requestPoller    *poller.Poller
 	consensusHandler chainconsensus.Handler
 	oracle           core.Oracle
+	blocksProvider   *blocksProvider
 	id               string
 }
 
@@ -100,6 +102,9 @@ func (c *capabilityGRPCService) Close() error {
 	}
 	if c.consensusHandler != nil {
 		closers = append(closers, c.consensusHandler)
+	}
+	if c.blocksProvider != nil {
+		closers = append(closers, c.blocksProvider)
 	}
 	if c.Stellar != nil {
 		closers = append(closers, c.Stellar)
@@ -177,6 +182,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	c.blocksProvider, err = newBlocksProvider(c.lggr, cfg.ObservationPollPeriod, stellarService)
+	if err != nil {
+		return fmt.Errorf("failed to create stellar block provider: %w", err)
+	}
 	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
 			BlockchainTimeout:                  time.Second * 20,
@@ -187,7 +196,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			ContractConfigLoadTimeout:          time.Second * 10,
 			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.blocksProvider, consensusMetrics),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {
@@ -227,7 +236,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 
-	for _, service := range []interface{ Start(context.Context) error }{c.requestPoller, c.consensusHandler, c.oracle} {
+	for _, service := range []interface{ Start(context.Context) error }{c.requestPoller, c.consensusHandler, c.blocksProvider, c.oracle} {
 		if err = service.Start(ctx); err != nil {
 			return err
 		}
