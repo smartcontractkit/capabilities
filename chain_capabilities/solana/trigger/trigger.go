@@ -91,21 +91,38 @@ func (lts *SolanaLogTriggerService) ToLogPollerFilter(triggerID string, config *
 	}, nil
 }
 
+// logQueryMinBlock optionally bounds log-poller queries by block number. When block is negative,
+// no block filter is applied. Registration uses an exclusive lower bound (Gt); the delivery
+// cursor uses an inclusive lower bound (Gte) so same-block logs after the last delivered index
+// can still be fetched and filtered client-side by pendingLogsAfterPosition.
+type logQueryMinBlock struct {
+	block     int64
+	inclusive bool
+}
+
+func (b logQueryMinBlock) applied() bool {
+	return b.block >= 0
+}
+
+func registrationMinBlock(startingBlock int64) logQueryMinBlock {
+	return logQueryMinBlock{block: startingBlock, inclusive: false}
+}
+
+func deliveryMinBlock(lastDeliveredBlock int64) logQueryMinBlock {
+	return logQueryMinBlock{block: lastDeliveredBlock, inclusive: true}
+}
+
 // BuildQueryExpressions builds query expressions including subkey filters.
-// When applyMinBlockFilter is true and minBlock >= 0, results are limited to logs at or after
-// minBlock. Registration uses an exclusive lower bound (Gt); the delivery cursor uses an
-// inclusive lower bound (Gte) so same-block logs after the last delivered index can still be
-// fetched and filtered client-side by pendingLogsAfterPosition.
-func BuildQueryExpressions(config *solanacappb.FilterLogTriggerRequest, minBlock int64, applyMinBlockFilter bool, minBlockInclusive bool) ([]query.Expression, error) {
+func BuildQueryExpressions(config *solanacappb.FilterLogTriggerRequest, minBlock logQueryMinBlock) ([]query.Expression, error) {
 	expressions := []query.Expression{
 		solprimitives.NewAddressFilter(solana.PublicKey(config.Address)),
 		solprimitives.NewEventSigFilter(getEventSig(config.EventName)),
 	}
 
-	if applyMinBlockFilter && minBlock >= 0 {
-		blockStr := strconv.FormatInt(minBlock, 10)
+	if minBlock.applied() {
+		blockStr := strconv.FormatInt(minBlock.block, 10)
 		operator := primitives.Gt
-		if minBlockInclusive {
+		if minBlock.inclusive {
 			operator = primitives.Gte
 		}
 		expressions = append(expressions, query.Block(blockStr, operator))
@@ -492,8 +509,10 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 	defer ticker.Stop()
 	defer close(logCh)
 
-	// startingBlock is the finalized block at registration. The delivery cursor only advances to the
-	// last successfully delivered log and never jumps ahead within a batch.
+	// startingBlock is the finalized block at registration. The delivery cursor tracks
+	// (BlockNumber, LogIndex) instead of log-poller SequenceNum so chainlink-solana does not
+	// need query-side sequence filtering. It only advances to the last successfully delivered
+	// log and never jumps ahead within a batch.
 	var (
 		lastDeliveredBlock    = startingBlock
 		lastDeliveredLogIndex int64
@@ -512,13 +531,11 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 				"lastDeliveredLogIndex", lastDeliveredLogIndex,
 				"startingBlock", startingBlock,
 			)
-			minBlock := startingBlock
-			minBlockInclusive := false
+			minBlock := registrationMinBlock(startingBlock)
 			if hasDelivered {
-				minBlock = lastDeliveredBlock
-				minBlockInclusive = true
+				minBlock = deliveryMinBlock(lastDeliveredBlock)
 			}
-			expressions, err := BuildQueryExpressions(config, minBlock, minBlock >= 0, minBlockInclusive)
+			expressions, err := BuildQueryExpressions(config, minBlock)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to build query expressions for trigger %s: %v", triggerID, err)
 				lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())

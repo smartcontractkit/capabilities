@@ -167,7 +167,7 @@ func newMockedSolana(t *testing.T, readsEnabled bool) *mockedSolana {
 	lggr := logger.Test(t)
 	service := &Solana{
 		readsEnabled:      readsEnabled,
-		SolanaService:     mockSolanaService,
+		SolanaService:     mocks.WrapSolanaService(mockSolanaService),
 		beholderProcessor: NopBeholderProcessor{},
 		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		chainSelector:     1,
