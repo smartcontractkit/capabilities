@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	AttrNodeAddress        = "node_address"
-	AttrGatewayProxyDonID  = "gateway_proxy_don_id"
-	AttrProxyMode          = "proxy_mode"
-	AttrStatusCode         = "status_code"
-	AttrMethodName         = "method_name"
-	AttrSuccess            = "success"
+	AttrNodeAddress       = "node_address"
+	AttrGatewayProxyDonID = "gateway_proxy_don_id"
+	AttrProxyMode         = "proxy_mode"
+	AttrStatusCode        = "status_code"
+	AttrMethodName        = "method_name"
+	AttrSuccess           = "success"
 )
 
 // Metrics contains metrics for HTTP actions
