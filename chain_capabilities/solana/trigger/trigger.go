@@ -1,8 +1,8 @@
 package trigger
 
 import (
-	"context"
 	"cmp"
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -92,18 +92,23 @@ func (lts *SolanaLogTriggerService) ToLogPollerFilter(triggerID string, config *
 }
 
 // BuildQueryExpressions builds query expressions including subkey filters.
-// When includeStartingBlockFilter is true and startingBlock >= 0, results are limited to logs
-// after the registration-time finalized block. Once delivery starts, progression uses the last
-// successfully delivered block/log-index position.
-func BuildQueryExpressions(config *solanacappb.FilterLogTriggerRequest, startingBlock int64, includeStartingBlockFilter bool) ([]query.Expression, error) {
+// When applyMinBlockFilter is true and minBlock >= 0, results are limited to logs at or after
+// minBlock. Registration uses an exclusive lower bound (Gt); the delivery cursor uses an
+// inclusive lower bound (Gte) so same-block logs after the last delivered index can still be
+// fetched and filtered client-side by pendingLogsAfterPosition.
+func BuildQueryExpressions(config *solanacappb.FilterLogTriggerRequest, minBlock int64, applyMinBlockFilter bool, minBlockInclusive bool) ([]query.Expression, error) {
 	expressions := []query.Expression{
 		solprimitives.NewAddressFilter(solana.PublicKey(config.Address)),
 		solprimitives.NewEventSigFilter(getEventSig(config.EventName)),
 	}
 
-	if includeStartingBlockFilter && startingBlock >= 0 {
-		blockStr := strconv.FormatInt(startingBlock, 10)
-		expressions = append(expressions, query.Block(blockStr, primitives.Gt))
+	if applyMinBlockFilter && minBlock >= 0 {
+		blockStr := strconv.FormatInt(minBlock, 10)
+		operator := primitives.Gt
+		if minBlockInclusive {
+			operator = primitives.Gte
+		}
+		expressions = append(expressions, query.Block(blockStr, operator))
 	}
 
 	for i, subkey := range config.Subkeys {
@@ -507,8 +512,13 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 				"lastDeliveredLogIndex", lastDeliveredLogIndex,
 				"startingBlock", startingBlock,
 			)
-			includeStartingBlockFilter := !hasDelivered
-			expressions, err := BuildQueryExpressions(config, startingBlock, includeStartingBlockFilter)
+			minBlock := startingBlock
+			minBlockInclusive := false
+			if hasDelivered {
+				minBlock = lastDeliveredBlock
+				minBlockInclusive = true
+			}
+			expressions, err := BuildQueryExpressions(config, minBlock, minBlock >= 0, minBlockInclusive)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to build query expressions for trigger %s: %v", triggerID, err)
 				lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())

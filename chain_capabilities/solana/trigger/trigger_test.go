@@ -23,6 +23,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
@@ -417,16 +418,28 @@ func TestPendingLogsAfterPosition(t *testing.T) {
 }
 
 func TestBuildQueryExpressions(t *testing.T) {
-	t.Run("omits starting block filter after first delivery", func(t *testing.T) {
+	t.Run("uses delivery cursor block filter after first delivery", func(t *testing.T) {
 		request := createTestRequest()
 
-		withBlock, err := BuildQueryExpressions(request, 99, true)
+		registrationExprs, err := BuildQueryExpressions(request, 99, true, false)
 		require.NoError(t, err)
-		require.Len(t, withBlock, 4)
+		require.Len(t, registrationExprs, 4)
 
-		withoutBlock, err := BuildQueryExpressions(request, 99, false)
+		deliveryExprs, err := BuildQueryExpressions(request, 150, true, true)
 		require.NoError(t, err)
-		require.Len(t, withoutBlock, 3)
+		require.Len(t, deliveryExprs, 4)
+
+		registrationBlock := registrationExprs[2].Primitive.(*primitives.Block)
+		assert.Equal(t, "99", registrationBlock.Block)
+		assert.Equal(t, primitives.Gt, registrationBlock.Operator)
+
+		deliveryBlock := deliveryExprs[2].Primitive.(*primitives.Block)
+		assert.Equal(t, "150", deliveryBlock.Block)
+		assert.Equal(t, primitives.Gte, deliveryBlock.Operator)
+
+		noFilter, err := BuildQueryExpressions(request, 99, false, false)
+		require.NoError(t, err)
+		require.Len(t, noFilter, 3)
 	})
 
 	t.Run("builds basic expressions", func(t *testing.T) {
@@ -434,7 +447,7 @@ func TestBuildQueryExpressions(t *testing.T) {
 			Address: testPublicKey[:],
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99, true)
+		expressions, err := BuildQueryExpressions(request, 99, true, false)
 
 		require.NoError(t, err)
 		require.Len(t, expressions, 3)
@@ -446,7 +459,7 @@ func TestBuildQueryExpressions(t *testing.T) {
 			Subkeys: testSubkeys,
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99, true)
+		expressions, err := BuildQueryExpressions(request, 99, true, false)
 
 		require.NoError(t, err)
 		require.Len(t, expressions, 4)
@@ -460,7 +473,7 @@ func TestBuildQueryExpressions(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99, true)
+		expressions, err := BuildQueryExpressions(request, 99, true, false)
 
 		require.NoError(t, err)
 		require.Len(t, expressions, 3)
@@ -485,7 +498,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99, true)
+		expressions, err := BuildQueryExpressions(request, 99, true, false)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -531,7 +544,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 49, true)
+		expressions, err := BuildQueryExpressions(request, 49, true, false)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -564,7 +577,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 0, true)
+		expressions, err := BuildQueryExpressions(request, 0, true, false)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -596,7 +609,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 0, true)
+		expressions, err := BuildQueryExpressions(request, 0, true, false)
 		require.NoError(t, err)
 		require.NotNil(t, expressions)
 
@@ -751,6 +764,67 @@ func TestStartPolling(t *testing.T) {
 		case <-time.After(50 * time.Millisecond):
 			t.Fatal("Timeout waiting for log")
 		}
+
+		mockSolana.AssertExpectations(t)
+	})
+
+	t.Run("uses delivery cursor in subsequent polls", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+
+		meta := testRequestMetadata()
+		ctx := meta.ContextWithCRE(baseCtx)
+
+		config := createTestRequest()
+		triggerID := "test-trigger"
+		startingBlock := int64(100)
+		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
+
+		var (
+			expressionsMu       sync.Mutex
+			capturedExpressions [][]query.Expression
+		)
+
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, exprs []query.Expression, _ query.LimitAndSort) ([]*solana.Log, error) {
+				expressionsMu.Lock()
+				capturedExpressions = append(capturedExpressions, exprs)
+				call := len(capturedExpressions)
+				expressionsMu.Unlock()
+
+				if call == 1 {
+					return []*solana.Log{createTestLog(101, testPublicKey)}, nil
+				}
+				return []*solana.Log{}, nil
+			}).Maybe()
+
+		telemetryContext := createTestTelemetryContext()
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
+
+		select {
+		case response := <-logCh:
+			assert.Equal(t, int64(101), response.Trigger.BlockNumber)
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("Timeout waiting for log")
+		}
+
+		tests.AssertEventually(t, func() bool {
+			expressionsMu.Lock()
+			defer expressionsMu.Unlock()
+			return len(capturedExpressions) >= 2
+		})
+
+		expressionsMu.Lock()
+		require.GreaterOrEqual(t, len(capturedExpressions), 2)
+		firstPollBlock := capturedExpressions[0][2].Primitive.(*primitives.Block)
+		secondPollBlock := capturedExpressions[1][2].Primitive.(*primitives.Block)
+		expressionsMu.Unlock()
+
+		assert.Equal(t, "100", firstPollBlock.Block)
+		assert.Equal(t, primitives.Gt, firstPollBlock.Operator)
+		assert.Equal(t, "101", secondPollBlock.Block)
+		assert.Equal(t, primitives.Gte, secondPollBlock.Operator)
 
 		mockSolana.AssertExpectations(t)
 	})
@@ -1006,7 +1080,7 @@ func TestErrorHandling(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99, true)
+		expressions, err := BuildQueryExpressions(request, 99, true, false)
 		if err != nil {
 			assert.Contains(t, err.Error(), "failed to create subkey filter")
 		} else {
@@ -1016,7 +1090,7 @@ func TestErrorHandling(t *testing.T) {
 
 	t.Run("block range validation", func(t *testing.T) {
 		request := createTestRequest()
-		expressions, err := BuildQueryExpressions(request, 199, true)
+		expressions, err := BuildQueryExpressions(request, 199, true, false)
 		if err == nil {
 			assert.NotNil(t, expressions)
 		}
@@ -1036,7 +1110,7 @@ func TestErrorHandling(t *testing.T) {
 			},
 		}
 
-		expressions, err := BuildQueryExpressions(request, 99, true)
+		expressions, err := BuildQueryExpressions(request, 99, true, false)
 		if err == nil {
 			assert.NotNil(t, expressions)
 		}
@@ -1044,7 +1118,7 @@ func TestErrorHandling(t *testing.T) {
 
 	t.Run("zero block range", func(t *testing.T) {
 		request := createTestRequest()
-		expressions, err := BuildQueryExpressions(request, -1, true)
+		expressions, err := BuildQueryExpressions(request, -1, true, false)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(expressions), 2)
 	})
@@ -1137,7 +1211,7 @@ func BenchmarkSolanaLogTriggerService_BuildQueryExpressions(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := BuildQueryExpressions(request, 99, true)
+		_, err := BuildQueryExpressions(request, 99, true, false)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1358,7 +1432,7 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 	t.Run("very large block numbers", func(t *testing.T) {
 		request := createTestRequest()
 
-		expressions, err := BuildQueryExpressions(request, 9223372036854775805, true)
+		expressions, err := BuildQueryExpressions(request, 9223372036854775805, true, false)
 
 		require.NoError(t, err)
 		require.NotEmpty(t, expressions)
@@ -1367,7 +1441,7 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 	t.Run("negative block numbers", func(t *testing.T) {
 		request := createTestRequest()
 
-		expressions, err := BuildQueryExpressions(request, -2, true)
+		expressions, err := BuildQueryExpressions(request, -2, true, false)
 
 		require.NoError(t, err)
 		require.NotEmpty(t, expressions)
