@@ -81,27 +81,35 @@ func (f *fakeMeterEmitter) Snapshots() []*meteringpb.MeterSnapshot {
 	return append([]*meteringpb.MeterSnapshot(nil), f.snapshots...)
 }
 
-// meteredTestDeps are the host-injected identity dimensions used by metering
-// tests. They mirror what the host populates via the Initialise channel.
+// meteredTestDeps are the host-injected dependencies used by metering tests.
+// The DON dimension still arrives via the Initialise channel; the
+// deployment/node dimensions now arrive via loop.EnvConfig (meteredTestDeployment).
 var meteredTestDeps = core.StandardCapabilitiesDependencies{
+	CapabilityDonID: 7,
+}
+
+// meteredTestDeployment is the deployment/node identity that main would source
+// from loop.EnvConfig and set on the service before Initialise.
+var meteredTestDeployment = resourcemanager.DeploymentIdentity{
 	Product:         "cre-mainline",
+	Tenant:          "mainline",
+	NumericTenantID: "42",
 	Environment:     "staging",
 	Zone:            "wf-zone-a",
 	NodeID:          "csa-pubkey-1",
-	CapabilityDonID: 7,
 }
 
 // expectedBaseIdentity is the base identity the Service builds from
 // meteredTestDeps (resource_id left empty; set per trigger).
 var expectedBaseIdentity = resourcemanager.ResourceIdentity{
-	Product:      "cre-mainline",
-	Environment:  "staging",
-	Zone:         "wf-zone-a",
-	DONID:        "7",
-	NodeID:       "csa-pubkey-1",
-	Service:      "cron-trigger",
-	Resource:     "trigger_registrations",
-	ResourceType: "operations",
+	Product:         "cre-mainline",
+	Tenant:          "mainline",
+	NumericTenantID: "42",
+	Environment:     "staging",
+	Zone:            "wf-zone-a",
+	Don:             &resourcemanager.DonIdentity{DonID: "7", NodeID: "csa-pubkey-1"},
+	Service:         "cron-trigger",
+	ResourcePool:    "trigger_registrations",
 }
 
 // newMeteredTriggerService builds an initialised trigger service whose
@@ -118,13 +126,15 @@ func newMeteredTriggerService(t *testing.T, clock clockwork.Clock, emitter resou
 	}
 
 	meters := resourcemanager.NewResourceManager(logger.Nop(), resourcemanager.ResourceManagerConfig{
-		Enabled:          true,
-		Emitter:          emitter,
-		SnapshotInterval: time.Minute,
-		Clock:            clock,
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      time.Minute,
+		Clock:                 clock,
 	})
 	ts, err := NewTriggerService(logger.Nop(), clock, limits.Factory{}, meters)
 	require.NoError(t, err)
+	ts.Deployment = meteredTestDeployment
 
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
@@ -155,25 +165,24 @@ func TestCronTrigger_Metering_ReserveAndRelease(t *testing.T) {
 	reserve := records[0]
 	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_RESERVE, reserve.GetAction())
 
-	// Identity is populated from the host-injected deps, with resource_id set
-	// to the trigger_id (cron is workflow-scoped).
+	// Identity is populated from host-injected deps and points at the cron
+	// resource pool. Per-trigger fields are carried on utilization.
 	id := reserve.GetIdentity()
 	require.NotNil(t, id)
 	assert.Equal(t, "cre-mainline", id.GetProduct())
+	assert.Equal(t, "mainline", id.GetTenant())
+	assert.Equal(t, "42", id.GetNumericTenantId())
 	assert.Equal(t, "staging", id.GetEnvironment())
 	assert.Equal(t, "wf-zone-a", id.GetZone())
-	assert.Equal(t, "7", id.GetDonId())
-	assert.Equal(t, "csa-pubkey-1", id.GetNodeId())
+	assert.Equal(t, "7", id.GetDon().GetDonId())
+	assert.Equal(t, "csa-pubkey-1", id.GetDon().GetNodeId())
 	assert.Equal(t, "cron-trigger", id.GetService())
-	assert.Equal(t, "trigger_registrations", id.GetResource())
-	assert.Equal(t, "operations", id.GetResourceType())
-	assert.Equal(t, triggerID1, id.GetResourceId())
+	assert.Equal(t, "trigger_registrations", id.GetResourcePool())
 
-	require.NotNil(t, reserve.GetUtilization())
-	assert.Equal(t, int64(1), reserve.GetUtilization().GetValue())
-	assert.Equal(t,
-		resourcemanager.IdempotencyKey(expectedBaseIdentity.WithResourceID(triggerID1), meteringpb.MeterAction_METER_ACTION_RESERVE, triggerID1),
-		reserve.GetUtilization().GetIdempotencyKey())
+	require.Len(t, reserve.GetUtilizations(), 1)
+	assert.Equal(t, "1", reserve.GetUtilizations()[0].GetValue())
+	assert.Equal(t, "operations", reserve.GetUtilizations()[0].GetResourceType())
+	assert.Equal(t, triggerID1, reserve.GetUtilizations()[0].GetResourceId())
 
 	// Each cron tick re-Writes the trigger to reschedule it; the Write
 	// happens before the channel send, so after receiving the event the
@@ -189,11 +198,9 @@ func TestCronTrigger_Metering_ReserveAndRelease(t *testing.T) {
 	require.Len(t, records, 2, "expected exactly one RELEASE on unregistration")
 	release := records[1]
 	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_RELEASE, release.GetAction())
-	assert.Equal(t, reserve.GetIdentity().GetResourceId(), release.GetIdentity().GetResourceId())
-	require.NotNil(t, release.GetUtilization())
-	assert.Equal(t, int64(1), release.GetUtilization().GetValue())
-	assert.NotEqual(t, reserve.GetUtilization().GetIdempotencyKey(), release.GetUtilization().GetIdempotencyKey(),
-		"RESERVE and RELEASE must not share an idempotency key")
+	assert.Equal(t, reserve.GetUtilizations()[0].GetResourceId(), release.GetUtilizations()[0].GetResourceId())
+	require.Len(t, release.GetUtilizations(), 1)
+	assert.Equal(t, "1", release.GetUtilizations()[0].GetValue())
 
 	require.NoError(t, ts.Close())
 }
@@ -253,7 +260,7 @@ func TestCronTrigger_Metering_FailOpen(t *testing.T) {
 
 // TestCronTrigger_Metering_Snapshot asserts the Service implements Meterable
 // such that a forced snapshot emits one MeterSnapshot per active trigger, each
-// carrying the full per-resource identity (resource_id set to the trigger_id).
+// carrying the full base identity and per-trigger utilization.
 func TestCronTrigger_Metering_Snapshot(t *testing.T) {
 	t.Parallel()
 
@@ -283,20 +290,20 @@ func TestCronTrigger_Metering_Snapshot(t *testing.T) {
 
 	byTrigger := map[string]*meteringpb.MeterSnapshot{}
 	for _, s := range snapshots {
-		byTrigger[s.GetIdentity().GetResourceId()] = s
+		byTrigger[s.GetUtilization()[0].GetResourceId()] = s
 	}
 
 	s1 := byTrigger[triggerID1]
 	require.NotNil(t, s1)
-	assert.Equal(t, int64(1), s1.GetUtilization().GetValue())
+	assert.Equal(t, "1", s1.GetUtilization()[0].GetValue())
 	assert.Equal(t, "cron-trigger", s1.GetIdentity().GetService())
-	assert.Equal(t, "trigger_registrations", s1.GetIdentity().GetResource())
-	assert.Equal(t, "operations", s1.GetIdentity().GetResourceType())
+	assert.Equal(t, "trigger_registrations", s1.GetIdentity().GetResourcePool())
+	assert.Equal(t, "operations", s1.GetUtilization()[0].GetResourceType())
 
 	s2 := byTrigger[triggerID2]
 	require.NotNil(t, s2)
-	assert.Equal(t, int64(1), s2.GetUtilization().GetValue())
-	assert.Equal(t, triggerID2, s2.GetIdentity().GetResourceId())
+	assert.Equal(t, "1", s2.GetUtilization()[0].GetValue())
+	assert.Equal(t, triggerID2, s2.GetUtilization()[0].GetResourceId())
 
 	require.NoError(t, ts.Close())
 }
@@ -332,11 +339,11 @@ func TestCronTrigger_Metering_GracefulCloseReleases(t *testing.T) {
 	releases := map[string]*meteringpb.MeterRecord{}
 	for _, r := range records[2:] {
 		require.Equal(t, meteringpb.MeterAction_METER_ACTION_RELEASE, r.GetAction())
-		releases[r.GetIdentity().GetResourceId()] = r
+		releases[r.GetUtilizations()[0].GetResourceId()] = r
 	}
 	require.Contains(t, releases, triggerID1)
 	require.Contains(t, releases, triggerID2)
-	assert.Equal(t, int64(1), releases[triggerID1].GetUtilization().GetValue())
+	assert.Equal(t, "1", releases[triggerID1].GetUtilizations()[0].GetValue())
 }
 
 // TestCronTrigger_Metering_DonIDFallback asserts the DON ID falls back to the
@@ -348,8 +355,8 @@ func TestCronTrigger_Metering_DonIDFallback(t *testing.T) {
 	emitter := &fakeMeterEmitter{}
 
 	meters := resourcemanager.NewResourceManager(logger.Nop(), resourcemanager.ResourceManagerConfig{
-		Enabled: true,
-		Emitter: emitter,
+		MeterRecordsEnabled: true,
+		Emitter:             emitter,
 	})
 	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{}, meters)
 	require.NoError(t, err)
@@ -366,7 +373,7 @@ func TestCronTrigger_Metering_DonIDFallback(t *testing.T) {
 
 	records := emitter.Records()
 	require.Len(t, records, 1)
-	assert.Equal(t, "42", records[0].GetIdentity().GetDonId(), "DON ID falls back to WorkflowDonID")
+	assert.Equal(t, "42", records[0].GetIdentity().GetDon().GetDonId(), "DON ID falls back to WorkflowDonID")
 	// Product falls back to the cron constant when the host injects none.
 	assert.Equal(t, "cre", records[0].GetIdentity().GetProduct())
 

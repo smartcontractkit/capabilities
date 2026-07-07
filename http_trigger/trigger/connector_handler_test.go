@@ -1178,17 +1178,16 @@ func (f *fakeMeterEmitter) actions() []meteringpb.MeterAction {
 }
 
 // testBaseIdentity is the base metering identity used by metering tests. It
-// carries the six coarse dimensions plus the service-level resource /
-// resource_type; per-workflow resource_id is derived per emission.
+// carries the six coarse dimensions plus the service-level resource_pool.
 var testBaseIdentity = resourcemanager.ResourceIdentity{
-	Product:      "cre-test",
-	Environment:  "staging",
-	Zone:         "wf-zone-a",
-	DONID:        "7",
-	NodeID:       "node-csa-pubkey",
-	Service:      meterService,
-	Resource:     meterResource,
-	ResourceType: meterResourceType,
+	Product:         "cre-test",
+	Tenant:          "mainline",
+	NumericTenantID: "42",
+	Environment:     "staging",
+	Zone:            "wf-zone-a",
+	Don:             &resourcemanager.DonIdentity{DonID: "7", NodeID: "node-csa-pubkey"},
+	Service:         meterService,
+	ResourcePool:    meterResource,
 }
 
 // setupWithMeterEmitter builds a handler with metering enabled and a fake
@@ -1206,9 +1205,10 @@ func setupWithMeterEmitter(t *testing.T, lggr logger.Logger, emitErr error) (*co
 	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
 	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
 	resourceManager := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{
-		Enabled:          true,
-		Emitter:          emitter,
-		SnapshotInterval: resourcemanager.DefaultSnapshotInterval,
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
 	})
 	handler, err := NewConnectorHandler(
 		lggr,
@@ -1263,19 +1263,18 @@ func TestRegisterWorkflow_MetersReserveThenUpdate(t *testing.T) {
 	record := emitter.records[0]
 	id := record.GetIdentity()
 	require.Equal(t, testBaseIdentity.Product, id.GetProduct())
+	require.Equal(t, testBaseIdentity.Tenant, id.GetTenant())
+	require.Equal(t, testBaseIdentity.NumericTenantID, id.GetNumericTenantId())
 	require.Equal(t, testBaseIdentity.Environment, id.GetEnvironment())
 	require.Equal(t, testBaseIdentity.Zone, id.GetZone())
-	require.Equal(t, testBaseIdentity.DONID, id.GetDonId())
-	require.Equal(t, testBaseIdentity.NodeID, id.GetNodeId())
+	require.Equal(t, testBaseIdentity.DonID(), id.GetDon().GetDonId())
+	require.Equal(t, testBaseIdentity.NodeID(), id.GetDon().GetNodeId())
 	require.Equal(t, meterService, id.GetService())
-	require.Equal(t, meterResource, id.GetResource())
-	require.Equal(t, meterResourceType, id.GetResourceType())
+	require.Equal(t, meterResource, id.GetResourcePool())
+	require.Equal(t, meterResourceType, record.GetUtilizations()[0].GetResourceType())
 	// resource_id is the workflow ID (HTTP registrations are workflow-scoped).
-	require.Equal(t, testWorkflowID, id.GetResourceId())
-	require.Equal(t, int64(1), record.GetUtilization().GetValue())
-	require.Equal(t,
-		resourcemanager.IdempotencyKey(testBaseIdentity.WithResourceID(testWorkflowID), meteringpb.MeterAction_METER_ACTION_RESERVE, testWorkflowID),
-		record.GetUtilization().GetIdempotencyKey())
+	require.Equal(t, testWorkflowID, record.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "1", record.GetUtilizations()[0].GetValue())
 
 	// Re-registering the same workflow emits UPDATE, not a second RESERVE.
 	sendCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
@@ -1310,24 +1309,18 @@ func TestRegisterWorkflow_VersionUpdate_MetersReleaseThenReserve(t *testing.T) {
 		meteringpb.MeterAction_METER_ACTION_RESERVE,
 	}, emitter.actions())
 
-	// RESERVE(A) anchors the old workflow ID via its resource_id.
+	// RESERVE(A) anchors the old workflow ID via utilization.resource_id.
 	reserveA := emitter.records[0]
-	require.Equal(t, testWorkflowID1, reserveA.GetIdentity().GetResourceId())
+	require.Equal(t, testWorkflowID1, reserveA.GetUtilizations()[0].GetResourceId())
 
 	// RELEASE targets the PREVIOUS workflow ID under the same owner; its
-	// resource_id is that previous workflow ID.
+	// utilization.resource_id is that previous workflow ID.
 	release := emitter.records[1]
-	require.Equal(t, testWorkflowID1, release.GetIdentity().GetResourceId())
-	require.Equal(t,
-		resourcemanager.IdempotencyKey(testBaseIdentity.WithResourceID(testWorkflowID1), meteringpb.MeterAction_METER_ACTION_RELEASE, testWorkflowID1),
-		release.GetUtilization().GetIdempotencyKey())
+	require.Equal(t, testWorkflowID1, release.GetUtilizations()[0].GetResourceId())
 
 	// The trailing RESERVE anchors the new workflow ID.
 	reserveB := emitter.records[2]
-	require.Equal(t, testWorkflowID2, reserveB.GetIdentity().GetResourceId())
-	require.Equal(t,
-		resourcemanager.IdempotencyKey(testBaseIdentity.WithResourceID(testWorkflowID2), meteringpb.MeterAction_METER_ACTION_RESERVE, testWorkflowID2),
-		reserveB.GetUtilization().GetIdempotencyKey())
+	require.Equal(t, testWorkflowID2, reserveB.GetUtilizations()[0].GetResourceId())
 }
 
 func TestUnregisterWorkflow_MetersRelease(t *testing.T) {
@@ -1345,7 +1338,7 @@ func TestUnregisterWorkflow_MetersRelease(t *testing.T) {
 		meteringpb.MeterAction_METER_ACTION_RELEASE,
 	}, emitter.actions())
 	release := emitter.records[1]
-	require.Equal(t, testWorkflowID, release.GetIdentity().GetResourceId())
+	require.Equal(t, testWorkflowID, release.GetUtilizations()[0].GetResourceId())
 
 	// Unregistering an absent workflow fails and must not emit RELEASE.
 	err = handler.UnregisterWorkflow(t.Context(), testWorkflowID)
@@ -1390,10 +1383,11 @@ func TestSnapshot_EmitsOneEntryPerActiveWorkflow(t *testing.T) {
 	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
 	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
 	rm := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{
-		Enabled:          true,
-		Emitter:          emitter,
-		SnapshotInterval: time.Minute,
-		Clock:            clock,
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      time.Minute,
+		Clock:                 clock,
 	})
 	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, rm, testBaseIdentity)
 	require.NoError(t, err)
@@ -1413,25 +1407,24 @@ func TestSnapshot_EmitsOneEntryPerActiveWorkflow(t *testing.T) {
 		return len(emitter.snapshots) == 2
 	}, time.Second, time.Millisecond)
 
-	// One MeterSnapshot per active workflow, each fully identified by its own
-	// per-workflow identity (resource_id is the workflow ID).
+	// One MeterSnapshot per active workflow, keyed by utilization.resource_id.
 	require.Len(t, emitter.snapshots, 2)
 	byWorkflowID := map[string]*meteringpb.MeterSnapshot{}
 	for _, s := range emitter.snapshots {
-		byWorkflowID[s.GetIdentity().GetResourceId()] = s
+		byWorkflowID[s.GetUtilization()[0].GetResourceId()] = s
 	}
 	require.Len(t, byWorkflowID, 2)
 
 	r1 := byWorkflowID[testWorkflowID1]
 	require.NotNil(t, r1)
 	require.Equal(t, testBaseIdentity.Product, r1.GetIdentity().GetProduct())
-	require.Equal(t, meterResource, r1.GetIdentity().GetResource())
-	require.Equal(t, meterResourceType, r1.GetIdentity().GetResourceType())
-	require.Equal(t, int64(1), r1.GetUtilization().GetValue())
+	require.Equal(t, meterResource, r1.GetIdentity().GetResourcePool())
+	require.Equal(t, meterResourceType, r1.GetUtilization()[0].GetResourceType())
+	require.Equal(t, "1", r1.GetUtilization()[0].GetValue())
 
 	r2 := byWorkflowID[testWorkflowID2]
 	require.NotNil(t, r2)
-	require.Equal(t, int64(1), r2.GetUtilization().GetValue())
+	require.Equal(t, "1", r2.GetUtilization()[0].GetValue())
 }
 
 // TestClose_EmitsReleasePerActiveWorkflow asserts graceful close drains a
@@ -1444,9 +1437,10 @@ func TestClose_EmitsReleasePerActiveWorkflow(t *testing.T) {
 	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
 	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
 	rm := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{
-		Enabled:          true,
-		Emitter:          emitter,
-		SnapshotInterval: resourcemanager.DefaultSnapshotInterval,
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
 	})
 	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, rm, testBaseIdentity)
 	require.NoError(t, err)
@@ -1466,7 +1460,7 @@ func TestClose_EmitsReleasePerActiveWorkflow(t *testing.T) {
 
 	released := map[string]bool{}
 	for _, r := range emitter.records {
-		released[r.GetIdentity().GetResourceId()] = true
+		released[r.GetUtilizations()[0].GetResourceId()] = true
 	}
 	require.True(t, released[testWorkflowID1])
 	require.True(t, released[testWorkflowID2])
@@ -1482,10 +1476,10 @@ func TestDONIDFallback_UsesWorkflowDON(t *testing.T) {
 	store := newWorkflowStore(lggr)
 	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
 	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
-	rm := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{Enabled: true, Emitter: emitter})
+	rm := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{MeterRecordsEnabled: true, Emitter: emitter})
 	// Base identity WITHOUT a capability DON (host did not inject one).
 	base := testBaseIdentity
-	base.DONID = ""
+	base.Don = &resourcemanager.DonIdentity{NodeID: "node-csa-pubkey"}
 	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, rm, base)
 	require.NoError(t, err)
 
@@ -1495,7 +1489,7 @@ func TestDONIDFallback_UsesWorkflowDON(t *testing.T) {
 	require.NoError(t, handler.RegisterWorkflow(t.Context(), input, sendCh))
 
 	require.Len(t, emitter.records, 1)
-	require.Equal(t, "99", emitter.records[0].GetIdentity().GetDonId())
+	require.Equal(t, "99", emitter.records[0].GetIdentity().GetDon().GetDonId())
 }
 
 // TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner tests that the workflowOwner

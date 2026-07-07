@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,8 +25,9 @@ import (
 const ServiceName = "HTTPTriggerCapability"
 
 // Metering identity constants for the HTTP trigger. Service is the stable
-// service constant (it must not encode environment or zone); Resource and
-// ResourceType identify the HTTP workflow-registration pool and its billing
+// service constant (it must not encode environment or zone); resource pool and
+// utilization resource_type identify the HTTP workflow-registration pool and
+// its billing
 // unit.
 const (
 	meterService      = "http-trigger"
@@ -37,26 +37,6 @@ const (
 	// dimension (legacy node or a boot path not yet updated).
 	meterProductFallback = "cre"
 )
-
-// meterRecordsEnabledEnvVar gates MeterRecord emission; the name is the
-// cross-producer convention for the metering rollout (SHARED-2718).
-const meterRecordsEnabledEnvVar = "CL_METER_RECORDS_ENABLED"
-
-// meterRecordsEnabled reads the metering gate from the environment. Unset or
-// unparseable values disable emission; metering config must never prevent the
-// capability from starting.
-func meterRecordsEnabled(lggr logger.Logger) bool {
-	v := os.Getenv(meterRecordsEnabledEnvVar)
-	if v == "" {
-		return false
-	}
-	enabled, err := strconv.ParseBool(v)
-	if err != nil {
-		lggr.Warnw("Invalid value for "+meterRecordsEnabledEnvVar+", meter record emission disabled", "value", v, "error", err)
-		return false
-	}
-	return enabled
-}
 
 var _ server.HTTPCapability = &service{}
 
@@ -72,6 +52,7 @@ type WorkflowRegistrationMetadata struct {
 	EngineVersion                 string
 	WorkflowDONID                 uint32
 	ReferenceID                   string
+	OrganizationID                string
 	// DecodedWorkflowName is the human-readable workflow name
 	DecodedWorkflowName string
 }
@@ -82,6 +63,23 @@ type ConnectorHandler interface {
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
 
+// MeteringConfig carries emission toggles and deployment/node identity
+// dimensions for the HTTP trigger's ResourceManager.
+type MeteringConfig struct {
+	MeterRecordsEnabled   bool
+	MeterSnapshotsEnabled bool
+	Deployment            resourcemanager.DeploymentIdentity
+}
+
+func (m MeteringConfig) resourceManagerConfig() resourcemanager.ResourceManagerConfig {
+	return resourcemanager.ResourceManagerConfig{
+		MeterRecordsEnabled:   m.MeterRecordsEnabled,
+		MeterSnapshotsEnabled: m.MeterSnapshotsEnabled,
+		Emitter:               beholder.GetEmitter(),
+		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
+	}
+}
+
 type service struct {
 	services.StateMachine
 	lggr             logger.SugaredLogger
@@ -90,12 +88,16 @@ type service struct {
 	metrics          *Metrics
 	limitsFactory    limits.Factory
 	orgResolver      orgresolver.OrgResolver
+	// metering carries static deployment/node identity dimensions plus metering
+	// emission toggles delivered via loop.EnvConfig.
+	metering MeteringConfig
 }
 
-func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
+func NewService(lggr logger.Logger, limitsFactory limits.Factory, metering MeteringConfig) *service {
 	return &service{
 		lggr:          logger.Sugared(logger.Named(lggr, ServiceName)),
 		limitsFactory: limitsFactory,
+		metering:      metering,
 	}
 }
 
@@ -122,12 +124,8 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	resourceManager := resourcemanager.NewResourceManager(s.lggr, resourcemanager.ResourceManagerConfig{
-		Enabled:          meterRecordsEnabled(s.lggr),
-		Emitter:          beholder.GetEmitter(),
-		SnapshotInterval: resourcemanager.DefaultSnapshotInterval,
-	})
-	baseIdentity := baseMeterIdentity(dependencies)
+	resourceManager := resourcemanager.NewResourceManager(s.lggr, s.metering.resourceManagerConfig())
+	baseIdentity := baseMeterIdentity(dependencies, s.metering.Deployment)
 	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, resourceManager, baseIdentity)
 	if err != nil {
 		return err
@@ -135,18 +133,19 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	return s.Start(ctx)
 }
 
-// baseMeterIdentity builds the HTTP trigger's base metering identity from the
-// host-injected dependencies. The six coarse dimensions plus the service-level
-// resource / resource_type are fixed here; the per-workflow resource_id is set
-// per emission via ResourceIdentity.WithResourceID.
+// baseMeterIdentity builds the HTTP trigger's base metering identity. The
+// deployment/node dimensions come from deployment (delivered via
+// loop.EnvConfig); the DON dimension comes from the host-injected
+// CapabilityDonID. The service-level resource_pool is fixed here; the
+// per-workflow billing fields are set on each Utilization.
 //
-// DONID is the capability DON the trigger LOOP was spawned for
+// The DON identifier is the capability DON the trigger LOOP was spawned for
 // (deps.CapabilityDonID, host-injected via capabilities#619). When the host has
-// not populated it (0), DONID is left empty here and resolved per registration
+// not populated it (0), the DON identifier is left empty here and resolved per registration
 // from the workflow DON at emit time (see connectorHandler.donID). Product
 // falls back to a constant when the host did not inject one.
-func baseMeterIdentity(deps core.StandardCapabilitiesDependencies) resourcemanager.ResourceIdentity {
-	product := deps.Product
+func baseMeterIdentity(deps core.StandardCapabilitiesDependencies, deployment resourcemanager.DeploymentIdentity) resourcemanager.ResourceIdentity {
+	product := deployment.Product
 	if product == "" {
 		product = meterProductFallback
 	}
@@ -154,15 +153,22 @@ func baseMeterIdentity(deps core.StandardCapabilitiesDependencies) resourcemanag
 	if deps.CapabilityDonID != 0 {
 		donID = strconv.FormatUint(uint64(deps.CapabilityDonID), 10)
 	}
+	var donIdentity *resourcemanager.DonIdentity
+	if donID != "" || deployment.NodeID != "" {
+		donIdentity = &resourcemanager.DonIdentity{
+			DonID:  donID,
+			NodeID: deployment.NodeID,
+		}
+	}
 	return resourcemanager.ResourceIdentity{
-		Product:      product,
-		Environment:  deps.Environment,
-		Zone:         deps.Zone,
-		DONID:        donID,
-		NodeID:       deps.NodeID,
-		Service:      meterService,
-		Resource:     meterResource,
-		ResourceType: meterResourceType,
+		Product:         product,
+		Tenant:          deployment.Tenant,
+		NumericTenantID: deployment.NumericTenantID,
+		Environment:     deployment.Environment,
+		Zone:            deployment.Zone,
+		Don:             donIdentity,
+		Service:         meterService,
+		ResourcePool:    meterResource,
 	}
 }
 

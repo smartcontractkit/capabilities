@@ -33,14 +33,14 @@ const testChainSelector = "5009297550715157269"
 // WorkflowDonID fallback.
 func testBaseIdentity() resourcemanager.ResourceIdentity {
 	return resourcemanager.ResourceIdentity{
-		Product:      "cre",
-		Environment:  "staging",
-		Zone:         "wf-zone-a",
-		DONID:        "42",
-		NodeID:       "csa-pubkey-hex",
-		Service:      MeteringService,
-		Resource:     MeteringResource,
-		ResourceType: MeteringResourceType,
+		Product:         "cre",
+		Tenant:          "mainline",
+		NumericTenantID: "42",
+		Environment:     "staging",
+		Zone:            "wf-zone-a",
+		Don:             &resourcemanager.DonIdentity{DonID: "42", NodeID: "csa-pubkey-hex"},
+		Service:         MeteringService,
+		ResourcePool:    MeteringResource,
 	}
 }
 
@@ -102,10 +102,11 @@ func newMeteredTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store Lo
 	clock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
 	lts.resourceManager = resourcemanager.NewResourceManager(logger.Test(t),
 		resourcemanager.ResourceManagerConfig{
-			Enabled:          true,
-			Emitter:          emitter,
-			SnapshotInterval: time.Minute,
-			Clock:            clock,
+			MeterRecordsEnabled:   true,
+			MeterSnapshotsEnabled: true,
+			Emitter:               emitter,
+			SnapshotInterval:      time.Minute,
+			Clock:                 clock,
 		})
 	lts.baseIdentity = testBaseIdentity()
 	lts.chainSelector = testChainSelector
@@ -121,19 +122,20 @@ func meteringTestInput() *evmcappb.FilterLogTriggerRequest {
 	}
 }
 
-// assertBaseIdentity checks the six coarse dimensions + service/resource on the
+// assertBaseIdentity checks the six coarse dimensions + service/resource_pool on the
 // emitted record identity, proving the host-injected identity is carried.
 func assertBaseIdentity(t *testing.T, id *meteringpb.ResourceIdentity) {
 	t.Helper()
 	require.NotNil(t, id)
 	require.Equal(t, "cre", id.GetProduct())
+	require.Equal(t, "mainline", id.GetTenant())
+	require.Equal(t, "42", id.GetNumericTenantId())
 	require.Equal(t, "staging", id.GetEnvironment())
 	require.Equal(t, "wf-zone-a", id.GetZone())
-	require.Equal(t, "42", id.GetDonId())
-	require.Equal(t, "csa-pubkey-hex", id.GetNodeId())
+	require.Equal(t, "42", id.GetDon().GetDonId())
+	require.Equal(t, "csa-pubkey-hex", id.GetDon().GetNodeId())
 	require.Equal(t, MeteringService, id.GetService())
-	require.Equal(t, MeteringResource, id.GetResource())
-	require.Equal(t, MeteringResourceType, id.GetResourceType())
+	require.Equal(t, MeteringResource, id.GetResourcePool())
 }
 
 // expectedPhysicalFilterID recomputes the physical filter id for the metering
@@ -160,7 +162,7 @@ func TestLogTriggerMetering_ReserveOnRegister(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-	service, emitter := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 
 	meta := capabilities.RequestMetadata{WorkflowID: "wf-id", WorkflowOwner: "0xOwner"}
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID, meta, meteringTestInput())
@@ -170,38 +172,35 @@ func TestLogTriggerMetering_ReserveOnRegister(t *testing.T) {
 	record := emitter.records[0]
 	assertBaseIdentity(t, record.GetIdentity())
 	physID := expectedPhysicalFilterID(t, meteringTestInput())
-	require.Equal(t, physID, record.GetIdentity().GetResourceId(), "resource_id must be the physical filter content hash")
+	require.Equal(t, physID, record.GetUtilizations()[0].GetResourceId(), "resource_id must be the physical filter content hash")
 	require.Equal(t, meteringpb.MeterAction_METER_ACTION_RESERVE, record.GetAction())
-	require.NotNil(t, record.GetUtilization())
-	require.Equal(t, int64(2), record.GetUtilization().GetValue(), "RESERVE value must equal the filter address count")
-	expectedID := service.identity("42", physID)
-	require.Equal(t,
-		resourcemanager.IdempotencyKey(expectedID, meteringpb.MeterAction_METER_ACTION_RESERVE, physID),
-		record.GetUtilization().GetIdempotencyKey())
+	require.Len(t, record.GetUtilizations(), 1)
+	require.Equal(t, "2", record.GetUtilizations()[0].GetValue(), "RESERVE value must equal the filter address count")
+	require.Equal(t, MeteringResourceType, record.GetUtilizations()[0].GetResourceType())
 }
 
 func TestLogTriggerMetering_DonIDFallbackToWorkflowDon(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-	service, emitter := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 	// Host did not inject a capability DON; the consumer's WorkflowDonID is the
 	// documented fallback resolved at emit time.
-	service.baseIdentity.DONID = ""
+	service.baseIdentity.Don = &resourcemanager.DonIdentity{NodeID: "csa-pubkey-hex"}
 
 	meta := capabilities.RequestMetadata{WorkflowID: "wf-id", WorkflowOwner: "0xOwner", WorkflowDonID: 7}
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID, meta, meteringTestInput())
 	require.NoError(t, err)
 
 	require.Len(t, emitter.records, 1)
-	require.Equal(t, "7", emitter.records[0].GetIdentity().GetDonId(), "empty capability DON must fall back to WorkflowDonID")
+	require.Equal(t, "7", emitter.records[0].GetIdentity().GetDon().GetDonId(), "empty capability DON must fall back to WorkflowDonID")
 }
 
 func TestLogTriggerMetering_NoReserveOnRegisterFailure(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocked register failure")).Once()
-	service, emitter := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, meteringTestInput())
 	require.Error(t, err)
@@ -227,14 +226,10 @@ func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
 		t.Helper()
 		assertBaseIdentity(t, record.GetIdentity())
 		require.Equal(t, meteringpb.MeterAction_METER_ACTION_RELEASE, record.GetAction())
-		require.NotNil(t, record.GetUtilization())
-		require.Equal(t, int64(2), record.GetUtilization().GetValue(), "RELEASE must carry the same value that was reserved")
+		require.Len(t, record.GetUtilizations(), 1)
+		require.Equal(t, "2", record.GetUtilizations()[0].GetValue(), "RELEASE must carry the same value that was reserved")
 		physID := expectedPhysicalFilterID(t, meteringTestInput())
-		require.Equal(t, physID, record.GetIdentity().GetResourceId())
-		expectedID := service.identity("42", physID)
-		require.Equal(t,
-			resourcemanager.IdempotencyKey(expectedID, meteringpb.MeterAction_METER_ACTION_RELEASE, physID),
-			record.GetUtilization().GetIdempotencyKey())
+		require.Equal(t, physID, record.GetUtilizations()[0].GetResourceId())
 	}
 
 	t.Run("release pairs the reserve", func(t *testing.T) {
@@ -242,7 +237,7 @@ func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
 		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-		service, emitter := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+		service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 
 		registerTrigger(t, service)
 		require.NoError(t, service.UnregisterLogTrigger(t.Context(), triggerID, meta, &evmcappb.FilterLogTriggerRequest{}))
@@ -250,8 +245,8 @@ func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
 		require.Len(t, emitter.records, 2)
 		require.Equal(t, meteringpb.MeterAction_METER_ACTION_RESERVE, emitter.records[0].GetAction())
 		assertRelease(t, service, emitter.records[1])
-		require.Equal(t, emitter.records[0].GetUtilization().GetValue(), emitter.records[1].GetUtilization().GetValue())
-		require.Equal(t, emitter.records[0].GetIdentity().GetResourceId(), emitter.records[1].GetIdentity().GetResourceId(),
+		require.Equal(t, emitter.records[0].GetUtilizations()[0].GetValue(), emitter.records[1].GetUtilizations()[0].GetValue())
+		require.Equal(t, emitter.records[0].GetUtilizations()[0].GetResourceId(), emitter.records[1].GetUtilizations()[0].GetResourceId(),
 			"RESERVE and RELEASE must share one physical resource_id")
 	})
 
@@ -260,7 +255,7 @@ func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
 		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocked unregister failure")).Once()
-		service, emitter := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+		service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 
 		registerTrigger(t, service)
 		// The reservation is released here (from the stashed count) before the
@@ -281,7 +276,7 @@ func TestLogTriggerMetering_OrphanCleanupEmitsNothing(t *testing.T) {
 	t.Run("stale filter cleanup emits no meter record", func(t *testing.T) {
 		mockEVM := evmmock.NewEVMService(t)
 		store := NewLogTriggerStore()
-		service, emitter := newMeteredTriggerObject(t, mockEVM, store)
+		service, emitter, _ := newMeteredTriggerObject(t, mockEVM, store)
 
 		liveFilterID := service.generateFilterID("live-trigger")
 		staleFilterID := service.generateFilterID("stale-trigger")
@@ -297,7 +292,7 @@ func TestLogTriggerMetering_OrphanCleanupEmitsNothing(t *testing.T) {
 
 	t.Run("emits nothing when cleanup unregister fails", func(t *testing.T) {
 		mockEVM := evmmock.NewEVMService(t)
-		service, emitter := newMeteredTriggerObject(t, mockEVM, NewLogTriggerStore())
+		service, emitter, _ := newMeteredTriggerObject(t, mockEVM, NewLogTriggerStore())
 
 		staleFilterID := service.generateFilterID("stale-trigger")
 		mockEVM.On("GetFiltersNames", mock.Anything).Return([]string{staleFilterID}, nil).Once()
@@ -312,7 +307,7 @@ func TestLogTriggerMetering_FailOpen(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-	service, emitter := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 	emitter.err = errors.New("mocked emitter failure")
 
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, meteringTestInput())
@@ -368,7 +363,7 @@ func TestPhysicalFilterID_Canonicalization(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Twice()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Twice()
-		service, emitter := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+		service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 
 		_, err := service.RegisterLogTrigger(t.Context(), "trigger-A",
 			capabilities.RequestMetadata{WorkflowID: "wf-1", WorkflowOwner: "0xOwner"}, meteringTestInput())
@@ -379,8 +374,8 @@ func TestPhysicalFilterID_Canonicalization(t *testing.T) {
 
 		require.Len(t, emitter.records, 2)
 		require.Equal(t,
-			emitter.records[0].GetIdentity().GetResourceId(),
-			emitter.records[1].GetIdentity().GetResourceId(),
+			emitter.records[0].GetUtilizations()[0].GetResourceId(),
+			emitter.records[1].GetUtilizations()[0].GetResourceId(),
 			"identical physical filters must share one resource_id across workflows/triggers")
 	})
 }
@@ -424,16 +419,17 @@ func TestLogTriggerMetering_Snapshot(t *testing.T) {
 	byResourceID := map[string]*meteringpb.MeterSnapshot{}
 	for _, s := range emitter.snapshots {
 		assertBaseIdentity(t, s.GetIdentity())
-		byResourceID[s.GetIdentity().GetResourceId()] = s
+		byResourceID[s.GetUtilization()[0].GetResourceId()] = s
 	}
 
 	a := byResourceID[physA]
 	require.NotNil(t, a)
-	require.Equal(t, int64(2), a.GetUtilization().GetValue())
+	require.Equal(t, "2", a.GetUtilization()[0].GetValue())
+	require.Equal(t, MeteringResourceType, a.GetUtilization()[0].GetResourceType())
 
 	b := byResourceID["physB"]
 	require.NotNil(t, b)
-	require.Equal(t, int64(5), b.GetUtilization().GetValue())
+	require.Equal(t, "5", b.GetUtilization()[0].GetValue())
 }
 
 // TestLogTriggerMetering_Snapshot_NothingActive asserts an empty store emits no
@@ -456,7 +452,7 @@ func TestLogTriggerMetering_Snapshot_NothingActive(t *testing.T) {
 func TestLogTriggerMetering_ReleaseOnGracefulClose(t *testing.T) {
 	mockEVM := evmmock.NewEVMService(t)
 	store := NewLogTriggerStore()
-	service, emitter := newMeteredTriggerObject(t, mockEVM, store)
+	service, emitter, _ := newMeteredTriggerObject(t, mockEVM, store)
 
 	physA := expectedPhysicalFilterID(t, meteringTestInput())
 	store.Write("trigger-A", logTriggerState{filter: filter{
@@ -483,8 +479,8 @@ func TestLogTriggerMetering_ReleaseOnGracefulClose(t *testing.T) {
 	// resource_id (the only per-filter discriminator on the record).
 	byResourceID := map[string]*meteringpb.MeterRecord{}
 	for _, record := range emitter.records {
-		byResourceID[record.GetIdentity().GetResourceId()] = record
+		byResourceID[record.GetUtilizations()[0].GetResourceId()] = record
 	}
-	require.Equal(t, int64(2), byResourceID[physA].GetUtilization().GetValue())
-	require.Equal(t, int64(5), byResourceID["physB"].GetUtilization().GetValue())
+	require.Equal(t, "2", byResourceID[physA].GetUtilizations()[0].GetValue())
+	require.Equal(t, "5", byResourceID["physB"].GetUtilizations()[0].GetValue())
 }

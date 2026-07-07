@@ -35,6 +35,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 
@@ -47,8 +48,8 @@ const (
 // Metering identity constants for the EVM log trigger (SHARED-2711). These are
 // the service-level dimensions of the base ResourceIdentity: Service is the
 // stable service constant (it must not encode deployment environment or zone,
-// which ride on the structured identity's coarse dimensions), Resource is the
-// resource pool, and ResourceType is the billing unit converted to credits.
+// which ride on the structured identity's coarse dimensions). Resource pool
+// lives on ResourceIdentity; billing unit lives on Utilization.resource_type.
 const (
 	MeteringService      = "evm-log-trigger"
 	MeteringResource     = "log_filters"
@@ -73,10 +74,11 @@ type LogTriggerService struct {
 	messageBuilder    *monitoring.MessageBuilder
 	resourceManager   *resourcemanager.ResourceManager
 	// baseIdentity is the producer's base metering identity: the six coarse
-	// dimensions plus service/resource/resource_type, built once at Initialise.
-	// The per-resource ResourceID is set per emit/snapshot via WithResourceID.
-	// When the host did not inject a capability DON ID, baseIdentity.DONID is
-	// empty and is filled per-emit from the consumer's WorkflowDonID.
+	// dimensions plus service/resource_pool, built once at Initialise.
+	// Per-resource billing fields are set on Utilization.
+	// When the host did not inject a capability DON ID, baseIdentity has an
+	// empty DON identifier and is filled per-emit from the consumer's
+	// WorkflowDonID.
 	baseIdentity  resourcemanager.ResourceIdentity
 	chainSelector string // decimal chain selector, the chain label on meter records
 	// rmUnregister removes this service from the ResourceManager's snapshot
@@ -376,6 +378,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		physicalFilterID:     physicalFilterID(lts.chainSelector, addresses, sigs, t2, t3, t4),
 		reservedAddressCount: int64(len(addresses)),
 		donID:                lts.resolveDONID(meta.WorkflowDonID),
+		orgID:                lts.resolveOrgID(ctx, meta.WorkflowOwner),
 		expressions:          expressions,
 		confidence:           confidence,
 	}
@@ -463,14 +466,14 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 
 // resolveDONID returns the metering DON ID for an emit, applying the
 // capabilities#619 0->WorkflowDonID rule: when the host injected a capability
-// DON ID, baseIdentity.DONID is non-empty and used as-is; otherwise the
+// DON ID, baseIdentity's DON identifier is non-empty and used as-is; otherwise the
 // consumer workflow's DON ID (from the request metadata) is the documented
 // fallback. The result is stashed on the filter at registration so the
 // unregister/cleanup/snapshot/close paths reproduce the same identity without
 // the request. Empty when neither source is known.
 func (lts *LogTriggerService) resolveDONID(workflowDonID uint32) string {
-	if lts.baseIdentity.DONID != "" {
-		return lts.baseIdentity.DONID
+	if lts.baseIdentity.DonID() != "" {
+		return lts.baseIdentity.DonID()
 	}
 	if workflowDonID != 0 {
 		return strconv.FormatUint(uint64(workflowDonID), 10)
@@ -478,14 +481,29 @@ func (lts *LogTriggerService) resolveDONID(workflowDonID uint32) string {
 	return ""
 }
 
-// identity returns the base metering identity with its DON ID and ResourceID
-// set for one resource. donID is the value stashed on the filter at
-// registration (see resolveDONID); resourceID is the physical filter content
-// hash (empty when unrecoverable, e.g. an orphaned filter).
-func (lts *LogTriggerService) identity(donID, resourceID string) resourcemanager.ResourceIdentity {
+func (lts *LogTriggerService) resolveOrgID(ctx context.Context, workflowOwner string) string {
+	if lts.orgResolver == nil || workflowOwner == "" {
+		return ""
+	}
+	orgID, err := lts.orgResolver.Get(ctx, workflowOwner)
+	if err != nil {
+		lts.lggr.Warnw("failed to fetch organization ID from org resolver", "workflowOwner", workflowOwner, "error", err)
+		return ""
+	}
+	return orgID
+}
+
+// identity returns the base metering identity with DON ID resolved for one
+// resource.
+func (lts *LogTriggerService) identity(donID string) resourcemanager.ResourceIdentity {
 	id := lts.baseIdentity
-	id.DONID = donID
-	id.ResourceID = resourceID
+	if donID == "" {
+		return id
+	}
+	id.Don = &resourcemanager.DonIdentity{
+		DonID:  donID,
+		NodeID: id.NodeID(),
+	}
 	return id
 }
 
@@ -500,14 +518,21 @@ func (lts *LogTriggerService) emitMeterRecord(ctx context.Context, action meteri
 	if lts.resourceManager == nil {
 		return
 	}
-	identity := lts.identity(f.donID, f.physicalFilterID)
+	identity := lts.identity(f.donID)
 	lts.resourceManager.EmitMeterRecord(ctx, identity, action,
-		resourcemanager.NewUtilization(identity, action, value, f.physicalFilterID))
+		[]*meteringpb.Utilization{
+			resourcemanager.NewUtilizationInt(value, resourcemanager.UtilizationFields{
+				ResourceType: MeteringResourceType,
+				ResourceID:   f.physicalFilterID,
+				EventID:      f.physicalFilterID,
+				OrgID:        f.orgID,
+			}),
+		})
 }
 
 // ResourceIdentity implements resourcemanager.Meterable: it returns the
 // producer's base identity (the six coarse dimensions plus
-// service/resource/resource_type). The per-resource DON ID and ResourceID are
+// service/resource_pool). The per-resource DON ID and billing fields are
 // populated per active filter by GetUtilization.
 func (lts *LogTriggerService) ResourceIdentity() resourcemanager.ResourceIdentity {
 	return lts.baseIdentity
@@ -523,8 +548,15 @@ func (lts *LogTriggerService) GetUtilization(_ context.Context) []resourcemanage
 	for _, state := range triggers {
 		f := state.filter
 		entries = append(entries, resourcemanager.SnapshotEntry{
-			Identity: lts.identity(f.donID, f.physicalFilterID),
-			Value:    f.reservedAddressCount,
+			Identity: lts.identity(f.donID),
+			Utilizations: []*meteringpb.Utilization{
+				resourcemanager.NewUtilizationInt(f.reservedAddressCount, resourcemanager.UtilizationFields{
+					ResourceType: MeteringResourceType,
+					ResourceID:   f.physicalFilterID,
+					EventID:      f.physicalFilterID,
+					OrgID:        f.orgID,
+				}),
+			},
 		})
 	}
 	return entries
@@ -736,7 +768,7 @@ func (lts *LogTriggerService) deliverLogReliably(
 	}
 
 	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
-	deliverCtx := lts.contextWithOrgForDelivery(ctx, telemetryContext.RequestMetadata)
+	deliverCtx := capcommon.ContextWithOrgForDelivery(ctx, lts.lggr, lts.orgResolver, telemetryContext.RequestMetadata)
 	if err := lts.baseTrigger.DeliverEvent(deliverCtx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)

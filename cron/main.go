@@ -1,51 +1,55 @@
 package main
 
 import (
-	"os"
-	"strconv"
-
 	"github.com/smartcontractkit/capabilities/cron/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 )
 
-// meterRecordsEnabledEnvVar gates MeterRecord emission; the name is the
-// cross-producer convention for the metering rollout (SHARED-2718).
-const meterRecordsEnabledEnvVar = "CL_METER_RECORDS_ENABLED"
+type meteringConfig struct {
+	meterRecordsEnabled   bool
+	meterSnapshotsEnabled bool
+	deployment            resourcemanager.DeploymentIdentity
+}
 
-// meterRecordsEnabled reads the metering gate from the environment. Unset or
-// unparseable values disable emission; metering config must never prevent the
-// capability from starting.
-func meterRecordsEnabled(lggr logger.Logger) bool {
-	v := os.Getenv(meterRecordsEnabledEnvVar)
-	if v == "" {
-		return false
+func newMeteringConfig(env loop.EnvConfig) meteringConfig {
+	return meteringConfig{
+		meterRecordsEnabled:   env.MeterRecordsEnabled,
+		meterSnapshotsEnabled: env.MeterSnapshotsEnabled,
+		deployment: resourcemanager.DeploymentIdentity{
+			Product:         env.MeterProduct,
+			Tenant:          env.MeterTenant,
+			NumericTenantID: env.MeterNumericTenantID,
+			Environment:     env.MeterEnvironment,
+			Zone:            env.MeterZone,
+			NodeID:          env.MeterNodeID,
+		},
 	}
-	enabled, err := strconv.ParseBool(v)
-	if err != nil {
-		lggr.Warnw("Invalid value for "+meterRecordsEnabledEnvVar+", meter record emission disabled", "value", v, "error", err)
-		return false
+}
+
+func (m meteringConfig) resourceManagerConfig() resourcemanager.ResourceManagerConfig {
+	return resourcemanager.ResourceManagerConfig{
+		MeterRecordsEnabled:   m.meterRecordsEnabled,
+		MeterSnapshotsEnabled: m.meterSnapshotsEnabled,
+		Emitter:               beholder.GetEmitter(),
+		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
 	}
-	return enabled
 }
 
 func main() {
 	loopserver.ServeNew(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
-		meters := resourcemanager.NewResourceManager(s.Logger, resourcemanager.ResourceManagerConfig{
-			Enabled:          meterRecordsEnabled(s.Logger),
-			Emitter:          beholder.GetEmitter(),
-			SnapshotInterval: resourcemanager.DefaultSnapshotInterval,
-		})
+		meteringCfg := newMeteringConfig(s.EnvConfig)
+		meters := resourcemanager.NewResourceManager(s.Logger, meteringCfg.resourceManagerConfig())
 
 		triggerService, err := trigger.NewTriggerService(s.Logger, nil, s.LimitsFactory, meters)
 		if err != nil {
 			s.Logger.Fatalw("Failed to create cron trigger service", "error", err)
 		}
+		triggerService.Deployment = meteringCfg.deployment
 
 		return server.NewCronServer(triggerService)
 	}, loop.WithOtelViews(trigger.MetricViews()))

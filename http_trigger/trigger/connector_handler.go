@@ -52,9 +52,9 @@ type connectorHandler struct {
 	stopChan                 services.StopChan
 	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 	resourceManager          *resourcemanager.ResourceManager
-	// baseIdentity is the six-dimension + resource/resource_type metering
-	// identity for this trigger LOOP, built once at Initialise. The
-	// per-workflow resource_id is derived per emission via WithResourceID.
+	// baseIdentity is the six-dimension + resource_pool metering identity for
+	// this trigger LOOP, built once at Initialise. Per-workflow billing fields
+	// are carried by Utilization.
 	baseIdentity resourcemanager.ResourceIdentity
 	// unregisterMeterable removes this handler from the ResourceManager's
 	// snapshot registry; set on Start, called on Close.
@@ -145,7 +145,7 @@ func (h *connectorHandler) Close() error {
 func (h *connectorHandler) releaseActiveWorkflows(ctx context.Context) {
 	for _, w := range h.workflowStore.getWorkflows() {
 		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE,
-			w.workflowSelector.WorkflowID, w.metadata.WorkflowDONID)
+			w.workflowSelector.WorkflowID, w.metadata.WorkflowDONID, w.metadata.OrganizationID)
 	}
 }
 
@@ -187,6 +187,18 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 	latencyMs := time.Since(startTime).Milliseconds()
 	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
+	orgID := h.resolveOrgID(ctx, input.WorkflowSelector.WorkflowOwner)
+	input.Metadata.OrganizationID = orgID
+
+	var prevWorkflowOrgID string
+	var prevWorkflowDONID uint32
+	if prevID, ok := h.workflowStore.getWorkflowIDByReference(input.WorkflowSelector.WorkflowOwner, input.WorkflowSelector.WorkflowName, input.WorkflowSelector.WorkflowTag); ok {
+		if prevWorkflow, found := h.workflowStore.getWorkflowByID(prevID); found {
+			prevWorkflowOrgID = prevWorkflow.metadata.OrganizationID
+			prevWorkflowDONID = prevWorkflow.metadata.WorkflowDONID
+		}
+	}
+
 	workflow := newWorkflowWithMetadata(input.WorkflowSelector, authorizedKeys, sendCh, input.Metadata)
 	prevWorkflowID, replaced, err := h.workflowStore.upsertWorkflow(workflow)
 	if err != nil {
@@ -197,15 +209,15 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 	workflowDONID := input.Metadata.WorkflowDONID
 	switch {
 	case !replaced:
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID)
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID, orgID)
 	case prevWorkflowID == newWorkflowID:
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_UPDATE, newWorkflowID, workflowDONID)
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_UPDATE, newWorkflowID, workflowDONID, orgID)
 	default:
 		// Version update: the same owner/name/tag reference now resolves to a
 		// new workflow ID. Release the previous workflow's reservation before
 		// reserving the new one so the old reservation does not leak.
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, prevWorkflowID, workflowDONID)
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID)
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, prevWorkflowID, prevWorkflowDONID, prevWorkflowOrgID)
+		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID, orgID)
 	}
 	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
@@ -218,18 +230,32 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 // workflow and action dedups downstream. The workflow_id is recoverable from
 // resource_id and the owner is resolved downstream, so no label metadata is
 // attached. Emission is fail-open and never affects the registration outcome.
-func (h *connectorHandler) emitMeterRecord(ctx context.Context, action meteringpb.MeterAction, workflowID string, workflowDONID uint32) {
-	identity := h.identityForWorkflow(workflowID, workflowDONID)
+func (h *connectorHandler) emitMeterRecord(ctx context.Context, action meteringpb.MeterAction, workflowID string, workflowDONID uint32, orgID string) {
+	identity := h.identityForWorkflow(workflowDONID)
 	h.resourceManager.EmitMeterRecord(ctx, identity, action,
-		resourcemanager.NewUtilization(identity, action, 1, workflowID))
+		[]*meteringpb.Utilization{
+			resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
+				ResourceType: meterResourceType,
+				ResourceID:   workflowID,
+				EventID:      workflowID,
+				OrgID:        orgID,
+			}),
+		})
 }
 
-// identityForWorkflow derives the per-workflow metering identity: the base
-// identity with resource_id set to the workflow ID, and DONID resolved per
+// identityForWorkflow derives per-workflow metering identity: base identity
+// with DON identifier resolved per
 // registration when the host did not inject a capability DON.
-func (h *connectorHandler) identityForWorkflow(workflowID string, workflowDONID uint32) resourcemanager.ResourceIdentity {
-	identity := h.baseIdentity.WithResourceID(workflowID)
-	identity.DONID = h.donID(workflowDONID)
+func (h *connectorHandler) identityForWorkflow(workflowDONID uint32) resourcemanager.ResourceIdentity {
+	identity := h.baseIdentity
+	donID := h.donID(workflowDONID)
+	if donID == "" {
+		return identity
+	}
+	identity.Don = &resourcemanager.DonIdentity{
+		DonID:  donID,
+		NodeID: identity.NodeID(),
+	}
 	return identity
 }
 
@@ -238,8 +264,8 @@ func (h *connectorHandler) identityForWorkflow(workflowID string, workflowDONID 
 // and falls back to the per-registration workflow DON when the host did not
 // populate one (CapabilityDonID == 0 at Initialise).
 func (h *connectorHandler) donID(workflowDONID uint32) string {
-	if h.baseIdentity.DONID != "" {
-		return h.baseIdentity.DONID
+	if h.baseIdentity.DonID() != "" {
+		return h.baseIdentity.DonID()
 	}
 	if workflowDONID != 0 {
 		return strconv.FormatUint(uint64(workflowDONID), 10)
@@ -247,9 +273,21 @@ func (h *connectorHandler) donID(workflowDONID uint32) string {
 	return ""
 }
 
+func (h *connectorHandler) resolveOrgID(ctx context.Context, workflowOwner string) string {
+	if h.orgResolver == nil || workflowOwner == "" {
+		return ""
+	}
+	orgID, err := h.orgResolver.Get(ctx, workflowOwner)
+	if err != nil {
+		h.lggr.Warnw("failed to fetch organization ID from org resolver", "workflowOwner", workflowOwner, "error", err)
+		return ""
+	}
+	return orgID
+}
+
 // ResourceIdentity returns the HTTP trigger's base metering identity (six
-// dimensions + resource / resource_type). The per-workflow resource_id is
-// populated by GetUtilization. It implements resourcemanager.Meterable.
+// dimensions + resource_pool). Per-workflow billing fields are populated on
+// Utilization in GetUtilization. It implements resourcemanager.Meterable.
 func (h *connectorHandler) ResourceIdentity() resourcemanager.ResourceIdentity {
 	return h.baseIdentity
 }
@@ -265,8 +303,15 @@ func (h *connectorHandler) GetUtilization(ctx context.Context) []resourcemanager
 	for _, w := range workflows {
 		workflowID := w.workflowSelector.WorkflowID
 		entries = append(entries, resourcemanager.SnapshotEntry{
-			Identity: h.identityForWorkflow(workflowID, w.metadata.WorkflowDONID),
-			Value:    1,
+			Identity: h.identityForWorkflow(w.metadata.WorkflowDONID),
+			Utilizations: []*meteringpb.Utilization{
+				resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
+					ResourceType: meterResourceType,
+					ResourceID:   workflowID,
+					EventID:      workflowID,
+					OrgID:        w.metadata.OrganizationID,
+				}),
+			},
 		})
 	}
 	return entries
@@ -302,14 +347,16 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 	// Snapshot the workflow DON before removal; it is needed for the meter
 	// record's identity DON fallback.
 	var workflowDONID uint32
+	var orgID string
 	if w, ok := h.workflowStore.getWorkflowByID(workflowID); ok {
 		workflowDONID = w.metadata.WorkflowDONID
+		orgID = w.metadata.OrganizationID
 	}
 	err := h.workflowStore.removeWorkflow(workflowID)
 	if err != nil {
 		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
 	}
-	h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, workflowID, workflowDONID)
+	h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, workflowID, workflowDONID, orgID)
 	h.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }

@@ -31,6 +31,7 @@ type filter struct {
 	// WorkflowDonID fallback when the host did not inject a capability DON);
 	// empty when neither is known.
 	donID       string
+	orgID       string
 	expressions []query.Expression
 	confidence  primitives.ConfidenceLevel
 }

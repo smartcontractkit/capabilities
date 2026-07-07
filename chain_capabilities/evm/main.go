@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -49,6 +48,40 @@ type capabilityGRPCService struct {
 	capability
 	lggr          logger.Logger
 	limitsFactory limits.Factory
+	// metering carries emission toggles and deployment/node identity dimensions
+	// delivered to the plugin process via loop.EnvConfig (set at startup). The
+	// zero value is valid and leaves those dimensions empty/disabled.
+	metering meteringConfig
+}
+
+type meteringConfig struct {
+	meterRecordsEnabled   bool
+	meterSnapshotsEnabled bool
+	deployment            resourcemanager.DeploymentIdentity
+}
+
+func newMeteringConfig(env loop.EnvConfig) meteringConfig {
+	return meteringConfig{
+		meterRecordsEnabled:   env.MeterRecordsEnabled,
+		meterSnapshotsEnabled: env.MeterSnapshotsEnabled,
+		deployment: resourcemanager.DeploymentIdentity{
+			Product:         env.MeterProduct,
+			Tenant:          env.MeterTenant,
+			NumericTenantID: env.MeterNumericTenantID,
+			Environment:     env.MeterEnvironment,
+			Zone:            env.MeterZone,
+			NodeID:          env.MeterNodeID,
+		},
+	}
+}
+
+func (m meteringConfig) resourceManagerConfig() resourcemanager.ResourceManagerConfig {
+	return resourcemanager.ResourceManagerConfig{
+		MeterRecordsEnabled:   m.meterRecordsEnabled,
+		MeterSnapshotsEnabled: m.meterSnapshotsEnabled,
+		Emitter:               beholder.GetEmitter(),
+		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
+	}
 }
 
 type capability struct {
@@ -65,7 +98,12 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
+		meteringCfg := newMeteringConfig(s.EnvConfig)
+		return evmcapserver.NewClientServer(&capabilityGRPCService{
+			lggr:          s.Logger,
+			limitsFactory: s.LimitsFactory,
+			metering:      meteringCfg,
+		})
 	}, loop.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
 }
 
@@ -167,12 +205,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	// as a sub-service and registers itself, so it must be configured with a
 	// snapshot interval here. Identity/snapshots are gated by the same metering
 	// env flag as MeterRecords.
-	resourceManager := resourcemanager.NewResourceManager(c.lggr, resourcemanager.ResourceManagerConfig{
-		Enabled:          meterRecordsEnabled(c.lggr),
-		Emitter:          beholder.GetEmitter(),
-		SnapshotInterval: resourcemanager.DefaultSnapshotInterval,
-	})
-	baseIdentity := newBaseMeteringIdentity(dependencies)
+	resourceManager := resourcemanager.NewResourceManager(c.lggr, c.metering.resourceManagerConfig())
+	baseIdentity := newBaseMeteringIdentity(dependencies, c.metering.deployment)
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
 		dependencies.OrgResolver, dependencies.TriggerEventStore, resourceManager, baseIdentity, c.chainSelector)
@@ -211,22 +245,20 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 }
 
 // defaultMeteringProduct is the fallback metering product dimension used when
-// the host did not inject one via the standardized Initialise channel (a legacy
-// node or a boot path not yet updated). The other deployment dimensions
-// (environment, zone, node_id) have no meaningful constant and are left empty
-// in that case, as documented on StandardCapabilitiesDependencies.
+// the host did not provide one via loop.EnvConfig (a legacy node or a boot path
+// not yet updated). The other deployment dimensions (environment, zone,
+// node_id) have no meaningful constant and are left empty in that case.
 const defaultMeteringProduct = "cre"
 
-// newBaseMeteringIdentity builds the EVM log trigger's base metering identity
-// from the host-injected dependencies. It carries the six coarse dimensions
-// plus the service-level resource/resource_type; the per-resource ResourceID is
-// set per emit/snapshot. DONID is the capability DON when the host injected one
-// (deps.CapabilityDonID); when 0, it is left empty here and resolved per emit
-// from the consumer's WorkflowDonID (see LogTriggerService.resolveDONID). This
-// reads deps.CapabilityDonID at the Initialise layer so the change is orthogonal
-// to capabilities#619's NewLogTriggerService signature edit.
-func newBaseMeteringIdentity(deps core.StandardCapabilitiesDependencies) resourcemanager.ResourceIdentity {
-	product := deps.Product
+// newBaseMeteringIdentity builds the EVM log trigger's base metering identity.
+// The deployment/node dimensions come from deployment (delivered via
+// loop.EnvConfig); the DON dimension comes from the host-injected
+// CapabilityDonID. It carries the six coarse dimensions plus the service-level
+// resource/resource_type; the per-resource ResourceID is set per emit/snapshot.
+// When CapabilityDonID is 0, the DON identifier is left empty here and resolved per emit from
+// the consumer's WorkflowDonID (see LogTriggerService.resolveDONID).
+func newBaseMeteringIdentity(deps core.StandardCapabilitiesDependencies, deployment resourcemanager.DeploymentIdentity) resourcemanager.ResourceIdentity {
+	product := deployment.Product
 	if product == "" {
 		product = defaultMeteringProduct
 	}
@@ -234,36 +266,23 @@ func newBaseMeteringIdentity(deps core.StandardCapabilitiesDependencies) resourc
 	if deps.CapabilityDonID != 0 {
 		donID = strconv.FormatUint(uint64(deps.CapabilityDonID), 10)
 	}
+	var donIdentity *resourcemanager.DonIdentity
+	if donID != "" || deployment.NodeID != "" {
+		donIdentity = &resourcemanager.DonIdentity{
+			DonID:  donID,
+			NodeID: deployment.NodeID,
+		}
+	}
 	return resourcemanager.ResourceIdentity{
-		Product:      product,
-		Environment:  deps.Environment,
-		Zone:         deps.Zone,
-		DONID:        donID,
-		NodeID:       deps.NodeID,
-		Service:      trigger.MeteringService,
-		Resource:     trigger.MeteringResource,
-		ResourceType: trigger.MeteringResourceType,
+		Product:         product,
+		Tenant:          deployment.Tenant,
+		NumericTenantID: deployment.NumericTenantID,
+		Environment:     deployment.Environment,
+		Zone:            deployment.Zone,
+		Don:             donIdentity,
+		Service:         trigger.MeteringService,
+		ResourcePool:    trigger.MeteringResource,
 	}
-}
-
-// meterRecordsEnabledEnvVar gates MeterRecord emission; the name is the
-// cross-producer convention for the metering rollout (SHARED-2718).
-const meterRecordsEnabledEnvVar = "CL_METER_RECORDS_ENABLED"
-
-// meterRecordsEnabled reads the metering gate from the environment. Unset or
-// unparseable values disable emission; metering config must never prevent the
-// capability from starting.
-func meterRecordsEnabled(lggr logger.Logger) bool {
-	v := os.Getenv(meterRecordsEnabledEnvVar)
-	if v == "" {
-		return false
-	}
-	enabled, err := strconv.ParseBool(v)
-	if err != nil {
-		lggr.Warnw("Invalid value for "+meterRecordsEnabledEnvVar+", meter record emission disabled", "value", v, "error", err)
-		return false
-	}
-	return enabled
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
