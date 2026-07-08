@@ -339,6 +339,9 @@ func (wr *writeReport) pollTransmissionInfo(
 	stageTimer := time.NewTimer(delay)
 	deltaStagePassed := false
 	hadSuccessfulPoll := false
+	// Guard so an unexpected state that persists across multiple poll iterations only
+	// emits one InvalidTransmissionState metric, not one per poll tick.
+	invalidStateEmitted := false
 	defer func() {
 		stageTimer.Stop()
 		if wr.monitoringEnabled() && !deltaStagePassed && hadSuccessfulPoll {
@@ -359,9 +362,12 @@ func (wr *writeReport) pollTransmissionInfo(
 				return lastValidInfo, nil
 			case TransmissionStateNotAttempted:
 			default:
-				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, lastValidInfo, transmissionID,
-					"Unexpected transmission state; continuing to poll",
-					invalidTransmissionStateError(lastValidInfo.State).Error())
+				if !invalidStateEmitted {
+					wr.emitInvalidTransmissionState(ctx, request, telemetryContext, lastValidInfo, transmissionID,
+						"Unexpected transmission state; continuing to poll",
+						invalidTransmissionStateError(lastValidInfo.State).Error())
+					invalidStateEmitted = true
+				}
 			}
 		}
 

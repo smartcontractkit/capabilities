@@ -1467,6 +1467,49 @@ func TestPollTransmissionInfo_EmitsInvalidTransmissionStateWithStubForwarder(t *
 	require.True(t, hasTelemetryMessage[*monitoring.WriteReportInvalidTransmissionState](processor.messages))
 }
 
+func TestPollTransmissionInfo_EmitsInvalidTransmissionStateOnlyOnce(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	processor := &recordingWriteReportProcessor{}
+	scheduler := ts.NewTransmissionScheduler(
+		p2ptypes.PeerID{2},
+		[]p2ptypes.PeerID{{1}, {2}, {3}},
+		150*time.Millisecond,
+		0,
+		lggr,
+	)
+	// Always return unexpected state — ensures multiple poll iterations hit the default branch.
+	stub := &stubForwarderClient{
+		transmissionInfoFn: func(int) (TransmissionInfo, error) {
+			return TransmissionInfo{State: TransmissionState(99)}, nil
+		},
+	}
+	wr := &writeReport{
+		forwarderClient:       stub,
+		lggr:                  logger.Sugared(lggr),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     processor,
+	}
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(500*time.Millisecond))
+	defer cancel()
+
+	_, err = wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 2)
+	require.NoError(t, err)
+
+	var invalidStateCount int
+	for _, msg := range processor.messages {
+		if _, ok := msg.(*monitoring.WriteReportInvalidTransmissionState); ok {
+			invalidStateCount++
+		}
+	}
+	require.Equal(t, 1, invalidStateCount, "InvalidTransmissionState should fire exactly once even across multiple poll iterations with a persistent unexpected state")
+}
+
 func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
