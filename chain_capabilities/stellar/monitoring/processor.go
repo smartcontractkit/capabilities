@@ -68,10 +68,12 @@ func (p *Processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish WriteReportInvalidTransmissionState metrics: %w", err)
 		}
 	case *WriteReportTxHashRetrievalPhase:
+		p.logMessage(msg)
 		if err := p.Metrics.OnWriteReportTxHashRetrievalPhase(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportTxHashRetrievalPhase metrics: %w", err)
 		}
 	case *WriteReportInvokeOnReportDuration:
+		p.logMessage(msg)
 		if err := p.Metrics.OnWriteReportInvokeOnReportDuration(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportInvokeOnReportDuration metrics: %w", err)
 		}

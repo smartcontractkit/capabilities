@@ -181,18 +181,10 @@ func convertReadContractRequest(req stellartypes.SimulateTransactionRequest) *Re
 	}
 }
 
-func executionMetricAttributes(ec *capmonitoring.ExecutionContext) []attribute.KeyValue {
-	return ec.MetricsAttributes()
-}
-
-func appendExecutionLogAttributes(reqAttrs []attribute.KeyValue, ec *capmonitoring.ExecutionContext) []attribute.KeyValue {
-	return append(reqAttrs, ec.LogAttributes()...)
-}
-
 func appendUserErrorLogAttributes(reqAttrs []attribute.KeyValue, summary string, isUserError bool, ec *capmonitoring.ExecutionContext) []attribute.KeyValue {
 	return append(append(reqAttrs,
 		attribute.String("summary", summary),
-		attribute.Bool("isUserError", isUserError),
+		attribute.Bool("is_user_error", isUserError),
 	), ec.LogAttributes()...)
 }
 
@@ -215,11 +207,11 @@ func readContractRequestLogAttributes(req *ReadContractRequest) []attribute.KeyV
 }
 
 func (r *ReadContractInitiated) LogAttributes() []attribute.KeyValue {
-	return appendExecutionLogAttributes(readContractRequestLogAttributes(r.Req), r.ExecutionContext)
+	return append(readContractRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
 }
 
 func (r *ReadContractInitiated) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *ReadContractSuccess) LogAttributes() []attribute.KeyValue {
@@ -230,7 +222,7 @@ func (r *ReadContractSuccess) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *ReadContractSuccess) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *ReadContractError) LogAttributes() []attribute.KeyValue {
@@ -238,7 +230,7 @@ func (r *ReadContractError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *ReadContractError) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func writeReportRequestLogAttributes(req *WriteReportRequest) []attribute.KeyValue {
@@ -253,19 +245,19 @@ func writeReportRequestLogAttributes(req *WriteReportRequest) []attribute.KeyVal
 }
 
 func (r *WriteReportInitiated) LogAttributes() []attribute.KeyValue {
-	return appendExecutionLogAttributes(writeReportRequestLogAttributes(r.Req), r.ExecutionContext)
+	return append(writeReportRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
 }
 
 func (r *WriteReportInitiated) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
-	return appendExecutionLogAttributes(writeReportRequestLogAttributes(r.Req), r.ExecutionContext)
+	return append(writeReportRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
 }
 
 func (r *WriteReportSuccess) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
@@ -273,7 +265,7 @@ func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportTxInfoRetrievalError) LogAttributes() []attribute.KeyValue {
@@ -287,13 +279,13 @@ func (r *WriteReportTxInfoRetrievalError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportTxInfoRetrievalError) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportInvalidTransmissionState) LogAttributes() []attribute.KeyValue {
 	return append(append(writeReportRequestLogAttributes(r.Req),
 		attribute.String("summary", r.GetSummary()),
-		attribute.String("transmission_state", strconv.FormatUint(uint64(r.GetTransmissionState()), 10)),
+		attribute.Int64("transmission_state", int64(r.GetTransmissionState())),
 		attribute.Bool("invalid_receiver", r.GetInvalidReceiver()),
 		attribute.Bool("success", r.GetSuccess()),
 		attribute.String("transmission_id", r.GetTransmissionId()),
@@ -302,7 +294,7 @@ func (r *WriteReportInvalidTransmissionState) LogAttributes() []attribute.KeyVal
 }
 
 func (r *WriteReportInvalidTransmissionState) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportSuccessfulEarlyReturn) LogAttributes() []attribute.KeyValue {
@@ -310,7 +302,7 @@ func (r *WriteReportSuccessfulEarlyReturn) LogAttributes() []attribute.KeyValue 
 }
 
 func (r *WriteReportSuccessfulEarlyReturn) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
@@ -325,15 +317,11 @@ func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportDuplicateTx) MetricAttributes() []attribute.KeyValue {
-	return executionMetricAttributes(r.ExecutionContext)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportTxHashRetrievalPhase) MetricAttributes() []attribute.KeyValue {
-	return append([]attribute.KeyValue{
-		attribute.String("phase", r.GetPhase()),
-		attribute.String("result", r.GetResult()),
-		attribute.String("lookup_type", r.GetLookupType()),
-	}, r.ExecutionContext.MetricsAttributes()...)
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportInvokeOnReportDuration) MetricAttributes() []attribute.KeyValue {

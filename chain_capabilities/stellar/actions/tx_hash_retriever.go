@@ -16,13 +16,29 @@ import (
 )
 
 const (
-	reportProcessedTopicPrefix      = "forwarder_ReportProcessed"
-	defaultForwarderLookbackLedgers = int64(100)
-	failedToRetrieveTxHashErrorMsg  = "failed to retrieve tx hash for report"
+	failedToRetrieveTxHashErrorMsg = "failed to retrieve tx hash for report"
+)
 
-	txHashLookupTypeSuccessful = "SuccessfulTransmission"
-	txHashLookupTypeFailed     = "FailedTransmission"
-	txHashRetrievalPhase       = "EventPoll"
+type TxHashRetrievalResult string
+
+const (
+	TxHashRetrievalResultFound             TxHashRetrievalResult = "Found"
+	TxHashRetrievalResultNotFound          TxHashRetrievalResult = "NotFound"
+	TxHashRetrievalResultFetchError        TxHashRetrievalResult = "FetchError"
+	TxHashRetrievalResultUnexpectedSuccess TxHashRetrievalResult = "UnexpectedSuccess"
+)
+
+type TxHashLookupType string
+
+const (
+	TxHashLookupTypeSuccessful TxHashLookupType = "SuccessfulTransmission"
+	TxHashLookupTypeFailed     TxHashLookupType = "FailedTransmission"
+)
+
+type TxHashRetrievalPhase string
+
+const (
+	TxHashRetrievalPhaseEventPoll TxHashRetrievalPhase = "EventPoll"
 )
 
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
@@ -95,17 +111,36 @@ func (l eventDetailsList) String() string {
 }
 
 func (r *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (string, error) {
-	details, err := r.fetchAndParseEvents(ctx, txHashLookupTypeSuccessful)
+	details, phaseStart, err := r.fetchAndParseEvents(ctx, TxHashLookupTypeSuccessful)
 	if err != nil {
 		return "", err
 	}
 	for _, d := range details {
 		if d.isSuccess {
+			if r.monitoringEnabled() {
+				monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
+					r.telemetryContext,
+					string(TxHashRetrievalPhaseEventPoll),
+					string(TxHashRetrievalResultFound),
+					int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
+					d.txHash,
+					string(TxHashLookupTypeSuccessful),
+				))
+			}
 			return d.txHash, nil
 		}
 	}
 	r.lggr.Errorw("No successful transmission found", "txCount", len(details), "transactions", details.String())
-	r.emitTxHashRetrievalPhase(ctx, txHashLookupTypeSuccessful, "NotFound", time.Now(), "")
+	if r.monitoringEnabled() {
+		monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
+			r.telemetryContext,
+			string(TxHashRetrievalPhaseEventPoll),
+			string(TxHashRetrievalResultNotFound),
+			int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
+			"",
+			string(TxHashLookupTypeSuccessful),
+		))
+	}
 	return "", fmt.Errorf("no successful transmission found. Found %d transactions (all failed): %s",
 		len(details), details)
 }
@@ -116,19 +151,37 @@ func (r *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (string
 }
 
 func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context) (string, int, error) {
-	details, err := r.fetchAndParseEvents(ctx, txHashLookupTypeFailed)
+	details, phaseStart, err := r.fetchAndParseEvents(ctx, TxHashLookupTypeFailed)
 	if err != nil {
 		return "", 0, err
 	}
 	for _, d := range details {
 		if d.isSuccess {
-			r.emitTxHashRetrievalPhase(ctx, txHashLookupTypeFailed, "UnexpectedSuccess", time.Now(), d.txHash)
+			if r.monitoringEnabled() {
+				monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
+					r.telemetryContext,
+					string(TxHashRetrievalPhaseEventPoll),
+					string(TxHashRetrievalResultUnexpectedSuccess),
+					int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
+					d.txHash,
+					string(TxHashLookupTypeFailed),
+				))
+			}
 			return "", len(details), fmt.Errorf("%w, successful tx hash: %s",
 				ErrUnexpectedSuccessfulTransmission, d.txHash)
 		}
 	}
 	if len(details) == 0 {
-		r.emitTxHashRetrievalPhase(ctx, txHashLookupTypeFailed, "NotFound", time.Now(), "")
+		if r.monitoringEnabled() {
+			monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
+				r.telemetryContext,
+				string(TxHashRetrievalPhaseEventPoll),
+				string(TxHashRetrievalResultNotFound),
+				int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
+				"",
+				string(TxHashLookupTypeFailed),
+			))
+		}
 		return "", 0, fmt.Errorf("no failed transmission found")
 	}
 
@@ -139,17 +192,28 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 		}
 	}
 
+	selectedHash := details[earliestIdx].txHash
 	r.lggr.Debugw("Returning earliest failed transmission",
 		append([]any{
 			"txCount", len(details),
-			"selectedTxHash", details[earliestIdx].txHash,
+			"selectedTxHash", selectedHash,
 		}, r.transmissionID.LogAttrs()...)...,
 	)
 
-	return details[earliestIdx].txHash, len(details), nil
+	if r.monitoringEnabled() {
+		monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
+			r.telemetryContext,
+			string(TxHashRetrievalPhaseEventPoll),
+			string(TxHashRetrievalResultFound),
+			int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
+			selectedHash,
+			string(TxHashLookupTypeFailed),
+		))
+	}
+	return selectedHash, len(details), nil
 }
 
-func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context, lookupType string) (eventDetailsList, error) {
+func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context, lookupType TxHashLookupType) (eventDetailsList, time.Time, error) {
 	phaseStart := time.Now()
 	events, err := capcommon.WithPollingRetry(ctx, r.lggr, func(ctx context.Context) ([]ReportProcessedEvent, error) {
 		events, fetchErr := r.forwarderClient.GetReportProcessedEvents(ctx, r.transmissionID)
@@ -162,31 +226,24 @@ func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context, lookupType st
 		return events, nil
 	})
 	if err != nil {
-		r.emitTxHashRetrievalPhase(ctx, lookupType, "FetchError", phaseStart, "")
-		return nil, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMsg, err)
+		if r.monitoringEnabled() {
+			monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
+				r.telemetryContext,
+				string(TxHashRetrievalPhaseEventPoll),
+				string(TxHashRetrievalResultFetchError),
+				int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
+				"",
+				string(lookupType),
+			))
+		}
+		return nil, phaseStart, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMsg, err)
 	}
 
-	details := buildEventDetails(events)
-	selectedHash := ""
-	if len(details) > 0 {
-		selectedHash = details[0].txHash
-	}
-	r.emitTxHashRetrievalPhase(ctx, lookupType, "Found", phaseStart, selectedHash)
-	return details, nil
+	return buildEventDetails(events), phaseStart, nil
 }
 
-func (r *TxHashRetriever) emitTxHashRetrievalPhase(ctx context.Context, lookupType, result string, phaseStart time.Time, txHash string) {
-	if r.beholderProcessor == nil || r.messageBuilder == nil {
-		return
-	}
-	monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
-		r.telemetryContext,
-		txHashRetrievalPhase,
-		result,
-		int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
-		txHash,
-		lookupType,
-	))
+func (r *TxHashRetriever) monitoringEnabled() bool {
+	return r.beholderProcessor != nil && r.messageBuilder != nil
 }
 
 func buildEventDetails(events []ReportProcessedEvent) eventDetailsList {

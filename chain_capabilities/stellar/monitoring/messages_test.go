@@ -79,13 +79,13 @@ func TestMessageBuilder_ReadContractMessages(t *testing.T) {
 	readErr := builder.BuildReadContractError(tc, req, "summary", caperrors.NewPublicUserError(assert.AnError, caperrors.InvalidArgument))
 	errAttrs := attrsToMap(readErr.LogAttributes())
 	assert.Equal(t, "summary", errAttrs["summary"])
-	assert.Equal(t, true, errAttrs["isUserError"])
+	assert.Equal(t, true, errAttrs["is_user_error"])
 	assert.Equal(t, req.ContractID, errAttrs["contract_id"])
 	assert.EqualValues(t, 7, attrsToMap(readErr.MetricAttributes())["workflow_don_id"])
 
 	readSystemErr := builder.BuildReadContractError(tc, req, "system failure", caperrors.NewPublicSystemError(assert.AnError, caperrors.Unknown))
 	systemErrAttrs := attrsToMap(readSystemErr.LogAttributes())
-	assert.Equal(t, false, systemErrAttrs["isUserError"])
+	assert.Equal(t, false, systemErrAttrs["is_user_error"])
 
 	nilRead := &monitoring.ReadContractInitiated{
 		ExecutionContext: newMessageBuilder().BuildExecutionContext(newTelemetryContext()),
@@ -130,10 +130,10 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	writeErr := builder.BuildWriteReportError(tc, req, "summary", caperrors.NewPublicUserError(assert.AnError, caperrors.InvalidArgument))
 	errAttrs := attrsToMap(writeErr.LogAttributes())
 	assert.Equal(t, "summary", errAttrs["summary"])
-	assert.Equal(t, true, errAttrs["isUserError"])
+	assert.Equal(t, true, errAttrs["is_user_error"])
 
 	writeSystemErr := builder.BuildWriteReportError(tc, req, "execute failed", caperrors.NewPublicSystemError(assert.AnError, caperrors.Unknown))
-	assert.Equal(t, false, attrsToMap(writeSystemErr.LogAttributes())["isUserError"])
+	assert.Equal(t, false, attrsToMap(writeSystemErr.LogAttributes())["is_user_error"])
 	assert.EqualValues(t, 7, attrsToMap(writeSystemErr.MetricAttributes())["workflow_don_id"])
 
 	txInfoErr := builder.BuildWriteReportTxInfoRetrievalError(tc, req, "abc123", "rpc down")
@@ -165,7 +165,7 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 		tc, req, 3, true, false, "receiver:report:exec", "transmitter", "summary", "cause",
 	)
 	invalidAttrs := attrsToMap(invalidState.LogAttributes())
-	assert.Equal(t, "3", invalidAttrs["transmission_state"])
+	assert.EqualValues(t, int64(3), invalidAttrs["transmission_state"])
 	assert.Equal(t, true, invalidAttrs["invalid_receiver"])
 	assert.Equal(t, false, invalidAttrs["success"])
 	assert.Equal(t, "transmitter", invalidAttrs["transmitter"])
@@ -173,9 +173,7 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 
 	txHashPhase := builder.BuildWriteReportTxHashRetrievalPhase(tc, "EventPoll", "Found", 123, "hash", "SuccessfulTransmission")
 	phaseAttrs := attrsToMap(txHashPhase.MetricAttributes())
-	assert.Equal(t, "EventPoll", phaseAttrs["phase"])
-	assert.Equal(t, "Found", phaseAttrs["result"])
-	assert.Equal(t, "SuccessfulTransmission", phaseAttrs["lookup_type"])
+	assert.EqualValues(t, 7, phaseAttrs["workflow_don_id"])
 
 	invokeDuration := builder.BuildWriteReportInvokeOnReportDuration(tc, 456, 1)
 	invokeAttrs := attrsToMap(invokeDuration.MetricAttributes())

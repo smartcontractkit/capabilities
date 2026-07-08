@@ -113,7 +113,6 @@ func (s *Stellar) GetLatestLedger(ctx context.Context, metadata capabilities.Req
 	if err != nil {
 		s.lggr.Errorw("Failed to GetLatestLedger", "error", err)
 		return nil, capcommon.GetError(fmt.Errorf("failed to GetLatestLedger: %w", err), false)
-
 	}
 	return responseAndMetadata, nil
 }

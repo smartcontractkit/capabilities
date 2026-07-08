@@ -61,8 +61,7 @@ type Metrics struct {
 		basic capmonitoring.MetricsCapBasic
 	}
 	WriteReportTxHashRetrievalPhase struct {
-		count         metric.Int64Counter
-		phaseDuration metric.Int64Histogram
+		duration metric.Int64Histogram
 	}
 	WriteReportInvokeOnReportDuration struct {
 		duration metric.Int64Histogram
@@ -100,21 +99,12 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	meter := commonbeholder.GetMeter()
-	txHashPhaseCount := commonbeholder.MetricInfo{
-		Name:        ns("write_report_tx_hash_retrieval_phase_count"),
-		Unit:        "",
-		Description: "The count of Stellar WriteReport tx hash retrieval phases by lookup type, phase, and result",
-	}
-	m.WriteReportTxHashRetrievalPhase.count, err = txHashPhaseCount.NewInt64Counter(meter)
-	if err != nil {
-		return Metrics{}, fmt.Errorf("failed to create write report tx hash retrieval phase count metric: %w", err)
-	}
 	txHashPhaseDuration := commonbeholder.MetricInfo{
 		Name:        ns("write_report_tx_hash_retrieval_phase_duration_ms"),
 		Unit:        "ms",
-		Description: "The duration of Stellar WriteReport tx hash retrieval phases by lookup type, phase, and result",
+		Description: "The duration of Stellar WriteReport tx hash retrieval",
 	}
-	m.WriteReportTxHashRetrievalPhase.phaseDuration, err = txHashPhaseDuration.NewInt64Histogram(meter)
+	m.WriteReportTxHashRetrievalPhase.duration, err = txHashPhaseDuration.NewInt64Histogram(meter)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report tx hash retrieval phase duration metric: %w", err)
 	}
@@ -173,8 +163,7 @@ func (m *Metrics) OnWriteReportInvalidTransmissionState(ctx context.Context, msg
 
 func (m *Metrics) OnWriteReportTxHashRetrievalPhase(ctx context.Context, msg *WriteReportTxHashRetrievalPhase) error {
 	attrs := metric.WithAttributes(msg.MetricAttributes()...)
-	m.WriteReportTxHashRetrievalPhase.count.Add(ctx, 1, attrs)
-	m.WriteReportTxHashRetrievalPhase.phaseDuration.Record(ctx, msg.GetPhaseDurationMs(), attrs)
+	m.WriteReportTxHashRetrievalPhase.duration.Record(ctx, msg.GetPhaseDurationMs(), attrs)
 	return nil
 }
 

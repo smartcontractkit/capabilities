@@ -1269,7 +1269,10 @@ func hasTelemetryMessage[T proto.Message](messages []proto.Message) bool {
 func requireTxHashPhaseEvent(
 	t *testing.T,
 	messages []proto.Message,
-	lookupType, phase, result, txHash string,
+	lookupType TxHashLookupType,
+	phase TxHashRetrievalPhase,
+	result TxHashRetrievalResult,
+	txHash string,
 ) *monitoring.WriteReportTxHashRetrievalPhase {
 	t.Helper()
 	for _, msg := range messages {
@@ -1277,10 +1280,10 @@ func requireTxHashPhaseEvent(
 		if !ok {
 			continue
 		}
-		if phaseMsg.GetLookupType() != lookupType || phaseMsg.GetResult() != result {
+		if phaseMsg.GetLookupType() != string(lookupType) || phaseMsg.GetResult() != string(result) {
 			continue
 		}
-		if phase != "" && phaseMsg.GetPhase() != phase {
+		if phase != "" && phaseMsg.GetPhase() != string(phase) {
 			continue
 		}
 		if txHash != "" && phaseMsg.GetTxHash() != txHash {
@@ -1467,7 +1470,7 @@ func TestTxHashRetriever_EmitsRetrievalPhaseTelemetry(t *testing.T) {
 	hash, err := retriever.GetSuccessfulTransmissionHash(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, testTxHash, hash)
-	requireTxHashPhaseEvent(t, processor.messages, "SuccessfulTransmission", txHashRetrievalPhase, "Found", testTxHash)
+	requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeSuccessful, TxHashRetrievalPhaseEventPoll, TxHashRetrievalResultFound, testTxHash)
 }
 
 func TestIsUserErrorWriteReport(t *testing.T) {
