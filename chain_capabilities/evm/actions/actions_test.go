@@ -1111,7 +1111,7 @@ func normalizeFilterLogsServiceRequest(req evmtypes.FilterLogsRequest) evmtypes.
 	return req
 }
 
-// Aligns with cresettings default FeatureMultiTriggerExecutionIDsActivePeriod ([2100-01-01, 2101-01-01]) so hash-based OCR path is active.
+// Aligns with cresettings default FeatureChainCapabilityHashBasedOCRActivePeriod so hash-based OCR path is active.
 func metaWithHashBasedConsensus(base capabilities.RequestMetadata) capabilities.RequestMetadata {
 	base.ExecutionTimestamp = time.Date(2100, 6, 1, 0, 0, 0, 0, time.UTC)
 	return base

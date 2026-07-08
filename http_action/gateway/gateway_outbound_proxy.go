@@ -22,7 +22,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
@@ -174,8 +173,6 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 	defer p.responses.cleanup(requestID)
 
-	lggr.Debugw("sending request to gateway")
-
 	rawRes := json.RawMessage(payload)
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
@@ -194,12 +191,15 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, gatewayReq.Hash())
 	if err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to establish connection to gateway: %w", err)
 	}
-	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, lggr)
+
+	lggr.Debugw("sending request to gateway", "donID", donID, "selectedGateway", selectedGateway)
+
+	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
@@ -278,6 +278,7 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 					if err != nil {
 						return "", err
 					}
+					lggr.Debugw("setting up ring", "gatewayIDs", gatewayIDs, "donID", donID)
 					selector = setupRing(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
 					continue
@@ -288,13 +289,15 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 				return "", fmt.Errorf("failed to select gateway using consistent hashing: %w", err)
 			}
 
+			lggr = logger.With(lggr, "selectedGateway", gateway, "donID", donID)
+
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
-				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err, "gateway", gateway)
+				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err)
 				selector.Remove(gateway)
 				continue
 			}
 
-			lggr.Debug("connected successfully")
+			lggr.Debugw("connected successfully")
 			return gateway, nil
 		}
 	}
@@ -338,7 +341,7 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 		req.Params = &json.RawMessage{}
 	}
 
-	var msg gateway.OutboundHTTPResponse
+	var msg gc.OutboundHTTPResponse
 	err := json.Unmarshal(*req.Params, &msg)
 	if err != nil {
 		l.Errorw("failed to unmarshal request params", "error", err)
