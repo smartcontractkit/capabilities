@@ -555,7 +555,7 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 			}
 
 			sentCount := 0
-			var latestDeliveredBlock int64 = startingBlock
+			var latestDeliveredBlock = startingBlock
 			pendingLogs := pendingLogsAfterPosition(logs, lastDeliveredBlock, lastDeliveredLogIndex)
 			for _, log := range pendingLogs {
 				if log == nil {
