@@ -2,7 +2,6 @@ package monitoring
 
 import (
 	"fmt"
-	"strconv"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -134,12 +133,11 @@ func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryConte
 
 func (m *MessageBuilder) BuildWriteReportTxHashRetrievalPhase(
 	tc TelemetryContext,
-	phase, result string,
+	result string,
 	phaseDurationMs int64,
 	txHash, lookupType string,
 ) *WriteReportTxHashRetrievalPhase {
 	return &WriteReportTxHashRetrievalPhase{
-		Phase:            phase,
 		Result:           result,
 		PhaseDurationMs:  phaseDurationMs,
 		TxHash:           txHash,
@@ -198,7 +196,7 @@ func readContractRequestLogAttributes(req *ReadContractRequest) []attribute.KeyV
 	attrs := []attribute.KeyValue{
 		attribute.String("contract_id", req.GetContractId()),
 		attribute.String("function", req.GetFunction()),
-		attribute.String("args_count", strconv.FormatUint(req.GetArgsCount(), 10)),
+		attribute.Int64("args_count", int64(req.GetArgsCount())), //nolint:gosec // G115: arg count is bounded by request size
 	}
 	if req.GetSourceAccount() != "" {
 		attrs = append(attrs, attribute.String("source_account", req.GetSourceAccount()))
@@ -216,8 +214,8 @@ func (r *ReadContractInitiated) MetricAttributes() []attribute.KeyValue {
 
 func (r *ReadContractSuccess) LogAttributes() []attribute.KeyValue {
 	return append(append(readContractRequestLogAttributes(r.Req),
-		attribute.String("result_len", strconv.FormatUint(r.GetResultLen(), 10)),
-		attribute.String("ledger_sequence", strconv.FormatUint(uint64(r.GetLedgerSequence()), 10)),
+		attribute.Int64("result_len", int64(r.GetResultLen())), //nolint:gosec // G115: result length is bounded by simulation output
+		attribute.Int64("ledger_sequence", int64(r.GetLedgerSequence())),
 	), r.ExecutionContext.LogAttributes()...)
 }
 
@@ -239,8 +237,8 @@ func writeReportRequestLogAttributes(req *WriteReportRequest) []attribute.KeyVal
 	}
 	return []attribute.KeyValue{
 		attribute.String("contract_id", req.GetContractId()),
-		attribute.String("report_size", strconv.FormatUint(req.GetReportSize(), 10)),
-		attribute.String("sigs_count", strconv.FormatUint(uint64(req.GetSigsCount()), 10)),
+		attribute.Int64("report_size", int64(req.GetReportSize())), //nolint:gosec // G115: report size is bounded by capability limit
+		attribute.Int64("sigs_count", int64(req.GetSigsCount())),
 	}
 }
 
@@ -326,6 +324,6 @@ func (r *WriteReportTxHashRetrievalPhase) MetricAttributes() []attribute.KeyValu
 
 func (r *WriteReportInvokeOnReportDuration) MetricAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("tx_status", strconv.FormatInt(int64(r.GetTxStatus()), 10)),
+		attribute.Int64("tx_status", int64(r.GetTxStatus())),
 	}, r.ExecutionContext.MetricsAttributes()...)
 }

@@ -562,7 +562,6 @@ func (x *WriteReportSuccessfulEarlyReturn) GetExecutionContext() *monitoring.Exe
 
 type WriteReportTxHashRetrievalPhase struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Phase            string                       `protobuf:"bytes,1,opt,name=phase,proto3" json:"phase,omitempty"`
 	Result           string                       `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
 	PhaseDurationMs  int64                        `protobuf:"varint,3,opt,name=phase_duration_ms,json=phaseDurationMs,proto3" json:"phase_duration_ms,omitempty"`
 	TxHash           string                       `protobuf:"bytes,4,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
@@ -600,13 +599,6 @@ func (x *WriteReportTxHashRetrievalPhase) ProtoReflect() protoreflect.Message {
 // Deprecated: Use WriteReportTxHashRetrievalPhase.ProtoReflect.Descriptor instead.
 func (*WriteReportTxHashRetrievalPhase) Descriptor() ([]byte, []int) {
 	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *WriteReportTxHashRetrievalPhase) GetPhase() string {
-	if x != nil {
-		return x.Phase
-	}
-	return ""
 }
 
 func (x *WriteReportTxHashRetrievalPhase) GetResult() string {
@@ -750,9 +742,8 @@ const file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc = ""
 	"\x11canonical_tx_hash\x18\x03 \x01(\tR\x0fcanonicalTxHash\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"m\n" +
 	" WriteReportSuccessfulEarlyReturn\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x80\x02\n" +
-	"\x1fWriteReportTxHashRetrievalPhase\x12\x14\n" +
-	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x16\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xea\x01\n" +
+	"\x1fWriteReportTxHashRetrievalPhase\x12\x16\n" +
 	"\x06result\x18\x02 \x01(\tR\x06result\x12*\n" +
 	"\x11phase_duration_ms\x18\x03 \x01(\x03R\x0fphaseDurationMs\x12\x17\n" +
 	"\atx_hash\x18\x04 \x01(\tR\x06txHash\x12\x1f\n" +

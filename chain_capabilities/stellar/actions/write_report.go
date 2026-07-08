@@ -31,7 +31,8 @@ import (
 const (
 	ocrSignatureLen = 65
 
-	unknownIssueExecutingReceiverContractMessage = "receiver contract execution failed"
+	unknownIssueExecutingReceiverContractMessage       = "receiver contract execution failed"
+	writeReportUnexpectedSuccessfulTransmissionMessage = "WriteReport unexpected successful transmission"
 )
 
 type writeReport struct {
@@ -148,7 +149,7 @@ func (wr *writeReport) execute(
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
 			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
-				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, "WriteReport unexpected successful transmission", hashErr.Error())
+				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
 			} else {
 				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash", "error", hashErr)
 			}
@@ -163,7 +164,7 @@ func (wr *writeReport) execute(
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
 			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
-				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, "WriteReport unexpected successful transmission", hashErr.Error())
+				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
 			} else {
 				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission failed, but failed to retrieve its tx hash", "error", hashErr)
 			}
@@ -239,7 +240,7 @@ func (wr *writeReport) execute(
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
 			if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
-				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, postInfo, transmissionID, "WriteReport unexpected successful transmission", err.Error())
+				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, postInfo, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, err.Error())
 			} else {
 				wr.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve failed transmission tx hash", "error", err, "localTxHash", submitResp.TxHash)
 			}

@@ -35,12 +35,6 @@ const (
 	TxHashLookupTypeFailed     TxHashLookupType = "FailedTransmission"
 )
 
-type TxHashRetrievalPhase string
-
-const (
-	TxHashRetrievalPhaseEventPoll TxHashRetrievalPhase = "EventPoll"
-)
-
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
 
 type TxHashRetriever struct {
@@ -120,7 +114,6 @@ func (r *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (st
 			if r.monitoringEnabled() {
 				monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
 					r.telemetryContext,
-					string(TxHashRetrievalPhaseEventPoll),
 					string(TxHashRetrievalResultFound),
 					int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
 					d.txHash,
@@ -134,7 +127,6 @@ func (r *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (st
 	if r.monitoringEnabled() {
 		monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
 			r.telemetryContext,
-			string(TxHashRetrievalPhaseEventPoll),
 			string(TxHashRetrievalResultNotFound),
 			int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
 			"",
@@ -160,7 +152,6 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 			if r.monitoringEnabled() {
 				monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
 					r.telemetryContext,
-					string(TxHashRetrievalPhaseEventPoll),
 					string(TxHashRetrievalResultUnexpectedSuccess),
 					int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
 					d.txHash,
@@ -175,7 +166,6 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 		if r.monitoringEnabled() {
 			monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
 				r.telemetryContext,
-				string(TxHashRetrievalPhaseEventPoll),
 				string(TxHashRetrievalResultNotFound),
 				int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
 				"",
@@ -203,7 +193,6 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 	if r.monitoringEnabled() {
 		monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
 			r.telemetryContext,
-			string(TxHashRetrievalPhaseEventPoll),
 			string(TxHashRetrievalResultFound),
 			int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
 			selectedHash,
@@ -229,7 +218,6 @@ func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context, lookupType Tx
 		if r.monitoringEnabled() {
 			monitoring.EmitInitiated(ctx, r.lggr, r.beholderProcessor, r.messageBuilder.BuildWriteReportTxHashRetrievalPhase(
 				r.telemetryContext,
-				string(TxHashRetrievalPhaseEventPoll),
 				string(TxHashRetrievalResultFetchError),
 				int64(math.Max(float64(time.Since(phaseStart).Milliseconds()), 0)),
 				"",

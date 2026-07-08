@@ -73,7 +73,6 @@ func TestMetrics_OnHistogramHandlers(t *testing.T) {
 
 	require.NoError(t, metrics.OnWriteReportTxHashRetrievalPhase(ctx, &monitoring.WriteReportTxHashRetrievalPhase{
 		ExecutionContext: ec,
-		Phase:            "EventPoll",
 		Result:           "Found",
 		PhaseDurationMs:  42,
 		TxHash:           "hash",

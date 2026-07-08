@@ -197,7 +197,7 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 		_, err := retriever.GetSuccessfulTransmissionHash(t.Context())
 		require.Error(t, err)
 		require.Len(t, processor.messages, 1)
-		requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeSuccessful, TxHashRetrievalPhaseEventPoll, TxHashRetrievalResultNotFound, "")
+		requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeSuccessful, TxHashRetrievalResultNotFound, "")
 	})
 
 	t.Run("emits unexpected success phase telemetry", func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 
 		_, err := retriever.GetFailedTransmissionHash(t.Context())
 		require.ErrorIs(t, err, ErrUnexpectedSuccessfulTransmission)
-		requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeFailed, TxHashRetrievalPhaseEventPoll, TxHashRetrievalResultUnexpectedSuccess, testTxHash)
+		requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeFailed, TxHashRetrievalResultUnexpectedSuccess, testTxHash)
 	})
 
 	t.Run("GetFailedTransmissionHashWithCount returns count", func(t *testing.T) {

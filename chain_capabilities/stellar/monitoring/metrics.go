@@ -99,14 +99,14 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	meter := commonbeholder.GetMeter()
-	txHashPhaseDuration := commonbeholder.MetricInfo{
-		Name:        ns("write_report_tx_hash_retrieval_phase_duration_ms"),
+	txHashRetrievalDuration := commonbeholder.MetricInfo{
+		Name:        ns("write_report_tx_hash_retrieval_duration_ms"),
 		Unit:        "ms",
 		Description: "The duration of Stellar WriteReport tx hash retrieval",
 	}
-	m.WriteReportTxHashRetrievalPhase.duration, err = txHashPhaseDuration.NewInt64Histogram(meter)
+	m.WriteReportTxHashRetrievalPhase.duration, err = txHashRetrievalDuration.NewInt64Histogram(meter)
 	if err != nil {
-		return Metrics{}, fmt.Errorf("failed to create write report tx hash retrieval phase duration metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create write report tx hash retrieval duration metric: %w", err)
 	}
 	invokeOnReportDuration := commonbeholder.MetricInfo{
 		Name:        ns("write_report_invoke_on_report_duration_ms"),

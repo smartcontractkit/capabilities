@@ -73,8 +73,8 @@ func TestMessageBuilder_ReadContractMessages(t *testing.T) {
 
 	success := builder.BuildReadContractSuccess(tc, req, 12, 100)
 	successAttrs := attrsToMap(success.LogAttributes())
-	assert.Equal(t, "12", successAttrs["result_len"])
-	assert.Equal(t, "100", successAttrs["ledger_sequence"])
+	assert.EqualValues(t, int64(12), successAttrs["result_len"])
+	assert.EqualValues(t, int64(100), successAttrs["ledger_sequence"])
 
 	readErr := builder.BuildReadContractError(tc, req, "summary", caperrors.NewPublicUserError(assert.AnError, caperrors.InvalidArgument))
 	errAttrs := attrsToMap(readErr.LogAttributes())
@@ -120,8 +120,8 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 
 	initiatedAttrs := attrsToMap(initiated.LogAttributes())
 	assert.Equal(t, req.ContractId, initiatedAttrs["contract_id"])
-	assert.Equal(t, "4", initiatedAttrs["report_size"])
-	assert.Equal(t, "2", initiatedAttrs["sigs_count"])
+	assert.EqualValues(t, int64(4), initiatedAttrs["report_size"])
+	assert.EqualValues(t, int64(2), initiatedAttrs["sigs_count"])
 	assert.EqualValues(t, 7, attrsToMap(initiated.MetricAttributes())["workflow_don_id"])
 
 	success := builder.BuildWriteReportSuccess(tc, req)
@@ -171,13 +171,13 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	assert.Equal(t, "transmitter", invalidAttrs["transmitter"])
 	assert.EqualValues(t, 7, attrsToMap(invalidState.MetricAttributes())["workflow_don_id"])
 
-	txHashPhase := builder.BuildWriteReportTxHashRetrievalPhase(tc, "EventPoll", "Found", 123, "hash", "SuccessfulTransmission")
+	txHashPhase := builder.BuildWriteReportTxHashRetrievalPhase(tc, "Found", 123, "hash", "SuccessfulTransmission")
 	phaseAttrs := attrsToMap(txHashPhase.MetricAttributes())
 	assert.EqualValues(t, 7, phaseAttrs["workflow_don_id"])
 
 	invokeDuration := builder.BuildWriteReportInvokeOnReportDuration(tc, 456, 1)
 	invokeAttrs := attrsToMap(invokeDuration.MetricAttributes())
-	assert.Equal(t, "1", invokeAttrs["tx_status"])
+	assert.EqualValues(t, int64(1), invokeAttrs["tx_status"])
 	assert.EqualValues(t, 7, invokeAttrs["workflow_don_id"])
 
 	nilInitiated := builder.BuildWriteReportInitiated(tc, nil)
