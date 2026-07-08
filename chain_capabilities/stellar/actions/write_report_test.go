@@ -1489,3 +1489,122 @@ func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(
 	require.NotNil(t, capErr)
 	require.True(t, hasTelemetryMessage[*monitoring.WriteReportInvalidTransmissionState](processor.messages))
 }
+
+func TestMonitoringEnabled(t *testing.T) {
+	t.Parallel()
+
+	wr := &writeReport{
+		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor: nopBeholderProcessor{},
+	}
+	require.True(t, wr.monitoringEnabled())
+
+	disabled := &writeReport{messageBuilder: monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, "")}
+	require.False(t, disabled.monitoringEnabled())
+}
+
+func TestEmitInvalidTransmissionState_MonitoringDisabled(t *testing.T) {
+	t.Parallel()
+
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	wr := &writeReport{
+		lggr:           logger.Sugared(logger.Test(t)),
+		messageBuilder: monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+	}
+	require.NotPanics(t, func() {
+		wr.emitInvalidTransmissionState(
+			t.Context(),
+			req,
+			monitoring.TelemetryContext{},
+			TransmissionInfo{State: TransmissionState(99)},
+			transmissionID,
+			"summary",
+			"cause",
+		)
+	})
+}
+
+func TestWriteReport_PreSubmitSucceeded_EventsUnavailable(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	_, reqMeta, req := newWRReportFixture(t)
+
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(succeededXDR(t)), nil).Once()
+	h.expectEventTxHashLookupUnavailable(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	_, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
+	require.NotNil(t, capErr)
+	require.Contains(t, capErr.Error(), failedToRetrieveTxHashErrorMsg)
+}
+
+func TestWriteReport_PreSubmitInvalidReceiver_EventsUnavailable(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	_, reqMeta, req := newWRReportFixture(t)
+
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(invalidReceiverXDR(t)), nil).Once()
+	h.expectEventTxHashLookupUnavailable(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	_, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
+	require.NotNil(t, capErr)
+	require.Contains(t, capErr.Error(), failedToRetrieveTxHashErrorMsg)
+}
+
+func TestWriteReport_PostSubmitFailed_EventsUnavailable(t *testing.T) {
+	t.Parallel()
+	h := newWriteReportHelper(t)
+	processor := h.withRecordingProcessor()
+	_, reqMeta, req := newWRReportFixture(t)
+	h.expectSigningAccount(t)
+
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+	h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+		Return(successSubmitResp(), nil).Once()
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(failedXDR(t)), nil).Once()
+	h.expectEventTxHashLookupUnavailable(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	_, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
+	require.NotNil(t, capErr)
+	require.Contains(t, capErr.Error(), failedToRetrieveTxHashErrorMsg)
+	require.False(t, hasTelemetryMessage[*monitoring.WriteReportInvalidTransmissionState](processor.messages))
+}
+
+func TestReplyFromTransaction_SkipsTelemetryWhenMonitoringDisabled(t *testing.T) {
+	t.Parallel()
+	_, _, req := newWRReportFixture(t)
+	mockSvc := mocks.NewStellarService(t)
+	mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
+		Return(stellartypes.GetTransactionResponse{}, errors.New("rpc down")).Maybe()
+
+	wr := &writeReport{
+		service:        mockSvc,
+		lggr:           logger.Sugared(logger.Test(t)),
+		messageBuilder: monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+	}
+	_, err := wr.replyFromTransaction(
+		t.Context(),
+		req,
+		monitoring.TelemetryContext{},
+		testTxHash,
+		stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+		nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to get transaction")
+}

@@ -175,3 +175,74 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	nilAttrs := attrsToMap(nilInitiated.LogAttributes())
 	assert.Equal(t, "nil request", nilAttrs["contract_id"])
 }
+
+func TestMessageAttributes_WriteReportNilRequest(t *testing.T) {
+	t.Parallel()
+
+	ec := newMessageBuilder().BuildExecutionContext(newTelemetryContext())
+
+	messages := []interface {
+		LogAttributes() []attribute.KeyValue
+		MetricAttributes() []attribute.KeyValue
+	}{
+		&monitoring.WriteReportInitiated{ExecutionContext: ec},
+		&monitoring.WriteReportSuccess{ExecutionContext: ec},
+		&monitoring.WriteReportError{ExecutionContext: ec, Summary: "summary"},
+		&monitoring.WriteReportTxInfoRetrievalError{ExecutionContext: ec, Summary: "summary"},
+		&monitoring.WriteReportDuplicateTx{ExecutionContext: ec, DuplicateTxHash: "dup"},
+		&monitoring.WriteReportInvalidTransmissionState{ExecutionContext: ec, Summary: "summary"},
+	}
+
+	for _, msg := range messages {
+		attrs := attrsToMap(msg.LogAttributes())
+		assert.Equal(t, "nil request", attrs["contract_id"])
+		assert.NotEmpty(t, msg.MetricAttributes())
+	}
+}
+
+func TestMessageAttributes_ReadContractNilRequest(t *testing.T) {
+	t.Parallel()
+
+	ec := newMessageBuilder().BuildExecutionContext(newTelemetryContext())
+	msg := &monitoring.ReadContractSuccess{ExecutionContext: ec}
+	attrs := attrsToMap(msg.LogAttributes())
+	assert.Equal(t, "nil request", attrs["contract_id"])
+	assert.NotEmpty(t, msg.MetricAttributes())
+}
+
+func TestMessageAttributes_WriteReportWithRequest(t *testing.T) {
+	t.Parallel()
+
+	builder := newMessageBuilder()
+	tc := newTelemetryContext()
+	req := &monitoring.WriteReportRequest{
+		ContractId: "CA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJUWDA",
+		ReportSize: 2,
+		SigsCount:  1,
+	}
+	ec := builder.BuildExecutionContext(tc)
+
+	success := &monitoring.WriteReportSuccess{Req: req, ExecutionContext: ec}
+	successAttrs := attrsToMap(success.LogAttributes())
+	assert.Equal(t, req.ContractId, successAttrs["contract_id"])
+	assert.NotEmpty(t, success.MetricAttributes())
+
+	txInfoErr := &monitoring.WriteReportTxInfoRetrievalError{
+		Req: req, ExecutionContext: ec, Summary: "summary", TxHash: "hash",
+	}
+	txInfoAttrs := attrsToMap(txInfoErr.LogAttributes())
+	assert.Equal(t, "hash", txInfoAttrs["tx_hash"])
+	assert.NotEmpty(t, txInfoErr.MetricAttributes())
+
+	duplicateTx := &monitoring.WriteReportDuplicateTx{
+		Req: req, ExecutionContext: ec, DuplicateTxHash: "dup", CanonicalTxHash: "canonical",
+	}
+	dupAttrs := attrsToMap(duplicateTx.LogAttributes())
+	assert.Equal(t, "dup", dupAttrs["duplicate_tx_hash"])
+	assert.Equal(t, "canonical", dupAttrs["canonical_tx_hash"])
+	assert.NotEmpty(t, duplicateTx.MetricAttributes())
+
+	earlyReturn := &monitoring.WriteReportSuccessfulEarlyReturn{ExecutionContext: ec}
+	assert.NotEmpty(t, earlyReturn.LogAttributes())
+	assert.NotEmpty(t, earlyReturn.MetricAttributes())
+}

@@ -12,6 +12,8 @@ import (
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
+var newMetricsCapBasic = capmonitoring.NewMetricsCapBasic
+
 func ns(name string) string { return fmt.Sprintf("stellar_capability_%s", name) }
 
 type basicCapEmitMessage interface {
@@ -21,7 +23,7 @@ type basicCapEmitMessage interface {
 
 func newBasicCapMetric(metricName string, msg proto.Message) (capmonitoring.MetricsCapBasic, error) {
 	info := capmonitoring.NewMetricsInfoCapBasic(ns(metricName), commonbeholder.ToSchemaFullName(msg))
-	basic, err := capmonitoring.NewMetricsCapBasic(info)
+	basic, err := newMetricsCapBasic(info)
 	if err != nil {
 		return capmonitoring.MetricsCapBasic{}, fmt.Errorf("failed to create %s metric: %w", metricName, err)
 	}

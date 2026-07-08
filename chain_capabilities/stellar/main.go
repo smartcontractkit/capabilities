@@ -216,7 +216,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	processor := &monitoring.Processor{
 		Lggr:    c.lggr,
-		Metrics: metrics,
+		Metrics: &metrics,
 	}
 
 	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)

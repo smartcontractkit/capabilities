@@ -21,7 +21,7 @@ func newTestProcessor(t *testing.T) (monitoring.Metrics, beholder.ProtoProcessor
 	lggr := logger.Test(t)
 	metrics, err := monitoring.NewMetrics()
 	require.NoError(t, err)
-	return metrics, &monitoring.Processor{Lggr: lggr, Metrics: metrics}
+	return metrics, &monitoring.Processor{Lggr: lggr, Metrics: &metrics}
 }
 
 func TestProcessor_Process_InitiatedMessage(t *testing.T) {

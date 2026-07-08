@@ -74,6 +74,7 @@ func TestEventDetailsList_String(t *testing.T) {
 	t.Parallel()
 
 	require.Equal(t, "[]", eventDetailsList(nil).String())
+	require.Equal(t, "[]", eventDetailsList{}.String())
 	require.Equal(t, "[hash=a ledger=1 result=success, hash=b ledger=2 result=failed]",
 		eventDetailsList{
 			{txHash: "a", ledger: 1, isSuccess: true},

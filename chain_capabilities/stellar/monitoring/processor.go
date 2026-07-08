@@ -13,9 +13,20 @@ import (
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 )
 
+type metricsHandler interface {
+	OnReadContractSuccess(context.Context, *ReadContractSuccess) error
+	OnReadContractError(context.Context, *ReadContractError) error
+	OnWriteReportSuccess(context.Context, *WriteReportSuccess) error
+	OnWriteReportError(context.Context, *WriteReportError) error
+	OnWriteReportTxInfoRetrievalError(context.Context, *WriteReportTxInfoRetrievalError) error
+	OnWriteReportDuplicateTx(context.Context, *WriteReportDuplicateTx) error
+	OnWriteReportSuccessfulEarlyReturn(context.Context, *WriteReportSuccessfulEarlyReturn) error
+	OnWriteReportInvalidTransmissionState(context.Context, *WriteReportInvalidTransmissionState) error
+}
+
 // Processor dispatches telemetry messages to metrics and logs for Stellar operations.
 type Processor struct {
-	Metrics Metrics
+	Metrics metricsHandler
 	Lggr    logger.Logger
 }
 
