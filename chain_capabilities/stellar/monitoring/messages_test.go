@@ -171,15 +171,6 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	assert.Equal(t, "transmitter", invalidAttrs["transmitter"])
 	assert.EqualValues(t, 7, attrsToMap(invalidState.MetricAttributes())["workflow_don_id"])
 
-	txHashPhase := builder.BuildWriteReportTxHashRetrievalPhase(tc, "Found", 123, "hash", "SuccessfulTransmission")
-	phaseAttrs := attrsToMap(txHashPhase.MetricAttributes())
-	assert.EqualValues(t, 7, phaseAttrs["workflow_don_id"])
-
-	invokeDuration := builder.BuildWriteReportInvokeOnReportDuration(tc, 456, 1)
-	invokeAttrs := attrsToMap(invokeDuration.MetricAttributes())
-	assert.EqualValues(t, int64(1), invokeAttrs["tx_status"])
-	assert.EqualValues(t, 7, invokeAttrs["workflow_don_id"])
-
 	nilInitiated := builder.BuildWriteReportInitiated(tc, nil)
 	nilAttrs := attrsToMap(nilInitiated.LogAttributes())
 	assert.Equal(t, "nil request", nilAttrs["contract_id"])

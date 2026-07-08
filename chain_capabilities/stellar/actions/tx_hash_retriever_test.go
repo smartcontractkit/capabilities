@@ -8,13 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 type stubForwarderClient struct {
@@ -174,52 +170,6 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 		_, err := retriever.GetFailedTransmissionHash(t.Context())
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrUnexpectedSuccessfulTransmission)
-	})
-
-	t.Run("emits single NotFound phase when all events failed", func(t *testing.T) {
-		t.Parallel()
-		processor := &recordingWriteReportProcessor{}
-		client := &stubForwarderClient{events: []ReportProcessedEvent{
-			{TxHash: "a", Ledger: 1, Success: false},
-			{TxHash: "b", Ledger: 2, Success: false},
-		}}
-		retriever := NewTxHashRetriever(
-			client,
-			lggr,
-			transmissionID,
-			WithTxHashRetrieverMonitoring(
-				processor,
-				monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-				monitoring.TelemetryContext{},
-			),
-		)
-
-		_, err := retriever.GetSuccessfulTransmissionHash(t.Context())
-		require.Error(t, err)
-		require.Len(t, processor.messages, 1)
-		requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeSuccessful, TxHashRetrievalResultNotFound, "")
-	})
-
-	t.Run("emits unexpected success phase telemetry", func(t *testing.T) {
-		t.Parallel()
-		processor := &recordingWriteReportProcessor{}
-		client := &stubForwarderClient{events: []ReportProcessedEvent{
-			{TxHash: testTxHash, Ledger: 100, Success: true},
-		}}
-		retriever := NewTxHashRetriever(
-			client,
-			lggr,
-			transmissionID,
-			WithTxHashRetrieverMonitoring(
-				processor,
-				monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-				monitoring.TelemetryContext{},
-			),
-		)
-
-		_, err := retriever.GetFailedTransmissionHash(t.Context())
-		require.ErrorIs(t, err, ErrUnexpectedSuccessfulTransmission)
-		requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeFailed, TxHashRetrievalResultUnexpectedSuccess, testTxHash)
 	})
 
 	t.Run("GetFailedTransmissionHashWithCount returns count", func(t *testing.T) {

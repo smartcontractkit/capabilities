@@ -131,29 +131,6 @@ func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryConte
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportTxHashRetrievalPhase(
-	tc TelemetryContext,
-	result string,
-	phaseDurationMs int64,
-	txHash, lookupType string,
-) *WriteReportTxHashRetrievalPhase {
-	return &WriteReportTxHashRetrievalPhase{
-		Result:           result,
-		PhaseDurationMs:  phaseDurationMs,
-		TxHash:           txHash,
-		LookupType:       lookupType,
-		ExecutionContext: m.BuildExecutionContext(tc),
-	}
-}
-
-func (m *MessageBuilder) BuildWriteReportInvokeOnReportDuration(tc TelemetryContext, durationMs int64, txStatus int32) *WriteReportInvokeOnReportDuration {
-	return &WriteReportInvokeOnReportDuration{
-		DurationMs:       durationMs,
-		TxStatus:         txStatus,
-		ExecutionContext: m.BuildExecutionContext(tc),
-	}
-}
-
 func convertWriteReportRequest(req *stellarcap.WriteReportRequest) *WriteReportRequest {
 	if req == nil {
 		return nil
@@ -316,14 +293,4 @@ func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
 
 func (r *WriteReportDuplicateTx) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
-}
-
-func (r *WriteReportTxHashRetrievalPhase) MetricAttributes() []attribute.KeyValue {
-	return r.ExecutionContext.MetricsAttributes()
-}
-
-func (r *WriteReportInvokeOnReportDuration) MetricAttributes() []attribute.KeyValue {
-	return append([]attribute.KeyValue{
-		attribute.Int64("tx_status", int64(r.GetTxStatus())),
-	}, r.ExecutionContext.MetricsAttributes()...)
 }

@@ -1266,44 +1266,6 @@ func hasTelemetryMessage[T proto.Message](messages []proto.Message) bool {
 	return false
 }
 
-func requireTxHashPhaseEvent(
-	t *testing.T,
-	messages []proto.Message,
-	lookupType TxHashLookupType,
-	result TxHashRetrievalResult,
-	txHash string,
-) *monitoring.WriteReportTxHashRetrievalPhase {
-	t.Helper()
-	for _, msg := range messages {
-		phaseMsg, ok := msg.(*monitoring.WriteReportTxHashRetrievalPhase)
-		if !ok {
-			continue
-		}
-		if phaseMsg.GetLookupType() != string(lookupType) || phaseMsg.GetResult() != string(result) {
-			continue
-		}
-		if txHash != "" && phaseMsg.GetTxHash() != txHash {
-			continue
-		}
-		return phaseMsg
-	}
-	t.Fatalf("missing tx hash phase event lookupType=%s result=%s txHash=%s", lookupType, result, txHash)
-	return nil
-}
-
-func requireInvokeOnReportDuration(t *testing.T, messages []proto.Message, txStatus int32) *monitoring.WriteReportInvokeOnReportDuration {
-	t.Helper()
-	for _, msg := range messages {
-		if duration, ok := msg.(*monitoring.WriteReportInvokeOnReportDuration); ok {
-			require.EqualValues(t, txStatus, duration.GetTxStatus())
-			require.NotNil(t, duration.GetExecutionContext())
-			return duration
-		}
-	}
-	t.Fatal("missing WriteReportInvokeOnReportDuration telemetry")
-	return nil
-}
-
 func requireDuplicateTxTelemetry(t *testing.T, messages []proto.Message, duplicateHash, canonicalHash string) {
 	t.Helper()
 	for _, msg := range messages {
@@ -1365,26 +1327,6 @@ func TestWriteReport_EmitsInvalidTransmissionStateOnUnexpectedSuccess(t *testing
 	require.True(t, hasTelemetryMessage[*monitoring.WriteReportInvalidTransmissionState](processor.messages))
 }
 
-func TestWriteReport_EmitsInvokeOnReportDurationTelemetry(t *testing.T) {
-	t.Parallel()
-	h := newWriteReportHelper(t)
-	processor := h.withRecordingProcessor()
-	rm, reqMeta, req := newWRReportFixture(t)
-	h.expectSigningAccount(t)
-
-	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
-		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
-	h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
-		Return(successSubmitResp(), nil).Once()
-	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
-		Return(transmissionResp(succeededXDR(t)), nil).Once()
-	h.expectPostSubmitSuccessTxLookup(t, rm, req.ContractId)
-
-	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
-	require.Nil(t, capErr)
-	requireInvokeOnReportDuration(t, processor.messages, 0)
-}
-
 func TestWriteReport_EmitsSuccessfulEarlyReturnTelemetry(t *testing.T) {
 	t.Parallel()
 	h := newQueuedWriteReportHelper(t)
@@ -1438,51 +1380,11 @@ func TestWriteReport_EmitsLifecycleTelemetry(t *testing.T) {
 	require.True(t, sawSuccess)
 }
 
-func TestTxHashRetriever_EmitsRetrievalPhaseTelemetry(t *testing.T) {
-	t.Parallel()
-	processor := &recordingWriteReportProcessor{}
-	lggr := logger.Test(t)
-	mockSvc := mocks.NewStellarService(t)
-	rm, reqMeta, req := newWRReportFixture(t)
-	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
-	require.NoError(t, err)
-
-	mockSvc.EXPECT().GetLatestLedger(mock.Anything).
-		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
-	mockSvc.EXPECT().GetEvents(mock.Anything, mock.Anything).
-		Return(reportProcessedEventsForFixture(t, rm, req.ContractId, true), nil).Once()
-
-	retriever := NewTxHashRetriever(
-		newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
-		logger.Sugared(lggr),
-		transmissionID,
-		WithTxHashRetrieverMonitoring(
-			processor,
-			monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			monitoring.TelemetryContext{},
-		),
-	)
-
-	hash, err := retriever.GetSuccessfulTransmissionHash(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, testTxHash, hash)
-	requireTxHashPhaseEvent(t, processor.messages, TxHashLookupTypeSuccessful, TxHashRetrievalResultFound, testTxHash)
-}
-
 func TestIsUserErrorWriteReport(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
 	require.True(t, h.stellar.isUserErrorWriteReport(errors.New(capcommon.UserError+" invalid receiver")))
 	require.False(t, h.stellar.isUserErrorWriteReport(errors.New("system failure")))
-}
-
-func TestSubmitTxStatusCode(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, int32(-1), submitTxStatusCode(nil))
-	require.Equal(t, int32(0), submitTxStatusCode(successSubmitResp()))
-	require.Equal(t, int32(1), submitTxStatusCode(&stellartypes.SubmitTransactionResponse{TxStatus: stellartypes.TxFailed}))
-	require.Equal(t, int32(2), submitTxStatusCode(&stellartypes.SubmitTransactionResponse{TxStatus: stellartypes.TxFatal}))
-	require.Equal(t, int32(-1), submitTxStatusCode(&stellartypes.SubmitTransactionResponse{TxStatus: stellartypes.TransactionStatus(99)}))
 }
 
 func TestWriteReport_EmitsInvalidTransmissionStatePreSubmitWithStubForwarder(t *testing.T) {

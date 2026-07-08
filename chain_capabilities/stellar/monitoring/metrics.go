@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/proto"
 
 	commonbeholder "github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -60,12 +59,6 @@ type Metrics struct {
 	WriteReportInvalidTransmissionState struct {
 		basic capmonitoring.MetricsCapBasic
 	}
-	WriteReportTxHashRetrievalPhase struct {
-		duration metric.Int64Histogram
-	}
-	WriteReportInvokeOnReportDuration struct {
-		duration metric.Int64Histogram
-	}
 }
 
 // NewMetrics constructs the Stellar capability metrics.
@@ -96,26 +89,6 @@ func NewMetrics() (Metrics, error) {
 	}
 	if m.WriteReportInvalidTransmissionState.basic, err = newBasicCapMetric("write_report_invalid_transmission_state", &WriteReportInvalidTransmissionState{}); err != nil {
 		return Metrics{}, err
-	}
-
-	meter := commonbeholder.GetMeter()
-	txHashRetrievalDuration := commonbeholder.MetricInfo{
-		Name:        ns("write_report_tx_hash_retrieval_duration_ms"),
-		Unit:        "ms",
-		Description: "The duration of Stellar WriteReport tx hash retrieval",
-	}
-	m.WriteReportTxHashRetrievalPhase.duration, err = txHashRetrievalDuration.NewInt64Histogram(meter)
-	if err != nil {
-		return Metrics{}, fmt.Errorf("failed to create write report tx hash retrieval duration metric: %w", err)
-	}
-	invokeOnReportDuration := commonbeholder.MetricInfo{
-		Name:        ns("write_report_invoke_on_report_duration_ms"),
-		Unit:        "ms",
-		Description: "The duration of Stellar WriteReport InvokeOnReport calls by tx status",
-	}
-	m.WriteReportInvokeOnReportDuration.duration, err = invokeOnReportDuration.NewInt64Histogram(meter)
-	if err != nil {
-		return Metrics{}, fmt.Errorf("failed to create write report invoke on report duration metric: %w", err)
 	}
 
 	return m, nil
@@ -158,17 +131,5 @@ func (m *Metrics) OnWriteReportSuccessfulEarlyReturn(ctx context.Context, msg *W
 
 func (m *Metrics) OnWriteReportInvalidTransmissionState(ctx context.Context, msg *WriteReportInvalidTransmissionState) error {
 	recordBasicCapEmit(ctx, m.WriteReportInvalidTransmissionState.basic, msg)
-	return nil
-}
-
-func (m *Metrics) OnWriteReportTxHashRetrievalPhase(ctx context.Context, msg *WriteReportTxHashRetrievalPhase) error {
-	attrs := metric.WithAttributes(msg.MetricAttributes()...)
-	m.WriteReportTxHashRetrievalPhase.duration.Record(ctx, msg.GetPhaseDurationMs(), attrs)
-	return nil
-}
-
-func (m *Metrics) OnWriteReportInvokeOnReportDuration(ctx context.Context, msg *WriteReportInvokeOnReportDuration) error {
-	attrs := metric.WithAttributes(msg.MetricAttributes()...)
-	m.WriteReportInvokeOnReportDuration.duration.Record(ctx, msg.GetDurationMs(), attrs)
 	return nil
 }

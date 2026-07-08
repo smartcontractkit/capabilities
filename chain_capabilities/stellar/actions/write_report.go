@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -123,8 +122,7 @@ func (wr *writeReport) execute(
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(hex.EncodeToString(scheduleKey[:]))
 	wr.lggr = wr.lggr.With(append([]any{"queuePosition", queuePosition, "forwarder", wr.forwarderClient.ForwarderAddress()}, transmissionID.LogAttrs()...)...)
 
-	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID,
-		WithTxHashRetrieverMonitoring(wr.beholderProcessor, wr.messageBuilder, telemetryContext))
+	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID)
 
 	// TODO(follow-up): Consider simulating the on_report transaction before polling when the
 	// transmission has not yet been attempted. If simulation predicts a terminal failure we
@@ -185,16 +183,10 @@ func (wr *writeReport) execute(
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
-	submitStart := time.Now()
 	submitResp, err := wr.forwarderClient.InvokeOnReport(ctx, request.ContractId, request.Report)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportInvokeOnReportDuration(
-		telemetryContext,
-		int64(math.Max(float64(time.Since(submitStart).Milliseconds()), 0)),
-		submitTxStatusCode(submitResp),
-	))
 
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
@@ -228,8 +220,6 @@ func (wr *writeReport) execute(
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 		if submitResp.TxStatus != stellartypes.TxSuccess && submitResp.TxHash != "" && submitResp.TxHash != txHash {
-			wr.lggr.Infow("Made a new transmission attempt - transmission succeeded, but local submit did not confirm (likely duplicate)",
-				"localTxHash", submitResp.TxHash, "txHash", txHash)
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission succeeded, but local submit did not confirm (likely duplicate)",
 				wr.lggr, wr.beholderProcessor,
 				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, submitResp.TxHash, txHash))
@@ -247,8 +237,6 @@ func (wr *writeReport) execute(
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 		if submitResp.TxHash != "" && submitResp.TxHash != txHash {
-			wr.lggr.Infow("Made a new transmission attempt - transmission failed, but local submit hash differs from canonical failed transmission",
-				"localTxHash", submitResp.TxHash, "txHash", txHash)
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission failed, but local submit hash differs from canonical failed transmission",
 				wr.lggr, wr.beholderProcessor,
 				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, submitResp.TxHash, txHash))
@@ -545,22 +533,6 @@ func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellarty
 
 func transmissionDebugID(id TransmissionID) string {
 	return fmt.Sprintf("%s:%s:%s", id.Receiver, id.ReportIDHex(), id.WorkflowExecutionIDHex())
-}
-
-func submitTxStatusCode(resp *stellartypes.SubmitTransactionResponse) int32 {
-	if resp == nil {
-		return -1
-	}
-	switch resp.TxStatus {
-	case stellartypes.TxSuccess:
-		return 0
-	case stellartypes.TxFailed:
-		return 1
-	case stellartypes.TxFatal:
-		return 2
-	default:
-		return -1
-	}
 }
 
 func (wr *writeReport) monitoringEnabled() bool {

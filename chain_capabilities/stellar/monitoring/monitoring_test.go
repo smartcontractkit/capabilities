@@ -61,8 +61,6 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 		{"WriteReportSuccess", &monitoring.WriteReportSuccess{Req: writeReq, ExecutionContext: ec}},
 		{"WriteReportDuplicateTx", &monitoring.WriteReportDuplicateTx{Req: writeReq, ExecutionContext: ec, DuplicateTxHash: "a", CanonicalTxHash: "b"}},
 		{"WriteReportSuccessfulEarlyReturn", &monitoring.WriteReportSuccessfulEarlyReturn{ExecutionContext: ec}},
-		{"WriteReportTxHashRetrievalPhase", &monitoring.WriteReportTxHashRetrievalPhase{ExecutionContext: ec, LookupType: "SuccessfulTransmission", Result: "Found", PhaseDurationMs: 5}},
-		{"WriteReportInvokeOnReportDuration", &monitoring.WriteReportInvokeOnReportDuration{ExecutionContext: ec, DurationMs: 123, TxStatus: 2}},
 	}
 
 	for _, tc := range successMsgs {

@@ -560,142 +560,6 @@ func (x *WriteReportSuccessfulEarlyReturn) GetExecutionContext() *monitoring.Exe
 	return nil
 }
 
-type WriteReportTxHashRetrievalPhase struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Result           string                       `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
-	PhaseDurationMs  int64                        `protobuf:"varint,3,opt,name=phase_duration_ms,json=phaseDurationMs,proto3" json:"phase_duration_ms,omitempty"`
-	TxHash           string                       `protobuf:"bytes,4,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	LookupType       string                       `protobuf:"bytes,5,opt,name=lookup_type,json=lookupType,proto3" json:"lookup_type,omitempty"`
-	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *WriteReportTxHashRetrievalPhase) Reset() {
-	*x = WriteReportTxHashRetrievalPhase{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteReportTxHashRetrievalPhase) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteReportTxHashRetrievalPhase) ProtoMessage() {}
-
-func (x *WriteReportTxHashRetrievalPhase) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteReportTxHashRetrievalPhase.ProtoReflect.Descriptor instead.
-func (*WriteReportTxHashRetrievalPhase) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *WriteReportTxHashRetrievalPhase) GetResult() string {
-	if x != nil {
-		return x.Result
-	}
-	return ""
-}
-
-func (x *WriteReportTxHashRetrievalPhase) GetPhaseDurationMs() int64 {
-	if x != nil {
-		return x.PhaseDurationMs
-	}
-	return 0
-}
-
-func (x *WriteReportTxHashRetrievalPhase) GetTxHash() string {
-	if x != nil {
-		return x.TxHash
-	}
-	return ""
-}
-
-func (x *WriteReportTxHashRetrievalPhase) GetLookupType() string {
-	if x != nil {
-		return x.LookupType
-	}
-	return ""
-}
-
-func (x *WriteReportTxHashRetrievalPhase) GetExecutionContext() *monitoring.ExecutionContext {
-	if x != nil {
-		return x.ExecutionContext
-	}
-	return nil
-}
-
-type WriteReportInvokeOnReportDuration struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	DurationMs       int64                        `protobuf:"varint,1,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
-	TxStatus         int32                        `protobuf:"varint,2,opt,name=tx_status,json=txStatus,proto3" json:"tx_status,omitempty"`
-	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *WriteReportInvokeOnReportDuration) Reset() {
-	*x = WriteReportInvokeOnReportDuration{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteReportInvokeOnReportDuration) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteReportInvokeOnReportDuration) ProtoMessage() {}
-
-func (x *WriteReportInvokeOnReportDuration) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteReportInvokeOnReportDuration.ProtoReflect.Descriptor instead.
-func (*WriteReportInvokeOnReportDuration) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *WriteReportInvokeOnReportDuration) GetDurationMs() int64 {
-	if x != nil {
-		return x.DurationMs
-	}
-	return 0
-}
-
-func (x *WriteReportInvokeOnReportDuration) GetTxStatus() int32 {
-	if x != nil {
-		return x.TxStatus
-	}
-	return 0
-}
-
-func (x *WriteReportInvokeOnReportDuration) GetExecutionContext() *monitoring.ExecutionContext {
-	if x != nil {
-		return x.ExecutionContext
-	}
-	return nil
-}
-
 var File_chain_capabilities_stellar_monitoring_write_report_proto protoreflect.FileDescriptor
 
 const file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc = "" +
@@ -742,18 +606,6 @@ const file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc = ""
 	"\x11canonical_tx_hash\x18\x03 \x01(\tR\x0fcanonicalTxHash\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"m\n" +
 	" WriteReportSuccessfulEarlyReturn\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xea\x01\n" +
-	"\x1fWriteReportTxHashRetrievalPhase\x12\x16\n" +
-	"\x06result\x18\x02 \x01(\tR\x06result\x12*\n" +
-	"\x11phase_duration_ms\x18\x03 \x01(\x03R\x0fphaseDurationMs\x12\x17\n" +
-	"\atx_hash\x18\x04 \x01(\tR\x06txHash\x12\x1f\n" +
-	"\vlookup_type\x18\x05 \x01(\tR\n" +
-	"lookupType\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xac\x01\n" +
-	"!WriteReportInvokeOnReportDuration\x12\x1f\n" +
-	"\vduration_ms\x18\x01 \x01(\x03R\n" +
-	"durationMs\x12\x1b\n" +
-	"\ttx_status\x18\x02 \x01(\x05R\btxStatus\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextB[ZYgithub.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring;monitoringb\x06proto3"
 
 var (
@@ -768,7 +620,7 @@ func file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP()
 	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescData
 }
 
-var file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_chain_capabilities_stellar_monitoring_write_report_proto_goTypes = []any{
 	(*WriteReportRequest)(nil),                  // 0: chain_capabilities.stellar.WriteReportRequest
 	(*WriteReportInitiated)(nil),                // 1: chain_capabilities.stellar.WriteReportInitiated
@@ -778,31 +630,27 @@ var file_chain_capabilities_stellar_monitoring_write_report_proto_goTypes = []an
 	(*WriteReportInvalidTransmissionState)(nil), // 5: chain_capabilities.stellar.WriteReportInvalidTransmissionState
 	(*WriteReportDuplicateTx)(nil),              // 6: chain_capabilities.stellar.WriteReportDuplicateTx
 	(*WriteReportSuccessfulEarlyReturn)(nil),    // 7: chain_capabilities.stellar.WriteReportSuccessfulEarlyReturn
-	(*WriteReportTxHashRetrievalPhase)(nil),     // 8: chain_capabilities.stellar.WriteReportTxHashRetrievalPhase
-	(*WriteReportInvokeOnReportDuration)(nil),   // 9: chain_capabilities.stellar.WriteReportInvokeOnReportDuration
-	(*monitoring.ExecutionContext)(nil),         // 10: monitoring.ExecutionContext
+	(*monitoring.ExecutionContext)(nil),         // 8: monitoring.ExecutionContext
 }
 var file_chain_capabilities_stellar_monitoring_write_report_proto_depIdxs = []int32{
 	0,  // 0: chain_capabilities.stellar.WriteReportInitiated.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	10, // 1: chain_capabilities.stellar.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	8,  // 1: chain_capabilities.stellar.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 2: chain_capabilities.stellar.WriteReportSuccess.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	10, // 3: chain_capabilities.stellar.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	8,  // 3: chain_capabilities.stellar.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 4: chain_capabilities.stellar.WriteReportError.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	10, // 5: chain_capabilities.stellar.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
+	8,  // 5: chain_capabilities.stellar.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 6: chain_capabilities.stellar.WriteReportTxInfoRetrievalError.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	10, // 7: chain_capabilities.stellar.WriteReportTxInfoRetrievalError.execution_context:type_name -> monitoring.ExecutionContext
+	8,  // 7: chain_capabilities.stellar.WriteReportTxInfoRetrievalError.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 8: chain_capabilities.stellar.WriteReportInvalidTransmissionState.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	10, // 9: chain_capabilities.stellar.WriteReportInvalidTransmissionState.execution_context:type_name -> monitoring.ExecutionContext
+	8,  // 9: chain_capabilities.stellar.WriteReportInvalidTransmissionState.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 10: chain_capabilities.stellar.WriteReportDuplicateTx.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	10, // 11: chain_capabilities.stellar.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
-	10, // 12: chain_capabilities.stellar.WriteReportSuccessfulEarlyReturn.execution_context:type_name -> monitoring.ExecutionContext
-	10, // 13: chain_capabilities.stellar.WriteReportTxHashRetrievalPhase.execution_context:type_name -> monitoring.ExecutionContext
-	10, // 14: chain_capabilities.stellar.WriteReportInvokeOnReportDuration.execution_context:type_name -> monitoring.ExecutionContext
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	8,  // 11: chain_capabilities.stellar.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
+	8,  // 12: chain_capabilities.stellar.WriteReportSuccessfulEarlyReturn.execution_context:type_name -> monitoring.ExecutionContext
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_stellar_monitoring_write_report_proto_init() }
@@ -816,7 +664,7 @@ func file_chain_capabilities_stellar_monitoring_write_report_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc), len(file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

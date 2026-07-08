@@ -63,24 +63,3 @@ func TestMetrics_OnBasicCapHandlers(t *testing.T) {
 		TransmissionId: "receiver:report:exec", Transmitter: "transmitter", ExecutionContext: ec,
 	}))
 }
-
-func TestMetrics_OnHistogramHandlers(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	metrics, err := monitoring.NewMetrics()
-	require.NoError(t, err)
-	ec := testExecutionContext(t)
-
-	require.NoError(t, metrics.OnWriteReportTxHashRetrievalPhase(ctx, &monitoring.WriteReportTxHashRetrievalPhase{
-		ExecutionContext: ec,
-		Result:           "Found",
-		PhaseDurationMs:  42,
-		TxHash:           "hash",
-		LookupType:       "SuccessfulTransmission",
-	}))
-	require.NoError(t, metrics.OnWriteReportInvokeOnReportDuration(ctx, &monitoring.WriteReportInvokeOnReportDuration{
-		ExecutionContext: ec,
-		DurationMs:       99,
-		TxStatus:         1,
-	}))
-}
