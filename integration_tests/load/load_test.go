@@ -137,9 +137,7 @@ func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int
 	ctx := t.Context()
 
 	lggr := logger.Test(t)
-	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
-	}()
+	t.Cleanup(utils.RemoveCapabilitiesDir(t))
 
 	targetSink, registerWorkflowOnDon := setupLoadtestDON(ctx, t, lggr, numberOfNodes, f, protocolRoundTime)
 
