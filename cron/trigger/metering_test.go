@@ -28,10 +28,11 @@ import (
 // entity attribute. A non-nil err simulates delivery failure: nothing is
 // recorded.
 type fakeMeterEmitter struct {
-	mu        sync.Mutex
-	err       error
-	records   []*meteringpb.MeterRecord
-	snapshots []*meteringpb.MeterSnapshot
+	mu            sync.Mutex
+	err           error
+	records       []*meteringpb.MeterRecord
+	recordDomains []string
+	snapshots     []*meteringpb.MeterSnapshot
 }
 
 func (f *fakeMeterEmitter) Emit(_ context.Context, body []byte, attrKVs ...any) error {
@@ -40,7 +41,7 @@ func (f *fakeMeterEmitter) Emit(_ context.Context, body []byte, attrKVs ...any) 
 	if f.err != nil {
 		return f.err
 	}
-	if attrEntity(attrKVs) == "metering.v1.MeterSnapshot" {
+	if attrValue(attrKVs, "beholder_entity") == "metering.v1.MeterSnapshot" {
 		snapshot := &meteringpb.MeterSnapshot{}
 		if err := proto.Unmarshal(body, snapshot); err != nil {
 			return err
@@ -53,14 +54,15 @@ func (f *fakeMeterEmitter) Emit(_ context.Context, body []byte, attrKVs ...any) 
 		return err
 	}
 	f.records = append(f.records, record)
+	f.recordDomains = append(f.recordDomains, attrValue(attrKVs, "beholder_domain"))
 	return nil
 }
 
-// attrEntity extracts the beholder entity attribute value from the variadic
+// attrValue extracts a beholder attribute value by key from the variadic
 // key/value attrs the ResourceManager passes to Emit.
-func attrEntity(attrKVs []any) string {
+func attrValue(attrKVs []any, key string) string {
 	for i := 0; i+1 < len(attrKVs); i += 2 {
-		if k, ok := attrKVs[i].(string); ok && k == "beholder_entity" {
+		if k, ok := attrKVs[i].(string); ok && k == key {
 			if v, ok := attrKVs[i+1].(string); ok {
 				return v
 			}
@@ -146,7 +148,7 @@ func newMeteredTriggerService(t *testing.T, clock clockwork.Clock, emitter resou
 	return ts, meters, fakeClock
 }
 
-func TestCronTrigger_Metering_ReserveAndRelease(t *testing.T) {
+func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	t.Parallel()
 
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -161,13 +163,16 @@ func TestCronTrigger_Metering_ReserveAndRelease(t *testing.T) {
 	require.Nil(t, capErr)
 
 	records := emitter.Records()
-	require.Len(t, records, 1, "expected exactly one RESERVE on successful registration")
-	reserve := records[0]
-	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_RESERVE, reserve.GetAction())
+	require.Len(t, records, 1, "expected exactly one +1 UPDATE on successful registration")
+	register := records[0]
+	// Producers emit only signed-delta UPDATE records; register is a +1 delta.
+	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, register.GetAction())
+	// The record carries the cll-meter billing domain.
+	assert.Equal(t, "cll-meter", emitter.recordDomains[0])
 
 	// Identity is populated from host-injected deps and points at the cron
 	// resource pool. Per-trigger fields are carried on utilization.
-	id := reserve.GetIdentity()
+	id := register.GetIdentity()
 	require.NotNil(t, id)
 	assert.Equal(t, "cre-mainline", id.GetProduct())
 	assert.Equal(t, "mainline", id.GetTenant())
@@ -178,11 +183,15 @@ func TestCronTrigger_Metering_ReserveAndRelease(t *testing.T) {
 	assert.Equal(t, "csa-pubkey-1", id.GetDon().GetNodeId())
 	assert.Equal(t, "cron-trigger", id.GetService())
 	assert.Equal(t, "trigger_registrations", id.GetResourcePool())
+	// The metering identity DON and the events.KeyDonID label derive from the
+	// same resolver, so they cannot diverge.
+	assert.Equal(t, ts.donID(metadata.WorkflowDonID), id.GetDon().GetDonId())
 
-	require.Len(t, reserve.GetUtilizations(), 1)
-	assert.Equal(t, "1", reserve.GetUtilizations()[0].GetValue())
-	assert.Equal(t, "operations", reserve.GetUtilizations()[0].GetResourceType())
-	assert.Equal(t, triggerID1, reserve.GetUtilizations()[0].GetResourceId())
+	require.Len(t, register.GetUtilizations(), 1)
+	assert.Equal(t, "1", register.GetUtilizations()[0].GetValue())
+	assert.Equal(t, "operations", register.GetUtilizations()[0].GetResourceType())
+	assert.Equal(t, triggerID1, register.GetUtilizations()[0].GetResourceId())
+	require.NotEmpty(t, register.GetUtilizations()[0].GetEventId(), "event_id is stamped per emission")
 
 	// Each cron tick re-Writes the trigger to reschedule it; the Write
 	// happens before the channel send, so after receiving the event the
@@ -195,12 +204,17 @@ func TestCronTrigger_Metering_ReserveAndRelease(t *testing.T) {
 
 	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond}))
 	records = emitter.Records()
-	require.Len(t, records, 2, "expected exactly one RELEASE on unregistration")
-	release := records[1]
-	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_RELEASE, release.GetAction())
-	assert.Equal(t, reserve.GetUtilizations()[0].GetResourceId(), release.GetUtilizations()[0].GetResourceId())
-	require.Len(t, release.GetUtilizations(), 1)
-	assert.Equal(t, "1", release.GetUtilizations()[0].GetValue())
+	require.Len(t, records, 2, "expected exactly one -1 UPDATE on unregistration")
+	unregister := records[1]
+	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, unregister.GetAction())
+	assert.Equal(t, register.GetUtilizations()[0].GetResourceId(), unregister.GetUtilizations()[0].GetResourceId())
+	require.Len(t, unregister.GetUtilizations(), 1)
+	assert.Equal(t, "-1", unregister.GetUtilizations()[0].GetValue(), "unregister is a signed -1 delta")
+
+	// event_id is unique per emission: register and unregister must differ.
+	require.NotEmpty(t, unregister.GetUtilizations()[0].GetEventId())
+	assert.NotEqual(t, register.GetUtilizations()[0].GetEventId(), unregister.GetUtilizations()[0].GetEventId(),
+		"each emission gets a distinct event_id")
 
 	require.NoError(t, ts.Close())
 }
@@ -219,19 +233,17 @@ func TestCronTrigger_Metering_NoEmitOnFailedPaths(t *testing.T) {
 	require.NotNil(t, capErr)
 	require.Empty(t, emitter.Records())
 
-	// Unregistering a trigger that was never registered releases nothing.
+	// Unregistering a trigger that was never registered emits no delta.
 	require.Nil(t, ts.UnregisterTrigger(t.Context(), "missing", metadata, &crontypedapi.Config{Schedule: everySecond}))
 	require.Empty(t, emitter.Records())
 
-	// Duplicate registration fails and must not double-RESERVE.
+	// Duplicate registration fails and must not emit a second +1 delta.
 	_, capErr = ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
 	require.Nil(t, capErr)
 	_, capErr = ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
 	require.NotNil(t, capErr)
 	require.Len(t, emitter.Records(), 1)
 
-	// Unregister to avoid a graceful-close RELEASE from interfering with the
-	// single-RESERVE assertion intent.
 	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond}))
 	require.NoError(t, ts.Close())
 }
@@ -308,10 +320,11 @@ func TestCronTrigger_Metering_Snapshot(t *testing.T) {
 	require.NoError(t, ts.Close())
 }
 
-// TestCronTrigger_Metering_GracefulCloseReleases asserts that Close drains a
-// RELEASE for every still-active registration, so a graceful shutdown does not
-// leak reservations in billing.
-func TestCronTrigger_Metering_GracefulCloseReleases(t *testing.T) {
+// TestCronTrigger_Metering_NoShutdownEmissions asserts that a graceful Close
+// emits NO meter records. Process-lifecycle emissions are deleted by design:
+// billing releases each still-active registration by its absence from the next
+// snapshot, not by a shutdown drain.
+func TestCronTrigger_Metering_NoShutdownEmissions(t *testing.T) {
 	t.Parallel()
 
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -327,23 +340,13 @@ func TestCronTrigger_Metering_GracefulCloseReleases(t *testing.T) {
 	_, capErr = ts.RegisterTrigger(t.Context(), triggerID2, metadata2, &crontypedapi.Config{Schedule: everySecond})
 	require.Nil(t, capErr)
 
-	// Two RESERVEs so far.
+	// Two +1 registration deltas so far.
 	require.Len(t, emitter.Records(), 2)
 
 	require.NoError(t, ts.Close())
 
-	// Close drained a RELEASE for each active trigger.
-	records := emitter.Records()
-	require.Len(t, records, 4, "two RESERVEs + one RELEASE per active trigger on graceful close")
-
-	releases := map[string]*meteringpb.MeterRecord{}
-	for _, r := range records[2:] {
-		require.Equal(t, meteringpb.MeterAction_METER_ACTION_RELEASE, r.GetAction())
-		releases[r.GetUtilizations()[0].GetResourceId()] = r
-	}
-	require.Contains(t, releases, triggerID1)
-	require.Contains(t, releases, triggerID2)
-	assert.Equal(t, "1", releases[triggerID1].GetUtilizations()[0].GetValue())
+	// Close emitted nothing: no shutdown drain.
+	require.Len(t, emitter.Records(), 2, "graceful close must emit no meter records")
 }
 
 // TestCronTrigger_Metering_DonIDFallback asserts the DON ID falls back to the
@@ -374,6 +377,8 @@ func TestCronTrigger_Metering_DonIDFallback(t *testing.T) {
 	records := emitter.Records()
 	require.Len(t, records, 1)
 	assert.Equal(t, "42", records[0].GetIdentity().GetDon().GetDonId(), "DON ID falls back to WorkflowDonID")
+	// Metering identity DON and events.KeyDonID label share the same resolver.
+	assert.Equal(t, ts.donID(metadata.WorkflowDonID), records[0].GetIdentity().GetDon().GetDonId())
 	// Product falls back to the cron constant when the host injects none.
 	assert.Equal(t, "cre", records[0].GetIdentity().GetProduct())
 

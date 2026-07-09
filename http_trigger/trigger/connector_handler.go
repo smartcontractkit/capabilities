@@ -59,6 +59,10 @@ type connectorHandler struct {
 	// unregisterMeterable removes this handler from the ResourceManager's
 	// snapshot registry; set on Start, called on Close.
 	unregisterMeterable func()
+	// orgResolverSvc is the CachingOrgResolver's service handle when one was
+	// injected; its Start/Close are wired into the handler lifecycle. Nil when
+	// no resolver was injected.
+	orgResolverSvc services.Service
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
@@ -67,7 +71,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 	if resourceManager == nil {
 		resourceManager = resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{})
 	}
-	return &connectorHandler{
+	h := &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
 		config:                   config,
@@ -79,7 +83,13 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		orgResolver:              orgResolver,
 		resourceManager:          resourceManager,
 		baseIdentity:             baseIdentity,
-	}, nil
+	}
+	// Own the caching resolver's lifecycle when one was injected, so its
+	// background refresh runs while the handler is up.
+	if caching, ok := orgResolver.(*orgresolver.CachingOrgResolver); ok {
+		h.orgResolverSvc = caching
+	}
+	return h, nil
 }
 
 func (h *connectorHandler) Start(ctx context.Context) error {
@@ -87,13 +97,22 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	h.wg.Add(1)
 	go h.startRequestCacheCleanup(ctx)
 	return h.StartOnce(HandlerName, func() error {
+		// Start the caching org resolver (if any) so its background refresh
+		// runs and the snapshot path is served from memory. Fail-open.
+		if h.orgResolverSvc != nil {
+			if err := h.orgResolverSvc.Start(ctx); err != nil {
+				h.lggr.Errorw("failed to start caching org resolver; org attribution may be empty", "err", err)
+			}
+		}
 		// Start the ResourceManager as a sub-service (it owns the snapshot
 		// tick) and register this handler as the snapshotted Meterable. The RM
-		// is fail-open and disabled by default, so this never gates startup.
+		// is fail-open: a start failure logs and continues (uniform with the
+		// other trigger producers) rather than gating the handler.
 		if err := h.resourceManager.Start(ctx); err != nil {
-			return err
+			h.lggr.Errorw("failed to start metering ResourceManager; snapshots disabled", "err", err)
+		} else {
+			h.unregisterMeterable = h.resourceManager.Register(h)
 		}
-		h.unregisterMeterable = h.resourceManager.Register(h)
 		return h.gatewayConnector.AddHandler(ctx, []string{
 			gateway_common.MethodWorkflowExecute,
 			gateway_common.MethodPullWorkflowMetadata,
@@ -128,25 +147,22 @@ func (h *connectorHandler) Close() error {
 	return h.StopOnce(HandlerName, func() error {
 		close(h.stopChan)
 		h.wg.Wait()
-		// Drain RELEASEs for every still-active workflow so reservations do not
-		// leak past shutdown, then unregister from the snapshot tick and stop
-		// the ResourceManager. Order matters: release before unregister/close so
-		// the final edges are emitted while emission is still wired up.
-		h.releaseActiveWorkflows(context.Background())
+		// No process-lifecycle metering emissions: a graceful shutdown emits
+		// nothing, and billing releases each still-active workflow by its
+		// absence from the next snapshot. Deregister the Meterable from the
+		// ResourceManager FIRST so no snapshot tick can run after teardown,
+		// then close the caching org resolver and the ResourceManager.
 		if h.unregisterMeterable != nil {
 			h.unregisterMeterable()
+			h.unregisterMeterable = nil
+		}
+		if h.orgResolverSvc != nil {
+			if err := h.orgResolverSvc.Close(); err != nil {
+				h.lggr.Errorw("failed to close caching org resolver", "err", err)
+			}
 		}
 		return h.resourceManager.Close()
 	})
-}
-
-// releaseActiveWorkflows emits a RELEASE for each workflow still active in the
-// store at shutdown. It is fail-open: emission never blocks or fails close.
-func (h *connectorHandler) releaseActiveWorkflows(ctx context.Context) {
-	for _, w := range h.workflowStore.getWorkflows() {
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE,
-			w.workflowSelector.WorkflowID, w.metadata.WorkflowDONID, w.metadata.OrganizationID)
-	}
 }
 
 func (h *connectorHandler) HealthReport() map[string]error {
@@ -187,76 +203,52 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 	latencyMs := time.Since(startTime).Milliseconds()
 	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
-	orgID := h.resolveOrgID(ctx, input.WorkflowSelector.WorkflowOwner)
-	input.Metadata.OrganizationID = orgID
-
-	var prevWorkflowOrgID string
-	var prevWorkflowDONID uint32
-	if prevID, ok := h.workflowStore.getWorkflowIDByReference(input.WorkflowSelector.WorkflowOwner, input.WorkflowSelector.WorkflowName, input.WorkflowSelector.WorkflowTag); ok {
-		if prevWorkflow, found := h.workflowStore.getWorkflowByID(prevID); found {
-			prevWorkflowOrgID = prevWorkflow.metadata.OrganizationID
-			prevWorkflowDONID = prevWorkflow.metadata.WorkflowDONID
-		}
-	}
-
 	workflow := newWorkflowWithMetadata(input.WorkflowSelector, authorizedKeys, sendCh, input.Metadata)
-	prevWorkflowID, replaced, err := h.workflowStore.upsertWorkflow(workflow)
+	// upsertWorkflow returns the evicted workflow (if any) atomically under the
+	// store lock, so we never need a separate pre-read (which would be a TOCTOU
+	// race against a concurrent register/unregister).
+	evicted, err := h.workflowStore.upsertWorkflow(workflow)
 	if err != nil {
 		return fmt.Errorf("failed to register workflow (ID: %s, Owner: %s, Name: %s): %w",
 			input.WorkflowSelector.WorkflowID, input.WorkflowSelector.WorkflowOwner, input.WorkflowSelector.WorkflowName, err)
 	}
 	newWorkflowID := input.WorkflowSelector.WorkflowID
 	workflowDONID := input.Metadata.WorkflowDONID
+	owner := input.WorkflowSelector.WorkflowOwner
 	switch {
-	case !replaced:
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID, orgID)
-	case prevWorkflowID == newWorkflowID:
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_UPDATE, newWorkflowID, workflowDONID, orgID)
+	case evicted == nil:
+		// Brand-new registration: bill +1 for the new durable resource.
+		h.emitMeterRecord(ctx, 1, newWorkflowID, workflowDONID, owner)
+	case evicted.workflowSelector.WorkflowID == newWorkflowID:
+		// Same-ID re-register: the durable resource is unchanged, so there is
+		// no level delta to bill. Emit nothing.
 	default:
 		// Version update: the same owner/name/tag reference now resolves to a
-		// new workflow ID. Release the previous workflow's reservation before
-		// reserving the new one so the old reservation does not leak.
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, prevWorkflowID, prevWorkflowDONID, prevWorkflowOrgID)
-		h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, newWorkflowID, workflowDONID, orgID)
+		// new workflow ID. Bill -1 against the evicted workflow's resource_id
+		// and +1 for the new, both derived from the atomically returned
+		// eviction so the old reservation cannot leak.
+		h.emitMeterRecord(ctx, -1, evicted.workflowSelector.WorkflowID, evicted.metadata.WorkflowDONID, evicted.workflowSelector.WorkflowOwner)
+		h.emitMeterRecord(ctx, 1, newWorkflowID, workflowDONID, owner)
 	}
 	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
 }
 
-// emitMeterRecord emits a meter record for one workflow registration
-// operation. resource_id is the workflow ID (HTTP registrations are
-// workflow-scoped, so there is no shared physical resource); the workflow ID
-// also doubles as the event identity, so a repeated emission for the same
-// workflow and action dedups downstream. The workflow_id is recoverable from
-// resource_id and the owner is resolved downstream, so no label metadata is
-// attached. Emission is fail-open and never affects the registration outcome.
-func (h *connectorHandler) emitMeterRecord(ctx context.Context, action meteringpb.MeterAction, workflowID string, workflowDONID uint32, orgID string) {
-	identity := h.identityForWorkflow(workflowDONID)
-	h.resourceManager.EmitMeterRecord(ctx, identity, action,
-		[]*meteringpb.Utilization{
-			resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
-				ResourceType: meterResourceType,
-				ResourceID:   workflowID,
-				EventID:      workflowID,
-				OrgID:        orgID,
-			}),
-		})
-}
-
-// identityForWorkflow derives per-workflow metering identity: base identity
-// with DON identifier resolved per
-// registration when the host did not inject a capability DON.
-func (h *connectorHandler) identityForWorkflow(workflowDONID uint32) resourcemanager.ResourceIdentity {
-	identity := h.baseIdentity
-	donID := h.donID(workflowDONID)
-	if donID == "" {
-		return identity
-	}
-	identity.Don = &resourcemanager.DonIdentity{
-		DonID:  donID,
-		NodeID: identity.NodeID(),
-	}
-	return identity
+// emitMeterRecord emits a signed delta MeterRecord (METER_ACTION_UPDATE) for a
+// change to the durable HTTP-workflow-registration level: register bills +1,
+// unregister/version-eviction bills -1. resource_id is the workflow ID (HTTP
+// registrations are workflow-scoped, so there is no shared physical resource).
+// The org is resolved fresh from owner at emit time; event_id is stamped by the
+// ResourceManager per emission. Emission is fail-open and never affects the
+// registration outcome.
+func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, workflowID string, workflowDONID uint32, owner string) {
+	identity := h.baseIdentity.WithWorkflowDonFallback(workflowDONID)
+	orgID := orgresolver.ResolveOrEmpty(ctx, h.orgResolver, owner, h.lggr)
+	h.resourceManager.EmitDelta(ctx, identity, delta, resourcemanager.UtilizationFields{
+		ResourceType: meterResourceType,
+		ResourceID:   workflowID,
+		OrgID:        orgID,
+	})
 }
 
 // donID returns the DON identifier for an emission. It prefers the
@@ -271,18 +263,6 @@ func (h *connectorHandler) donID(workflowDONID uint32) string {
 		return strconv.FormatUint(uint64(workflowDONID), 10)
 	}
 	return ""
-}
-
-func (h *connectorHandler) resolveOrgID(ctx context.Context, workflowOwner string) string {
-	if h.orgResolver == nil || workflowOwner == "" {
-		return ""
-	}
-	orgID, err := h.orgResolver.Get(ctx, workflowOwner)
-	if err != nil {
-		h.lggr.Warnw("failed to fetch organization ID from org resolver", "workflowOwner", workflowOwner, "error", err)
-		return ""
-	}
-	return orgID
 }
 
 // ResourceIdentity returns the HTTP trigger's base metering identity (six
@@ -302,14 +282,17 @@ func (h *connectorHandler) GetUtilization(ctx context.Context) []resourcemanager
 	entries := make([]resourcemanager.SnapshotEntry, 0, len(workflows))
 	for _, w := range workflows {
 		workflowID := w.workflowSelector.WorkflowID
+		// Org is resolved from the stored owner via the shared caching resolver
+		// (a cache hit populated at registration), keeping GetUtilization
+		// no-network as the snapshot contract requires.
+		orgID := orgresolver.ResolveOrEmpty(ctx, h.orgResolver, w.workflowSelector.WorkflowOwner, h.lggr)
 		entries = append(entries, resourcemanager.SnapshotEntry{
-			Identity: h.identityForWorkflow(w.metadata.WorkflowDONID),
+			Identity: h.baseIdentity.WithWorkflowDonFallback(w.metadata.WorkflowDONID),
 			Utilizations: []*meteringpb.Utilization{
 				resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
 					ResourceType: meterResourceType,
 					ResourceID:   workflowID,
-					EventID:      workflowID,
-					OrgID:        w.metadata.OrganizationID,
+					OrgID:        orgID,
 				}),
 			},
 		})
@@ -344,19 +327,20 @@ func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKe
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
-	// Snapshot the workflow DON before removal; it is needed for the meter
-	// record's identity DON fallback.
+	// Snapshot the workflow DON and owner before removal; the DON feeds the
+	// meter record's identity fallback and the owner resolves org at emit time.
 	var workflowDONID uint32
-	var orgID string
+	var owner string
 	if w, ok := h.workflowStore.getWorkflowByID(workflowID); ok {
 		workflowDONID = w.metadata.WorkflowDONID
-		orgID = w.metadata.OrganizationID
+		owner = w.workflowSelector.WorkflowOwner
 	}
 	err := h.workflowStore.removeWorkflow(workflowID)
 	if err != nil {
 		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
 	}
-	h.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, workflowID, workflowDONID, orgID)
+	// Unregister bills a -1 delta against the workflow's resource_id.
+	h.emitMeterRecord(ctx, -1, workflowID, workflowDONID, owner)
 	h.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }

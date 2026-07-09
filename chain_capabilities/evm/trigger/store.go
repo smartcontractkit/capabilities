@@ -16,24 +16,30 @@ type filter struct {
 	// physicalFilterID is the workflow-independent content hash of the filter's
 	// physical matching criteria (chain selector + canonicalized addresses,
 	// event sigs, and positional topics). It is the metering ResourceID and the
-	// RESERVE/RELEASE event identity, so the unregister, cleanup, snapshot, and
-	// graceful-close paths all reuse it from here without the request input.
+	// shared-resource refcount key, so the unregister, cleanup, and snapshot
+	// paths all reuse it from here without the request input. Identical filters
+	// registered by different triggers share one physicalFilterID and are billed
+	// once (a +delta on the 0->1 activation, a -delta on the 1->0 release).
 	physicalFilterID string
-	// reservedAddressCount is the number of filter addresses metered in the
-	// RESERVE record when the filter was registered. The matching RELEASE
-	// must carry the same value, and UnregisterLogTrigger ignores its request
-	// input, so the count is stashed here at registration.
+	// reservedAddressCount is the number of filter addresses this filter bills:
+	// the +delta emitted on the physical filter's 0->1 activation, and the
+	// -delta on its 1->0 release, both carry this value. UnregisterLogTrigger
+	// ignores its request input, so the count is stashed here at registration.
 	reservedAddressCount int64
 	// donID is stashed from the registration RequestMetadata so the
-	// unregister/cleanup/snapshot/close paths can emit a metering record with
-	// the same identity as the RESERVE, without the original request. It is the
-	// resolved metering DON ID string (capability DON, or the consumer
-	// WorkflowDonID fallback when the host did not inject a capability DON);
-	// empty when neither is known.
-	donID       string
-	orgID       string
-	expressions []query.Expression
-	confidence  primitives.ConfidenceLevel
+	// unregister/cleanup/snapshot paths reproduce the same identity as the
+	// activation delta without the original request. It is the resolved metering
+	// DON ID string (capability DON, or the consumer WorkflowDonID fallback when
+	// the host did not inject a capability DON); empty when neither is known.
+	donID string
+	// workflowOwner is the durable attribution key. We store the workflow OWNER,
+	// never a resolved org ID: the org is resolved fresh at each emission (via
+	// orgresolver.ResolveOrEmpty) and at snapshot time (via the shared
+	// CachingOrgResolver), so a re-linked owner is picked up without rewriting
+	// durable state.
+	workflowOwner string
+	expressions   []query.Expression
+	confidence    primitives.ConfidenceLevel
 }
 
 type logTriggerState struct {
@@ -57,6 +63,8 @@ type LogTriggerStore interface {
 	Read(triggerID string) (value logTriggerState, ok bool)
 	ReadAll() (values map[string]logTriggerState)
 	Write(triggerID string, value logTriggerState)
+	WriteAndIsFirstForPhysical(triggerID string, value logTriggerState) (firstForPhysical bool)
+	DeleteAndIsLastForPhysical(triggerID, physicalFilterID string) (found, lastForPhysical bool)
 	Update(triggerID string, lastBlock *big.Int, unfinalizedSentEventIDs map[string]*big.Int) error
 	Delete(triggerID string)
 }
@@ -88,6 +96,50 @@ func (cs *logTriggerStore) Write(triggerID string, value logTriggerState) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.triggers[triggerID] = value
+}
+
+// WriteAndIsFirstForPhysical writes value under triggerID and reports whether,
+// at the instant of the write, no OTHER trigger already held
+// value.physicalFilterID. A true result is the 0->1 activation of that shared
+// physical filter — the only transition that bills a +delta. Deriving the
+// transition from owned state at operation time keeps the emitter stateless
+// (no ledger). The scan and write are atomic under the store lock so two
+// concurrent registrations of the same physical filter can never both observe
+// zero and double-bill.
+func (cs *logTriggerStore) WriteAndIsFirstForPhysical(triggerID string, value logTriggerState) (firstForPhysical bool) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	firstForPhysical = true
+	for id, existing := range cs.triggers {
+		if id == triggerID {
+			continue
+		}
+		if existing.physicalFilterID == value.physicalFilterID {
+			firstForPhysical = false
+			break
+		}
+	}
+	cs.triggers[triggerID] = value
+	return firstForPhysical
+}
+
+// DeleteAndIsLastForPhysical deletes triggerID and reports whether any remaining
+// trigger still holds physicalFilterID. lastForPhysical is true when none
+// remain — the 1->0 deactivation that bills a -delta. found reports whether the
+// trigger existed. Scan and delete are atomic under the store lock.
+func (cs *logTriggerStore) DeleteAndIsLastForPhysical(triggerID, physicalFilterID string) (found, lastForPhysical bool) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	_, found = cs.triggers[triggerID]
+	delete(cs.triggers, triggerID)
+	lastForPhysical = true
+	for _, existing := range cs.triggers {
+		if existing.physicalFilterID == physicalFilterID {
+			lastForPhysical = false
+			break
+		}
+	}
+	return found, lastForPhysical
 }
 
 func (cs *logTriggerStore) Update(triggerID string, lastBlock *big.Int, unfinalizedSentEventIDs map[string]*big.Int) error {

@@ -221,9 +221,9 @@ func TestSendWorkflows_Success(t *testing.T) {
 	wf1 := newWorkflow(selector1, authorizedKeys1, sendCh1)
 	wf2 := newWorkflow(selector2, authorizedKeys2, sendCh2)
 
-	_, _, err := workflowStore.upsertWorkflow(wf1)
+	_, err := workflowStore.upsertWorkflow(wf1)
 	require.NoError(t, err)
-	_, _, err = workflowStore.upsertWorkflow(wf2)
+	_, err = workflowStore.upsertWorkflow(wf2)
 	require.NoError(t, err)
 
 	gatewayID := "gateway1"

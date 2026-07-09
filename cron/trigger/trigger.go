@@ -52,10 +52,12 @@ const (
 	meteringResource = "trigger_registrations"
 	// meteringResourceType is the billing unit for cron registrations.
 	meteringResourceType = "operations"
-	// meteringProductFallback is used when the host has not provided a Product
-	// via loop.EnvConfig (a legacy node or a boot path not yet updated).
-	meteringProductFallback = "cre"
 )
+
+// orgResolverRefreshInterval bounds how stale a cached owner->org mapping may
+// get in the snapshot path. It matches the snapshot cadence so a re-linked org
+// is reflected within one snapshot interval.
+const orgResolverRefreshInterval = resourcemanager.DefaultSnapshotInterval
 
 type Config struct {
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
@@ -71,7 +73,12 @@ type cronTrigger struct {
 	nextRun       time.Time
 	workflowID    string
 	workflowDonID uint32
-	orgID         string
+	// workflowOwner is the durable attribution key. We store the workflow OWNER,
+	// never a resolved org ID: the org is resolved fresh at each record emission
+	// (via orgresolver.ResolveOrEmpty) and at snapshot time (via the shared
+	// CachingOrgResolver), so a re-linked owner is picked up without rewriting
+	// durable state.
+	workflowOwner string
 	close         func()
 }
 
@@ -102,6 +109,11 @@ type Service struct {
 	// empty.
 	Deployment  resourcemanager.DeploymentIdentity
 	orgResolver orgresolver.OrgResolver
+	// orgResolverSvc is the CachingOrgResolver's service handle when this
+	// service owns its lifecycle (set in Initialise when an OrgResolver was
+	// injected). Its Start/Close are wired into start/close. Nil when no
+	// resolver was injected.
+	orgResolverSvc services.Service
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
@@ -203,50 +215,38 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 	return s, nil
 }
 
-// identityFor returns the per-trigger metering identity. resource_id is
-// workflow-scoped (the trigger_id) for cron and is carried on Utilization.
-// The DON ID
-// falls back to the consumer workflow's DON when the host has not injected a
-// capability DON ID (deps.CapabilityDonID == 0).
-func (s *Service) identityFor(workflowDonID uint32) resourcemanager.ResourceIdentity {
-	id := s.base
-	if id.DonID() == "" && workflowDonID != 0 {
-		id.Don = &resourcemanager.DonIdentity{
-			DonID:  strconv.FormatUint(uint64(workflowDonID), 10),
-			NodeID: s.Deployment.NodeID,
-		}
-	}
-	return id
+// donID resolves the single DON identifier stamped on BOTH the metering
+// identity and the events.KeyDonID label, so the two can never diverge: the
+// host-injected CapabilityDonID (carried on base) wins, otherwise the consumer
+// workflow's DON is the documented fallback.
+func (s *Service) donID(workflowDonID uint32) string {
+	return s.base.WithWorkflowDonFallback(workflowDonID).DonID()
 }
 
-func (s *Service) resolveOrgID(ctx context.Context, workflowOwner string) string {
-	if s.orgResolver == nil || workflowOwner == "" {
-		return ""
+// utilizationFields builds the per-trigger billing fields shared by the record
+// and snapshot paths. resource_id is the workflow-scoped trigger_id; org_id is
+// resolved fresh from the workflow owner by the caller (never stored). event_id
+// is intentionally absent: the ResourceManager stamps a unique UUID per
+// emission.
+func (s *Service) utilizationFields(triggerID, orgID string) resourcemanager.UtilizationFields {
+	return resourcemanager.UtilizationFields{
+		ResourceType: meteringResourceType,
+		ResourceID:   triggerID,
+		OrgID:        orgID,
 	}
-	orgID, err := s.orgResolver.Get(ctx, workflowOwner)
-	if err != nil {
-		s.lggr.Warnw("failed to fetch organization ID from org resolver", "workflowOwner", workflowOwner, "error", err)
-		return ""
-	}
-	return orgID
 }
 
-// emitMeterRecord reports a change to this trigger's registration reservation
-// for billing. The triggerID doubles as the idempotency event identity: a
-// triggerID is registered at most once at a time, so retried emissions for the
-// same registration dedup downstream. Emission is fail-open and never affects
-// the registration itself.
-func (s *Service) emitMeterRecord(ctx context.Context, action meteringpb.MeterAction, metadata capabilities.RequestMetadata, triggerID string, orgID string) {
-	id := s.identityFor(metadata.WorkflowDonID)
-	s.meters.EmitMeterRecord(ctx, id, action,
-		[]*meteringpb.Utilization{
-			resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
-				ResourceType: meteringResourceType,
-				ResourceID:   triggerID,
-				EventID:      triggerID,
-				OrgID:        orgID,
-			}),
-		})
+// emitMeterRecord emits a signed delta MeterRecord (METER_ACTION_UPDATE) for a
+// change to the durable cron-registration level: register bills +1, unregister
+// bills -1. don_id is derived from the STORED workflow DON via
+// WithWorkflowDonFallback so a register and its later unregister resolve the
+// same identity regardless of the unregister request's metadata. The org is
+// resolved fresh from owner at emit time. Emission is fail-open and never
+// affects the registration itself.
+func (s *Service) emitMeterRecord(ctx context.Context, delta int64, workflowDonID uint32, triggerID, owner string) {
+	id := s.base.WithWorkflowDonFallback(workflowDonID)
+	orgID := orgresolver.ResolveOrEmpty(ctx, s.orgResolver, owner, s.lggr)
+	s.meters.EmitDelta(ctx, id, delta, s.utilizationFields(triggerID, orgID))
 }
 
 func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
@@ -270,41 +270,23 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	s.fastestScheduleInterval = limiter
 
-	s.orgResolver = dependencies.OrgResolver
-	if s.orgResolver == nil {
+	if dependencies.OrgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
+	} else {
+		// Wrap the injected resolver in a CachingOrgResolver so the snapshot
+		// path (GetUtilization, contractually no-network) resolves org from
+		// memory. We own this wrapper's lifecycle (see start/close).
+		caching := orgresolver.NewCaching(dependencies.OrgResolver, orgResolverRefreshInterval)
+		s.orgResolver = caching
+		s.orgResolverSvc = caching
 	}
 
 	// Build the base metering identity. The deployment/node dimensions come from
 	// s.Deployment (delivered via loop.EnvConfig, set by main before
-	// Initialise); the DON dimension comes from the host-injected
-	// CapabilityDonID. Any may be empty/zero; the DON identifier falls back to the consumer
-	// workflow DON at emit time (see identityFor).
-	product := s.Deployment.Product
-	if product == "" {
-		product = meteringProductFallback
-	}
-	var donID string
-	if dependencies.CapabilityDonID != 0 {
-		donID = strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10)
-	}
-	var donIdentity *resourcemanager.DonIdentity
-	if donID != "" || s.Deployment.NodeID != "" {
-		donIdentity = &resourcemanager.DonIdentity{
-			DonID:  donID,
-			NodeID: s.Deployment.NodeID,
-		}
-	}
-	s.base = resourcemanager.ResourceIdentity{
-		Product:         product,
-		Tenant:          s.Deployment.Tenant,
-		NumericTenantID: s.Deployment.NumericTenantID,
-		Environment:     s.Deployment.Environment,
-		Zone:            s.Deployment.Zone,
-		Don:             donIdentity,
-		Service:         meteringService,
-		ResourcePool:    meteringResource,
-	}
+	// Initialise); the authoritative DON ID is the host-injected CapabilityDonID.
+	// When it is 0, NewBaseIdentity leaves don_id empty and each emission falls
+	// back to the consumer workflow's DON via WithWorkflowDonFallback.
+	s.base = resourcemanager.NewBaseIdentity(s.Deployment, dependencies.CapabilityDonID, meteringService, meteringResource)
 
 	err = s.Start(ctx)
 	if err != nil {
@@ -412,7 +394,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					events.KeyWorkflowExecutionID, workflowExecutionID,
 					events.KeyWorkflowOwner, metadata.WorkflowOwner,
 					events.KeyWorkflowName, displayWorkflowName,
-					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
+					events.KeyDonID, s.donID(metadata.WorkflowDonID),
 					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
 					events.KeyOrganizationID, orgID,
 					events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
@@ -439,14 +421,21 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			if callbackCh == nil {
 				return // unregistered already
 			}
-			s.triggers.Write(triggerID, cronTrigger{
+			// Re-check existence atomically with the write: an unregister that
+			// ran during this callback (after the Read above) deletes the
+			// trigger, and resurrecting it here would keep the resource billed
+			// via snapshots after the caller stopped it. WriteIfPresent skips
+			// the write when the trigger is already gone.
+			if written := s.triggers.WriteIfPresent(triggerID, cronTrigger{
 				job:           job,
 				nextRun:       nextExecutionTime,
 				workflowID:    metadata.WorkflowID,
 				workflowDonID: metadata.WorkflowDonID,
-				orgID:         trigger.orgID,
+				workflowOwner: metadata.WorkflowOwner,
 				close:         closeCh,
-			})
+			}); !written {
+				return // unregistered concurrently; do not resurrect or send
+			}
 
 			select {
 			case callbackCh <- response:
@@ -484,17 +473,17 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("RegisterTrigger failed to remove job: %s", err), caperrors.Internal)
 	}
 
-	orgID := s.resolveOrgID(ctx, metadata.WorkflowOwner)
 	s.triggers.Write(triggerID, cronTrigger{
 		job:           job,
 		nextRun:       firstRunTime,
 		workflowID:    metadata.WorkflowID,
 		workflowDonID: metadata.WorkflowDonID,
-		orgID:         orgID,
+		workflowOwner: metadata.WorkflowOwner,
 		close:         closeCh,
 	})
 
-	s.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RESERVE, metadata, triggerID, orgID)
+	// Register bills a +1 delta to the durable trigger-registration level.
+	s.emitMeterRecord(ctx, 1, metadata.WorkflowDonID, triggerID, metadata.WorkflowOwner)
 
 	s.lggr.Debugw("Trigger registered", "workflowId", metadata.WorkflowID, "triggerId", triggerID, "jobId", job.ID())
 	s.metrics.IncActiveTriggersGauge(ctx)
@@ -547,7 +536,10 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	// Remove from triggers context
 	s.triggers.Delete(triggerID)
 
-	s.emitMeterRecord(ctx, meteringpb.MeterAction_METER_ACTION_RELEASE, metadata, triggerID, trigger.orgID)
+	// Unregister bills a -1 delta. don_id and owner come from the STORED trigger
+	// (not the unregister request's metadata) so the delta reverses the exact
+	// identity the register +1 billed.
+	s.emitMeterRecord(ctx, -1, trigger.workflowDonID, triggerID, trigger.workflowOwner)
 
 	s.lggr.Debugw("UnregisterTrigger", "triggerId", triggerID, "jobId", jobID)
 	s.metrics.DecActiveTriggersGauge(ctx)
@@ -558,9 +550,18 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 // already been started by the engine, so start registers this Service as a
 // Meterable (the RM polls it once per snapshot tick) and starts the scheduler,
 // refreshing next-run times for any registrations that survived a restart.
-func (s *Service) start(_ context.Context) error {
+func (s *Service) start(ctx context.Context) error {
 	if s.scheduler == nil {
 		return errors.New("service has shutdown, it must be built again to restart")
+	}
+
+	// Start the caching org resolver so its background refresh runs and the
+	// snapshot path is served from memory. Fail-open: a resolver start failure
+	// must not gate the trigger service.
+	if s.orgResolverSvc != nil {
+		if err := s.orgResolverSvc.Start(ctx); err != nil {
+			s.lggr.Errorw("failed to start caching org resolver; org attribution may be empty", "err", err)
+		}
 	}
 
 	// Register for snapshots. The RM owns the tick; we only supply state via
@@ -576,7 +577,7 @@ func (s *Service) start(_ context.Context) error {
 			nextRun:       nextExecutionTime,
 			workflowID:    trigger.workflowID,
 			workflowDonID: trigger.workflowDonID,
-			orgID:         trigger.orgID,
+			workflowOwner: trigger.workflowOwner,
 			close:         trigger.close,
 		})
 		if err != nil {
@@ -588,36 +589,29 @@ func (s *Service) start(_ context.Context) error {
 }
 
 // close is the services.Engine close hook. After this the Service cannot be
-// started again; it must be re-built to schedule again. close drains a RELEASE
-// for every still-active registration (so a graceful shutdown does not leak
-// reservations in billing), unregisters from the snapshot registry, then shuts
-// the scheduler down. The ResourceManager sub-service is closed by the engine
-// afterwards.
+// started again; it must be re-built to schedule again. There are NO
+// process-lifecycle metering emissions: a graceful shutdown emits nothing, and
+// billing releases each still-active registration by its absence from the next
+// snapshot. close deregisters the Meterable from the ResourceManager FIRST (so
+// no snapshot can run after the store is torn down), closes the caching org
+// resolver, then shuts the scheduler down. The ResourceManager sub-service is
+// closed by the engine afterwards.
 func (s *Service) close() error {
 	if s.scheduler == nil {
 		return errors.New("service has shutdown, it must be built again to restart")
 	}
 
-	// Graceful-close RELEASEs. Use a background context: the engine's start
-	// context is already cancelled by the time close runs. Emission is
-	// fail-open, so a metering failure never blocks shutdown.
-	ctx := context.Background()
-	for triggerID, trigger := range s.triggers.ReadAll() {
-		id := s.identityFor(trigger.workflowDonID)
-		s.meters.EmitMeterRecord(ctx, id, meteringpb.MeterAction_METER_ACTION_RELEASE,
-			[]*meteringpb.Utilization{
-				resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
-					ResourceType: meteringResourceType,
-					ResourceID:   triggerID,
-					EventID:      triggerID,
-					OrgID:        trigger.orgID,
-				}),
-			})
-	}
-
+	// Deregister from the snapshot registry before anything else so no snapshot
+	// tick can observe a half-torn-down service.
 	if s.unregisterMeterable != nil {
 		s.unregisterMeterable()
 		s.unregisterMeterable = nil
+	}
+
+	if s.orgResolverSvc != nil {
+		if err := s.orgResolverSvc.Close(); err != nil {
+			s.lggr.Errorw("failed to close caching org resolver", "err", err)
+		}
 	}
 
 	err := s.scheduler.Shutdown()
@@ -655,16 +649,12 @@ func (s *Service) GetUtilization(ctx context.Context) []resourcemanager.Snapshot
 	triggers := s.triggers.ReadAll()
 	entries := make([]resourcemanager.SnapshotEntry, 0, len(triggers))
 	for triggerID, trigger := range triggers {
-		id := s.identityFor(trigger.workflowDonID)
+		id := s.base.WithWorkflowDonFallback(trigger.workflowDonID)
+		orgID := orgresolver.ResolveOrEmpty(ctx, s.orgResolver, trigger.workflowOwner, s.lggr)
 		entries = append(entries, resourcemanager.SnapshotEntry{
 			Identity: id,
 			Utilizations: []*meteringpb.Utilization{
-				resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
-					ResourceType: meteringResourceType,
-					ResourceID:   triggerID,
-					EventID:      triggerID,
-					OrgID:        trigger.orgID,
-				}),
+				resourcemanager.NewUtilizationInt(1, s.utilizationFields(triggerID, orgID)),
 			},
 		})
 	}

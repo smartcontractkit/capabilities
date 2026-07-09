@@ -52,38 +52,38 @@ func newWorkflowStore(lggr logger.Logger) *workflowStore {
 // workflow reference (owner/name/tag combination) with new workflow instance.
 // upsertWorkflow should be invoked in the order of workflow registration, so that
 // the latest workflow instance is always used for the given reference.
-// The returned replaced flag reports whether an existing registration was
-// replaced (true) rather than a new one inserted (false); when replaced,
-// prevWorkflowID is the workflow ID the reference pointed to before the
-// upsert (it may equal the new workflow ID, or differ on a version update).
-func (s *workflowStore) upsertWorkflow(w *workflow) (prevWorkflowID string, replaced bool, err error) {
+//
+// It returns the evicted workflow: the registration that previously held this
+// owner/name/tag reference (nil when the reference was new). The eviction is
+// determined atomically under the store lock so the caller can meter the
+// replaced resource without a separate, racy pre-read. The evicted workflow's
+// WorkflowID may equal the new one (a same-ID re-register, no level change) or
+// differ (a version update whose old resource_id must be released).
+func (s *workflowStore) upsertWorkflow(w *workflow) (evicted *workflow, err error) {
 	// Validate workflow fields
 	if err := validateWorkflowSelector(w.workflowSelector); err != nil {
-		return "", false, fmt.Errorf("invalid workflow selector: %w", err)
+		return nil, fmt.Errorf("invalid workflow selector: %w", err)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	prevWorkflowID, replaced = s.workflowReferenceToID[workflowReference{
+	ref := workflowReference{
 		workflowOwner: w.workflowSelector.WorkflowOwner,
 		workflowName:  w.workflowSelector.WorkflowName,
 		workflowTag:   w.workflowSelector.WorkflowTag,
-	}]
-	if replaced {
+	}
+	if prevWorkflowID, replaced := s.workflowReferenceToID[ref]; replaced {
 		reference := fmt.Sprintf("%s/%s/%s", w.workflowSelector.WorkflowOwner, w.workflowSelector.WorkflowName, w.workflowSelector.WorkflowTag)
 		s.lggr.Debugw("Updating existing workflow reference and removing previous workflow", "reference", reference, "prevWorkflowID", prevWorkflowID)
 		if oldW, ok := s.workflows[prevWorkflowID]; ok {
+			evicted = oldW
 			oldW.close()
 		}
 		delete(s.workflows, prevWorkflowID)
 	}
 	s.workflows[w.workflowSelector.WorkflowID] = w
-	s.workflowReferenceToID[workflowReference{
-		workflowOwner: w.workflowSelector.WorkflowOwner,
-		workflowName:  w.workflowSelector.WorkflowName,
-		workflowTag:   w.workflowSelector.WorkflowTag,
-	}] = w.workflowSelector.WorkflowID
-	return prevWorkflowID, replaced, nil
+	s.workflowReferenceToID[ref] = w.workflowSelector.WorkflowID
+	return evicted, nil
 }
 
 // validateWorkflowSelector validates the workflow selector fields

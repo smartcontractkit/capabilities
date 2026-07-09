@@ -1134,13 +1134,14 @@ func TestHandleGatewayMessage_NilRequest(t *testing.T) {
 // MeterSnapshot bodies are decoded with the correct type. Each MeterSnapshot
 // covers exactly one resource.
 type fakeMeterEmitter struct {
-	err       error
-	records   []*meteringpb.MeterRecord
-	snapshots []*meteringpb.MeterSnapshot
+	err           error
+	records       []*meteringpb.MeterRecord
+	recordDomains []string
+	snapshots     []*meteringpb.MeterSnapshot
 }
 
 func (f *fakeMeterEmitter) Emit(ctx context.Context, body []byte, attrKVs ...any) error {
-	if f.entity(attrKVs) == "metering.v1.MeterSnapshot" {
+	if f.attr(attrKVs, beholder.AttrKeyEntity) == "metering.v1.MeterSnapshot" {
 		var snapshot meteringpb.MeterSnapshot
 		if err := proto.Unmarshal(body, &snapshot); err != nil {
 			return err
@@ -1153,14 +1154,15 @@ func (f *fakeMeterEmitter) Emit(ctx context.Context, body []byte, attrKVs ...any
 		return err
 	}
 	f.records = append(f.records, &record)
+	f.recordDomains = append(f.recordDomains, f.attr(attrKVs, beholder.AttrKeyDomain))
 	return f.err
 }
 
-// entity returns the value of the beholder entity attribute from the
-// alternating key/value attrKVs slice, or "" if absent.
-func (f *fakeMeterEmitter) entity(attrKVs []any) string {
+// attr returns the value of a beholder attribute by key from the alternating
+// key/value attrKVs slice, or "" if absent.
+func (f *fakeMeterEmitter) attr(attrKVs []any, key string) string {
 	for i := 0; i+1 < len(attrKVs); i += 2 {
-		if k, ok := attrKVs[i].(string); ok && k == beholder.AttrKeyEntity {
+		if k, ok := attrKVs[i].(string); ok && k == key {
 			if v, ok := attrKVs[i+1].(string); ok {
 				return v
 			}
@@ -1248,7 +1250,7 @@ func meterTestRegistrationInput() WorkflowRegistrationInput {
 	}
 }
 
-func TestRegisterWorkflow_MetersReserveThenUpdate(t *testing.T) {
+func TestRegisterWorkflow_RegisterThenSameIDReRegister(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, emitter := setupWithMeterEmitter(t, lggr, nil)
 	input := meterTestRegistrationInput()
@@ -1257,10 +1259,11 @@ func TestRegisterWorkflow_MetersReserveThenUpdate(t *testing.T) {
 	err := handler.RegisterWorkflow(t.Context(), input, sendCh)
 	require.NoError(t, err)
 
-	// First registration reserves exactly once, with the full structured
-	// identity populated on the record.
-	require.Equal(t, []meteringpb.MeterAction{meteringpb.MeterAction_METER_ACTION_RESERVE}, emitter.actions())
+	// First registration bills a single +1 UPDATE delta with the full
+	// structured identity populated on the record.
+	require.Equal(t, []meteringpb.MeterAction{meteringpb.MeterAction_METER_ACTION_UPDATE}, emitter.actions())
 	record := emitter.records[0]
+	require.Equal(t, "cll-meter", emitter.recordDomains[0])
 	id := record.GetIdentity()
 	require.Equal(t, testBaseIdentity.Product, id.GetProduct())
 	require.Equal(t, testBaseIdentity.Tenant, id.GetTenant())
@@ -1271,22 +1274,25 @@ func TestRegisterWorkflow_MetersReserveThenUpdate(t *testing.T) {
 	require.Equal(t, testBaseIdentity.NodeID(), id.GetDon().GetNodeId())
 	require.Equal(t, meterService, id.GetService())
 	require.Equal(t, meterResource, id.GetResourcePool())
+	// The metering identity DON and events.KeyDonID label derive from the same
+	// donID resolver, so they cannot diverge.
+	require.Equal(t, handler.donID(input.Metadata.WorkflowDONID), id.GetDon().GetDonId())
 	require.Equal(t, meterResourceType, record.GetUtilizations()[0].GetResourceType())
 	// resource_id is the workflow ID (HTTP registrations are workflow-scoped).
 	require.Equal(t, testWorkflowID, record.GetUtilizations()[0].GetResourceId())
 	require.Equal(t, "1", record.GetUtilizations()[0].GetValue())
+	require.NotEmpty(t, record.GetUtilizations()[0].GetEventId(), "event_id is stamped per emission")
 
-	// Re-registering the same workflow emits UPDATE, not a second RESERVE.
+	// Re-registering the SAME workflow ID is not a level change and emits
+	// nothing (no RESERVE/UPDATE): the durable resource is unchanged.
 	sendCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 	err = handler.RegisterWorkflow(t.Context(), input, sendCh2)
 	require.NoError(t, err)
-	require.Equal(t, []meteringpb.MeterAction{
-		meteringpb.MeterAction_METER_ACTION_RESERVE,
-		meteringpb.MeterAction_METER_ACTION_UPDATE,
-	}, emitter.actions())
+	require.Equal(t, []meteringpb.MeterAction{meteringpb.MeterAction_METER_ACTION_UPDATE}, emitter.actions(),
+		"same-ID re-register emits no additional delta")
 }
 
-func TestRegisterWorkflow_VersionUpdate_MetersReleaseThenReserve(t *testing.T) {
+func TestRegisterWorkflow_VersionUpdate_MetersNegativeThenPositiveDelta(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, emitter := setupWithMeterEmitter(t, lggr, nil)
 
@@ -1296,34 +1302,43 @@ func TestRegisterWorkflow_VersionUpdate_MetersReleaseThenReserve(t *testing.T) {
 	require.NoError(t, handler.RegisterWorkflow(t.Context(), inputA, sendChA))
 
 	// Re-registering the same owner/name/tag reference with a NEW workflow ID
-	// is a version update: the previous workflow's reservation is released
-	// before the new one is reserved, so the old reservation cannot leak.
+	// is a version update: the previous workflow's resource is billed -1 before
+	// the new one is billed +1, so the old resource cannot leak.
 	inputB := meterTestRegistrationInput()
 	inputB.WorkflowSelector.WorkflowID = testWorkflowID2
 	sendChB := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 	require.NoError(t, handler.RegisterWorkflow(t.Context(), inputB, sendChB))
 
 	require.Equal(t, []meteringpb.MeterAction{
-		meteringpb.MeterAction_METER_ACTION_RESERVE,
-		meteringpb.MeterAction_METER_ACTION_RELEASE,
-		meteringpb.MeterAction_METER_ACTION_RESERVE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
 	}, emitter.actions())
 
-	// RESERVE(A) anchors the old workflow ID via utilization.resource_id.
-	reserveA := emitter.records[0]
-	require.Equal(t, testWorkflowID1, reserveA.GetUtilizations()[0].GetResourceId())
+	// +1 for the old workflow ID (via utilization.resource_id).
+	registerA := emitter.records[0]
+	require.Equal(t, testWorkflowID1, registerA.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "1", registerA.GetUtilizations()[0].GetValue())
 
-	// RELEASE targets the PREVIOUS workflow ID under the same owner; its
-	// utilization.resource_id is that previous workflow ID.
+	// -1 targets the PREVIOUS (evicted) workflow ID.
 	release := emitter.records[1]
 	require.Equal(t, testWorkflowID1, release.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "-1", release.GetUtilizations()[0].GetValue())
 
-	// The trailing RESERVE anchors the new workflow ID.
-	reserveB := emitter.records[2]
-	require.Equal(t, testWorkflowID2, reserveB.GetUtilizations()[0].GetResourceId())
+	// +1 for the new workflow ID.
+	registerB := emitter.records[2]
+	require.Equal(t, testWorkflowID2, registerB.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "1", registerB.GetUtilizations()[0].GetValue())
+
+	// event_ids are unique across all three emissions.
+	ids := map[string]struct{}{}
+	for _, r := range emitter.records {
+		ids[r.GetUtilizations()[0].GetEventId()] = struct{}{}
+	}
+	require.Len(t, ids, 3, "each emission gets a distinct event_id")
 }
 
-func TestUnregisterWorkflow_MetersRelease(t *testing.T) {
+func TestUnregisterWorkflow_MetersNegativeDelta(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, emitter := setupWithMeterEmitter(t, lggr, nil)
 
@@ -1334,13 +1349,15 @@ func TestUnregisterWorkflow_MetersRelease(t *testing.T) {
 	err = handler.UnregisterWorkflow(t.Context(), testWorkflowID)
 	require.NoError(t, err)
 	require.Equal(t, []meteringpb.MeterAction{
-		meteringpb.MeterAction_METER_ACTION_RESERVE,
-		meteringpb.MeterAction_METER_ACTION_RELEASE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
 	}, emitter.actions())
 	release := emitter.records[1]
 	require.Equal(t, testWorkflowID, release.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "-1", release.GetUtilizations()[0].GetValue())
+	require.NotEqual(t, emitter.records[0].GetUtilizations()[0].GetEventId(), release.GetUtilizations()[0].GetEventId())
 
-	// Unregistering an absent workflow fails and must not emit RELEASE.
+	// Unregistering an absent workflow fails and must not emit a delta.
 	err = handler.UnregisterWorkflow(t.Context(), testWorkflowID)
 	require.Error(t, err)
 	require.Len(t, emitter.records, 2)
@@ -1427,9 +1444,11 @@ func TestSnapshot_EmitsOneEntryPerActiveWorkflow(t *testing.T) {
 	require.Equal(t, "1", r2.GetUtilization()[0].GetValue())
 }
 
-// TestClose_EmitsReleasePerActiveWorkflow asserts graceful close drains a
-// RELEASE for every still-active workflow so reservations do not leak.
-func TestClose_EmitsReleasePerActiveWorkflow(t *testing.T) {
+// TestClose_EmitsNoShutdownRecords asserts a graceful close emits NO meter
+// records. Process-lifecycle emissions are deleted by design: an active
+// workflow is released by its absence from the next snapshot, not by a
+// close-time drain.
+func TestClose_EmitsNoShutdownRecords(t *testing.T) {
 	lggr := logger.Test(t)
 	emitter := &fakeMeterEmitter{}
 	cfg := ServiceConfig{MetadataBatchSize: 10, MaxAuthorizedKeysPerWorkflow: 3}
@@ -1449,21 +1468,10 @@ func TestClose_EmitsReleasePerActiveWorkflow(t *testing.T) {
 	registerMeterWorkflow(t, handler, testWorkflowID1, testWorkflowOwner1)
 	registerMeterWorkflow(t, handler, testWorkflowID2, testWorkflowOwner2)
 
-	// Drop the lifecycle RESERVE records; assert only on the close drain.
+	// Drop the register deltas; assert the close path emits nothing.
 	emitter.records = nil
 	require.NoError(t, handler.Close())
-
-	require.Equal(t, []meteringpb.MeterAction{
-		meteringpb.MeterAction_METER_ACTION_RELEASE,
-		meteringpb.MeterAction_METER_ACTION_RELEASE,
-	}, emitter.actions())
-
-	released := map[string]bool{}
-	for _, r := range emitter.records {
-		released[r.GetUtilizations()[0].GetResourceId()] = true
-	}
-	require.True(t, released[testWorkflowID1])
-	require.True(t, released[testWorkflowID2])
+	require.Empty(t, emitter.records, "graceful close must emit no meter records")
 }
 
 // TestDONIDFallback_UsesWorkflowDON asserts that when the host did not inject a
@@ -1490,6 +1498,8 @@ func TestDONIDFallback_UsesWorkflowDON(t *testing.T) {
 
 	require.Len(t, emitter.records, 1)
 	require.Equal(t, "99", emitter.records[0].GetIdentity().GetDon().GetDonId())
+	// Metering identity DON and events.KeyDonID label share the same resolver.
+	require.Equal(t, handler.donID(input.Metadata.WorkflowDONID), emitter.records[0].GetIdentity().GetDon().GetDonId())
 }
 
 // TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner tests that the workflowOwner

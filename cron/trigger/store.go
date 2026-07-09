@@ -14,6 +14,7 @@ type CronStore interface {
 	Read(triggerID string) (value cronTrigger, ok bool)
 	ReadAll() (values map[string]cronTrigger)
 	Write(triggerID string, value cronTrigger)
+	WriteIfPresent(triggerID string, value cronTrigger) (written bool)
 	Delete(triggerID string)
 }
 
@@ -44,6 +45,23 @@ func (cs *cronStore) Write(triggerID string, value cronTrigger) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.triggers[triggerID] = value
+}
+
+// WriteIfPresent updates triggerID only when it currently exists, performing
+// the existence check and the write atomically under the store lock. It returns
+// false without writing when the trigger has already been deleted (e.g. by a
+// concurrent UnregisterTrigger). The cron task callback uses this so a tick that
+// began before an unregister cannot re-insert ("resurrect") a trigger that was
+// just removed: snapshot absence is the release signal, so a resurrected entry
+// would keep the resource billed after the caller stopped it.
+func (cs *cronStore) WriteIfPresent(triggerID string, value cronTrigger) (written bool) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if _, ok := cs.triggers[triggerID]; !ok {
+		return false
+	}
+	cs.triggers[triggerID] = value
+	return true
 }
 
 func (cs *cronStore) Delete(triggerID string) {

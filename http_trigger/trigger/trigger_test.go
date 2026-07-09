@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
@@ -56,7 +57,7 @@ func TestService_RegisterTrigger(t *testing.T) {
 			mockHandler := &mockConnectorHandler{
 				registerErr: tc.registerErr,
 			}
-			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, MeteringConfig{})
+			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, resourcemanager.Config{})
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
 			gc := mockedGatewayConnector(t)
 			err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
@@ -118,7 +119,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 			mockHandler := &mockConnectorHandler{
 				unregisterErr: tt.handlerErr,
 			}
-			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, MeteringConfig{})
+			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, resourcemanager.Config{})
 			cfg := "{}"
 			gc := mockedGatewayConnector(t)
 			err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
@@ -141,7 +142,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 }
 
 func TestService_Initialise_EmptyConfig(t *testing.T) {
-	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, MeteringConfig{})
+	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, resourcemanager.Config{})
 	gc := mockedGatewayConnector(t)
 
 	err := svc.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
@@ -157,7 +158,7 @@ func TestService_Initialise_EmptyConfig(t *testing.T) {
 
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
-	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, MeteringConfig{})
+	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)}, resourcemanager.Config{})
 	cfg := "{}"
 	gc := mockedGatewayConnector(t)
 	err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{

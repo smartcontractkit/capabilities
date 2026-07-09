@@ -50,10 +50,11 @@ func testBaseIdentity() resourcemanager.ResourceIdentity {
 // per active resource (no single Snapshot envelope), so snapshots accumulates
 // one message per resource.
 type fakeMeterEmitter struct {
-	err       error
-	emitCalls int
-	records   []*meteringpb.MeterRecord
-	snapshots []*meteringpb.MeterSnapshot
+	err           error
+	emitCalls     int
+	records       []*meteringpb.MeterRecord
+	recordDomains []string
+	snapshots     []*meteringpb.MeterSnapshot
 }
 
 func (f *fakeMeterEmitter) Emit(_ context.Context, body []byte, attrKVs ...any) error {
@@ -74,7 +75,21 @@ func (f *fakeMeterEmitter) Emit(_ context.Context, body []byte, attrKVs ...any) 
 		return err
 	}
 	f.records = append(f.records, &record)
+	f.recordDomains = append(f.recordDomains, attrString(attrKVs, beholder.AttrKeyDomain))
 	return nil
+}
+
+// attrString returns the string value for key in the alternating key/value
+// attrs the ResourceManager passes to Emit, or "" if absent.
+func attrString(attrKVs []any, key string) string {
+	for i := 0; i+1 < len(attrKVs); i += 2 {
+		if attrKVs[i] == key {
+			if v, ok := attrKVs[i+1].(string); ok {
+				return v
+			}
+		}
+	}
+	return ""
 }
 
 // isSnapshotEmit reports whether the emitter attributes name the MeterSnapshot
@@ -158,7 +173,7 @@ func expectedPhysicalFilterID(t *testing.T, input *evmcappb.FilterLogTriggerRequ
 	return physicalFilterID(testChainSelector, addrs, sigs, h2, h3, h4)
 }
 
-func TestLogTriggerMetering_ReserveOnRegister(t *testing.T) {
+func TestLogTriggerMetering_RegisterEmitsPositiveDelta(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
@@ -173,10 +188,18 @@ func TestLogTriggerMetering_ReserveOnRegister(t *testing.T) {
 	assertBaseIdentity(t, record.GetIdentity())
 	physID := expectedPhysicalFilterID(t, meteringTestInput())
 	require.Equal(t, physID, record.GetUtilizations()[0].GetResourceId(), "resource_id must be the physical filter content hash")
-	require.Equal(t, meteringpb.MeterAction_METER_ACTION_RESERVE, record.GetAction())
+	// Producers emit only signed-delta UPDATE records; a fresh registration is
+	// the physical filter's 0->1 activation and bills +addressCount.
+	require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, record.GetAction())
 	require.Len(t, record.GetUtilizations(), 1)
-	require.Equal(t, "2", record.GetUtilizations()[0].GetValue(), "RESERVE value must equal the filter address count")
+	require.Equal(t, "2", record.GetUtilizations()[0].GetValue(), "activation delta must equal the filter address count")
 	require.Equal(t, MeteringResourceType, record.GetUtilizations()[0].GetResourceType())
+	require.NotEmpty(t, record.GetUtilizations()[0].GetEventId(), "event_id is stamped per emission")
+	// The record carries the cll-meter billing domain.
+	require.Equal(t, "cll-meter", emitter.recordDomains[0])
+	// The metering identity DON and the events.KeyDonID label derive from the
+	// same resolveDONID, so they cannot diverge.
+	require.Equal(t, service.resolveDONID(meta.WorkflowDonID), record.GetIdentity().GetDon().GetDonId())
 }
 
 func TestLogTriggerMetering_DonIDFallbackToWorkflowDon(t *testing.T) {
@@ -225,14 +248,14 @@ func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
 	assertRelease := func(t *testing.T, service *LogTriggerService, record *meteringpb.MeterRecord) {
 		t.Helper()
 		assertBaseIdentity(t, record.GetIdentity())
-		require.Equal(t, meteringpb.MeterAction_METER_ACTION_RELEASE, record.GetAction())
+		require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, record.GetAction())
 		require.Len(t, record.GetUtilizations(), 1)
-		require.Equal(t, "2", record.GetUtilizations()[0].GetValue(), "RELEASE must carry the same value that was reserved")
+		require.Equal(t, "-2", record.GetUtilizations()[0].GetValue(), "the 1->0 release delta negates the activation value")
 		physID := expectedPhysicalFilterID(t, meteringTestInput())
 		require.Equal(t, physID, record.GetUtilizations()[0].GetResourceId())
 	}
 
-	t.Run("release pairs the reserve", func(t *testing.T) {
+	t.Run("release negates the activation", func(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
@@ -243,11 +266,13 @@ func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
 		require.NoError(t, service.UnregisterLogTrigger(t.Context(), triggerID, meta, &evmcappb.FilterLogTriggerRequest{}))
 
 		require.Len(t, emitter.records, 2)
-		require.Equal(t, meteringpb.MeterAction_METER_ACTION_RESERVE, emitter.records[0].GetAction())
+		require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, emitter.records[0].GetAction())
+		require.Equal(t, "2", emitter.records[0].GetUtilizations()[0].GetValue())
 		assertRelease(t, service, emitter.records[1])
-		require.Equal(t, emitter.records[0].GetUtilizations()[0].GetValue(), emitter.records[1].GetUtilizations()[0].GetValue())
 		require.Equal(t, emitter.records[0].GetUtilizations()[0].GetResourceId(), emitter.records[1].GetUtilizations()[0].GetResourceId(),
-			"RESERVE and RELEASE must share one physical resource_id")
+			"activation and release must share one physical resource_id")
+		require.NotEqual(t, emitter.records[0].GetUtilizations()[0].GetEventId(), emitter.records[1].GetUtilizations()[0].GetEventId(),
+			"each emission gets a distinct event_id")
 	})
 
 	t.Run("release emitted even when UnregisterLogTracking fails", func(t *testing.T) {
@@ -258,7 +283,7 @@ func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
 		service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 
 		registerTrigger(t, service)
-		// The reservation is released here (from the stashed count) before the
+		// The -delta is emitted here (from the stashed count) before the
 		// UnregisterLogTracking RPC. If the RPC fails the filter is orphaned at
 		// the log poller; the cleanup thread unregisters it silently, emitting
 		// no further metering record.
@@ -356,10 +381,11 @@ func TestPhysicalFilterID_Canonicalization(t *testing.T) {
 		require.NotEqual(t, id1, id2)
 	})
 
-	t.Run("identical filters from different workflows/triggers share one id", func(t *testing.T) {
+	t.Run("identical filters from different workflows/triggers share one billed resource", func(t *testing.T) {
 		// physicalFilterID takes only physical criteria; workflow/trigger are not
-		// inputs. Two registrations with identical criteria therefore collide by
-		// construction, which this asserts end to end through the register path.
+		// inputs. Two registrations with identical criteria collide by
+		// construction, so only the first (the 0->1 activation) bills a delta;
+		// the second shares the already-active physical filter and emits nothing.
 		evmService := initMocks(t)
 		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Twice()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Twice()
@@ -372,12 +398,51 @@ func TestPhysicalFilterID_Canonicalization(t *testing.T) {
 			capabilities.RequestMetadata{WorkflowID: "wf-2", WorkflowOwner: "0xOther"}, meteringTestInput())
 		require.NoError(t, err)
 
-		require.Len(t, emitter.records, 2)
-		require.Equal(t,
-			emitter.records[0].GetUtilizations()[0].GetResourceId(),
-			emitter.records[1].GetUtilizations()[0].GetResourceId(),
-			"identical physical filters must share one resource_id across workflows/triggers")
+		require.Len(t, emitter.records, 1, "the shared physical filter is billed once (only the 0->1 activation)")
+		require.Equal(t, expectedPhysicalFilterID(t, meteringTestInput()), emitter.records[0].GetUtilizations()[0].GetResourceId())
 	})
+}
+
+// TestLogTriggerMetering_SharedFilterRefcount asserts the derived 0<->1 refcount
+// billing for a physical filter shared by two triggers: the first register bills
+// +addressCount (0->1), the second register bills nothing (1->2), the first
+// unregister bills nothing (2->1), and the last unregister bills -addressCount
+// (1->0).
+func TestLogTriggerMetering_SharedFilterRefcount(t *testing.T) {
+	evmService := initMocks(t)
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Twice()
+	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Twice()
+	evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil)
+	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+
+	physID := expectedPhysicalFilterID(t, meteringTestInput())
+
+	// trigger-A: 0->1 activation bills +2.
+	_, err := service.RegisterLogTrigger(t.Context(), "trigger-A",
+		capabilities.RequestMetadata{WorkflowID: "wf-1", WorkflowOwner: "0xOwner"}, meteringTestInput())
+	require.NoError(t, err)
+	require.Len(t, emitter.records, 1)
+	require.Equal(t, "2", emitter.records[0].GetUtilizations()[0].GetValue())
+
+	// trigger-B shares the same physical filter: 1->2, bills nothing.
+	_, err = service.RegisterLogTrigger(t.Context(), "trigger-B",
+		capabilities.RequestMetadata{WorkflowID: "wf-2", WorkflowOwner: "0xOther"}, meteringTestInput())
+	require.NoError(t, err)
+	require.Len(t, emitter.records, 1, "a second holder of the same physical filter bills nothing")
+
+	// Unregister trigger-A: 2->1, still held by trigger-B, bills nothing.
+	require.NoError(t, service.UnregisterLogTrigger(t.Context(), "trigger-A", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{}))
+	require.Len(t, emitter.records, 1, "releasing one of two holders bills nothing")
+
+	// Unregister trigger-B: 1->0, bills -2.
+	require.NoError(t, service.UnregisterLogTrigger(t.Context(), "trigger-B", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{}))
+	require.Len(t, emitter.records, 2)
+	require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, emitter.records[1].GetAction())
+	require.Equal(t, "-2", emitter.records[1].GetUtilizations()[0].GetValue())
+	require.Equal(t, physID, emitter.records[1].GetUtilizations()[0].GetResourceId())
+
+	// All emitted event_ids are distinct.
+	require.NotEqual(t, emitter.records[0].GetUtilizations()[0].GetEventId(), emitter.records[1].GetUtilizations()[0].GetEventId())
 }
 
 // TestLogTriggerMetering_Snapshot drives one snapshot tick and asserts one
@@ -447,40 +512,55 @@ func TestLogTriggerMetering_Snapshot_NothingActive(t *testing.T) {
 	require.Empty(t, emitter.snapshots, "an empty store emits no MeterSnapshot")
 }
 
-// TestLogTriggerMetering_ReleaseOnGracefulClose asserts that closing the service
-// releases every still-active filter so a clean shutdown is not seen as a leak.
-func TestLogTriggerMetering_ReleaseOnGracefulClose(t *testing.T) {
+// TestLogTriggerMetering_NoShutdownEmissions asserts that a graceful Close emits
+// NO meter records. Process-lifecycle emissions are deleted by design: an active
+// filter is released by its absence from the next snapshot, not by a close-time
+// drain.
+func TestLogTriggerMetering_NoShutdownEmissions(t *testing.T) {
+	evmService := initMocks(t)
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
+	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+	evmService.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
+	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	require.NoError(t, service.Start(t.Context()))
+
+	_, err := service.RegisterLogTrigger(t.Context(), triggerID,
+		capabilities.RequestMetadata{WorkflowID: "wf", WorkflowOwner: "0xOwner"}, meteringTestInput())
+	require.NoError(t, err)
+	require.Len(t, emitter.records, 1, "registration bills a +delta")
+
+	recordsBefore := len(emitter.records)
+	require.NoError(t, service.Close())
+	require.Len(t, emitter.records, recordsBefore, "graceful close must emit no meter records")
+}
+
+// TestLogTriggerMetering_SnapshotDedup asserts GetUtilization emits one entry
+// per DISTINCT physical filter (not per trigger registration): two triggers
+// sharing one physicalFilterID snapshot as a single resource.
+func TestLogTriggerMetering_SnapshotDedup(t *testing.T) {
 	mockEVM := evmmock.NewEVMService(t)
 	store := NewLogTriggerStore()
-	service, emitter, _ := newMeteredTriggerObject(t, mockEVM, store)
+	service, emitter, clock := newMeteredTriggerObject(t, mockEVM, store)
 
-	physA := expectedPhysicalFilterID(t, meteringTestInput())
+	physShared := expectedPhysicalFilterID(t, meteringTestInput())
+	// Two triggers share one physical filter.
 	store.Write("trigger-A", logTriggerState{filter: filter{
-		filterID:             service.generateFilterID("trigger-A"),
-		physicalFilterID:     physA,
-		reservedAddressCount: 2,
-		donID:                "42",
+		filterID: service.generateFilterID("trigger-A"), physicalFilterID: physShared, reservedAddressCount: 2, donID: "42",
 	}})
 	store.Write("trigger-B", logTriggerState{filter: filter{
-		filterID:             service.generateFilterID("trigger-B"),
-		physicalFilterID:     "physB",
-		reservedAddressCount: 5,
-		donID:                "42",
+		filterID: service.generateFilterID("trigger-B"), physicalFilterID: physShared, reservedAddressCount: 2, donID: "42",
 	}})
 
-	service.releaseActiveFiltersOnClose(t.Context())
+	unregister := service.resourceManager.Register(service)
+	t.Cleanup(unregister)
+	servicetest.Run(t, service.resourceManager)
+	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
+	clock.Advance(time.Minute)
 
-	require.Len(t, emitter.records, 2, "one RELEASE per active filter on graceful close")
-	for _, record := range emitter.records {
-		require.Equal(t, meteringpb.MeterAction_METER_ACTION_RELEASE, record.GetAction())
-		assertBaseIdentity(t, record.GetIdentity())
-	}
-	// The records carry no label metadata, so pair them by their physical
-	// resource_id (the only per-filter discriminator on the record).
-	byResourceID := map[string]*meteringpb.MeterRecord{}
-	for _, record := range emitter.records {
-		byResourceID[record.GetUtilizations()[0].GetResourceId()] = record
-	}
-	require.Equal(t, "2", byResourceID[physA].GetUtilizations()[0].GetValue())
-	require.Equal(t, "5", byResourceID["physB"].GetUtilizations()[0].GetValue())
+	require.Eventually(t, func() bool {
+		return len(emitter.snapshots) == 1
+	}, time.Second, time.Millisecond)
+	require.Len(t, emitter.snapshots, 1, "two triggers sharing one physical filter snapshot once")
+	require.Equal(t, physShared, emitter.snapshots[0].GetUtilization()[0].GetResourceId())
+	require.Equal(t, "2", emitter.snapshots[0].GetUtilization()[0].GetValue())
 }

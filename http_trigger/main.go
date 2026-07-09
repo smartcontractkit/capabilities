@@ -9,24 +9,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 )
 
-func newMeteringConfig(env loop.EnvConfig) trigger.MeteringConfig {
-	return trigger.MeteringConfig{
-		MeterRecordsEnabled:   env.MeterRecordsEnabled,
-		MeterSnapshotsEnabled: env.MeterSnapshotsEnabled,
-		Deployment: resourcemanager.DeploymentIdentity{
-			Product:         env.MeterProduct,
-			Tenant:          env.MeterTenant,
-			NumericTenantID: env.MeterNumericTenantID,
-			Environment:     env.MeterEnvironment,
-			Zone:            env.MeterZone,
-			NodeID:          env.MeterNodeID,
-		},
-	}
-}
-
 func main() {
 	loopserver.ServeNew(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
-		meteringCfg := newMeteringConfig(s.EnvConfig)
+		// ConfigFromEnv is the single, canonical loop-env -> metering mapping
+		// (enable flags, beholder emitter, snapshot interval, deployment
+		// identity); no per-main copy of that mapping.
+		meteringCfg := resourcemanager.ConfigFromEnv(&s.EnvConfig)
 		svc := trigger.NewService(s.Logger, s.LimitsFactory, meteringCfg)
 		return server.NewHTTPServer(svc)
 	})
