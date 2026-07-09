@@ -2,6 +2,13 @@ module github.com/smartcontractkit/capabilities/chain_capabilities/evm
 
 go 1.26.2
 
+// Unpublished local stack for SHARED-2709; drop once chainlink-common and
+// chainlink-protos/metering/go are tagged.
+replace (
+	github.com/smartcontractkit/chainlink-common => ../../../chainlink-common
+	github.com/smartcontractkit/chainlink-protos/metering/go => ../../../chainlink-protos/metering/go
+)
+
 require (
 	github.com/ethereum/go-ethereum v1.17.0
 	github.com/google/go-cmp v0.7.0

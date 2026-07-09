@@ -2,6 +2,13 @@ module github.com/smartcontractkit/capabilities/integration_tests
 
 go 1.26.4
 
+// Unpublished local stack for SHARED-2709; drop once chainlink-common and
+// chainlink-protos/metering/go are tagged.
+replace (
+	github.com/smartcontractkit/chainlink-common => ../../chainlink-common
+	github.com/smartcontractkit/chainlink-protos/metering/go => ../../chainlink-protos/metering/go
+)
+
 replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ../loadtestwritetarget
 
 replace github.com/smartcontractkit/capabilities/http_action => ../http_action

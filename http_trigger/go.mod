@@ -2,6 +2,13 @@ module github.com/smartcontractkit/capabilities/http_trigger
 
 go 1.26.2
 
+// Unpublished local stack for SHARED-2709; drop once chainlink-common and
+// chainlink-protos/metering/go are tagged.
+replace (
+	github.com/smartcontractkit/chainlink-common => ../../chainlink-common
+	github.com/smartcontractkit/chainlink-protos/metering/go => ../../chainlink-protos/metering/go
+)
+
 require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
