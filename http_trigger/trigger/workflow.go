@@ -52,26 +52,30 @@ func newWorkflowStore(lggr logger.Logger) *workflowStore {
 // workflow reference (owner/name/tag combination) with new workflow instance.
 // upsertWorkflow should be invoked in the order of workflow registration, so that
 // the latest workflow instance is always used for the given reference.
-func (s *workflowStore) upsertWorkflow(w *workflow) error {
+// The returned replaced flag reports whether an existing registration was
+// replaced (true) rather than a new one inserted (false); when replaced,
+// prevWorkflowID is the workflow ID the reference pointed to before the
+// upsert (it may equal the new workflow ID, or differ on a version update).
+func (s *workflowStore) upsertWorkflow(w *workflow) (prevWorkflowID string, replaced bool, err error) {
 	// Validate workflow fields
 	if err := validateWorkflowSelector(w.workflowSelector); err != nil {
-		return fmt.Errorf("invalid workflow selector: %w", err)
+		return "", false, fmt.Errorf("invalid workflow selector: %w", err)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	workflowID, exists := s.workflowReferenceToID[workflowReference{
+	prevWorkflowID, replaced = s.workflowReferenceToID[workflowReference{
 		workflowOwner: w.workflowSelector.WorkflowOwner,
 		workflowName:  w.workflowSelector.WorkflowName,
 		workflowTag:   w.workflowSelector.WorkflowTag,
 	}]
-	if exists {
+	if replaced {
 		reference := fmt.Sprintf("%s/%s/%s", w.workflowSelector.WorkflowOwner, w.workflowSelector.WorkflowName, w.workflowSelector.WorkflowTag)
-		s.lggr.Debugw("Updating existing workflow reference and removing previous workflow", "reference", reference, "prevWorkflowID", workflowID)
-		if oldW, ok := s.workflows[workflowID]; ok {
+		s.lggr.Debugw("Updating existing workflow reference and removing previous workflow", "reference", reference, "prevWorkflowID", prevWorkflowID)
+		if oldW, ok := s.workflows[prevWorkflowID]; ok {
 			oldW.close()
 		}
-		delete(s.workflows, workflowID)
+		delete(s.workflows, prevWorkflowID)
 	}
 	s.workflows[w.workflowSelector.WorkflowID] = w
 	s.workflowReferenceToID[workflowReference{
@@ -79,7 +83,7 @@ func (s *workflowStore) upsertWorkflow(w *workflow) error {
 		workflowName:  w.workflowSelector.WorkflowName,
 		workflowTag:   w.workflowSelector.WorkflowTag,
 	}] = w.workflowSelector.WorkflowID
-	return nil
+	return prevWorkflowID, replaced, nil
 }
 
 // validateWorkflowSelector validates the workflow selector fields

@@ -134,8 +134,10 @@ func TestWorkflowStore_upsertWorkflow(t *testing.T) {
 	lggr := logger.Test(t)
 	store := newWorkflowStore(lggr)
 	wf, _ := testWorkflow()
-	err := store.upsertWorkflow(wf)
+	prevWorkflowID, replaced, err := store.upsertWorkflow(wf)
 	require.NoError(t, err)
+	require.False(t, replaced)
+	require.Empty(t, prevWorkflowID)
 
 	w, exists := store.getWorkflowByID(wf.workflowSelector.WorkflowID)
 	require.True(t, exists)
@@ -257,7 +259,7 @@ func TestWorkflowStore_upsertWorkflow_ValidationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wf := newWorkflow(tt.selector, authorizedKeys, sendCh)
-			err := store.upsertWorkflow(wf)
+			_, _, err := store.upsertWorkflow(wf)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.wantErr)
 		})
@@ -273,12 +275,16 @@ func TestWorkflowStore_upsertWorkflow_Duplicate(t *testing.T) {
 	w2, _ := testWorkflow()
 
 	// Add first workflow
-	err := store.upsertWorkflow(w1)
+	prevWorkflowID, replaced, err := store.upsertWorkflow(w1)
 	require.NoError(t, err)
+	require.False(t, replaced)
+	require.Empty(t, prevWorkflowID)
 
 	// Add second workflow with same ID (this should replace the first)
-	err = store.upsertWorkflow(w2)
+	prevWorkflowID, replaced, err = store.upsertWorkflow(w2)
 	require.NoError(t, err)
+	require.True(t, replaced)
+	require.Equal(t, w1.workflowSelector.WorkflowID, prevWorkflowID)
 
 	// Verify the workflow was replaced - since both have same ID/reference,
 	// the second one should be present
@@ -294,7 +300,7 @@ func TestWorkflowStore_removeWorkflow_Success(t *testing.T) {
 	lggr := logger.Test(t)
 	store := newWorkflowStore(lggr)
 	w, _ := testWorkflow()
-	err := store.upsertWorkflow(w)
+	_, _, err := store.upsertWorkflow(w)
 	require.NoError(t, err)
 
 	wf, exists := store.getWorkflowByID(w.workflowSelector.WorkflowID)
@@ -393,11 +399,11 @@ func TestWorkflowStore_GetWorkflows_Multiple(t *testing.T) {
 	wf2 := newWorkflow(wfSelector2, authorizedKeys, sendCh2)
 	wf3 := newWorkflow(wfSelector3, authorizedKeys, sendCh3)
 
-	err := store.upsertWorkflow(wf1)
+	_, _, err := store.upsertWorkflow(wf1)
 	require.NoError(t, err)
-	err = store.upsertWorkflow(wf2)
+	_, _, err = store.upsertWorkflow(wf2)
 	require.NoError(t, err)
-	err = store.upsertWorkflow(wf3)
+	_, _, err = store.upsertWorkflow(wf3)
 	require.NoError(t, err)
 
 	// Get all workflows
@@ -421,7 +427,7 @@ func TestWorkflowStore_getWorkflowIDByReference_Success(t *testing.T) {
 	lggr := logger.Test(t)
 	store := newWorkflowStore(lggr)
 	wf, _ := testWorkflow()
-	err := store.upsertWorkflow(wf)
+	_, _, err := store.upsertWorkflow(wf)
 	require.NoError(t, err)
 
 	workflowID, exists := store.getWorkflowIDByReference(
@@ -538,8 +544,10 @@ func TestWorkflowStore_upsertWorkflow_ReplaceWithSameReference(t *testing.T) {
 	wf2 := newWorkflow(selector2, authorizedKeys, sendCh2)
 
 	// Add first workflow
-	err := store.upsertWorkflow(wf1)
+	prevWorkflowID, replaced, err := store.upsertWorkflow(wf1)
 	require.NoError(t, err)
+	require.False(t, replaced)
+	require.Empty(t, prevWorkflowID)
 
 	// Verify first workflow is there
 	workflow, exists := store.getWorkflowByID(testWorkflowID1)
@@ -551,9 +559,12 @@ func TestWorkflowStore_upsertWorkflow_ReplaceWithSameReference(t *testing.T) {
 	require.True(t, exists)
 	require.Equal(t, testWorkflowID1, workflowID)
 
-	// Add second workflow with same reference
-	err = store.upsertWorkflow(wf2)
+	// Add second workflow with same reference; the previous workflow ID is
+	// surfaced so callers can release its reservation.
+	prevWorkflowID, replaced, err = store.upsertWorkflow(wf2)
 	require.NoError(t, err)
+	require.True(t, replaced)
+	require.Equal(t, testWorkflowID1, prevWorkflowID)
 
 	// First workflow should be removed
 	_, exists = store.getWorkflowByID(testWorkflowID1)
@@ -576,7 +587,7 @@ func TestWorkflowStore_removeWorkflow_RemovesReference(t *testing.T) {
 	lggr := logger.Test(t)
 	store := newWorkflowStore(lggr)
 	wf, _ := testWorkflow()
-	err := store.upsertWorkflow(wf)
+	_, _, err := store.upsertWorkflow(wf)
 	require.NoError(t, err)
 
 	// Verify workflow and reference exist
@@ -735,7 +746,7 @@ func TestWorkflowStore_getWorkflowIDByReference_PartialMatch(t *testing.T) {
 	lggr := logger.Test(t)
 	store := newWorkflowStore(lggr)
 	wf, _ := testWorkflow()
-	err := store.upsertWorkflow(wf)
+	_, _, err := store.upsertWorkflow(wf)
 	require.NoError(t, err)
 
 	// Test with wrong owner

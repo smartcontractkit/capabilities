@@ -12,7 +12,26 @@ import (
 )
 
 type filter struct {
-	filterID    string
+	filterID string
+	// physicalFilterID is the workflow-independent content hash of the filter's
+	// physical matching criteria (chain selector + canonicalized addresses,
+	// event sigs, and positional topics). It is the metering ResourceID and the
+	// RESERVE/RELEASE event identity, so the unregister, cleanup, snapshot, and
+	// graceful-close paths all reuse it from here without the request input.
+	physicalFilterID string
+	// reservedAddressCount is the number of filter addresses metered in the
+	// RESERVE record when the filter was registered. The matching RELEASE
+	// must carry the same value, and UnregisterLogTrigger ignores its request
+	// input, so the count is stashed here at registration.
+	reservedAddressCount int64
+	// donID is stashed from the registration RequestMetadata so the
+	// unregister/cleanup/snapshot/close paths can emit a metering record with
+	// the same identity as the RESERVE, without the original request. It is the
+	// resolved metering DON ID string (capability DON, or the consumer
+	// WorkflowDonID fallback when the host did not inject a capability DON);
+	// empty when neither is known.
+	donID       string
+	orgID       string
 	expressions []query.Expression
 	confidence  primitives.ConfidenceLevel
 }
