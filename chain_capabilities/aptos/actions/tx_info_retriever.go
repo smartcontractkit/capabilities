@@ -463,9 +463,8 @@ func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{})
 		return false
 	}
 
-	receiverHex, _ := arguments[0].(string)
-	expectedReceiverHex := hex.EncodeToString(thr.transmissionID.Receiver[:])
-	if strings.TrimPrefix(receiverHex, "0x") != expectedReceiverHex {
+	receiverHex, ok := arguments[0].(string)
+	if !ok || !receiverAddressesEqual(receiverHex, thr.transmissionID.Receiver) {
 		return false
 	}
 
@@ -476,4 +475,18 @@ func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{})
 	}
 
 	return true
+}
+
+// receiverAddressesEqual compares a hex-encoded receiver from chain tx arguments
+// against the expected 32-byte address. Aptos APIs may omit leading zero hex
+// digits (e.g. 0x0447... serializes as 0x4476...), so we parse both sides.
+// Incident: nodes 1-9 failed to match node 0's successful WriteReport tx because
+// arg[0] was returned without a leading zero hex digit. Example on-chain tx:
+// https://explorer.aptoslabs.com/txn/6208934644/userTxnOverview?network=mainnet
+func receiverAddressesEqual(receiverHex string, expected aptos_sdk.AccountAddress) bool {
+	var parsed aptos_sdk.AccountAddress
+	if err := parsed.ParseStringRelaxed(receiverHex); err != nil {
+		return false
+	}
+	return parsed == expected
 }
