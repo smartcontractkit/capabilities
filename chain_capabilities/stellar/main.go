@@ -76,7 +76,7 @@ func main() {
 			lggr:          s.Logger.Named(CapabilityName),
 			limitsFactory: s.LimitsFactory,
 		})
-	}, loop.WithOtelViews(consMetrics.MetricViews()))
+	}, loop.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
 }
 
 func (c *capabilityGRPCService) ChainSelector() uint64 {

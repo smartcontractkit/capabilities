@@ -5,12 +5,48 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/protobuf/proto"
 
 	commonbeholder "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
+
+// capDurationBucketBoundariesMs covers the full lifecycle of a Stellar write-report:
+// from fast read-contract calls (~10ms) through ledger confirmation wait times
+// (~5,000-30,000ms) and up to the max-retry timeout (~60,000ms).
+var capDurationBucketBoundariesMs = []float64{
+	10, 25, 50, 100, 250, 500,
+	1000, 2500, 5000,
+	10000, 20000, 30000, 60000,
+}
+
+// MetricViews returns OTel SDK views that override the default histogram bucket
+// boundaries for all Stellar capability _cap_duration instruments.
+func MetricViews() []sdkmetric.View {
+	metricNames := []string{
+		ns("read_contract_success") + "_cap_duration",
+		ns("read_contract_error") + "_cap_duration",
+		ns("write_report_success") + "_cap_duration",
+		ns("write_report_error") + "_cap_duration",
+		ns("write_report_duplicate_tx") + "_cap_duration",
+		ns("write_report_tx_info_retrieval_error") + "_cap_duration",
+		ns("write_report_successful_early_return") + "_cap_duration",
+		ns("write_report_invalid_transmission_state") + "_cap_duration",
+	}
+
+	views := make([]sdkmetric.View, 0, len(metricNames))
+	for _, name := range metricNames {
+		views = append(views, sdkmetric.NewView(
+			sdkmetric.Instrument{Name: name},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: capDurationBucketBoundariesMs,
+			}},
+		))
+	}
+	return views
+}
 
 var newMetricsCapBasic = capmonitoring.NewMetricsCapBasic
 
