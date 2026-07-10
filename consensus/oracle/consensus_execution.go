@@ -59,6 +59,8 @@ func CalculateOutcomeForObservations(
 			return handleCommonPrefixAggregation(lggr, observations, f, errorsMigrationFlag)
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
 			return handleCommonSuffixAggregation(lggr, observations, f, errorsMigrationFlag)
+		case sdk.AggregationType_AGGREGATION_TYPE_FREQUENCY_LIST:
+			return handleValueCountsAggregation(lggr, observations, f)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
@@ -336,6 +338,94 @@ func handleIdenticalAggregation(_ logger.Logger, values []*valuespb.Value, f int
 	}
 
 	return uniqueCandidate, nil
+}
+
+// handleValueCountsAggregation returns a list of all distinct observation values
+// together with how many times each was seen. Each list element is a map with
+// "value" and "count" fields. Results are sorted by count descending, then by
+// serialized value ascending for determinism.
+func handleValueCountsAggregation(
+	_ logger.Logger,
+	observations []*valuespb.Value,
+	f int,
+) (*valuespb.Value, error) {
+	if len(observations) < f+1 {
+		return nil, ErrInsufficientObservations
+	}
+
+	type valueOccurrence struct {
+		count int64
+		value *valuespb.Value
+	}
+
+	var (
+		marshaler   = &proto.MarshalOptions{Deterministic: true}
+		occurrences = make(map[string]valueOccurrence)
+	)
+
+	for _, currentValue := range observations {
+		if currentValue == nil || currentValue.Value == nil {
+			continue
+		}
+
+		b, err := marshaler.Marshal(currentValue)
+		if err != nil {
+			return nil, fmt.Errorf("unable to marshal value: %w", err)
+		}
+		key := string(b)
+
+		occurrence := occurrences[key]
+		occurrence.count++
+		if occurrence.value == nil {
+			occurrence.value = currentValue
+		}
+		occurrences[key] = occurrence
+	}
+
+	if len(occurrences) == 0 {
+		return nil, ErrInsufficientObservations
+	}
+
+	type countedValue struct {
+		key   string
+		count int64
+		value *valuespb.Value
+	}
+
+	counted := make([]countedValue, 0, len(occurrences))
+	for key, occurrence := range occurrences {
+		counted = append(counted, countedValue{
+			key:   key,
+			count: occurrence.count,
+			value: occurrence.value,
+		})
+	}
+
+	slices.SortFunc(counted, func(a, b countedValue) int {
+		if a.count != b.count {
+			if a.count > b.count {
+				return -1
+			}
+			return 1
+		}
+		if a.key < b.key {
+			return -1
+		}
+		if a.key > b.key {
+			return 1
+		}
+		return 0
+	})
+
+	result := make([]*valuespb.Value, 0, len(counted))
+	for _, entry := range counted {
+		result = append(result, valuespb.NewMapValue(map[string]*valuespb.Value{
+			"value": entry.value,
+			"count": valuespb.NewInt64Value(entry.count),
+		}))
+	}
+
+	return valuespb.NewListValue(result), nil
 }
 
 // handleCommonSuffixAggregation reverses the underlying lists in the slice of
