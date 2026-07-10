@@ -226,8 +226,9 @@ func (s *Service) donID(workflowDonID uint32) string {
 // utilizationFields builds the per-trigger billing fields shared by the record
 // and snapshot paths. resource_id is the workflow-scoped trigger_id; org_id is
 // resolved fresh from the workflow owner by the caller (never stored). event_id
-// is intentionally absent: the ResourceManager stamps a unique UUID per
-// emission.
+// is intentionally absent from the fields: for records the caller passes it
+// explicitly (a deterministic cross-node id), and for snapshots the
+// ResourceManager derives it from the bucket/resource/node key.
 func (s *Service) utilizationFields(triggerID, orgID string) resourcemanager.UtilizationFields {
 	return resourcemanager.UtilizationFields{
 		ResourceType: meteringResourceType,
@@ -243,10 +244,17 @@ func (s *Service) utilizationFields(triggerID, orgID string) resourcemanager.Uti
 // same identity regardless of the unregister request's metadata. The org is
 // resolved fresh from owner at emit time. Emission is fail-open and never
 // affects the registration itself.
-func (s *Service) emitMeterRecord(ctx context.Context, delta int64, workflowDonID uint32, triggerID, owner string) {
+// emitMeterRecord derives the cross-node-deterministic event_id from the
+// registration namespace + the DON-aggregated request identity (workflowID +
+// triggerID). RegisterTrigger/UnregisterTrigger are invoked by the remote
+// trigger publisher with the mode-aggregated request, byte-identical on every
+// capability-DON node, so these parts are DON-consistent and every node emits
+// the identical event_id for the same logical (un)register.
+func (s *Service) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID, triggerID string, workflowDonID uint32, owner string) {
 	id := s.base.WithWorkflowDonFallback(workflowDonID)
 	orgID := orgresolver.ResolveOrEmpty(ctx, s.orgResolver, owner, s.lggr)
-	s.meters.EmitDelta(ctx, id, delta, s.utilizationFields(triggerID, orgID))
+	eventID := resourcemanager.EventID(namespace, workflowID, triggerID)
+	s.meters.EmitDelta(ctx, id, eventID, delta, s.utilizationFields(triggerID, orgID))
 }
 
 func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
@@ -483,7 +491,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	})
 
 	// Register bills a +1 delta to the durable trigger-registration level.
-	s.emitMeterRecord(ctx, 1, metadata.WorkflowDonID, triggerID, metadata.WorkflowOwner)
+	s.emitMeterRecord(ctx, 1, "cron-register", metadata.WorkflowID, triggerID, metadata.WorkflowDonID, metadata.WorkflowOwner)
 
 	s.lggr.Debugw("Trigger registered", "workflowId", metadata.WorkflowID, "triggerId", triggerID, "jobId", job.ID())
 	s.metrics.IncActiveTriggersGauge(ctx)
@@ -536,10 +544,11 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	// Remove from triggers context
 	s.triggers.Delete(triggerID)
 
-	// Unregister bills a -1 delta. don_id and owner come from the STORED trigger
-	// (not the unregister request's metadata) so the delta reverses the exact
-	// identity the register +1 billed.
-	s.emitMeterRecord(ctx, -1, trigger.workflowDonID, triggerID, trigger.workflowOwner)
+	// Unregister bills a -1 delta. workflowID, don_id and owner come from the
+	// STORED trigger (not the unregister request's metadata) so the delta
+	// reverses the exact identity the register +1 billed, and the event_id is
+	// derived from the same DON-consistent workflowID+triggerID.
+	s.emitMeterRecord(ctx, -1, "cron-unregister", trigger.workflowID, triggerID, trigger.workflowDonID, trigger.workflowOwner)
 
 	s.lggr.Debugw("UnregisterTrigger", "triggerId", triggerID, "jobId", jobID)
 	s.metrics.DecActiveTriggersGauge(ctx)

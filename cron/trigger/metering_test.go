@@ -98,7 +98,7 @@ var meteredTestDeployment = resourcemanager.DeploymentIdentity{
 	NumericTenantID: "42",
 	Environment:     "staging",
 	Zone:            "wf-zone-a",
-	NodeID:          "csa-pubkey-1",
+	NodeID:          "clp-cre-wf-zone-a-1",
 }
 
 // expectedBaseIdentity is the base identity the Service builds from
@@ -109,7 +109,7 @@ var expectedBaseIdentity = resourcemanager.ResourceIdentity{
 	NumericTenantID: "42",
 	Environment:     "staging",
 	Zone:            "wf-zone-a",
-	Don:             &resourcemanager.DonIdentity{DonID: "7", NodeID: "csa-pubkey-1"},
+	Don:             &resourcemanager.DonIdentity{DonID: "7", NodeID: "clp-cre-wf-zone-a-1"},
 	Service:         "cron-trigger",
 	ResourcePool:    "trigger_registrations",
 }
@@ -180,7 +180,7 @@ func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	assert.Equal(t, "staging", id.GetEnvironment())
 	assert.Equal(t, "wf-zone-a", id.GetZone())
 	assert.Equal(t, "7", id.GetDon().GetDonId())
-	assert.Equal(t, "csa-pubkey-1", id.GetDon().GetNodeId())
+	assert.Equal(t, "clp-cre-wf-zone-a-1", id.GetDon().GetNodeId())
 	assert.Equal(t, "cron-trigger", id.GetService())
 	assert.Equal(t, "trigger_registrations", id.GetResourcePool())
 	// The metering identity DON and the events.KeyDonID label derive from the
@@ -191,7 +191,21 @@ func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	assert.Equal(t, "1", register.GetUtilizations()[0].GetValue())
 	assert.Equal(t, "operations", register.GetUtilizations()[0].GetResourceType())
 	assert.Equal(t, triggerID1, register.GetUtilizations()[0].GetResourceId())
-	require.NotEmpty(t, register.GetUtilizations()[0].GetEventId(), "event_id is stamped per emission")
+	// event_id is the deterministic, cross-node-identical id derived from the
+	// DON-aggregated request identity (workflowID + triggerID).
+	wantRegisterID := resourcemanager.EventID("cron-register", workflowID1, triggerID1)
+	assert.Equal(t, wantRegisterID, register.GetUtilizations()[0].GetEventId())
+
+	// Cross-node determinism: a second node fielding the identical register
+	// request derives the identical event_id.
+	emitter2 := &fakeMeterEmitter{}
+	ts2, _, _ := newMeteredTriggerService(t, clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), emitter2)
+	_, capErr2 := ts2.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
+	require.Nil(t, capErr2)
+	require.Len(t, emitter2.Records(), 1)
+	assert.Equal(t, register.GetUtilizations()[0].GetEventId(), emitter2.Records()[0].GetUtilizations()[0].GetEventId(),
+		"two nodes fielding the same register must emit the identical event_id")
+	require.NoError(t, ts2.Close())
 
 	// Each cron tick re-Writes the trigger to reschedule it; the Write
 	// happens before the channel send, so after receiving the event the
@@ -211,10 +225,13 @@ func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	require.Len(t, unregister.GetUtilizations(), 1)
 	assert.Equal(t, "-1", unregister.GetUtilizations()[0].GetValue(), "unregister is a signed -1 delta")
 
-	// event_id is unique per emission: register and unregister must differ.
-	require.NotEmpty(t, unregister.GetUtilizations()[0].GetEventId())
+	// event_id: unregister is namespaced distinctly from register (so the paired
+	// +1/-1 deltas never dedup into each other) but is otherwise the same
+	// deterministic derivation over the DON-consistent workflowID+triggerID.
+	wantUnregisterID := resourcemanager.EventID("cron-unregister", workflowID1, triggerID1)
+	assert.Equal(t, wantUnregisterID, unregister.GetUtilizations()[0].GetEventId())
 	assert.NotEqual(t, register.GetUtilizations()[0].GetEventId(), unregister.GetUtilizations()[0].GetEventId(),
-		"each emission gets a distinct event_id")
+		"register and unregister must have distinct event_ids")
 
 	require.NoError(t, ts.Close())
 }

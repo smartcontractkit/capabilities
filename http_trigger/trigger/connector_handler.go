@@ -218,7 +218,7 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 	switch {
 	case evicted == nil:
 		// Brand-new registration: bill +1 for the new durable resource.
-		h.emitMeterRecord(ctx, 1, newWorkflowID, workflowDONID, owner)
+		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, workflowDONID, owner)
 	case evicted.workflowSelector.WorkflowID == newWorkflowID:
 		// Same-ID re-register: the durable resource is unchanged, so there is
 		// no level delta to bill. Emit nothing.
@@ -227,8 +227,8 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 		// new workflow ID. Bill -1 against the evicted workflow's resource_id
 		// and +1 for the new, both derived from the atomically returned
 		// eviction so the old reservation cannot leak.
-		h.emitMeterRecord(ctx, -1, evicted.workflowSelector.WorkflowID, evicted.metadata.WorkflowDONID, evicted.workflowSelector.WorkflowOwner)
-		h.emitMeterRecord(ctx, 1, newWorkflowID, workflowDONID, owner)
+		h.emitMeterRecord(ctx, -1, "http-unregister", evicted.workflowSelector.WorkflowID, evicted.metadata.WorkflowDONID, evicted.workflowSelector.WorkflowOwner)
+		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, workflowDONID, owner)
 	}
 	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
@@ -238,13 +238,20 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 // change to the durable HTTP-workflow-registration level: register bills +1,
 // unregister/version-eviction bills -1. resource_id is the workflow ID (HTTP
 // registrations are workflow-scoped, so there is no shared physical resource).
-// The org is resolved fresh from owner at emit time; event_id is stamped by the
-// ResourceManager per emission. Emission is fail-open and never affects the
-// registration outcome.
-func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, workflowID string, workflowDONID uint32, owner string) {
+// The org is resolved fresh from owner at emit time. Emission is fail-open and
+// never affects the registration outcome.
+//
+// event_id is derived from the action namespace + the workflow ID, which is
+// DON-consistent: the (un)register requests are delivered to every capability
+// node as the mode-aggregated request (see the remote trigger publisher), and a
+// version update changes the workflow ID so its +1/-1 pair is distinct from the
+// prior version. The unregister path passes the same workflowID so its -1 hashes
+// symmetrically with the register +1 it reverses.
+func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID string, workflowDONID uint32, owner string) {
 	identity := h.baseIdentity.WithWorkflowDonFallback(workflowDONID)
 	orgID := orgresolver.ResolveOrEmpty(ctx, h.orgResolver, owner, h.lggr)
-	h.resourceManager.EmitDelta(ctx, identity, delta, resourcemanager.UtilizationFields{
+	eventID := resourcemanager.EventID(namespace, workflowID)
+	h.resourceManager.EmitDelta(ctx, identity, eventID, delta, resourcemanager.UtilizationFields{
 		ResourceType: meterResourceType,
 		ResourceID:   workflowID,
 		OrgID:        orgID,
@@ -339,8 +346,10 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 	if err != nil {
 		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
 	}
-	// Unregister bills a -1 delta against the workflow's resource_id.
-	h.emitMeterRecord(ctx, -1, workflowID, workflowDONID, owner)
+	// Unregister bills a -1 delta against the workflow's resource_id. It hashes
+	// symmetrically with the register +1 (same workflowID, "http-unregister"
+	// namespace) so the consumer pairs them by workflowID.
+	h.emitMeterRecord(ctx, -1, "http-unregister", workflowID, workflowDONID, owner)
 	h.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }

@@ -463,7 +463,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	})
 	if firstForPhysical {
 		// 0->1 activation of a shared physical filter: bill +addressCount once.
-		lts.emitDelta(ctx, loggedFilter.reservedAddressCount, loggedFilter)
+		lts.emitDelta(ctx, loggedFilter.reservedAddressCount, "evm-activate", meta.WorkflowID, triggerID, loggedFilter)
 	}
 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
@@ -559,16 +559,23 @@ func (lts *LogTriggerService) identity(donID string) resourcemanager.ResourceIde
 // physical log filter: +addressCount on the physical filter's 0->1 activation,
 // -addressCount on its 1->0 release. The physical filter content hash is the
 // ResourceID, so all triggers sharing it bill against one resource. The org is
-// resolved fresh from the stored owner at emit time; event_id is stamped by the
-// ResourceManager per emission. Emission is fail-open and must never gate the
-// path that calls it.
-func (lts *LogTriggerService) emitDelta(ctx context.Context, delta int64, f filter) {
+// resolved fresh from the stored owner at emit time. Emission is fail-open and
+// must never gate the path that calls it.
+//
+// event_id is derived from the DON-aggregated request that drove the transition
+// (workflowID + triggerID of the RegisterLogTrigger / UnregisterLogTrigger call),
+// namespaced per action. The remote trigger publisher invokes those methods with
+// the mode-aggregated request, byte-identical on every capability node, so the
+// parts are DON-consistent. physicalFilterID is intentionally NOT the event_id
+// (it stays the resource_id): it would collide across activate/release cycles.
+func (lts *LogTriggerService) emitDelta(ctx context.Context, delta int64, namespace, workflowID, triggerID string, f filter) {
 	if lts.resourceManager == nil {
 		return
 	}
 	identity := lts.identity(f.donID)
 	orgID := orgresolver.ResolveOrEmpty(ctx, lts.orgResolver, f.workflowOwner, lts.lggr)
-	lts.resourceManager.EmitDelta(ctx, identity, delta, resourcemanager.UtilizationFields{
+	eventID := resourcemanager.EventID(namespace, workflowID, triggerID)
+	lts.resourceManager.EmitDelta(ctx, identity, eventID, delta, resourcemanager.UtilizationFields{
 		ResourceType: MeteringResourceType,
 		ResourceID:   f.physicalFilterID,
 		OrgID:        orgID,
@@ -1000,7 +1007,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 		// 1->0 release of the shared physical filter: bill -addressCount once.
 		// The value and identity are reused from the stashed filter so this
 		// -delta reverses the exact +delta the activation billed.
-		lts.emitDelta(ctx, -trigger.reservedAddressCount, trigger.filter)
+		lts.emitDelta(ctx, -trigger.reservedAddressCount, "evm-release", meta.WorkflowID, triggerID, trigger.filter)
 	}
 
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
