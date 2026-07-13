@@ -269,7 +269,7 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, triggerResp.WorkflowID)
 
-	executionID, err := workflows.GenerateExecutionIDWithTriggerIndex(strings.TrimPrefix(testWorkflowID, "0x"), req.ID, 0)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID) //nolint:staticcheck // SA1019 default FeatureMultiTrigger period is inactive
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
@@ -974,7 +974,7 @@ func TestHandleGatewayMessage_TriggerFailureDoesNotCacheThenSameRequestSucceeds(
 		t.Fatal("timed out waiting for trigger delivery")
 	}
 
-	executionID, err := workflows.GenerateExecutionIDWithTriggerIndex(strings.TrimPrefix(testWorkflowID, "0x"), req.ID, 0)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID) //nolint:staticcheck // SA1019 default FeatureMultiTrigger period is inactive
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
