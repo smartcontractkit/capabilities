@@ -1,12 +1,15 @@
 package monitoring
 
 import (
+	"context"
 	"errors"
 	"testing"
 
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-
 	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
@@ -29,43 +32,25 @@ func TestNewMetrics_ConstructorError(t *testing.T) {
 	require.Contains(t, err.Error(), "instrument registration failed")
 }
 
-func TestMetricViews_CapDurationBuckets(t *testing.T) {
-	t.Parallel()
+func TestNewMetrics_CapDurationBuckets(t *testing.T) {
+	reader := useManualMetricReader(t)
 
-	views := MetricViews()
-	expectedBuckets := []float64{
-		10, 25, 50, 100, 250, 500,
-		1000, 2500, 5000,
-		10000, 20000, 30000, 60000,
-	}
-	expectedMetricNames := []string{
-		"stellar_capability_read_contract_success_cap_duration",
-		"stellar_capability_read_contract_error_cap_duration",
-		"stellar_capability_write_report_success_cap_duration",
-		"stellar_capability_write_report_error_cap_duration",
-		"stellar_capability_write_report_duplicate_tx_cap_duration",
-		"stellar_capability_write_report_tx_info_retrieval_error_cap_duration",
-		"stellar_capability_write_report_successful_early_return_cap_duration",
-		"stellar_capability_write_report_invalid_transmission_state_cap_duration",
-	}
+	metrics, err := NewMetrics()
+	require.NoError(t, err)
 
-	require.Len(t, views, len(expectedMetricNames))
-	for _, name := range expectedMetricNames {
-		stream, ok := metricViewStream(views, name)
-		require.True(t, ok, "missing metric view for %s", name)
-		aggregation, ok := stream.Aggregation.(sdkmetric.AggregationExplicitBucketHistogram)
-		require.True(t, ok, "expected explicit bucket histogram for %s", name)
-		require.Equal(t, expectedBuckets, aggregation.Boundaries, "bucket boundaries mismatch for %s", name)
+	ec := &capmonitoring.ExecutionContext{
+		MetaCapabilityTimestampStart: 100,
+		MetaCapabilityTimestampEmit:  150,
 	}
-}
+	require.NoError(t, metrics.OnWriteReportSuccess(t.Context(), &WriteReportSuccess{ExecutionContext: ec}))
 
-func metricViewStream(views []sdkmetric.View, name string) (sdkmetric.Stream, bool) {
-	for _, view := range views {
-		if stream, ok := view(sdkmetric.Instrument{Name: name}); ok {
-			return stream, true
-		}
-	}
-	return sdkmetric.Stream{}, false
+	var resourceMetrics metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &resourceMetrics))
+
+	histogram := findHistogram(resourceMetrics, "stellar_capability_write_report_success_cap_duration")
+	require.NotNil(t, histogram)
+	require.Len(t, histogram.DataPoints, 1)
+	require.Equal(t, capDurationBucketBoundariesMs, histogram.DataPoints[0].Bounds)
 }
 
 func TestNewMetrics_RegistrationErrors(t *testing.T) {
@@ -99,4 +84,37 @@ func TestNewMetrics_RegistrationErrors(t *testing.T) {
 			require.Contains(t, err.Error(), metricName)
 		})
 	}
+}
+
+func useManualMetricReader(t *testing.T) *sdkmetric.ManualReader {
+	t.Helper()
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	previousClient := beholder.GetClient()
+	client := beholder.NewNoopClient()
+	client.MeterProvider = provider
+	client.Meter = provider.Meter("stellar-monitoring-test")
+	beholder.SetClient(client)
+
+	t.Cleanup(func() {
+		beholder.SetClient(previousClient)
+		require.NoError(t, provider.Shutdown(context.Background()))
+	})
+
+	return reader
+}
+
+func findHistogram(resourceMetrics metricdata.ResourceMetrics, name string) *metricdata.Histogram[int64] {
+	for _, scopeMetrics := range resourceMetrics.ScopeMetrics {
+		for _, metric := range scopeMetrics.Metrics {
+			if metric.Name != name {
+				continue
+			}
+			if histogram, ok := metric.Data.(metricdata.Histogram[int64]); ok {
+				return &histogram
+			}
+		}
+	}
+	return nil
 }

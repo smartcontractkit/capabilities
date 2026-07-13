@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/otel/attribute"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/protobuf/proto"
 
 	commonbeholder "github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -22,32 +21,6 @@ var capDurationBucketBoundariesMs = []float64{
 	10000, 20000, 30000, 60000,
 }
 
-// MetricViews returns OTel SDK views that override the default histogram bucket
-// boundaries for all Stellar capability _cap_duration instruments.
-func MetricViews() []sdkmetric.View {
-	metricNames := []string{
-		ns("read_contract_success") + "_cap_duration",
-		ns("read_contract_error") + "_cap_duration",
-		ns("write_report_success") + "_cap_duration",
-		ns("write_report_error") + "_cap_duration",
-		ns("write_report_duplicate_tx") + "_cap_duration",
-		ns("write_report_tx_info_retrieval_error") + "_cap_duration",
-		ns("write_report_successful_early_return") + "_cap_duration",
-		ns("write_report_invalid_transmission_state") + "_cap_duration",
-	}
-
-	views := make([]sdkmetric.View, 0, len(metricNames))
-	for _, name := range metricNames {
-		views = append(views, sdkmetric.NewView(
-			sdkmetric.Instrument{Name: name},
-			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
-				Boundaries: capDurationBucketBoundariesMs,
-			}},
-		))
-	}
-	return views
-}
-
 var newMetricsCapBasic = capmonitoring.NewMetricsCapBasic
 
 func ns(name string) string { return fmt.Sprintf("stellar_capability_%s", name) }
@@ -58,7 +31,11 @@ type basicCapEmitMessage interface {
 }
 
 func newBasicCapMetric(metricName string, msg proto.Message) (capmonitoring.MetricsCapBasic, error) {
-	info := capmonitoring.NewMetricsInfoCapBasic(ns(metricName), commonbeholder.ToSchemaFullName(msg))
+	info := capmonitoring.NewMetricsInfoCapBasicWithBuckets(
+		ns(metricName),
+		commonbeholder.ToSchemaFullName(msg),
+		capDurationBucketBoundariesMs,
+	)
 	basic, err := newMetricsCapBasic(info)
 	if err != nil {
 		return capmonitoring.MetricsCapBasic{}, fmt.Errorf("failed to create %s metric: %w", metricName, err)
