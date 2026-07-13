@@ -56,6 +56,8 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 		ReportingPluginConfig: config,
 		MaxBatchSize:          int(offchainCfg.MaxBatchSize),
 		MaxObservationLength:  int(offchainCfg.MaxObservationLengthBytes),
+		MaxReportLengthBytes:  int(offchainCfg.MaxReportLengthBytes),
+		MaxReportCount:        int(offchainCfg.MaxReportCount),
 	}
 
 	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics), ocr3types.ReportingPluginInfo{

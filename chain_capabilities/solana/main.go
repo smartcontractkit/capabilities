@@ -111,7 +111,7 @@ func (c *capabilityGRPCService) Close() error {
 }
 
 func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
-	return caperrors.NewError(fmt.Errorf("not implemented"), caperrors.VisibilityPublic, caperrors.OriginSystem, caperrors.Unknown)
+	return c.triggerService.AckEvent(ctx, triggerID, eventID)
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -186,7 +186,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
-		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, false)
+		// TODO(CRE-4409 follow-up): use dependencies.CapabilityDonID once Solana
+		// starts emitting KeyDonID events.
+		// Until then, passing 0 preserves the legacy "first matched DON" behavior.
+		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, 0, c.lggr, false)
 		if err != nil {
 			return fmt.Errorf("failed to init DON: %w", err)
 		}
@@ -242,6 +245,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		MessageBuilder:    messageBuilder,
 		Triggers:          trigger.NewSolanaLogTriggerStore(),
 		LimitsFactory:     c.limitsFactory,
+		TriggerEventStore: dependencies.TriggerEventStore,
+		CapabilityID:      c.id,
+		OrgResolver:       dependencies.OrgResolver,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create log trigger service: %w", err)

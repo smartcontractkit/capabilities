@@ -8,6 +8,9 @@ packages:
     interfaces:
       Poller:
       Handler:
+  github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics:
+    interfaces:
+      ConsensusMetrics:
   github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle:
     interfaces:
       BlocksProvider:

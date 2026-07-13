@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -17,6 +17,7 @@ import (
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -27,6 +28,7 @@ import (
 
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
 
@@ -152,6 +154,9 @@ type SolanaLogTriggerService struct {
 	maxLogsKept             int64
 	eventRateLimit          limits.RateLimiter
 	eventPayloadSizeLimiter limits.BoundLimiter[commoncfg.Size]
+	orgResolver             orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
+
+	baseTrigger *capabilities.BaseTriggerCapability[*solanacappb.Log]
 }
 
 type LogTriggerServiceOpts struct {
@@ -165,6 +170,9 @@ type LogTriggerServiceOpts struct {
 	Retention                       time.Duration
 	MaxLogsKept                     int64
 	LimitsFactory                   limits.Factory
+	TriggerEventStore               capabilities.EventStore
+	CapabilityID                    string
+	OrgResolver                     orgresolver.OrgResolver
 }
 
 func NewLogTriggerService(opts LogTriggerServiceOpts) (*SolanaLogTriggerService, error) {
@@ -192,6 +200,12 @@ func NewLogTriggerService(opts LogTriggerServiceOpts) (*SolanaLogTriggerService,
 	if opts.MessageBuilder == nil {
 		return nil, fmt.Errorf("messageBuilder is required")
 	}
+	if opts.CapabilityID == "" {
+		return nil, fmt.Errorf("capabilityID must be non-empty")
+	}
+	if opts.TriggerEventStore == nil {
+		return nil, fmt.Errorf("no trigger event store provided")
+	}
 	lts := &SolanaLogTriggerService{
 		SolanaService:                   opts.SolanaService,
 		lggr:                            opts.Logger,
@@ -202,16 +216,28 @@ func NewLogTriggerService(opts LogTriggerServiceOpts) (*SolanaLogTriggerService,
 		logTriggerSendChannelBufferSize: opts.LogTriggerSendChannelBufferSize,
 		retention:                       opts.Retention,
 		maxLogsKept:                     opts.MaxLogsKept,
+		orgResolver:                     opts.OrgResolver,
+	}
+	if lts.orgResolver == nil {
+		lts.lggr.Warn("OrgResolver is nil, Solana log trigger capability will not be able to fetch organization ID")
 	}
 
 	if err := lts.initLimiters(opts.LimitsFactory); err != nil {
 		return nil, err
 	}
 
+	baseTrigger, err := capabilities.NewBaseTriggerCapabilityWithCRESettings(context.Background(), opts.TriggerEventStore,
+		func() *solanacappb.Log { return &solanacappb.Log{} }, opts.Logger, opts.CapabilityID, opts.LimitsFactory.Settings)
+	if err != nil {
+		return nil, err
+	}
+	lts.baseTrigger = baseTrigger
+
 	// Initialize the service engine
 	lts.Service, lts.srvcEng = services.Config{
 		Name:  "SolanaLogTriggerService",
 		Start: lts.start,
+		Close: lts.close,
 	}.NewServiceEngine(opts.Logger)
 
 	lts.lggr.Info("SolanaLogTriggerService initialized")
@@ -234,11 +260,19 @@ func (lts *SolanaLogTriggerService) initLimiters(limitsFactory limits.Factory) e
 	return nil
 }
 
-func (lts *SolanaLogTriggerService) start(_ context.Context) error {
+func (lts *SolanaLogTriggerService) start(ctx context.Context) error {
+	if err := lts.baseTrigger.Start(ctx); err != nil {
+		return err
+	}
 	duration := 30 * time.Second
 	ticker := services.NewTicker(duration)
 	lts.lggr.Debugf("Starting clean up of stale log poller filters every %s", duration)
 	lts.srvcEng.GoTick(ticker, lts.cleanUpStaleFilters)
+	return nil
+}
+
+func (lts *SolanaLogTriggerService) close() error {
+	lts.baseTrigger.Stop()
 	return nil
 }
 
@@ -311,16 +345,29 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to create log poller filter: %w", err), caperrors.Internal)
 	}
 
+	// write trigger to store before registering with log poller so that
+	// cleanUpStaleFilters doesn't immediately unregister in a race scenario.
+	pollDone := make(chan struct{})
+	pollCtx, pollCancel := context.WithCancel(context.Background())
+	pollCtx = meta.ContextWithCRE(pollCtx)
+	lts.triggers.Write(triggerID, solanaLogTriggerState{
+		stopPolling: func() {
+			pollCancel()
+			<-pollDone
+		},
+		filter: config,
+	})
+
 	lts.lggr.Debugf("RegisterLogTracking id: %s", lpFilter.Name)
 
 	// Diagnostic: log what we're sending (before gRPC / ToProto)
 	hasCPI := lpFilter.CPIFilterConfig != nil
-	lts.lggr.Infow("[DEBUG] RegisterLogTracking sending",
+	lts.lggr.Infow("RegisterLogTracking sending",
 		"filterName", lpFilter.Name,
 		"hasCPIFilterConfig", hasCPI,
 	)
 	if hasCPI {
-		lts.lggr.Infow("[DEBUG] RegisterLogTracking sending CPI config",
+		lts.lggr.Infow("RegisterLogTracking sending CPI config",
 			"filterName", lpFilter.Name,
 			"methodName", lpFilter.CPIFilterConfig.MethodName,
 		)
@@ -328,6 +375,8 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 
 	err = lts.SolanaService.RegisterLogTracking(ctx, *lpFilter)
 	if err != nil {
+		pollCancel()
+		lts.triggers.Delete(triggerID)
 		summary := fmt.Sprintf("failed to register log-tracking: '%v' for triggerID: %s", err, triggerID)
 		lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s", err, triggerID), caperrors.Unknown)
@@ -337,23 +386,14 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 
 	logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], lts.logTriggerSendChannelBufferSize)
 
+	lts.baseTrigger.RegisterTrigger(triggerID, logCh)
+
 	lts.srvcEng.Go(func(svcCtx context.Context) {
-		pollCtx, cancel := context.WithCancel(svcCtx)
-		pollCtx = meta.ContextWithCRE(pollCtx)
+		context.AfterFunc(svcCtx, pollCancel)
 
-		pollWG := new(sync.WaitGroup)
-		pollWG.Add(1)
-		lts.triggers.Write(triggerID, solanaLogTriggerState{
-			stopPolling: func() {
-				cancel()
-				pollWG.Wait()
-			},
-			filter: config,
-		})
-
-		defer pollWG.Done()
+		defer close(pollDone)
+		defer lts.triggers.Delete(triggerID)
 		lts.startPolling(pollCtx, telemetryContext, config, triggerID, fromBlock, logCh)
-		lts.triggers.Delete(triggerID)
 	})
 
 	return logCh, nil
@@ -374,6 +414,7 @@ func (lts *SolanaLogTriggerService) UnregisterLogTrigger(ctx context.Context, tr
 	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.stopPolling()
 	lts.triggers.Delete(triggerID)
+	lts.baseTrigger.UnregisterTrigger(triggerID)
 
 	err := lts.SolanaService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {
@@ -381,6 +422,15 @@ func (lts *SolanaLogTriggerService) UnregisterLogTrigger(ctx context.Context, tr
 		lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
 		unregisterLogTrackingError := fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
 		return caperrors.NewPrivateSystemError(unregisterLogTrackingError, caperrors.Unknown)
+	}
+	return nil
+}
+
+func (lts *SolanaLogTriggerService) AckEvent(ctx context.Context, triggerID string, eventID string) caperrors.Error {
+	if err := lts.baseTrigger.AckEvent(ctx, triggerID, eventID); err != nil {
+		wrappedErr := fmt.Errorf("failed to AckEvent on baseTrigger (triggerID=%s eventID=%s): %w", triggerID, eventID, err)
+		lts.lggr.Error(wrappedErr)
+		return caperrors.NewPrivateSystemError(wrappedErr, caperrors.Internal)
 	}
 	return nil
 }
@@ -482,19 +532,11 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 					continue
 				}
 
-				response := capabilities.TriggerAndId[*solanacappb.Log]{
-					Id:      eventID,
-					Trigger: protoLog,
-				}
-
-				select {
-				case <-ctx.Done():
+				if ctx.Err() != nil {
 					return
-				case logCh <- response:
+				}
+				if lts.deliverLogReliably(ctx, telemetryContext, triggerID, protoLog, eventID, log) {
 					sentCount++
-				default:
-					summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", lts.logTriggerSendChannelBufferSize, triggerID, eventID)
-					lts.logAndEmitEventDroppedError(ctx, telemetryContext, triggerID, log, summary, "channel full", false)
 				}
 			}
 
@@ -518,6 +560,40 @@ func getSubkeyPaths(subkeys []*solanacappb.SubkeyConfig) [][]string {
 		}
 	}
 	return paths
+}
+
+// deliverLogReliably sends a single Solana log to the BaseTriggerCapability
+// for persistence, retransmission, and ACKing.
+func (lts *SolanaLogTriggerService) deliverLogReliably(
+	ctx context.Context,
+	telemetryContext monitoring.TelemetryContext,
+	triggerID string,
+	protoLog *solanacappb.Log,
+	eventID string,
+	log *solana.Log,
+) bool {
+	anyPayload, err := anypb.New(protoLog)
+	if err != nil {
+		lts.lggr.Errorw("failed to pack protoLog into Any",
+			"err", err, "triggerID", triggerID, "eventID", eventID)
+		return false
+	}
+
+	te := capabilities.TriggerEvent{
+		TriggerType: triggerID,
+		ID:          eventID,
+		Payload:     anyPayload,
+	}
+
+	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
+	deliverCtx := capcommon.ContextWithOrgForDelivery(ctx, lts.lggr, lts.orgResolver, telemetryContext.RequestMetadata)
+	if err := lts.baseTrigger.DeliverEvent(deliverCtx, te, triggerID); err != nil {
+		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
+		lts.lggr.Error(summary)
+		lts.logAndEmitEventDroppedError(ctx, telemetryContext, triggerID, log, summary, err.Error(), false)
+		return false
+	}
+	return true
 }
 
 // Monitoring helper methods

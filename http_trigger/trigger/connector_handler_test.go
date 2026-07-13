@@ -15,6 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
@@ -189,11 +190,13 @@ func setupWithTriggerChannelBuffer(t *testing.T, lggr logger.Logger, triggerChBu
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -266,7 +269,7 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, triggerResp.WorkflowID)
 
-	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID)
+	executionID, err := workflows.GenerateExecutionIDWithTriggerIndex(strings.TrimPrefix(testWorkflowID, "0x"), req.ID, 0)
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
@@ -593,11 +596,13 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 
@@ -710,11 +715,13 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 
@@ -869,11 +876,13 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 
@@ -965,7 +974,7 @@ func TestHandleGatewayMessage_TriggerFailureDoesNotCacheThenSameRequestSucceeds(
 		t.Fatal("timed out waiting for trigger delivery")
 	}
 
-	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID)
+	executionID, err := workflows.GenerateExecutionIDWithTriggerIndex(strings.TrimPrefix(testWorkflowID, "0x"), req.ID, 0)
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
@@ -1045,11 +1054,13 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
+		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 	)
 	require.NoError(t, err)
 

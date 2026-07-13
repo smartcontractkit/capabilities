@@ -108,6 +108,14 @@ func TestCompareStringNumbers(t *testing.T) {
 			expected:       false,
 			expectError:    "invalid number actionSpend: strconv.ParseFloat: parsing \"invalid\": invalid syntax",
 		},
+		{
+			// Write-report fee from fee.Text('f', -1) can be one wei above a round ETH limit.
+			name:           "write report gas fee one wei over limit",
+			limitStr:       "0.021",
+			actionSpendStr: "0.021000000000000001",
+			expected:       false,
+			expectError:    "",
+		},
 	}
 
 	for _, test := range tests {

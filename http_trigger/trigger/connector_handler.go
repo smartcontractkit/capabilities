@@ -18,6 +18,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
@@ -36,6 +37,7 @@ type connectorHandler struct {
 	lggr                     logger.Logger
 	gatewayConnector         core.GatewayConnector
 	config                   ServiceConfig
+	capabilityDonID          uint32 // authoritative sending DON ID; 0 = unknown, falls back to WorkflowDONID
 	requestCache             *requestCache
 	workflowStore            *workflowStore
 	gatewayMetadataPublisher GatewayMetadataPublisher
@@ -45,12 +47,14 @@ type connectorHandler struct {
 	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
-	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics, orgResolver orgresolver.OrgResolver) (*connectorHandler, error) {
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32,
+	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics,
+	orgResolver orgresolver.OrgResolver, limitsFactory limits.Factory) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
 		config:                   config,
+		capabilityDonID:          capabilityDonID,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
@@ -268,7 +272,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	}
 
 	l = logger.With(l, "workflowID", workflowMetadata.WorkflowID)
-	workflowExecutionID, err := h.generateWorkflowExecutionID(strings.TrimPrefix(workflowMetadata.WorkflowID, "0x"), req.ID, l)
+	workflowExecutionID, err := h.generateWorkflowExecutionID(ctx, workflowMetadata.WorkflowID, req.ID, workflowMetadata.ReferenceID, l)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
@@ -290,6 +294,18 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		displayWorkflowName = workflowMetadata.WorkflowName
 	}
 
+	// Emit the *sending* capability DON ID. The HTTP trigger plugin runs on a
+	// capability DON, separate from the consumer workflow's DON. The workflow
+	// service needs the sender's DON to resolve on-chain quorum params (N, F).
+	// See CRE-4409. capabilityDonID is 0 when the host could not resolve it
+	// authoritatively (a multi-DON job-spec node, or a core node that pre-dates
+	// CRE-4409); in that case we fall back to WorkflowDONID. This fallback is
+	// permanent, not transitional, since the job-spec boot path is still supported.
+	donIDForEvent := h.capabilityDonID
+	if donIDForEvent == 0 {
+		donIDForEvent = workflowMetadata.WorkflowDONID
+	}
+
 	labeler := custmsg.NewLabeler().With(
 		events.KeyTriggerID, req.ID,
 		events.KeyWorkflowID, workflowMetadata.WorkflowID,
@@ -299,7 +315,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
-		events.KeyDonID, strconv.Itoa(int(workflowMetadata.WorkflowDONID)),
+		events.KeyDonID, strconv.Itoa(int(donIDForEvent)),
 	)
 
 	// Try to fetch organization ID if org resolver is available
@@ -312,7 +328,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		}
 	}
 
-	l.Debugw("Triggering workflow")
+	l.Debugw("Triggering workflow", "isLegacyExecutionID", false)
 	input := []byte(triggerReq.Input)
 	err = h.triggerWorkflow(ctx, workflowMetadata.WorkflowID, req.ID, gatewayID, input, triggerReq.Key)
 	if err != nil {
@@ -344,6 +360,7 @@ type WorkflowMetadata struct {
 	WorkflowRegistryAddress       string
 	EngineVersion                 string
 	WorkflowDONID                 uint32
+	ReferenceID                   string
 }
 
 func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.WorkflowSelector, l logger.Logger) (WorkflowMetadata, error) {
@@ -395,6 +412,7 @@ func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metad
 		metadata.WorkflowRegistryAddress = w.metadata.WorkflowRegistryAddress
 		metadata.EngineVersion = w.metadata.EngineVersion
 		metadata.WorkflowDONID = w.metadata.WorkflowDONID
+		metadata.ReferenceID = w.metadata.ReferenceID
 		l.Debugw("Retrieved workflow metadata",
 			"workflowID", workflowID,
 			"workflowOwner", metadata.WorkflowOwner,
@@ -409,11 +427,19 @@ func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metad
 	}
 }
 
-func (h *connectorHandler) generateWorkflowExecutionID(workflowID, reqID string, l logger.Logger) (string, error) {
-	workflowExecutionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowID, "0x"), reqID)
+func (h *connectorHandler) generateWorkflowExecutionID(ctx context.Context, workflowID, reqID, referenceID string, l logger.Logger) (string, error) {
+	triggerIndex, err := workflows.GetTriggerIndexFromReferenceID(referenceID)
 	if err != nil {
-		l.Errorw("Failed to generate workflow execution ID", "error", err)
-		return "", err
+		l.Warnw("failed to get trigger index from reference ID", "err", err, "workflowID", workflowID, "refID", referenceID)
+		// continue with execution even if we can't get trigger index
+		triggerIndex = 0
+	}
+
+	strippedWorkflowID := strings.TrimPrefix(workflowID, "0x")
+	workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(strippedWorkflowID, reqID, triggerIndex)
+	if execIDErr != nil {
+		l.Errorw("Failed to generate workflow execution ID", "error", execIDErr)
+		return "", execIDErr
 	}
 	return ensureHexPrefix(workflowExecutionID), nil
 }

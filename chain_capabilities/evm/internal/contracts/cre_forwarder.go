@@ -312,7 +312,7 @@ func (t TransmissionID) ReceiverHex() string {
 }
 
 func (t TransmissionID) InvalidReceiverMessage() string {
-	return "Invalid receiver: " + common.Bytes2Hex(t.Receiver[:])
+	return "invalid receiver 0x" + common.Bytes2Hex(t.Receiver[:]) + ": contract does not implement the IReceiver interface"
 }
 
 func (t TransmissionID) ReportIDHex() string {

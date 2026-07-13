@@ -177,7 +177,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: [][]byte{},
 		})
-		expectedError := "[2]Unknown: no valid addresses provided (at least one address is required)"
+		expectedError := "[3]InvalidArgument: no valid addresses provided (at least one address is required)"
 		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
@@ -192,12 +192,12 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 				{Values: [][]byte{}}, // 5th topic, should fail
 			},
 		})
-		expectedError := "[2]Unknown: there can be at most 4 topics provided, got 5 instead"
+		expectedError := "[3]InvalidArgument: there can be at most 4 topics provided, got 5 instead"
 		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("missing eventSig", func(t *testing.T) {
-		expectedError := "[2]Unknown: no valid event sig provided (at least one event sig is required in topics)"
+		expectedError := "[3]InvalidArgument: no valid event sig provided (at least one event sig is required in topics)"
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
@@ -233,7 +233,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: brokenAddresses,
 			Topics:    topicsWithEventSig0,
 		})
-		expectedError := "[2]Unknown: failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []"
+		expectedError := "[14]Unavailable: failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []"
 		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
@@ -279,7 +279,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 			triggers: NewLogTriggerStore(),
 		}
 		err := service.UnregisterLogTrigger(t.Context(), triggerID, emptyMetadata, emptyRequest)
-		assertCapError(t, err, caperrors.VisibilityPublic, "[13]Internal: no active trigger found for triggerID: trigger-1")
+		assertCapError(t, err, caperrors.VisibilityPublic, "[5]NotFound: no active trigger found for triggerID: trigger-1")
 	})
 
 	t.Run("fail to unregister log-tracking", func(t *testing.T) {
@@ -293,7 +293,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 			lastBlock:  big.NewInt(0),
 		})
 		err := service.UnregisterLogTrigger(t.Context(), breakingTriggerID, emptyMetadata, emptyRequest)
-		assertCapError(t, err, caperrors.VisibilityPrivate, "[2]Unknown: failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
+		assertCapError(t, err, caperrors.VisibilityPrivate, "[14]Unavailable: failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
 	})
 }
 
@@ -1261,33 +1261,33 @@ func TestNewLogTriggerService(t *testing.T) {
 
 	t.Run("empty capability id", func(t *testing.T) {
 		lggr := logger.Test(t)
-		_, err := NewLogTriggerService(evmService, store, lggr, "", beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, capabilities.NewMemEventStore())
+		_, err := NewLogTriggerService(evmService, store, lggr, "", 0, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, capabilities.NewMemEventStore())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "capabilityID must be non-empty")
 	})
 	t.Run("ok initialize interval", func(t *testing.T) {
-		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 0, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, 10*time.Second, 0, 0, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(1000), trigger.logTriggerSendChannelBufferSize)
 		require.Equal(t, uint64(1000), trigger.limitAndSort.Limit.Count)
 	})
 	t.Run("ok initialize all params", func(t *testing.T) {
-		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 100, 50, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, 10*time.Second, 100, 50, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(100), trigger.logTriggerSendChannelBufferSize)
 		require.Equal(t, uint64(50), trigger.limitAndSort.Limit.Count)
 	})
 	t.Run("ok initialize buffer only", func(t *testing.T) {
-		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(10000), trigger.logTriggerSendChannelBufferSize)
 		require.Equal(t, uint64(defaultLimitQueryLogSize), trigger.limitAndSort.Limit.Count) //default value for limit as 0 was provided
 	})
 	t.Run("ok initialize query limit only", func(t *testing.T) {
-		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 100, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, 10*time.Second, 0, 100, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(defaultSendChannelBufferSize), trigger.logTriggerSendChannelBufferSize) //default value for buffer size as 0 was provided
@@ -1296,25 +1296,25 @@ func TestNewLogTriggerService(t *testing.T) {
 	// negative tests
 	t.Run("negative poll interval", func(t *testing.T) {
 		lggr := logger.Test(t)
-		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, -1*time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
+		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, -1*time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "logTriggerPollInterval must be positive, got: -1s")
 	})
 	t.Run("limit query log size >= send channel buffer size", func(t *testing.T) {
 		lggr := logger.Test(t)
-		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, time.Second, 5, 10, limits.Factory{Logger: lggr}, nil, nil)
+		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, time.Second, 5, 10, limits.Factory{Logger: lggr}, nil, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "logTriggerLimitQueryLogSize (10) must be less than logTriggerSendChannelBufferSize (5)")
 	})
 	t.Run("limit query log size >= default send channel buffer size", func(t *testing.T) {
 		lggr := logger.Test(t)
-		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, time.Second, 0, defaultSendChannelBufferSize+1, limits.Factory{Logger: lggr}, nil, nil)
+		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, time.Second, 0, defaultSendChannelBufferSize+1, limits.Factory{Logger: lggr}, nil, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
 	})
 	t.Run("nil trigger event store", func(t *testing.T) {
 		lggr := logger.Test(t)
-		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
+		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, 0, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no trigger event store provided")
 	})

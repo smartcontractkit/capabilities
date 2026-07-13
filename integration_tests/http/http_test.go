@@ -55,66 +55,6 @@ Id = "test_gateway"
 URL = "%s"
 `
 
-const gatewayConfigTemplate = `
-{
-  "ConnectionManagerConfig": {
-    "AuthChallengeLen": 32,
-    "AuthGatewayId": "test_gateway",
-    "AuthTimestampToleranceSec": 30
-  },
-  "NodeServerConfig": {
-    "Path": "/node",
-    "Port": 0,
-    "HandshakeTimeoutMillis": 2000,
-    "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 5000,
-    "RequestTimeoutMillis": 5000,
-    "WriteTimeoutMillis": 10000
-  },
-  "UserServerConfig": {
-    "Path": "/user",
-    "Port": 0,
-    "ContentTypeHeader": "application/jsonrpc",
-    "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 5000,
-    "RequestTimeoutMillis": 5000,
-    "WriteTimeoutMillis": 10000
-  },
-  "Dons": [
-    {
-      "DonId": "test_don",
-	  "F": 1,
-      "Handlers": [
-		{
-			"Name": "http-capabilities",
-			"ServiceName": "workflows",
-			"Config": {
-				"NodeRateLimiter": {
-					"GlobalBurst": 50,
-					"GlobalRPS": 50,
-					"PerSenderBurst": 50,
-					"PerSenderRPS": 50
-				},
-				"UserRateLimiter": {
-					"GlobalBurst": 50,
-					"GlobalRPS": 50,
-					"PerSenderBurst": 50,
-					"PerSenderRPS": 50	
-				}
-			}
-		}
-	  ],
-      "Members": [
-        {
-          "Address": "%s",
-          "Name": "test_node_1"
-        }
-      ]
-    }
-  ]
-}
-`
-
 const serviceConfigTemplate = `
 {
 	"proxyMode": "gateway"
@@ -151,15 +91,14 @@ func newTestNetworkClient(t *testing.T, addr *net.TCPAddr, lggr logger.Logger) n
 }
 
 func newTestGateway(t *testing.T, publicKey string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
-	gatewayConfigStr := fmt.Sprintf(gatewayConfigTemplate, publicKey)
-	return newTestGatewayFromConfig(t, gatewayConfigStr, c, lggr)
+	return newTestGatewayFromConfig(t, buildHTTPActionGatewayConfig("test_gateway", publicKey), c, lggr)
 }
 
 func newTestGatewayFromConfig(t *testing.T, gatewayConfigStr string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
 	var gatewayConfig *config.GatewayConfig
 	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
 	require.NoError(t, err)
-	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr, limits.Factory{Logger: lggr}), lggr, limits.Factory{Logger: lggr})
+	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr, limits.Factory{Logger: lggr}, nil), lggr, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 	servicetest.Run(t, gateway)
 	return gateway

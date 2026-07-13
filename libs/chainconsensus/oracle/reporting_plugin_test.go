@@ -1475,13 +1475,17 @@ func TestReports(t *testing.T) {
 	})
 	require.NoError(t, err)
 	testCases := []struct {
-		name             string
-		outcome          *types.Outcome
-		expectedErrorLog string
-		expectedReports  []ocr3types.ReportPlus[[]byte]
+		name                 string
+		outcome              *types.Outcome
+		maxReportCount       int
+		maxReportLengthBytes int
+		expectedLog          string
+		expectedReports      []ocr3types.ReportPlus[[]byte]
 	}{
 		{
-			name: "successful reports generation",
+			name:                 "successful reports generation",
+			maxReportCount:       10,
+			maxReportLengthBytes: 1024 * 1024,
 			outcome: &types.Outcome{
 				Outcomes: []*types.RequestOutcome{
 					{
@@ -1544,7 +1548,9 @@ func TestReports(t *testing.T) {
 			},
 		},
 		{
-			name: "unsupported observation type",
+			name:                 "unsupported observation type",
+			maxReportCount:       10,
+			maxReportLengthBytes: 1024 * 1024,
 			outcome: &types.Outcome{
 				Outcomes: []*types.RequestOutcome{
 					{
@@ -1553,27 +1559,97 @@ func TestReports(t *testing.T) {
 					},
 				},
 			},
-			expectedErrorLog: "Failed to get report and info for request outcome, skipping report generation for this request",
+			expectedLog: "Failed to get report and info for request outcome, skipping report generation for this request",
+		},
+		{
+			name:                 "max report count limits number of reports",
+			maxReportCount:       2,
+			maxReportLengthBytes: 1024 * 1024,
+			outcome: &types.Outcome{
+				Outcomes: []*types.RequestOutcome{
+					{
+						RequestID: "request_1",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value_1")},
+					},
+					{
+						RequestID: "request_2",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value_2")},
+					},
+					{
+						RequestID: "request_3",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value_3")},
+					},
+				},
+				ChainHeight: &types.ChainHeight{},
+			},
+			expectedLog: "maximum number of reports reached, stopping further report generation for this round",
+			expectedReports: []ocr3types.ReportPlus[[]byte]{
+				{
+					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+						Report: mustMarshalProto(&types.RequestReport{
+							RequestID: "request_1",
+							Report:    &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("value_1")},
+						}),
+						Info: info,
+					},
+				},
+				{
+					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+						Report: mustMarshalProto(&types.RequestReport{
+							RequestID: "request_2",
+							Report:    &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("value_2")},
+						}),
+						Info: info,
+					},
+				},
+			},
+		},
+		{
+			name:                 "reports exceeding max length only set info",
+			maxReportCount:       10,
+			maxReportLengthBytes: 20,
+			outcome: &types.Outcome{
+				Outcomes: []*types.RequestOutcome{
+					{
+						RequestID: "short",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("hi")},
+					},
+					{
+						RequestID: "toolong",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: bytes.Repeat([]byte("x"), 100)},
+					},
+				},
+				ChainHeight: &types.ChainHeight{},
+			},
+			expectedLog: "report is too large to transmit",
+			expectedReports: []ocr3types.ReportPlus[[]byte]{
+				{
+					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+						Report: mustMarshalProto(&types.RequestReport{
+							RequestID: "short",
+							Report:    &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("hi")},
+						}),
+						Info: info,
+					},
+				},
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lggr, observer := logger.TestObservedSugared(t, zapcore.ErrorLevel)
-			rp := newReportingPlugin(Config{}, lggr, nil, nil, test.GetConsensusMetrics(t))
+			lggr, observer := logger.TestObservedSugared(t, zapcore.InfoLevel)
+			rp := newReportingPlugin(Config{MaxReportCount: tc.maxReportCount, MaxReportLengthBytes: tc.maxReportLengthBytes}, lggr, nil, nil, test.GetConsensusMetrics(t))
 
 			reports, err := rp.Reports(t.Context(), 1, mustMarshalProto(tc.outcome))
-			if tc.expectedErrorLog != "" {
-				tests.RequireLogMessage(t, observer, tc.expectedErrorLog)
-				require.Empty(t, reports)
-				require.Nil(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Len(t, reports, len(tc.expectedReports))
-				for i := range reports {
-					require.Equal(t, tc.expectedReports[i].ReportWithInfo.Report, reports[i].ReportWithInfo.Report)
-					require.Equal(t, tc.expectedReports[i].ReportWithInfo.Info, reports[i].ReportWithInfo.Info)
-				}
+			require.NoError(t, err)
+			if tc.expectedLog != "" {
+				tests.RequireLogMessage(t, observer, tc.expectedLog)
+			}
+			require.Len(t, reports, len(tc.expectedReports))
+			for i := range reports {
+				require.Equal(t, tc.expectedReports[i].ReportWithInfo.Report, reports[i].ReportWithInfo.Report)
+				require.Equal(t, tc.expectedReports[i].ReportWithInfo.Info, reports[i].ReportWithInfo.Info)
 			}
 		})
 	}

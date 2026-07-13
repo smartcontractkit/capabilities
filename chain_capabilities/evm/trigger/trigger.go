@@ -12,6 +12,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -33,7 +35,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 
@@ -55,6 +56,12 @@ type LogTriggerService struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
+	// capabilityDonID is the on-chain DON ID of this capability DON.
+	// Used to label emitted events with the sending DON ID, distinct from the
+	// consumer workflow's DON ID carried in RequestMetadata.WorkflowDonID. Zero
+	// means unknown; the labeler then falls back to WorkflowDonID.
+	capabilityDonID uint32
+
 	triggers                        LogTriggerStore
 	logTriggerPollInterval          time.Duration
 	logTriggerSendChannelBufferSize uint64
@@ -69,6 +76,7 @@ type LogTriggerService struct {
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, capabilityID string,
+	capabilityDonID uint32,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
@@ -104,6 +112,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr:                            lggr,
 		beholderProcessor:               beholderProcessor,
 		messageBuilder:                  messageBuilder,
+		capabilityDonID:                 capabilityDonID,
 		triggers:                        store,
 		logTriggerPollInterval:          logTriggerPollInterval,
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
@@ -149,6 +158,9 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 		return
 	}
 	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
+	if err != nil {
+		return
+	}
 	return
 }
 
@@ -219,22 +231,22 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 	lenAddrs := len(input.GetAddresses())
 	if lenAddrs == 0 {
-		return nil, actions.NewUserError(fmt.Errorf("no valid addresses provided (at least one address is required)"))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("no valid addresses provided (at least one address is required)"), caperrors.InvalidArgument)
 	}
 	if err := lts.filterAddressLimiter.Check(ctx, lenAddrs); err != nil {
-		return nil, actions.NewUserError(err)
+		return nil, caperrors.NewPublicUserError(err, caperrors.LimitExceeded)
 	}
 
 	lenTopics := len(input.GetTopics())
 	if lenTopics > 4 {
-		return nil, actions.NewUserError(fmt.Errorf("there can be at most 4 topics provided, got %d instead", lenTopics))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("there can be at most 4 topics provided, got %d instead", lenTopics), caperrors.InvalidArgument)
 	}
 	if lenTopics == 0 || len(input.GetTopics()[0].Values) == 0 {
-		return nil, actions.NewUserError(fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)"))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)"), caperrors.InvalidArgument)
 	}
 	for i, topic := range input.GetTopics() {
 		if err := lts.filterTopicsPerSlotLimiter.Check(ctx, len(topic.Values)); err != nil {
-			return nil, actions.NewUserError(fmt.Errorf("topic %d: %w", i, err))
+			return nil, caperrors.NewPublicUserError(fmt.Errorf("topic %d: %w", i, err), caperrors.LimitExceeded)
 		}
 	}
 
@@ -251,27 +263,27 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	addresses, err := evmservice.ConvertAddressesFromProto(input.GetAddresses())
 	if err != nil {
-		return nil, actions.NewUserError(fmt.Errorf("failed to convert addresses: %w", err))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("failed to convert addresses: %w", err), caperrors.InvalidArgument)
 	}
 
 	sigs, err := evmservice.ConvertHashesFromProto(eventSigs)
 	if err != nil {
-		return nil, actions.NewUserError(fmt.Errorf("failed to convert eventSigs: %w", err))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("failed to convert eventSigs: %w", err), caperrors.InvalidArgument)
 	}
 
 	t2, err := evmservice.ConvertHashesFromProto(topics2)
 	if err != nil {
-		return nil, actions.NewUserError(fmt.Errorf("failed to convert topics2: %w", err))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("failed to convert topics2: %w", err), caperrors.InvalidArgument)
 	}
 
 	t3, err := evmservice.ConvertHashesFromProto(topics3)
 	if err != nil {
-		return nil, actions.NewUserError(fmt.Errorf("failed to convert topics3: %w", err))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("failed to convert topics3: %w", err), caperrors.InvalidArgument)
 	}
 
 	t4, err := evmservice.ConvertHashesFromProto(topics4)
 	if err != nil {
-		return nil, actions.NewUserError(fmt.Errorf("failed to convert topics4: %w", err))
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("failed to convert topics4: %w", err), caperrors.InvalidArgument)
 	}
 
 	filterQuery := evmtypes.LPFilterQuery{
@@ -295,7 +307,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 		summary := fmt.Sprintf("failed to register log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
-		return nil, caperrors.NewPublicSystemError(registerError, caperrors.Unknown)
+		return nil, caperrors.NewPublicSystemError(registerError, caperrors.Unavailable)
 	}
 	expressions, confidence := lts.createLogRequest(ctx, addresses, sigs, t2, t3, t4, input.GetConfidence())
 
@@ -432,6 +444,13 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	var needsUpdate bool
 	sentCount := 0
 
+	triggerIndex, err := workflows.GetTriggerIndexFromReferenceID(telemetryContext.ReferenceID)
+	if err != nil {
+		lts.lggr.Warnw("failed to get trigger index from reference ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "refID", telemetryContext.ReferenceID)
+		// continue with execution even if we can't get trigger index
+		triggerIndex = 0
+	}
+
 	for _, log := range logs {
 		if log == nil {
 			lts.lggr.Errorf("Received nil log for triggerID: %s, skipping", triggerID)
@@ -457,12 +476,13 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id)
-		if err != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+		workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
+		if execIDErr != nil {
+			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "isLegacyExecutionID", false, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
 			workflowExecutionID = ""
 		}
+		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID, "isLegacyExecutionID", false)
 
 		displayWorkflowName := telemetryContext.DecodedWorkflowName
 		if displayWorkflowName == "" {
@@ -476,8 +496,18 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowName, displayWorkflowName,
 		)
 
-		// add DON metadata if available
-		if telemetryContext.WorkflowDonID != 0 {
+		// Emit the *sending* capability DON ID. The trigger plugin runs on a capability
+		// DON (e.g. chain_capabilities_zone-a), separate from the consumer workflow's
+		// DON carried in RequestMetadata.WorkflowDonID. The workflow service needs the
+		// sender's DON to resolve on-chain quorum params (N, F). See CRE-4409.
+		// capabilityDonID is 0 when the host could not resolve it authoritatively
+		// (a multi-DON job-spec node, or a core node that pre-dates CRE-4409); in
+		// that case we fall back to WorkflowDonID. This fallback is permanent, not
+		// transitional, since the job-spec boot path is still supported.
+		switch {
+		case lts.capabilityDonID != 0:
+			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(lts.capabilityDonID)))
+		case telemetryContext.WorkflowDonID != 0:
 			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)))
 		}
 		if telemetryContext.WorkflowDonConfigVersion != 0 {
@@ -559,7 +589,8 @@ func (lts *LogTriggerService) deliverLogReliably(
 	}
 
 	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
-	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
+	deliverCtx := capcommon.ContextWithOrgForDelivery(ctx, lts.lggr, lts.orgResolver, telemetryContext.RequestMetadata)
+	if err := lts.baseTrigger.DeliverEvent(deliverCtx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
 		monitoring.LogAndEmitError(
@@ -706,7 +737,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	}
 	trigger, found := lts.triggers.Read(triggerID)
 	if !found {
-		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Internal)
+		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.NotFound)
 	}
 	lts.lggr.Infof("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
@@ -718,7 +749,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 		unregisterLogTrackingError := fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
-		return caperrors.NewPrivateSystemError(unregisterLogTrackingError, caperrors.Unknown)
+		return caperrors.NewPrivateSystemError(unregisterLogTrackingError, caperrors.Unavailable)
 	}
 	return nil
 }

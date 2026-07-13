@@ -22,7 +22,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
@@ -36,6 +35,12 @@ var (
 	_ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
 	_ common.OutboundRequestClient = &gatewayOutboundProxy{}
 )
+
+// routingGatewayConnector is the subset of MultiGatewayConnector used for outbound routing.
+type routingGatewayConnector interface {
+	core.GatewayConnector
+	GatewayIDsForDon(ctx context.Context, donID string) ([]string, error)
+}
 
 type gatewayOutboundProxy struct {
 	services.StateMachine
@@ -168,8 +173,6 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 	defer p.responses.cleanup(requestID)
 
-	lggr.Debugw("sending request to gateway")
-
 	rawRes := json.RawMessage(payload)
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
@@ -179,14 +182,24 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 
 	p.metrics.IncrementRequestCount(ctx, lggr)
-	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
+
+	donID, err := p.validator.ResolveGatewayProxyDonID(ctx)
 	if err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
+		return nil, 0, fmt.Errorf("failed to resolve gateway proxy DON: %w", err)
+	}
+
+	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, gatewayReq.Hash())
+	if err != nil {
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to establish connection to gateway: %w", err)
 	}
-	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, lggr)
+
+	lggr.Debugw("sending request to gateway", "donID", donID, "selectedGateway", selectedGateway)
+
+	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
@@ -242,10 +255,10 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 // from the consistent hash ring and the method retries to select another gateway.
 // When all gateways are evicted from the hash ring, then it will retry to get the list of gateways and reinitialize the ring and retry after backoff.
 // Note that consitent hash ring is reset every time a new request is made, so it will always use the latest list of gateways.
-func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, requestHash string) (string, error) {
-	gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
+func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, donID, requestHash string) (string, error) {
+	gatewayIDs, err := p.gatewayIDsForDon(ctx, donID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get gateway IDs: %w", err)
+		return "", err
 	}
 	selector := setupRing(gatewayIDs)
 	backoff := time.Duration(p.gatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
@@ -261,10 +274,11 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 				case <-ctx.Done():
 					return "", ctx.Err()
 				case <-time.After(backoff):
-					gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
+					gatewayIDs, err := p.gatewayIDsForDon(ctx, donID)
 					if err != nil {
-						return "", fmt.Errorf("failed to get gateway IDs: %w", err)
+						return "", err
 					}
+					lggr.Debugw("setting up ring", "gatewayIDs", gatewayIDs, "donID", donID)
 					selector = setupRing(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
 					continue
@@ -275,16 +289,33 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 				return "", fmt.Errorf("failed to select gateway using consistent hashing: %w", err)
 			}
 
+			lggr = logger.With(lggr, "selectedGateway", gateway, "donID", donID)
+
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
-				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err, "gateway", gateway)
+				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err)
 				selector.Remove(gateway)
 				continue
 			}
 
-			lggr.Debug("connected successfully")
+			lggr.Debugw("connected successfully")
 			return gateway, nil
 		}
 	}
+}
+
+func (p *gatewayOutboundProxy) gatewayIDsForDon(ctx context.Context, donID string) ([]string, error) {
+	routing, ok := p.gatewayConnector.(routingGatewayConnector)
+	if !ok {
+		return nil, fmt.Errorf("gateway connector does not support multi-gateway routing")
+	}
+	gatewayIDs, err := routing.GatewayIDsForDon(ctx, donID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get gateway IDs: %w", err)
+	}
+	if len(gatewayIDs) == 0 {
+		return nil, fmt.Errorf("no gateways configured for DON %q", donID)
+	}
+	return gatewayIDs, nil
 }
 
 // attemptGatewayConnection waits to connect to a gateway with a new child context
@@ -310,7 +341,7 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 		req.Params = &json.RawMessage{}
 	}
 
-	var msg gateway.OutboundHTTPResponse
+	var msg gc.OutboundHTTPResponse
 	err := json.Unmarshal(*req.Params, &msg)
 	if err != nil {
 		l.Errorw("failed to unmarshal request params", "error", err)
