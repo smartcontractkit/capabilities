@@ -12,11 +12,11 @@ var errInsufficientErrorOb = fmt.Errorf("insufficient number of errors")
 
 // modeForError returns a slice of common errors for a given request when:
 // 1. The total number of observations is at least (N+F)/2+1, and
-// 2. The number of observed errors is at least F+1.
-// If no single error was observed by at least F+1 nodes, it returns a slice
-// of the most frequently observed errors whose combined observation count equals F+1.
+// 2. The number of observed errors is at least minMatching.
+// If no single error was observed by at least minMatching nodes, it returns a slice
+// of the most frequently observed errors whose combined observation count equals minMatching.
 // The returned int is the count of the most frequently observed error(s) (not necessarily identical).
-func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]byte, int, error) {
+func modeForError(N, F, minMatching int, requestID string, aos []attributedObservation) ([][]byte, int, error) {
 	type keyT [sha256.Size]byte
 	counters := make(map[keyT]*counter[[]byte])
 	var totalNum int
@@ -82,13 +82,13 @@ func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]
 	for _, c := range sortedCounters {
 		result = append(result, c.value)
 		count += c.count
-		if count >= F+1 {
+		if count >= minMatching {
 			break
 		}
 	}
 
-	if count < F+1 {
-		return nil, count, fmt.Errorf("%w: expected %d, got %d", errInsufficientErrorOb, F+1, count)
+	if count < minMatching {
+		return nil, count, fmt.Errorf("%w: expected %d, got %d", errInsufficientErrorOb, minMatching, count)
 	}
 
 	return result, count, nil
