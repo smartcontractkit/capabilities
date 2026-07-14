@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math/big"
@@ -402,19 +403,7 @@ func handleValueCountsAggregation(
 	}
 
 	slices.SortFunc(counted, func(a, b countedValue) int {
-		if a.count != b.count {
-			if a.count > b.count {
-				return -1
-			}
-			return 1
-		}
-		if a.key < b.key {
-			return -1
-		}
-		if a.key > b.key {
-			return 1
-		}
-		return 0
+		return cmp.Or(cmp.Compare(a.count, b.count), cmp.Compare(a.key, b.key))
 	})
 
 	result := make([]*valuespb.Value, 0, len(counted))
