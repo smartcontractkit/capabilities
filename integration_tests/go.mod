@@ -29,7 +29,7 @@ require (
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260714130758-475cb096a3e1
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260609161557-8ceae53b8ab1
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20260512150409-b4068bf735e6
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260622152157-c8e129347b8b
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260714170805-29c5577b5f55
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260528221400-84746b70eeeb
 	github.com/smartcontractkit/chainlink/v2 v2.29.1-cre-beta.0.0.20260609174137-e2407e0bdd98
 	github.com/smartcontractkit/cre-sdk-go v1.5.0
@@ -304,7 +304,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260615195421-fb87220e503f // indirect
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb // indirect
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64 // indirect
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260507123701-77fc93b573bb // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
 	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20260428205619-2db1389501a1 // indirect
