@@ -403,6 +403,7 @@ func handleValueCountsAggregation(
 	}
 
 	slices.SortFunc(counted, func(a, b countedValue) int {
+		// count favors b, and key favors a. this is by design...
 		return cmp.Or(cmp.Compare(b.count, a.count), cmp.Compare(a.key, b.key))
 	})
 
