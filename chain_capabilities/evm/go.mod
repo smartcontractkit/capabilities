@@ -8,7 +8,7 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260615195421-fb87220e503f
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb
 	github.com/smartcontractkit/chain-selectors v1.0.106
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260713185857-30ad2e76c0f4
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260714130758-475cb096a3e1
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260410162948-2dca02f24e98
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251022073203-7d8ae8cf67c1
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260410144512-ca02ad6ed16a
