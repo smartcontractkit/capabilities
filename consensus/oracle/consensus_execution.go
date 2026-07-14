@@ -403,7 +403,7 @@ func handleValueCountsAggregation(
 	}
 
 	slices.SortFunc(counted, func(a, b countedValue) int {
-		return cmp.Or(cmp.Compare(a.count, b.count), cmp.Compare(a.key, b.key))
+		return cmp.Or(cmp.Compare(b.count, a.count), cmp.Compare(a.key, b.key))
 	})
 
 	result := make([]*valuespb.Value, 0, len(counted))
