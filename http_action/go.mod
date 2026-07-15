@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/http_action
 go 1.26.2
 
 require (
-	github.com/doyensec/safeurl v0.2.2
+	github.com/doyensec/safeurl v0.2.4
 	github.com/google/uuid v1.6.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260605180138-9678dea7f443
