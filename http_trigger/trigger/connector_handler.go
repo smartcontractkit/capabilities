@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,10 +58,6 @@ type connectorHandler struct {
 	// unregisterMeterable removes this handler from the ResourceManager's
 	// snapshot registry; set on Start, called on Close.
 	unregisterMeterable func()
-	// orgResolverSvc is the CachingOrgResolver's service handle when one was
-	// injected; its Start/Close are wired into the handler lifecycle. Nil when
-	// no resolver was injected.
-	orgResolverSvc services.Service
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
@@ -84,11 +79,6 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		resourceManager:          resourceManager,
 		baseIdentity:             baseIdentity,
 	}
-	// Own the caching resolver's lifecycle when one was injected, so its
-	// background refresh runs while the handler is up.
-	if caching, ok := orgResolver.(*orgresolver.CachingOrgResolver); ok {
-		h.orgResolverSvc = caching
-	}
 	return h, nil
 }
 
@@ -97,13 +87,6 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	h.wg.Add(1)
 	go h.startRequestCacheCleanup(ctx)
 	return h.StartOnce(HandlerName, func() error {
-		// Start the caching org resolver (if any) so its background refresh
-		// runs and the snapshot path is served from memory. Fail-open.
-		if h.orgResolverSvc != nil {
-			if err := h.orgResolverSvc.Start(ctx); err != nil {
-				h.lggr.Errorw("failed to start caching org resolver; org attribution may be empty", "err", err)
-			}
-		}
 		// Start the ResourceManager as a sub-service (it owns the snapshot
 		// tick) and register this handler as the snapshotted Meterable. The RM
 		// is fail-open: a start failure logs and continues (uniform with the
@@ -151,15 +134,10 @@ func (h *connectorHandler) Close() error {
 		// nothing, and billing releases each still-active workflow by its
 		// absence from the next snapshot. Deregister the Meterable from the
 		// ResourceManager FIRST so no snapshot tick can run after teardown,
-		// then close the caching org resolver and the ResourceManager.
+		// then close the ResourceManager.
 		if h.unregisterMeterable != nil {
 			h.unregisterMeterable()
 			h.unregisterMeterable = nil
-		}
-		if h.orgResolverSvc != nil {
-			if err := h.orgResolverSvc.Close(); err != nil {
-				h.lggr.Errorw("failed to close caching org resolver", "err", err)
-			}
 		}
 		return h.resourceManager.Close()
 	})
@@ -248,8 +226,15 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 // prior version. The unregister path passes the same workflowID so its -1 hashes
 // symmetrically with the register +1 it reverses.
 func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID string, workflowDONID uint32, owner string) {
-	identity := h.baseIdentity.WithWorkflowDonFallback(workflowDONID)
-	orgID := orgresolver.ResolveOrEmpty(ctx, h.orgResolver, owner, h.lggr)
+	identity := h.baseIdentity
+	var orgID string
+	if h.orgResolver != nil && owner != "" {
+		if resolved, err := h.orgResolver.Get(ctx, owner); err != nil {
+			logger.Sugared(h.lggr).Warnw("failed to resolve org ID for metering", "owner", owner, "err", err)
+		} else {
+			orgID = resolved
+		}
+	}
 	eventID := resourcemanager.EventID(namespace, workflowID)
 	h.resourceManager.EmitDelta(ctx, identity, eventID, delta, resourcemanager.UtilizationFields{
 		ResourceType: meterResourceType,
@@ -258,18 +243,9 @@ func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, nam
 	})
 }
 
-// donID returns the DON identifier for an emission. It prefers the
-// host-injected capability DON captured in the base identity (capabilities#619)
-// and falls back to the per-registration workflow DON when the host did not
-// populate one (CapabilityDonID == 0 at Initialise).
+// donID returns the DON identifier from the base metering identity.
 func (h *connectorHandler) donID(workflowDONID uint32) string {
-	if h.baseIdentity.DonID() != "" {
-		return h.baseIdentity.DonID()
-	}
-	if workflowDONID != 0 {
-		return strconv.FormatUint(uint64(workflowDONID), 10)
-	}
-	return ""
+	return h.baseIdentity.DonID()
 }
 
 // ResourceIdentity returns the HTTP trigger's base metering identity (six
@@ -289,12 +265,14 @@ func (h *connectorHandler) GetUtilization(ctx context.Context) []resourcemanager
 	entries := make([]resourcemanager.SnapshotEntry, 0, len(workflows))
 	for _, w := range workflows {
 		workflowID := w.workflowSelector.WorkflowID
-		// Org is resolved from the stored owner via the shared caching resolver
-		// (a cache hit populated at registration), keeping GetUtilization
-		// no-network as the snapshot contract requires.
-		orgID := orgresolver.ResolveOrEmpty(ctx, h.orgResolver, w.workflowSelector.WorkflowOwner, h.lggr)
+		var orgID string
+		if h.orgResolver != nil && w.workflowSelector.WorkflowOwner != "" {
+			if resolved, err := h.orgResolver.Get(ctx, w.workflowSelector.WorkflowOwner); err == nil {
+				orgID = resolved
+			}
+		}
 		entries = append(entries, resourcemanager.SnapshotEntry{
-			Identity: h.baseIdentity.WithWorkflowDonFallback(w.metadata.WorkflowDONID),
+			Identity: h.baseIdentity,
 			Utilizations: []*meteringpb.Utilization{
 				resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
 					ResourceType: meterResourceType,

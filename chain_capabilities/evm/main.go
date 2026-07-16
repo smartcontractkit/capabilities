@@ -31,10 +31,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/durableemitter"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
-	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -50,7 +50,7 @@ type capabilityGRPCService struct {
 	limitsFactory limits.Factory
 	// metering is the resolved metering Config (ResourceManagerConfig +
 	// DeploymentIdentity) produced from loop.EnvConfig by
-	// resourcemanager.ConfigFromEnv at startup. The zero value is valid and
+	// EnvConfig.MeteringConfig at startup. The zero value is valid and
 	// leaves those dimensions empty/disabled.
 	metering resourcemanager.Config
 }
@@ -69,10 +69,16 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		// ConfigFromEnv is the single, canonical loop-env -> metering mapping
-		// (enable flags, beholder emitter, snapshot interval, deployment
-		// identity); no per-main copy of that mapping.
-		meteringCfg := resourcemanager.ConfigFromEnv(&s.EnvConfig)
+		// EnvConfig.MeteringConfig is the single, canonical loop-env -> metering
+		// mapping (enable flags, snapshot interval, deployment identity); no
+		// per-main copy of that mapping. The durable emitter is resolved here
+		// and injected, since resourcemanager itself must not reach for the
+		// process-global emitter.
+		var emitter resourcemanager.Emitter
+		if de := durableemitter.GetGlobalEmitter(); de != nil {
+			emitter = de
+		}
+		meteringCfg := s.EnvConfig.MeteringConfig(emitter)
 		return evmcapserver.NewClientServer(&capabilityGRPCService{
 			lggr:          s.Logger,
 			limitsFactory: s.LimitsFactory,
@@ -179,19 +185,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	// snapshot interval here. Identity/snapshots are gated by the same metering
 	// env flag as MeterRecords.
 	resourceManager := resourcemanager.NewResourceManager(c.lggr, c.metering.ResourceManagerConfig)
-	// The authoritative DON ID is the host-injected CapabilityDonID; when 0,
-	// NewBaseIdentity leaves don_id empty and each emission falls back to the
-	// consumer workflow's DON via the LogTriggerService's resolveDONID.
-	baseIdentity := resourcemanager.NewBaseIdentity(c.metering.DeploymentIdentity, dependencies.CapabilityDonID, trigger.MeteringService, trigger.MeteringResource)
-	// Wrap the injected org resolver in a CachingOrgResolver so the snapshot
-	// path (GetUtilization, contractually no-network) resolves org from memory.
-	// We own its Start/Close (wired into the start loop and Close below).
-	// The LogTriggerService owns the caching resolver's Start/Close lifecycle
-	// (it type-asserts the *CachingOrgResolver), so we only construct it here.
-	var orgResolver orgresolver.OrgResolver = dependencies.OrgResolver
-	if dependencies.OrgResolver != nil {
-		orgResolver = orgresolver.NewCaching(dependencies.OrgResolver, resourcemanager.DefaultSnapshotInterval)
+	baseIdentity := resourcemanager.NewBaseIdentity(c.metering.DeploymentIdentity, trigger.MeteringService, trigger.MeteringResource)
+	if dependencies.CapabilityDonID != 0 {
+		baseIdentity = baseIdentity.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
 	}
+	orgResolver := dependencies.OrgResolver
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
 		orgResolver, dependencies.TriggerEventStore, resourceManager, baseIdentity, c.chainSelector)

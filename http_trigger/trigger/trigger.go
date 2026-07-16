@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,11 +33,6 @@ const (
 	meterResource     = "http_workflows"
 	meterResourceType = "operations"
 )
-
-// orgResolverRefreshInterval bounds owner->org cache staleness in the snapshot
-// path. It matches the snapshot cadence so a re-linked org is reflected within
-// one snapshot interval.
-const orgResolverRefreshInterval = resourcemanager.DefaultSnapshotInterval
 
 var _ server.HTTPCapability = &service{}
 
@@ -72,7 +68,7 @@ type service struct {
 	orgResolver      orgresolver.OrgResolver
 	// metering is the resolved metering Config (ResourceManagerConfig +
 	// DeploymentIdentity) produced from loop.EnvConfig by
-	// resourcemanager.ConfigFromEnv in main.
+	// EnvConfig.MeteringConfig in main.
 	metering resourcemanager.Config
 }
 
@@ -99,9 +95,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 		s.lggr.Warn("OrgResolver is nil, HTTP trigger capability will not be able to fetch organization ID")
 		s.orgResolver = nil
 	} else {
-		// Wrap in a CachingOrgResolver so the snapshot path (no-network) is
-		// served from memory. The handler owns its Start/Close lifecycle.
-		s.orgResolver = orgresolver.NewCaching(dependencies.OrgResolver, orgResolverRefreshInterval)
+		s.orgResolver = dependencies.OrgResolver
 	}
 	workflowStore := newWorkflowStore(s.lggr)
 	var err error
@@ -112,10 +106,10 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
 	resourceManager := resourcemanager.NewResourceManager(s.lggr, s.metering.ResourceManagerConfig)
-	// The authoritative DON ID is the host-injected CapabilityDonID; when 0,
-	// NewBaseIdentity leaves don_id empty and each emission falls back to the
-	// consumer workflow's DON via WithWorkflowDonFallback.
-	baseIdentity := resourcemanager.NewBaseIdentity(s.metering.DeploymentIdentity, dependencies.CapabilityDonID, meterService, meterResource)
+	baseIdentity := resourcemanager.NewBaseIdentity(s.metering.DeploymentIdentity, meterService, meterResource)
+	if dependencies.CapabilityDonID != 0 {
+		baseIdentity = baseIdentity.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
+	}
 	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, resourceManager, baseIdentity)
 	if err != nil {
 		return err

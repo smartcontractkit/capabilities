@@ -54,11 +54,6 @@ const (
 // filter.
 const cleanupInterval = 30 * time.Second
 
-// orgResolverRefreshInterval bounds owner->org cache staleness in the snapshot
-// path. It matches the snapshot cadence so a re-linked org is reflected within
-// one snapshot interval.
-const orgResolverRefreshInterval = resourcemanager.DefaultSnapshotInterval
-
 // Metering identity constants for the EVM log trigger (SHARED-2711). These are
 // the service-level dimensions of the base ResourceIdentity: Service is the
 // stable service constant (it must not encode deployment environment or zone,
@@ -108,11 +103,7 @@ type LogTriggerService struct {
 	filterTopicsPerSlotLimiter limits.BoundLimiter[int]
 	eventRateLimit             limits.RateLimiter
 	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
-	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
-	// orgResolverSvc is the CachingOrgResolver's service handle when one was
-	// injected; its Start/Close are wired into the service lifecycle. Nil when
-	// no resolver was injected.
-	orgResolverSvc services.Service
+	orgResolver orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 	// filterRegisteredAt records, per log-poller filter name, the time it was
 	// registered at the log poller. cleanUpStaleFilters uses it to skip filters
 	// younger than one cleanup interval, closing the register-time window where
@@ -172,11 +163,6 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	if lts.orgResolver == nil {
 		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
 	}
-	// Own the caching resolver's lifecycle when one was injected, so its
-	// background refresh runs while the service is up.
-	if caching, ok := orgResolver.(*orgresolver.CachingOrgResolver); ok {
-		lts.orgResolverSvc = caching
-	}
 	if lts.resourceManager == nil {
 		lts.lggr.Warn("ResourceManager is nil, EVM log trigger capability will not emit meter records")
 	}
@@ -231,14 +217,6 @@ func (lts *LogTriggerService) start(ctx context.Context) error {
 	lts.lggr.Infof("Starting clean up of failed log poller filters every %s", cleanupInterval)
 	lts.srvcEng.GoTick(ticker, lts.cleanUpStaleFilters)
 
-	// Start the caching org resolver (if any) so its background refresh runs
-	// and the snapshot path is served from memory. Fail-open.
-	if lts.orgResolverSvc != nil {
-		if err := lts.orgResolverSvc.Start(ctx); err != nil {
-			lts.lggr.Errorw("failed to start caching org resolver; org attribution may be empty", "err", err)
-		}
-	}
-
 	// The ResourceManager owns the snapshot tick: start it as a sub-service of
 	// this service and Register ourselves so its tick polls GetUtilization. We
 	// never run our own snapshot loop. The RM is fail-open and starting it must
@@ -265,11 +243,6 @@ func (lts *LogTriggerService) close() error {
 		lts.rmUnregister = nil
 	}
 	lts.baseTrigger.Stop()
-	if lts.orgResolverSvc != nil {
-		if err := lts.orgResolverSvc.Close(); err != nil {
-			lts.lggr.Errorw("failed to close caching org resolver", "err", err)
-		}
-	}
 	if lts.resourceManager != nil {
 		return lts.resourceManager.Close()
 	}
@@ -415,14 +388,23 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	// Build the filter's metering identity once from the already-converted
 	// inputs: a workflow-independent content hash and the resolved DON ID. It is
 	// stashed on the trigger state so every later path (unregister, cleanup,
-	// snapshot) reproduces the same identity without the request input. We store
-	// the workflow OWNER, never a resolved org, and resolve org at emit time.
+	// snapshot) reproduces the same identity without the request input. The orgID
+	// is resolved at registration and stored so emit/snapshot paths avoid network.
+	var orgID string
+	if lts.orgResolver != nil && meta.WorkflowOwner != "" {
+		if resolved, err := lts.orgResolver.Get(ctx, meta.WorkflowOwner); err != nil {
+			lts.lggr.Warnw("failed to resolve org ID for metering", "owner", meta.WorkflowOwner, "err", err)
+		} else {
+			orgID = resolved
+		}
+	}
 	loggedFilter := filter{
 		filterID:             filterID,
 		physicalFilterID:     physicalFilterID(lts.chainSelector, addresses, sigs, t2, t3, t4),
 		reservedAddressCount: int64(len(addresses)),
 		donID:                lts.resolveDONID(meta.WorkflowDonID),
 		workflowOwner:        meta.WorkflowOwner,
+		orgID:                orgID,
 		expressions:          expressions,
 		confidence:           confidence,
 	}
@@ -522,23 +504,11 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + SuffixLogTriggerFilterID
 }
 
-// resolveDONID returns the metering DON ID for an emit, applying the
-// capabilities#619 0->WorkflowDonID rule: when the host injected a capability
-// DON ID, baseIdentity's DON identifier is non-empty and used as-is; otherwise the
-// consumer workflow's DON ID (from the request metadata) is the documented
-// fallback. The result is stashed on the filter at registration so the
-// unregister/cleanup/snapshot paths reproduce the same identity without the
-// request. Empty when neither source is known. This is the SAME value stamped
-// on the events.KeyDonID label (see startPolling), so metering identity and the
-// event label cannot diverge.
+// resolveDONID returns the base identity's DON ID. The DON ID is stamped on
+// the identity at construction (via WithDonID) and is the single source of
+// truth for metering and event labels.
 func (lts *LogTriggerService) resolveDONID(workflowDonID uint32) string {
-	if lts.baseIdentity.DonID() != "" {
-		return lts.baseIdentity.DonID()
-	}
-	if workflowDonID != 0 {
-		return strconv.FormatUint(uint64(workflowDonID), 10)
-	}
-	return ""
+	return lts.baseIdentity.DonID()
 }
 
 // identity returns the base metering identity with DON ID resolved for one
@@ -573,12 +543,11 @@ func (lts *LogTriggerService) emitDelta(ctx context.Context, delta int64, namesp
 		return
 	}
 	identity := lts.identity(f.donID)
-	orgID := orgresolver.ResolveOrEmpty(ctx, lts.orgResolver, f.workflowOwner, lts.lggr)
 	eventID := resourcemanager.EventID(namespace, workflowID, triggerID)
 	lts.resourceManager.EmitDelta(ctx, identity, eventID, delta, resourcemanager.UtilizationFields{
 		ResourceType: MeteringResourceType,
 		ResourceID:   f.physicalFilterID,
-		OrgID:        orgID,
+		OrgID:        f.orgID,
 	})
 }
 
@@ -624,7 +593,7 @@ func (lts *LogTriggerService) GetUtilization(ctx context.Context) []resourcemana
 	entries := make([]resourcemanager.SnapshotEntry, 0, len(byPhysical))
 	for _, agg := range byPhysical {
 		f := agg.f
-		orgID := orgresolver.ResolveOrEmpty(ctx, lts.orgResolver, f.workflowOwner, lts.lggr)
+		orgID := f.orgID
 		entries = append(entries, resourcemanager.SnapshotEntry{
 			Identity: lts.identity(f.donID),
 			Utilizations: []*meteringpb.Utilization{

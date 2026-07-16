@@ -185,7 +185,7 @@ func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	assert.Equal(t, "trigger_registrations", id.GetResourcePool())
 	// The metering identity DON and the events.KeyDonID label derive from the
 	// same resolver, so they cannot diverge.
-	assert.Equal(t, ts.donID(metadata.WorkflowDonID), id.GetDon().GetDonId())
+	assert.Equal(t, ts.donID(), id.GetDon().GetDonId())
 
 	require.Len(t, register.GetUtilizations(), 1)
 	assert.Equal(t, "1", register.GetUtilizations()[0].GetValue())
@@ -395,7 +395,7 @@ func TestCronTrigger_Metering_DonIDFallback(t *testing.T) {
 	require.Len(t, records, 1)
 	assert.Equal(t, "42", records[0].GetIdentity().GetDon().GetDonId(), "DON ID falls back to WorkflowDonID")
 	// Metering identity DON and events.KeyDonID label share the same resolver.
-	assert.Equal(t, ts.donID(metadata.WorkflowDonID), records[0].GetIdentity().GetDon().GetDonId())
+	assert.Equal(t, ts.donID(), records[0].GetIdentity().GetDon().GetDonId())
 	// Product falls back to the cron constant when the host injects none.
 	assert.Equal(t, "cre", records[0].GetIdentity().GetProduct())
 

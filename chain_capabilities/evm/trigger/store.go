@@ -32,12 +32,12 @@ type filter struct {
 	// DON ID string (capability DON, or the consumer WorkflowDonID fallback when
 	// the host did not inject a capability DON); empty when neither is known.
 	donID string
-	// workflowOwner is the durable attribution key. We store the workflow OWNER,
-	// never a resolved org ID: the org is resolved fresh at each emission (via
-	// orgresolver.ResolveOrEmpty) and at snapshot time (via the shared
-	// CachingOrgResolver), so a re-linked owner is picked up without rewriting
-	// durable state.
+	// workflowOwner is stored for attribution.
 	workflowOwner string
+	// orgID is the organization ID resolved from workflowOwner at registration
+	// time and stored alongside so that emit and snapshot paths can use it
+	// without a network call.
+	orgID string
 	expressions   []query.Expression
 	confidence    primitives.ConfidenceLevel
 }
