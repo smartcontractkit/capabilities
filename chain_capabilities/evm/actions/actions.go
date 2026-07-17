@@ -132,7 +132,7 @@ func requestID(meta capabilities.RequestMetadata) string {
 func (e *EVM) useHashBasedConsensus(ctx context.Context, meta capabilities.RequestMetadata) bool {
 	l, lErr := e.featureChainCapabilityHashBasedOCRActiveAt.Limit(ctx)
 	err := e.featureChainCapabilityHashBasedOCRActiveAt.Check(ctx, commoncfg.NewTimestamp(meta.ExecutionTimestamp))
-	e.lggr.Infow("useHashBasedConsensus", "limit", l.String(), "lerr", lErr, meta.ExecutionTimestamp, commoncfg.NewTimestamp(meta.ExecutionTimestamp).String(), "err", err)
+	e.lggr.Infow("useHashBasedConsensus", "limit", l.String(), "lerr", lErr, "ex_time", meta.ExecutionTimestamp, "exec_time_str", commoncfg.NewTimestamp(meta.ExecutionTimestamp).String(), "err", err)
 	return err == nil
 }
 
