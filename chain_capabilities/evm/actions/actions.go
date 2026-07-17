@@ -131,8 +131,8 @@ func requestID(meta capabilities.RequestMetadata) string {
 // useHashBasedConsensus is true when hash-based OCR (V2) should be used for reads that support it.
 func (e *EVM) useHashBasedConsensus(ctx context.Context, meta capabilities.RequestMetadata) bool {
 	l, lErr := e.featureChainCapabilityHashBasedOCRActiveAt.Limit(ctx)
-	e.lggr.Infow("useHashBasedConsensus", "limit", l.String(), "lerr", lErr, meta.ExecutionTimestamp, commoncfg.NewTimestamp(meta.ExecutionTimestamp).String())
 	err := e.featureChainCapabilityHashBasedOCRActiveAt.Check(ctx, commoncfg.NewTimestamp(meta.ExecutionTimestamp))
+	e.lggr.Infow("useHashBasedConsensus", "limit", l.String(), "lerr", lErr, meta.ExecutionTimestamp, commoncfg.NewTimestamp(meta.ExecutionTimestamp).String(), "err", err)
 	return err == nil
 }
 
