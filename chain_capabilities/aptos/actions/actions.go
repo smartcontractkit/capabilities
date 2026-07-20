@@ -71,10 +71,10 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 		messageBuilder:         messageBuilder,
 	}
 
-	return a, a.initLimiters(limitsFactory)
+	return a, a.initLimiters(limitsFactory, lggr)
 }
 
-func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
+func (a *Aptos) initLimiters(limitsFactory limits.Factory, lggr logger.Logger) (err error) {
 	a.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Aptos.ReportSizeLimit)
 	if err != nil {
 		return
@@ -84,8 +84,11 @@ func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 	if err != nil {
 		return
 	}
-
+	lggr.Debugw("Initializing write report block timestamp active period limiter", "activePeriod", cresettings.Default.PerWorkflow.FeatureAptosWriteReportBlockTimestampActivePeriod)
 	a.writeReportBlockTimestampActive, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureAptosWriteReportBlockTimestampActivePeriod)
+	if err != nil {
+		return
+	}
 	return
 }
 
