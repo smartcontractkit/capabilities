@@ -50,14 +50,21 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 		return nil, ocr3types.ReportingPluginInfo{}, fmt.Errorf("failed to read reporting plugin config: %w", err)
 	}
 
+	//nolint:gosec // F and N values will never exceed uint32 max
+	// Allow MinResponsesToAggregate to be set to 0 to use the default of F+1. If set, it must be between F+1 and N.
+	if offchainCfg.MinResponsesToAggregate != 0 && (offchainCfg.MinResponsesToAggregate < uint32(config.F+1) || offchainCfg.MinResponsesToAggregate > uint32(config.N)) {
+		return nil, ocr3types.ReportingPluginInfo{}, fmt.Errorf("invalid MinResponsesToAggregate: %d; must be gte to %d (F+1) and lte to %d (N)", offchainCfg.MinResponsesToAggregate, config.F+1, config.N)
+	}
+
 	rpf.logger.Infof("Using reporting plugin config: %+v", offchainCfg)
 
 	cfg := Config{
-		ReportingPluginConfig: config,
-		MaxBatchSize:          int(offchainCfg.MaxBatchSize),
-		MaxObservationLength:  int(offchainCfg.MaxObservationLengthBytes),
-		MaxReportLengthBytes:  int(offchainCfg.MaxReportLengthBytes),
-		MaxReportCount:        int(offchainCfg.MaxReportCount),
+		ReportingPluginConfig:   config,
+		MaxBatchSize:            int(offchainCfg.MaxBatchSize),
+		MaxObservationLength:    int(offchainCfg.MaxObservationLengthBytes),
+		MaxReportLengthBytes:    int(offchainCfg.MaxReportLengthBytes),
+		MaxReportCount:          int(offchainCfg.MaxReportCount),
+		MinResponsesToAggregate: int(offchainCfg.MinResponsesToAggregate),
 	}
 
 	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics), ocr3types.ReportingPluginInfo{

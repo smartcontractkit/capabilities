@@ -22,6 +22,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/test"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcapocr3types "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
@@ -1756,4 +1757,162 @@ func TestIsVolatileCandidateBetter(t *testing.T) {
 			require.Equal(t, !tc.want, isVolatileCandidateABetter(&b, &a))
 		})
 	}
+}
+
+// TestAgreeOnEventuallyConsistentValue_TwoFPlusOne verifies that setting
+// MinIdenticalObservations=2F+1 raises the matching bar for read results.
+func TestAgreeOnEventuallyConsistentValue_TwoFPlusOne(t *testing.T) {
+	const id = "req-2f1"
+	// N=7, F=2 → require 5 identical (2F+1)
+	plugin := newReportingPlugin(Config{
+		ReportingPluginConfig:   ocr3types.ReportingPluginConfig{F: 2, N: 7},
+		MinResponsesToAggregate: 5,
+	}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+
+	makeAos := func(values []string) []attributedObservation {
+		aos := make([]attributedObservation, len(values))
+		for i, v := range values {
+			//nolint:gosec
+			aos[i] = attributedObservation{
+				Observer: commontypes.OracleID(i),
+				Observation: &types.Observation{
+					Observations: map[string]*types.RequestObservation{
+						id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte(v)}},
+					},
+				},
+			}
+		}
+		return aos
+	}
+
+	t.Run("succeeds with 5 of 7 identical", func(t *testing.T) {
+		aos := makeAos([]string{"v", "v", "v", "v", "v", "other", "other"})
+		got, actualCount, err := plugin.agreeOnEventuallyConsistentValue(id, aos)
+		require.NoError(t, err)
+		require.Equal(t, []byte("v"), got)
+		require.Equal(t, 5, actualCount)
+	})
+
+	t.Run("fails with only 4 of 7 identical", func(t *testing.T) {
+		aos := makeAos([]string{"v", "v", "v", "v", "x", "y", "z"})
+		_, actualCount, err := plugin.agreeOnEventuallyConsistentValue(id, aos)
+		require.ErrorContains(t, err, "insufficient number of identical observations: expected 5, got 4")
+		require.Equal(t, 4, actualCount)
+	})
+
+	t.Run("default F+1 still works when MinIdenticalObservations is zero", func(t *testing.T) {
+		pluginDefault := newReportingPlugin(Config{
+			ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 2, N: 7},
+		}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+		// 3 of 7 matching → F+1=3, should succeed
+		aos := makeAos([]string{"v", "v", "v", "a", "b", "c", "d"})
+		got, actualCount, err := pluginDefault.agreeOnEventuallyConsistentValue(id, aos)
+		require.NoError(t, err)
+		require.Equal(t, []byte("v"), got)
+		require.Equal(t, 3, actualCount)
+	})
+}
+
+func marshalOffchainConfig(t *testing.T, cfg *evmcapocr3types.ReportingPluginConfig) []byte {
+	t.Helper()
+	b, err := proto.Marshal(cfg)
+	require.NoError(t, err)
+	return b
+}
+
+func TestNewReportingPlugin_MinResponsesToAggregateValidation(t *testing.T) {
+	const N = 4
+	const F = 1
+	// F+1 = 2
+
+	newFactory := func(t *testing.T) *ReportingPluginFactory {
+		t.Helper()
+		return NewReportingPluginFactory(
+			logger.Sugared(logger.Test(t)),
+			mocks.NewRequestsHandler(t),
+			mocks.NewBlocksProvider(t),
+			test.GetConsensusMetrics(t),
+		)
+	}
+
+	baseOffchainCfg := &evmcapocr3types.ReportingPluginConfig{
+		MaxQueryLengthBytes:       1024 * 1024,
+		MaxObservationLengthBytes: 95 * 1024,
+		MaxOutcomeLengthBytes:     uint32(ocr3types.MaxMaxOutcomeLength),
+		MaxReportLengthBytes:      uint32(ocr3types.MaxMaxReportLength),
+		MaxReportCount:            uint32(ocr3types.MaxMaxReportCount),
+		MaxBatchSize:              200,
+	}
+
+	t.Run("below F+1 is rejected", func(t *testing.T) {
+		cfg := proto.Clone(baseOffchainCfg).(*evmcapocr3types.ReportingPluginConfig)
+		cfg.MinResponsesToAggregate = 1 // less than F+1=2
+
+		_, _, err := newFactory(t).NewReportingPlugin(t.Context(), ocr3types.ReportingPluginConfig{
+			F:              F,
+			N:              N,
+			OffchainConfig: marshalOffchainConfig(t, cfg),
+		})
+		require.ErrorContains(t, err, "invalid MinResponsesToAggregate")
+	})
+
+	t.Run("zero is allowed (default case)", func(t *testing.T) {
+		cfg := proto.Clone(baseOffchainCfg).(*evmcapocr3types.ReportingPluginConfig)
+		cfg.MinResponsesToAggregate = 0
+
+		_, _, err := newFactory(t).NewReportingPlugin(t.Context(), ocr3types.ReportingPluginConfig{
+			F:              F,
+			N:              N,
+			OffchainConfig: marshalOffchainConfig(t, cfg),
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("above N is rejected", func(t *testing.T) {
+		cfg := proto.Clone(baseOffchainCfg).(*evmcapocr3types.ReportingPluginConfig)
+		cfg.MinResponsesToAggregate = N + 1
+
+		_, _, err := newFactory(t).NewReportingPlugin(t.Context(), ocr3types.ReportingPluginConfig{
+			F:              F,
+			N:              N,
+			OffchainConfig: marshalOffchainConfig(t, cfg),
+		})
+		require.ErrorContains(t, err, "invalid MinResponsesToAggregate")
+	})
+
+	t.Run("equal to F+1 is accepted", func(t *testing.T) {
+		cfg := proto.Clone(baseOffchainCfg).(*evmcapocr3types.ReportingPluginConfig)
+		cfg.MinResponsesToAggregate = F + 1
+
+		_, _, err := newFactory(t).NewReportingPlugin(t.Context(), ocr3types.ReportingPluginConfig{
+			F:              F,
+			N:              N,
+			OffchainConfig: marshalOffchainConfig(t, cfg),
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("equal to N is accepted", func(t *testing.T) {
+		cfg := proto.Clone(baseOffchainCfg).(*evmcapocr3types.ReportingPluginConfig)
+		cfg.MinResponsesToAggregate = N
+
+		_, _, err := newFactory(t).NewReportingPlugin(t.Context(), ocr3types.ReportingPluginConfig{
+			F:              F,
+			N:              N,
+			OffchainConfig: marshalOffchainConfig(t, cfg),
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("value between F+1 and N is accepted", func(t *testing.T) {
+		cfg := proto.Clone(baseOffchainCfg).(*evmcapocr3types.ReportingPluginConfig)
+		cfg.MinResponsesToAggregate = 3 // F+1=2, N=4
+
+		_, _, err := newFactory(t).NewReportingPlugin(t.Context(), ocr3types.ReportingPluginConfig{
+			F:              F,
+			N:              N,
+			OffchainConfig: marshalOffchainConfig(t, cfg),
+		})
+		require.NoError(t, err)
+	})
 }

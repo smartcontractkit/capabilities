@@ -12,6 +12,8 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 )
 
+const reportProcessedTopicPrefix = "forwarder_ReportProcessed"
+
 // CREForwarderCodec encodes and decodes Stellar CRE forwarder contract calls.
 type CREForwarderCodec interface {
 	EncodeReport(transmitter, receiver string, report *sdk.ReportResponse) ([]stellartypes.ScVal, error)

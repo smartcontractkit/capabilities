@@ -11,14 +11,25 @@ import (
 )
 
 type MetricsInfoCapBasic struct {
-	count             beholder.MetricInfo
-	capTimestampStart beholder.MetricInfo
-	capTimestampEmit  beholder.MetricInfo
-	capDuration       beholder.MetricInfo // ts.emit - ts.start
+	count              beholder.MetricInfo
+	capTimestampStart  beholder.MetricInfo
+	capTimestampEmit   beholder.MetricInfo
+	capDuration        beholder.MetricInfo // ts.emit - ts.start
+	capDurationBuckets []float64           // explicit histogram buckets; nil uses the SDK default
 }
 
-// NewMetricsInfoCapBasic creates a new MetricsInfoCapBasic using the provided event/metric information
+// NewMetricsInfoCapBasic creates a MetricsInfoCapBasic with default histogram buckets.
 func NewMetricsInfoCapBasic(metricPrefix, eventRef string) MetricsInfoCapBasic {
+	return newMetricsInfoCapBasic(metricPrefix, eventRef, nil)
+}
+
+// NewMetricsInfoCapBasicWithBuckets creates a MetricsInfoCapBasic with explicit histogram bucket
+// boundaries for the cap_duration instrument.
+func NewMetricsInfoCapBasicWithBuckets(metricPrefix, eventRef string, buckets []float64) MetricsInfoCapBasic {
+	return newMetricsInfoCapBasic(metricPrefix, eventRef, buckets)
+}
+
+func newMetricsInfoCapBasic(metricPrefix, eventRef string, buckets []float64) MetricsInfoCapBasic {
 	return MetricsInfoCapBasic{
 		count: beholder.MetricInfo{
 			Name:        fmt.Sprintf("%s_count", metricPrefix),
@@ -40,6 +51,7 @@ func NewMetricsInfoCapBasic(metricPrefix, eventRef string) MetricsInfoCapBasic {
 			Unit:        "ms",
 			Description: fmt.Sprintf("The duration (local) since capability exec start to message: '%s' emit", eventRef),
 		},
+		capDurationBuckets: buckets,
 	}
 }
 
@@ -74,7 +86,14 @@ func NewMetricsCapBasic(info MetricsInfoCapBasic) (MetricsCapBasic, error) {
 		return set, fmt.Errorf("failed to create new gauge: %w", err)
 	}
 
-	set.capDuration, err = info.capDuration.NewInt64Histogram(meter)
+	histOpts := []metric.Int64HistogramOption{
+		metric.WithUnit(info.capDuration.Unit),
+		metric.WithDescription(info.capDuration.Description),
+	}
+	if len(info.capDurationBuckets) > 0 {
+		histOpts = append(histOpts, metric.WithExplicitBucketBoundaries(info.capDurationBuckets...))
+	}
+	set.capDuration, err = meter.Int64Histogram(info.capDuration.Name, histOpts...)
 	if err != nil {
 		return set, fmt.Errorf("failed to create new histogram: %w", err)
 	}

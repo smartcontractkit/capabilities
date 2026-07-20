@@ -205,6 +205,50 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			expectedOutcome: mustNewList("7", "8", "9"),
 		},
 		{
+			name: "value counts aggregation: distinct values with counts",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(50)),
+				values.Proto(values.NewString("malicious")),
+			},
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_FREQUENCY_LIST,
+				},
+			},
+			f: 2,
+			expectedOutcome: valuespb.NewListValue([]*valuespb.Value{
+				valuespb.NewMapValue(map[string]*valuespb.Value{
+					"value": values.Proto(values.NewInt64(42)),
+					"count": valuespb.NewInt64Value(3),
+				}),
+				valuespb.NewMapValue(map[string]*valuespb.Value{
+					"value": values.Proto(values.NewString("malicious")),
+					"count": valuespb.NewInt64Value(1),
+				}),
+				valuespb.NewMapValue(map[string]*valuespb.Value{
+					"value": values.Proto(values.NewInt64(50)),
+					"count": valuespb.NewInt64Value(1),
+				}),
+			}),
+		},
+		{
+			name: "value counts aggregation: insufficient observations",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewInt64(10)),
+				values.Proto(values.NewInt64(20)),
+			},
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_FREQUENCY_LIST,
+				},
+			},
+			f:             2,
+			expectedError: ErrInsufficientObservations,
+		},
+		{
 			name: "unknown aggregation type (UNSPECIFIED)",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewInt64(10)),

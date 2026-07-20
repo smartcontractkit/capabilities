@@ -14,21 +14,35 @@ import (
 )
 
 type stubForwarderClient struct {
-	events []ReportProcessedEvent
-	err    error
+	events             []ReportProcessedEvent
+	eventsErr          error
+	transmissionInfoFn func(call int) (TransmissionInfo, error)
+	invokeOnReportResp *stellartypes.SubmitTransactionResponse
+	invokeOnReportErr  error
+	transmissionCalls  int
 }
 
 func (s *stubForwarderClient) InvokeOnReport(context.Context, string, *sdk.ReportResponse) (*stellartypes.SubmitTransactionResponse, error) {
-	panic("not implemented")
+	if s.invokeOnReportErr != nil {
+		return nil, s.invokeOnReportErr
+	}
+	if s.invokeOnReportResp != nil {
+		return s.invokeOnReportResp, nil
+	}
+	panic("stubForwarderClient.InvokeOnReport not configured")
 }
 
 func (s *stubForwarderClient) GetTransmissionInfo(context.Context, TransmissionID) (TransmissionInfo, error) {
-	panic("not implemented")
+	s.transmissionCalls++
+	if s.transmissionInfoFn != nil {
+		return s.transmissionInfoFn(s.transmissionCalls)
+	}
+	panic("stubForwarderClient.GetTransmissionInfo not configured")
 }
 
 func (s *stubForwarderClient) GetReportProcessedEvents(context.Context, TransmissionID) ([]ReportProcessedEvent, error) {
-	if s.err != nil {
-		return nil, s.err
+	if s.eventsErr != nil {
+		return nil, s.eventsErr
 	}
 	return s.events, nil
 }
@@ -60,6 +74,7 @@ func TestEventDetailsList_String(t *testing.T) {
 	t.Parallel()
 
 	require.Equal(t, "[]", eventDetailsList(nil).String())
+	require.Equal(t, "[]", eventDetailsList{}.String())
 	require.Equal(t, "[hash=a ledger=1 result=success, hash=b ledger=2 result=failed]",
 		eventDetailsList{
 			{txHash: "a", ledger: 1, isSuccess: true},
@@ -116,7 +131,7 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 
 	t.Run("returns error when event fetch fails", func(t *testing.T) {
 		t.Parallel()
-		client := &stubForwarderClient{err: errors.New("rpc down")}
+		client := &stubForwarderClient{eventsErr: errors.New("rpc down")}
 		retriever := NewTxHashRetriever(client, lggr, transmissionID)
 
 		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
