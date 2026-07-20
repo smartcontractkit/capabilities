@@ -128,7 +128,7 @@ require (
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/dominikbraun/graph v0.23.0 // indirect
-	github.com/doyensec/safeurl v0.2.3 // indirect
+	github.com/doyensec/safeurl v0.2.4 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect
