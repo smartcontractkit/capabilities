@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 	"time"
 
@@ -799,7 +800,7 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 func createPluginsAndStores(n int, t *testing.T, lggr logger.Logger, f int, outcomeExpirySpan uint64, maxRequestOutcomeSize int) []pluginAndRequestStore {
 	var pluginAndRequestStores []pluginAndRequestStore
 
-	for i := 0; i < n; i++ {
+	for range n {
 		reportingPlugin, reqStore := createReportingPlugin(t, lggr, f, n, outcomeExpirySpan, maxRequestOutcomeSize)
 		pluginAndRequestStores = append(pluginAndRequestStores, pluginAndRequestStore{
 			plugin: reportingPlugin,
@@ -890,9 +891,7 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 
 	// Create a map to hold the request ID to expected result
 	requestIDToOutcome := make(map[string]*consensusPluginTest)
-	for reqID, obs := range reqToObservations {
-		requestIDToOutcome[reqID] = obs
-	}
+	maps.Copy(requestIDToOutcome, reqToObservations)
 
 	// Get reports and verify the value selected
 	reports := allReports[0]
@@ -1001,7 +1000,7 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 }
 
 func addRequestsToAllStores(pluginAndRequestStores []pluginAndRequestStore, reqToObservations map[string]*consensusPluginTest, t *testing.T) {
-	for i := 0; i < len(pluginAndRequestStores); i++ {
+	for i := range pluginAndRequestStores {
 		var pluginObs []*oracle.ConsensusRequest
 
 		for _, obsData := range reqToObservations {
@@ -1019,7 +1018,7 @@ func addRequestsToAllStores(pluginAndRequestStores []pluginAndRequestStore, reqT
 }
 
 func removeRequestFromAllStores(pluginAndRequestStores []pluginAndRequestStore, requestID string) {
-	for i := 0; i < len(pluginAndRequestStores); i++ {
+	for i := range pluginAndRequestStores {
 		pluginAndRequestStores[i].store.Evict(requestID)
 	}
 }

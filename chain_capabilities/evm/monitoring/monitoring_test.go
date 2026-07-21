@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -403,12 +404,7 @@ func attributesMatch(attrs attribute.Set, expectation metricExpectation) bool {
 			return false
 		}
 	}
-	for _, key := range expectation.absent {
-		if attrs.HasValue(key) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(expectation.absent, attrs.HasValue)
 }
 
 type ProcessorMock struct {

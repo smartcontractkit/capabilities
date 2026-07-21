@@ -509,7 +509,7 @@ func Test_FieldsMapAggregation_ErrorDeterminism(t *testing.T) {
 	}
 
 	seenErrors := map[string]bool{}
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		_, err := handleFieldsMapAggregation(lggr, observations, desc, nil, f, false)
 		require.Error(t, err)
 		seenErrors[err.Error()] = true

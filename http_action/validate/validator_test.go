@@ -245,7 +245,7 @@ func TestValidatedRequestMtlsRateLimit(t *testing.T) {
 		// Default MtlsRateLimit allows a burst of 3 (see cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit).
 		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
 		require.Positive(t, burst)
-		for i := 0; i < burst; i++ {
+		for i := range burst {
 			out, err := validator.ValidatedRequest(ctx, mtlsRequest())
 			require.NoError(t, err, "request %d within burst should be allowed", i)
 			require.NotNil(t, out)
@@ -259,7 +259,7 @@ func TestValidatedRequestMtlsRateLimit(t *testing.T) {
 
 		// Exhaust the burst; the rate refills every 30s so it won't replenish during the test.
 		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
-		for i := 0; i < burst; i++ {
+		for range burst {
 			_, err := validator.ValidatedRequest(ctx, mtlsRequest())
 			require.NoError(t, err)
 		}

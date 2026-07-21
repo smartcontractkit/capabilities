@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"maps"
 	"sync"
 
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
@@ -44,9 +45,7 @@ func (s *solanaLogTriggerStore) ReadAll() (values map[string]solanaLogTriggerSta
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	tCopy := map[string]solanaLogTriggerState{}
-	for k, v := range s.triggers {
-		tCopy[k] = v
-	}
+	maps.Copy(tCopy, s.triggers)
 	return tCopy
 }
 

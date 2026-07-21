@@ -2,13 +2,14 @@ package actions
 
 import (
 	"bytes"
+	"crypto/sha3"
 	"fmt"
+	"hash"
 	"slices"
 	"time"
 
 	"github.com/smartcontractkit/libocr/permutation"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
@@ -98,7 +99,7 @@ func (ts *TransmissionScheduler) GetOrderedTransmitters(transmissionID string) [
 
 // transmissionScheduleSeed generates a deterministic 16-byte key from transmissionID
 func transmissionScheduleSeed(transmissionID string) [16]byte {
-	hash := sha3.New256()
+	hash := hash.Hash(sha3.New256())
 	hash.Write([]byte(transmissionID))
 	var key [16]byte
 	copy(key[:], hash.Sum(nil))

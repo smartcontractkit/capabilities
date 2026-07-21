@@ -19,7 +19,7 @@ func TestQueryBatchCapacityCalculation(t *testing.T) {
 	testMetrics := newTestMetrics(t, "query")
 	queryBatch := batching.NewQueryBatch(ctx, testLogger, 100000000, testMetrics)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		added := queryBatch.AddRequestID(ctx, uuid.NewString())
 
 		require.True(t, added)
@@ -42,7 +42,7 @@ func TestQueryBatchCapacityExceeded(t *testing.T) {
 
 	queryBatch := batching.NewQueryBatch(ctx, testLogger, 100, testMetrics)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		added := queryBatch.AddRequestID(ctx, uuid.NewString())
 
 		if !added {
