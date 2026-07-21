@@ -281,8 +281,8 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 		return fmt.Errorf("%s signed report must contain at least one signature", capcommon.UserError)
 	}
 	for i, sig := range request.Report.Sigs {
-		if len(sig.GetSignature()) != attributedEd25519SignatureLen {
-			return fmt.Errorf("%s signature %d has invalid length: got %d, want %d", capcommon.UserError, i, len(sig.GetSignature()), attributedEd25519SignatureLen)
+		if len(sig.GetSignature()) != ed25519OCRSigLen {
+			return fmt.Errorf("%s signature %d has invalid length: got %d, want %d", capcommon.UserError, i, len(sig.GetSignature()), ed25519OCRSigLen)
 		}
 	}
 

@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	reportProcessedTopicPrefix    = "forwarder_ReportProcessed"
-	ocrReportContextLen           = 96
-	attributedEd25519SignatureLen = ed25519.PublicKeySize + ed25519.SignatureSize
+	reportProcessedTopicPrefix = "forwarder_ReportProcessed"
+	ocrReportContextLen        = 96
+	ed25519OCRSigLen           = ed25519.PublicKeySize + ed25519.SignatureSize
 )
 
 // CREForwarderCodec encodes and decodes Stellar CRE forwarder contract calls.
@@ -67,11 +67,11 @@ func (creForwarderCodecImpl) EncodeReport(transmitter string, receiver string, r
 	rawSignatures := make([][]byte, len(signatures))
 	for i, attributedSig := range signatures {
 		sig := attributedSig.GetSignature()
-		if len(sig) != attributedEd25519SignatureLen {
+		if len(sig) != ed25519OCRSigLen {
 			return nil, fmt.Errorf(
 				"signature %d: expected %d bytes (%d-byte public key || %d-byte signature), got %d",
 				i,
-				attributedEd25519SignatureLen,
+				ed25519OCRSigLen,
 				ed25519.PublicKeySize,
 				ed25519.SignatureSize,
 				len(sig),
