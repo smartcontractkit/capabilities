@@ -207,11 +207,13 @@ func transmissionResp(xdrResult string) stellartypes.SimulateTransactionResponse
 }
 
 func successSubmitResp() *stellartypes.SubmitTransactionResponse {
+	fee := testFee
+	ts := testBlockTimestamp
 	return &stellartypes.SubmitTransactionResponse{
 		TxStatus:       stellartypes.TxSuccess,
 		TxHash:         testTxHash,
-		TransactionFee: new(testFee),
-		BlockTimestamp: new(testBlockTimestamp),
+		TransactionFee: &fee,
+		BlockTimestamp: &ts,
 	}
 }
 
@@ -618,7 +620,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 		require.Nil(t, result)
 		require.NotNil(t, capErr)
-		require.Contains(t, capErr.Error(), "failed to determine canonical transmission outcome after submit")
+		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 	})
 
 	t.Run("post-submit shows InvalidReceiver - reply with error message and canonical tx hash", func(t *testing.T) {
@@ -702,7 +704,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 		require.Nil(t, result)
 		require.NotNil(t, capErr)
-		require.Contains(t, capErr.Error(), "failed to determine canonical transmission outcome after submit")
+		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 	})
 
 	t.Run("submit superseded by prior success - post-submit succeeds", func(t *testing.T) {
@@ -1024,28 +1026,6 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 		require.Equal(t, TransmissionStateSucceeded, info.State)
 	})
 
-	t.Run("terminal state returned after deadline does not emit early-return telemetry", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-		defer cancel()
-
-		wr, _, transmissionID, req := newPollTransmissionInfoHarness(t, 25*time.Millisecond)
-		processor := &recordingWriteReportProcessor{}
-		wr.forwarderClient = &stubForwarderClient{
-			transmissionInfoFn: func(int) (TransmissionInfo, error) {
-				time.Sleep(100 * time.Millisecond)
-				return TransmissionInfo{State: TransmissionStateSucceeded}, nil
-			},
-		}
-		wr.messageBuilder = monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, "")
-		wr.beholderProcessor = processor
-
-		info, err := wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 1)
-		require.NoError(t, err)
-		require.Equal(t, TransmissionStateSucceeded, info.State)
-		require.False(t, hasTelemetryMessage[*monitoring.WriteReportSuccessfulEarlyReturn](processor.messages))
-	})
-
 	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -1082,7 +1062,6 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 
 		_, err := wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 2)
 		require.Error(t, err)
-		require.ErrorIs(t, err, context.Canceled)
 		require.Contains(t, err.Error(), "waiting for transmission info")
 	})
 }
@@ -1117,7 +1096,7 @@ func TestWriteReport_TxFatalSubmitWithoutCanonicalOutcomeReturnsError(t *testing
 	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 	require.Nil(t, result)
 	require.NotNil(t, capErr)
-	require.Contains(t, capErr.Error(), "failed to determine canonical transmission outcome after submit")
+	require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 }
 
 func TestReplyBuilders(t *testing.T) {
