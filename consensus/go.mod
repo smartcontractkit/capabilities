@@ -8,7 +8,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260529092756-a94bc8ce96d6
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260717225314-5fc9656c1b02
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260720112227-06ed99d53bf8
 	github.com/smartcontractkit/cre-sdk-go v0.9.0
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
@@ -81,9 +81,10 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.104 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260529092756-a94bc8ce96d6 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260626151909-052e55e62e62 // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
-	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b // indirect
+	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe // indirect
+	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260709145319-7782fb89eb16 // indirect
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
