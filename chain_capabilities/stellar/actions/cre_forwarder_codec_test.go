@@ -133,13 +133,17 @@ func TestEncodeReport_SanitizesNilSlices(t *testing.T) {
 	t.Parallel()
 	codec := NewCREForwarderCodec()
 
+	// Valid 96-byte ed25519 sig so encoding reaches raw_report/report_context.
+	sig := make([]byte, ed25519OCRSigLen)
+	sig[0] = 0xAB
 	report := &workflowpb.ReportResponse{
-		Sigs: []*workflowpb.AttributedSignature{{Signature: nil}},
+		Sigs: []*workflowpb.AttributedSignature{{Signature: sig}},
 	}
 	args, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
 	require.NoError(t, err)
 	require.Len(t, args, 5)
 
+	// nil raw_report / report_context become empty Bytes.
 	require.Equal(t, stellartypes.ScValTypeBytes, args[2].Type)
 	require.NotNil(t, args[2].Bytes)
 	require.Empty(t, args[2].Bytes)
@@ -148,11 +152,57 @@ func TestEncodeReport_SanitizesNilSlices(t *testing.T) {
 	require.NotNil(t, args[3].Bytes)
 	require.Empty(t, args[3].Bytes)
 
+	// signatures is a Vec<Ed25519Signature>: each an ScMap { public_key, signature }
+	// with field-name keys in sorted order (public_key < signature).
 	require.Equal(t, stellartypes.ScValTypeVec, args[4].Type)
 	require.NotNil(t, args[4].Vec)
 	require.Len(t, args[4].Vec.Values, 1)
-	require.NotNil(t, args[4].Vec.Values[0].Bytes)
-	require.Empty(t, args[4].Vec.Values[0].Bytes)
+	sigStruct := args[4].Vec.Values[0]
+	require.Equal(t, stellartypes.ScValTypeMap, sigStruct.Type)
+	require.NotNil(t, sigStruct.Map)
+	require.Len(t, sigStruct.Map.Entries, 2)
+	require.Equal(t, "public_key", *sigStruct.Map.Entries[0].Key.Symbol)
+	require.Len(t, sigStruct.Map.Entries[0].Val.Bytes, 32)
+	require.Equal(t, "signature", *sigStruct.Map.Entries[1].Key.Symbol)
+	require.Len(t, sigStruct.Map.Entries[1].Val.Bytes, 64)
+}
+
+func TestEncodeReport_RejectsInvalidSignatureLength(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	report := &workflowpb.ReportResponse{
+		Sigs: []*workflowpb.AttributedSignature{{Signature: make([]byte, 65)}}, // secp256k1 length, not ed25519
+	}
+	_, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected 96 bytes")
+}
+
+// TestEncodeReport_SortsSignaturesByPublicKey verifies the forwarder's
+// strictly-ascending-by-public-key requirement: signatures are emitted sorted by
+// pubkey regardless of input order.
+func TestEncodeReport_SortsSignaturesByPublicKey(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	sigHigh := make([]byte, ed25519OCRSigLen)
+	sigHigh[0] = 0x02
+	sigLow := make([]byte, ed25519OCRSigLen)
+	sigLow[0] = 0x01
+
+	report := &workflowpb.ReportResponse{
+		Sigs: []*workflowpb.AttributedSignature{{Signature: sigHigh}, {Signature: sigLow}}, // out of order
+	}
+	args, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.NoError(t, err)
+
+	vec := args[4].Vec.Values
+	require.Len(t, vec, 2)
+	pk0 := vec[0].Map.Entries[0].Val.Bytes // public_key of first entry
+	pk1 := vec[1].Map.Entries[0].Val.Bytes
+	require.Equal(t, byte(0x01), pk0[0])
+	require.Equal(t, byte(0x02), pk1[0])
 }
 
 func TestEncodeQueryTransmissionInputs(t *testing.T) {

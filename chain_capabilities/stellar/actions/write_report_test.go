@@ -132,9 +132,13 @@ func newWRReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMe
 }
 
 func wrTestSigs() []*workflowpb.AttributedSignature {
-	sig := make([]byte, ocrSignatureLen)
-	sig[0] = 0xAB
-	return []*workflowpb.AttributedSignature{{Signature: sig}, {Signature: sig}}
+	// ed25519 OCR sigs: 32-byte pubkey || 64-byte signature. Distinct leading
+	// pubkey bytes so the codec's ascending-by-pubkey ordering is well-defined.
+	sigA := make([]byte, ocrReportContextLen)
+	sigA[0] = 0xAB
+	sigB := make([]byte, ocrReportContextLen)
+	sigB[0] = 0xCD
+	return []*workflowpb.AttributedSignature{{Signature: sigA}, {Signature: sigB}}
 }
 
 // ─── XDR helpers ─────────────────────────────────────────────────────────────
@@ -358,7 +362,7 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
 		require.Contains(t, err.Error(), "signature 0 has invalid length")
-		require.Contains(t, err.Error(), "want 65")
+		require.Contains(t, err.Error(), "want 96")
 	})
 
 	t.Run("report metadata cannot be decoded", func(t *testing.T) {

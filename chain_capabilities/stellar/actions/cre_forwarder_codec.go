@@ -1,18 +1,23 @@
 package actions
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"fmt"
-
-	"github.com/stellar/go-stellar-sdk/strkey"
-	"github.com/stellar/go-stellar-sdk/xdr"
+	"slices"
 
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/stellar/go-stellar-sdk/strkey"
+	"github.com/stellar/go-stellar-sdk/xdr"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 )
 
-const reportProcessedTopicPrefix = "forwarder_ReportProcessed"
+const (
+	reportProcessedTopicPrefix = "forwarder_ReportProcessed"
+	ocrReportContextLen        = 96
+)
 
 // CREForwarderCodec encodes and decodes Stellar CRE forwarder contract calls.
 type CREForwarderCodec interface {
@@ -29,11 +34,11 @@ func NewCREForwarderCodec() CREForwarderCodec {
 }
 
 // EncodeReport constructs ScVal arguments for the forwarder report() function.
-//
-// Arg order matches the on-chain Rust signature:
-//
-//	report(transmitter: Address, receiver: Address, raw_report: Bytes, report_context: Bytes, signatures: Vec<BytesN<65>>)
-func (c *creForwarderCodecImpl) EncodeReport(transmitter, receiver string, report *sdk.ReportResponse) ([]stellartypes.ScVal, error) {
+func (creForwarderCodecImpl) EncodeReport(transmitter string, receiver string, report *sdk.ReportResponse) ([]stellartypes.ScVal, error) {
+	if report == nil {
+		return nil, fmt.Errorf("report is nil")
+	}
+
 	transmitterVal, err := accountAddressToScVal(transmitter)
 	if err != nil {
 		return nil, fmt.Errorf("transmitter: %w", err)
@@ -41,40 +46,96 @@ func (c *creForwarderCodecImpl) EncodeReport(transmitter, receiver string, repor
 
 	receiverVal, err := contractAddressToScVal(receiver)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("receiver: %w", err)
 	}
 
 	rawReport := report.GetRawReport()
-	if rawReport == nil {
-		rawReport = []byte{}
+	if len(rawReport) == 0 {
+		return nil, fmt.Errorf("raw report is empty")
 	}
 	reportContext := report.GetReportContext()
-	if reportContext == nil {
-		reportContext = []byte{}
+	if len(reportContext) != ocrReportContextLen {
+		return nil, fmt.Errorf("report context: expected %d bytes, got %d", ocrReportContextLen, len(reportContext))
 	}
 
-	rawReportVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: rawReport}
-	reportContextVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: reportContext}
+	signatures := report.GetSigs()
+	if len(signatures) == 0 {
+		return nil, fmt.Errorf("report contains no signatures")
+	}
 
-	sigs := report.GetSigs()
-	sigVals := make([]*stellartypes.ScVal, len(sigs))
-	for i, sig := range sigs {
-		sigBytes := sig.GetSignature()
-		if sigBytes == nil {
-			sigBytes = []byte{}
+	const attributedSignatureLen = ed25519.PublicKeySize + ed25519.SignatureSize
+
+	rawSignatures := make([][]byte, len(signatures))
+	for i, attributedSig := range signatures {
+		sig := attributedSig.GetSignature()
+		if len(sig) != attributedSignatureLen {
+			return nil, fmt.Errorf(
+				"signature %d: expected %d bytes (%d-byte public key || %d-byte signature), got %d",
+				i,
+				attributedSignatureLen,
+				ed25519.PublicKeySize,
+				ed25519.SignatureSize,
+				len(sig),
+			)
 		}
-		s := stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: sigBytes}
-		sigVals[i] = &s
-	}
-	sigsVal := stellartypes.ScVal{
-		Type: stellartypes.ScValTypeVec,
-		Vec:  &stellartypes.ScVec{Values: sigVals},
+		rawSignatures[i] = sig
 	}
 
-	return []stellartypes.ScVal{transmitterVal, receiverVal, rawReportVal, reportContextVal, sigsVal}, nil
+	slices.SortFunc(rawSignatures, func(a, b []byte) int { return bytes.Compare(a[:ed25519.PublicKeySize], b[:ed25519.PublicKeySize]) })
+
+	for i := 1; i < len(rawSignatures); i++ {
+		previous := rawSignatures[i-1][:ed25519.PublicKeySize]
+		current := rawSignatures[i][:ed25519.PublicKeySize]
+
+		if bytes.Equal(previous, current) {
+			return nil, fmt.Errorf("signature %d: duplicate signer public key", i)
+		}
+	}
+
+	signatureVals := make([]*stellartypes.ScVal, len(rawSignatures))
+	for i, sig := range rawSignatures {
+		signatureVals[i] = encodeEd25519Signature(sig[:ed25519.PublicKeySize], sig[ed25519.PublicKeySize:])
+	}
+
+	return []stellartypes.ScVal{
+		transmitterVal,
+		receiverVal,
+		{Type: stellartypes.ScValTypeBytes, Bytes: rawReport},
+		{Type: stellartypes.ScValTypeBytes, Bytes: reportContext},
+		{Type: stellartypes.ScValTypeVec, Vec: &stellartypes.ScVec{Values: signatureVals}}}, nil
 }
 
-func (c *creForwarderCodecImpl) EncodeQueryTransmissionInputs(transmissionID TransmissionID) ([]stellartypes.ScVal, error) {
+func encodeEd25519Signature(publicKey, signature []byte) *stellartypes.ScVal {
+	return &stellartypes.ScVal{
+		Type: stellartypes.ScValTypeMap,
+		Map: &stellartypes.ScMap{
+			Entries: []stellartypes.ScMapEntry{
+				{
+					Key: &stellartypes.ScVal{
+						Type:   stellartypes.ScValTypeSymbol,
+						Symbol: new("public_key"),
+					},
+					Val: &stellartypes.ScVal{
+						Type:  stellartypes.ScValTypeBytes,
+						Bytes: publicKey,
+					},
+				},
+				{
+					Key: &stellartypes.ScVal{
+						Type:   stellartypes.ScValTypeSymbol,
+						Symbol: new("signature"),
+					},
+					Val: &stellartypes.ScVal{
+						Type:  stellartypes.ScValTypeBytes,
+						Bytes: signature,
+					},
+				},
+			},
+		},
+	}
+}
+
+func (creForwarderCodecImpl) EncodeQueryTransmissionInputs(transmissionID TransmissionID) ([]stellartypes.ScVal, error) {
 	receiverVal, err := contractAddressToScVal(transmissionID.Receiver)
 	if err != nil {
 		return nil, err
@@ -86,7 +147,7 @@ func (c *creForwarderCodecImpl) EncodeQueryTransmissionInputs(transmissionID Tra
 	}, nil
 }
 
-func (c *creForwarderCodecImpl) DecodeQueryTransmissionInfo(returnValueXDR string, ledgerSequence uint32) (TransmissionInfo, error) {
+func (creForwarderCodecImpl) DecodeQueryTransmissionInfo(returnValueXDR string, ledgerSequence uint32) (TransmissionInfo, error) {
 	var sv xdr.ScVal
 	if err := xdr.SafeUnmarshalBase64(returnValueXDR, &sv); err != nil {
 		return TransmissionInfo{}, fmt.Errorf("decode transmission info result XDR: %w", err)
@@ -173,15 +234,14 @@ func decodeContractTransmissionInfo(sv xdr.ScVal) (TransmissionState, string, er
 	return state, transmitter, nil
 }
 
-func (c *creForwarderCodecImpl) EncodeReportProcessedTopicFilter(transmissionID TransmissionID) (stellartypes.TopicFilter, error) {
-	eventName := reportProcessedTopicPrefix
+func (creForwarderCodecImpl) EncodeReportProcessedTopicFilter(transmissionID TransmissionID) (stellartypes.TopicFilter, error) {
 	receiverVal, err := contractAddressToScVal(transmissionID.Receiver)
 	if err != nil {
 		return stellartypes.TopicFilter{}, err
 	}
 	return stellartypes.TopicFilter{
 		Segments: []stellartypes.TopicSegment{
-			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeSymbol, Symbol: &eventName}},
+			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeSymbol, Symbol: new(reportProcessedTopicPrefix)}},
 			{Value: &receiverVal},
 			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.WorkflowExecutionID[:]}},
 			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.ReportID[:]}},
