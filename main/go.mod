@@ -1,13 +1,13 @@
-module github.com/smartcontractkit/capabilities/consensus
+module github.com/smartcontractkit/capabilities/main
 
 go 1.26.2
 
 require (
-	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260601182856-0b9e9346b65c
+	github.com/smartcontractkit/chainlink-protos/cre/impl v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
 	github.com/spf13/cobra v1.10.2
 	google.golang.org/grpc v1.80.0
@@ -24,6 +24,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
@@ -56,3 +57,5 @@ require (
 replace github.com/smartcontractkit/capabilities/libs => ../libs
 
 replace github.com/smartcontractkit/chainlink-common => ../../chainlink-common
+
+replace github.com/smartcontractkit/chainlink-protos/cre/impl => ../../chainlink-protos/cre/impl

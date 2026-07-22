@@ -26,8 +26,8 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	commonproxy "github.com/smartcontractkit/chainlink-common/pkg/network/proxy"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 )
 
 // p2pPrivateKeyEnvVar holds the hex-encoded ed25519 key (a 32-byte seed or a
@@ -180,8 +180,8 @@ func (s *proxyService) Start(ctx context.Context) error {
 	}
 
 	s.grpcServer = grpc.NewServer()
-	commonproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, commonproxy.NewServer(ocrFactory))
-	commonproxy.RegisterPeerGroupProxyServer(s.grpcServer, commonproxy.NewPeerGroupServer(newNetworkingPeerGroupFactory(pgFactory)))
+	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(ocrFactory))
+	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(newNetworkingPeerGroupFactory(pgFactory)))
 
 	// Stop serving when the context is cancelled (SIGINT/SIGTERM handled in main).
 	go func() {
@@ -221,10 +221,10 @@ func (s *proxyService) HealthReport() map[string]error {
 func (s *proxyService) Name() string { return "p2p-proxy" }
 
 // newNetworkingPeerGroupFactory adapts a libocr networking.PeerGroupFactory to
-// the common-local commonproxy.PeerGroupFactory expected by the proxy server.
+// the common-local creproxy.PeerGroupFactory expected by the proxy server.
 // This adapter lives here (rather than in chainlink-common) so that common does
 // not need to import libocr/networking, which would pull in go-ethereum.
-func newNetworkingPeerGroupFactory(inner networking.PeerGroupFactory) commonproxy.PeerGroupFactory {
+func newNetworkingPeerGroupFactory(inner networking.PeerGroupFactory) creproxy.PeerGroupFactory {
 	return networkingPeerGroupFactory{inner: inner}
 }
 
@@ -232,7 +232,7 @@ type networkingPeerGroupFactory struct {
 	inner networking.PeerGroupFactory
 }
 
-func (a networkingPeerGroupFactory) NewPeerGroup(configDigest [32]byte, peerIDs []string, bootstrappers []commonproxy.BootstrapperInfo) (commonproxy.PeerGroup, error) {
+func (a networkingPeerGroupFactory) NewPeerGroup(configDigest [32]byte, peerIDs []string, bootstrappers []creproxy.BootstrapperInfo) (creproxy.PeerGroup, error) {
 	locators := make([]commontypes.BootstrapperLocator, len(bootstrappers))
 	for i, b := range bootstrappers {
 		locators[i] = commontypes.BootstrapperLocator{PeerID: b.PeerID, Addrs: b.Addrs}
@@ -248,7 +248,7 @@ type networkingPeerGroup struct {
 	inner networking.PeerGroup
 }
 
-func (a networkingPeerGroup) NewStream(remotePeerID string, args commonproxy.StreamArgs) (commonproxy.PeerGroupStream, error) {
+func (a networkingPeerGroup) NewStream(remotePeerID string, args creproxy.StreamArgs) (creproxy.PeerGroupStream, error) {
 	st, err := a.inner.NewStream(remotePeerID, networking.NewStreamArgs1{
 		StreamName:         args.StreamName,
 		OutgoingBufferSize: args.OutgoingBufferSize,
@@ -260,7 +260,7 @@ func (a networkingPeerGroup) NewStream(remotePeerID string, args commonproxy.Str
 	if err != nil {
 		return nil, err
 	}
-	// networking.Stream's method set matches commonproxy.PeerGroupStream.
+	// networking.Stream's method set matches creproxy.PeerGroupStream.
 	return st, nil
 }
 
