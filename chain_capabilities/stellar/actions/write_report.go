@@ -381,10 +381,7 @@ func (wr *writeReport) pollTransmissionInfo(
 			}
 		}
 
-		wait := (100 * time.Millisecond) << min(attempt, 5)
-		if wait > 2*time.Second {
-			wait = 2 * time.Second
-		}
+		wait := min((100*time.Millisecond)<<min(attempt, 5), 2*time.Second)
 		attempt++
 
 		select {
@@ -484,7 +481,7 @@ func (wr *writeReport) replyFromTransaction(
 	}
 
 	reply := &stellarcap.WriteReportReply{
-		TxHash:                          capcommon.Ptr(txHash),
+		TxHash:                          new(txHash),
 		TxStatus:                        txStatus,
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,

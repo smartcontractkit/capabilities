@@ -28,13 +28,13 @@ var (
 
 // Constants for type names used in aggregation logic.
 var (
-	typeInt64   = reflect.TypeOf((*valuespb.Value_Int64Value)(nil))
-	typeUint64  = reflect.TypeOf((*valuespb.Value_Uint64Value)(nil))
-	typeFloat64 = reflect.TypeOf((*valuespb.Value_Float64Value)(nil))
-	typeDecimal = reflect.TypeOf((*valuespb.Value_DecimalValue)(nil))
-	typeBigInt  = reflect.TypeOf((*valuespb.Value_BigintValue)(nil))
-	typeString  = reflect.TypeOf((*valuespb.Value_StringValue)(nil))
-	typeTime    = reflect.TypeOf((*valuespb.Value_TimeValue)(nil))
+	typeInt64   = reflect.TypeFor[*valuespb.Value_Int64Value]()
+	typeUint64  = reflect.TypeFor[*valuespb.Value_Uint64Value]()
+	typeFloat64 = reflect.TypeFor[*valuespb.Value_Float64Value]()
+	typeDecimal = reflect.TypeFor[*valuespb.Value_DecimalValue]()
+	typeBigInt  = reflect.TypeFor[*valuespb.Value_BigintValue]()
+	typeString  = reflect.TypeFor[*valuespb.Value_StringValue]()
+	typeTime    = reflect.TypeFor[*valuespb.Value_TimeValue]()
 )
 
 // CalculateOutcomeForObservations determines the outcome for a set of observations based on a consensus descriptor.

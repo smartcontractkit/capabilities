@@ -189,7 +189,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 			n++
 			return &wrapperspb.StringValue{Value: fmt.Sprintf("payload-%d", n)}, n, nil
 		}, logger.TestSugared(t))
-		for i := 0; i < MaxNumberOfVolatileObservations; i++ {
+		for i := range MaxNumberOfVolatileObservations {
 			require.NoError(t, r.CaptureObservation(t.Context()), "capture %d", i)
 		}
 		err := r.CaptureObservation(t.Context())

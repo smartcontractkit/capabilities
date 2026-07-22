@@ -605,10 +605,8 @@ func (wr *writeReport) pollTransmissionInfo(
 			}
 		}
 
-		wait := (100 * time.Millisecond) << min(attempt, 5) // exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms, then capped at 2s
-		if wait > 2*time.Second {
-			wait = 2 * time.Second
-		}
+		// exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms, then capped at 2s
+		wait := min((100*time.Millisecond)<<min(attempt, 5), 2*time.Second)
 		attempt++
 
 		select {

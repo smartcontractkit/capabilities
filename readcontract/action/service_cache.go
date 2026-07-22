@@ -81,11 +81,9 @@ func (ec *ServiceCache[I, S]) Name() string {
 
 func (ec *ServiceCache[I, S]) Start() error {
 	return ec.StartOnce(ec.name, func() error {
-		ec.wg.Add(1)
-		go func() {
-			defer ec.wg.Done()
+		ec.wg.Go(func() {
 			ec.reapLoop()
-		}()
+		})
 		return nil
 	})
 }

@@ -395,10 +395,8 @@ func (e *WriteReport) pollTransmissionInfo(
 			}
 		}
 
-		wait := (100 * time.Millisecond) << min(attempt, 5) // up to 3.2s wait
-		if wait > 2*time.Second {
-			wait = 2 * time.Second
-		}
+		// up to 3.2s wait
+		wait := min((100*time.Millisecond)<<min(attempt, 5), 2*time.Second)
 		attempt++
 
 		select {
