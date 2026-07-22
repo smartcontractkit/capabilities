@@ -8,9 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/hashicorp/go-plugin"
 	"github.com/spf13/cobra"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -48,12 +50,37 @@ func (b *Bootstrapper) run(factory func(ctx context.Context) []services.Service)
 			stop()
 			return err
 		}
+		defer func() { _ = root.Close() }()
 
+		if underPluginHost() {
+			// Launched by a go-plugin host (e.g. the core node): expose the empty
+			// LOOP so the host can supervise this process over gRPC (handshake +
+			// go-plugin's liveness health check). The started services run in
+			// this process, so that liveness reflects them. Blocks until the host
+			// shuts us down.
+			plugin.Serve(&plugin.ServeConfig{
+				HandshakeConfig: loop.EmptyHandshakeConfig(),
+				Plugins:         map[string]plugin.Plugin{loop.PluginEmptyName: &loop.EmptyLoop{}},
+				GRPCServer:      plugin.DefaultGRPCServer,
+			})
+			return nil
+		}
+
+		// Standalone: block until interrupted, then close.
 		<-ctx.Done()
-		return root.Close()
+		return nil
 	}
 
 	return b.root.Execute()
+}
+
+// underPluginHost reports whether this process was launched by a go-plugin host,
+// detected via the empty plugin's handshake magic cookie. go-plugin's Serve
+// refuses to run (and exits) when this is absent, so we only serve the plugin in
+// that case and otherwise run standalone.
+func underPluginHost() bool {
+	h := loop.EmptyHandshakeConfig()
+	return os.Getenv(h.MagicCookieKey) == h.MagicCookieValue
 }
 
 type CommonConfig struct {
