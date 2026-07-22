@@ -110,6 +110,9 @@ func (k *peerKeyring) PublicKey() ragetypes.PeerPublicKey {
 // NOTE: per the standalone framework, Start blocks until shutdown (the
 // Bootstrapper returns the result of Start directly).
 type proxyService struct {
+	services.Service
+	eng *services.Engine
+
 	cfg  *Config
 	lggr logger.Logger
 	db   standalone.Dependency[*sql.DB]
@@ -120,7 +123,20 @@ type proxyService struct {
 
 var _ services.Service = (*proxyService)(nil)
 
-func (s *proxyService) Start(ctx context.Context) error {
+// newProxyService builds the proxy service using the standard
+// services.Config/Engine pattern, so its lifecycle and health integrate with
+// the bootstrapper's aggregated health report.
+func newProxyService(cfg *Config, lggr logger.Logger, db standalone.Dependency[*sql.DB]) *proxyService {
+	s := &proxyService{cfg: cfg, lggr: lggr, db: db}
+	s.Service, s.eng = services.Config{
+		Name:  "P2PProxy",
+		Start: s.start,
+		Close: s.close,
+	}.NewServiceEngine(lggr)
+	return s
+}
+
+func (s *proxyService) start(ctx context.Context) error {
 	if len(s.cfg.ListenAddresses) == 0 {
 		return errors.New("at least one --listen-addresses is required")
 	}
@@ -183,42 +199,30 @@ func (s *proxyService) Start(ctx context.Context) error {
 	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(ocrFactory))
 	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(newNetworkingPeerGroupFactory(pgFactory)))
 
-	// Stop serving when the context is cancelled (SIGINT/SIGTERM handled in main).
-	go func() {
+	// Gracefully stop the gRPC server when the engine cancels this context on
+	// Close; run the (blocking) Serve in a tracked goroutine so start returns
+	// promptly, per the services.Engine contract.
+	s.eng.Go(func(ctx context.Context) {
 		<-ctx.Done()
 		s.grpcServer.GracefulStop()
-	}()
-
-	s.lggr.Infow("p2p proxy serving", "address", lis.Addr().String())
-	serveErr := s.grpcServer.Serve(lis)
-
-	// Serve has returned (graceful stop or fatal error): tear down the peer.
-	if cerr := peer.Close(); cerr != nil {
-		s.lggr.Warnw("error closing rage peer", "err", cerr)
-	}
-	if serveErr != nil {
-		return fmt.Errorf("proxy gRPC server stopped: %w", serveErr)
-	}
+	})
+	s.eng.Go(func(context.Context) {
+		s.lggr.Infow("p2p proxy serving", "address", lis.Addr().String())
+		if err := s.grpcServer.Serve(lis); err != nil {
+			s.eng.Errorw("proxy gRPC server stopped", "err", err)
+		}
+	})
 	return nil
 }
 
-func (s *proxyService) Close() error {
-	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
-	}
+// close tears down the rage peer. The gRPC server is gracefully stopped by the
+// goroutine started in start once the engine cancels its context.
+func (s *proxyService) close() error {
 	if s.peerCloser != nil {
 		return s.peerCloser.Close()
 	}
 	return nil
 }
-
-func (s *proxyService) Ready() error { return nil }
-
-func (s *proxyService) HealthReport() map[string]error {
-	return map[string]error{s.Name(): nil}
-}
-
-func (s *proxyService) Name() string { return "p2p-proxy" }
 
 // newNetworkingPeerGroupFactory adapts a libocr networking.PeerGroupFactory to
 // the common-local creproxy.PeerGroupFactory expected by the proxy server.

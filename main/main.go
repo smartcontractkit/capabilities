@@ -54,9 +54,9 @@ via CL_DATABASE_URL.`,
 		return err
 	}
 
-	bootstrapper := standalone.NewBootstrapper(root)
+	bootstrapper := standalone.NewBootstrapper(root, lggr)
 
-	return standalone.Run1(bootstrapper, func(ctx context.Context, dbDep standalone.Dependency[*sql.DB]) services.Service {
-		return &proxyService{cfg: cfg, lggr: lggr, db: dbDep}
+	return standalone.Run1(bootstrapper, func(ctx context.Context, dbDep standalone.Dependency[*sql.DB]) []services.Service {
+		return []services.Service{newProxyService(cfg, lggr, dbDep)}
 	}, db.Dependency(embeddedMigrations, migrationsTable))
 }
