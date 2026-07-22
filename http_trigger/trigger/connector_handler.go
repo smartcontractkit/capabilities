@@ -55,7 +55,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics,
 	orgResolver orgresolver.OrgResolver, limitsFactory limits.Factory,
 ) (*connectorHandler, error) {
-	multiTriggerFlag, err := limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
+	multiTriggerFlag, err := limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureHTTPTriggerNewExecutionIDsActivePeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multi-trigger execution ID flag: %w", err)
 	}

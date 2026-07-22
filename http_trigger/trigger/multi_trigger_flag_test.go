@@ -23,7 +23,7 @@ func TestFeatureMultiTriggerFlagCheckRequiresCRE(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now().UTC()
-	period := cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod
+	period := cresettings.Default.PerWorkflow.FeatureHTTPTriggerNewExecutionIDsActivePeriod
 	period.DefaultValue = settings.Range[config.Timestamp]{
 		Lower: config.Timestamp(now.Add(-time.Hour).Unix()),
 		Upper: config.Timestamp(now.Add(time.Hour).Unix()),
@@ -88,7 +88,7 @@ func TestGenerateWorkflowExecutionID_WithCREUsesMultiTriggerIDs(t *testing.T) {
 	handler, _, _, _ := setup(t, lggr)
 
 	now := time.Now().UTC()
-	period := cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod
+	period := cresettings.Default.PerWorkflow.FeatureHTTPTriggerNewExecutionIDsActivePeriod
 	period.DefaultValue = settings.Range[config.Timestamp]{
 		Lower: config.Timestamp(now.Add(-time.Hour).Unix()),
 		Upper: config.Timestamp(now.Add(time.Hour).Unix()),
