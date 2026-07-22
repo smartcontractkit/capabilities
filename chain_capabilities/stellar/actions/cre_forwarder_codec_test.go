@@ -1,6 +1,8 @@
 package actions
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"testing"
 
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -129,30 +131,163 @@ func TestEncodeReport_InvalidTransmitter(t *testing.T) {
 	require.Contains(t, err.Error(), "transmitter")
 }
 
-func TestEncodeReport_SanitizesNilSlices(t *testing.T) {
+func TestEncodeReport_EncodesForwarderArguments(t *testing.T) {
 	t.Parallel()
 	codec := NewCREForwarderCodec()
 
+	rawReport := []byte{0xAA}
+	reportContext := make([]byte, ocrReportContextLen)
+	reportContext[0] = 0xBB
+	sig := make([]byte, ed25519OCRSigLen)
+	sig[0] = 0x01
+	sig[ed25519.PublicKeySize] = 0xCC
+
 	report := &workflowpb.ReportResponse{
-		Sigs: []*workflowpb.AttributedSignature{{Signature: nil}},
+		RawReport:     rawReport,
+		ReportContext: reportContext,
+		Sigs:          []*workflowpb.AttributedSignature{{Signature: sig}},
 	}
 	args, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
 	require.NoError(t, err)
 	require.Len(t, args, 5)
 
+	require.Equal(t, stellartypes.ScValTypeAddress, args[0].Type)
+	require.Equal(t, stellartypes.ScValTypeAddress, args[1].Type)
 	require.Equal(t, stellartypes.ScValTypeBytes, args[2].Type)
-	require.NotNil(t, args[2].Bytes)
-	require.Empty(t, args[2].Bytes)
-
+	require.Equal(t, rawReport, args[2].Bytes)
 	require.Equal(t, stellartypes.ScValTypeBytes, args[3].Type)
-	require.NotNil(t, args[3].Bytes)
-	require.Empty(t, args[3].Bytes)
+	require.Equal(t, reportContext, args[3].Bytes)
 
 	require.Equal(t, stellartypes.ScValTypeVec, args[4].Type)
 	require.NotNil(t, args[4].Vec)
 	require.Len(t, args[4].Vec.Values, 1)
-	require.NotNil(t, args[4].Vec.Values[0].Bytes)
-	require.Empty(t, args[4].Vec.Values[0].Bytes)
+	publicKey, signature := requireEncodedEd25519Signature(t, args[4].Vec.Values[0])
+	require.Equal(t, sig[:ed25519.PublicKeySize], publicKey)
+	require.Equal(t, sig[ed25519.PublicKeySize:], signature)
+}
+
+func TestEncodeReport_RejectsEmptyRawReport(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	report := &workflowpb.ReportResponse{
+		ReportContext: make([]byte, ocrReportContextLen),
+		Sigs:          wrTestSigs(),
+	}
+	_, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "raw report is empty")
+}
+
+func TestEncodeReport_RejectsInvalidReportContextLength(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	report := &workflowpb.ReportResponse{
+		RawReport:     []byte{0x01},
+		ReportContext: make([]byte, ocrReportContextLen-1),
+		Sigs:          wrTestSigs(),
+	}
+	_, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "report context: expected 96 bytes")
+}
+
+func TestEncodeReport_RejectsInvalidSignatureLength(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	report := &workflowpb.ReportResponse{
+		RawReport:     []byte{0x01},
+		ReportContext: make([]byte, ocrReportContextLen),
+		Sigs:          []*workflowpb.AttributedSignature{{Signature: make([]byte, 65)}}, // secp256k1 length, not ed25519
+	}
+	_, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected 96 bytes")
+}
+
+// TestEncodeReport_SortsSignaturesByPublicKey verifies the forwarder's
+// strictly-ascending-by-public-key requirement: signatures are emitted sorted by
+// pubkey regardless of input order.
+func TestEncodeReport_SortsSignaturesByPublicKey(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	sigHigh := make([]byte, ed25519OCRSigLen)
+	sigHigh[0] = 0x02
+	sigHigh[ed25519.PublicKeySize] = 0xA2
+	sigLow := make([]byte, ed25519OCRSigLen)
+	sigLow[0] = 0x01
+	sigLow[ed25519.PublicKeySize] = 0xA1
+
+	report := &workflowpb.ReportResponse{
+		RawReport:     []byte{0x01},
+		ReportContext: make([]byte, ocrReportContextLen),
+		Sigs:          []*workflowpb.AttributedSignature{{Signature: sigHigh}, {Signature: sigLow}}, // out of order
+	}
+	args, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.NoError(t, err)
+
+	vec := args[4].Vec.Values
+	require.Len(t, vec, 2)
+	pk0, signature0 := requireEncodedEd25519Signature(t, vec[0])
+	pk1, signature1 := requireEncodedEd25519Signature(t, vec[1])
+	require.Equal(t, sigLow[:ed25519.PublicKeySize], pk0)
+	require.Equal(t, sigHigh[:ed25519.PublicKeySize], pk1)
+	require.Equal(t, sigLow[ed25519.PublicKeySize:], signature0)
+	require.Equal(t, sigHigh[ed25519.PublicKeySize:], signature1)
+}
+
+func TestEncodeReport_RejectsDuplicateSignerPublicKey(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+
+	sigA := make([]byte, ed25519OCRSigLen)
+	sigB := make([]byte, ed25519OCRSigLen)
+	copy(sigA[:ed25519.PublicKeySize], bytes.Repeat([]byte{0x01}, ed25519.PublicKeySize))
+	copy(sigB[:ed25519.PublicKeySize], sigA[:ed25519.PublicKeySize])
+	sigA[ed25519.PublicKeySize] = 0xA1
+	sigB[ed25519.PublicKeySize] = 0xB1
+
+	report := &workflowpb.ReportResponse{
+		RawReport:     []byte{0x01},
+		ReportContext: make([]byte, ocrReportContextLen),
+		Sigs: []*workflowpb.AttributedSignature{
+			{Signature: sigA},
+			{Signature: sigB},
+		},
+	}
+	_, err := codec.EncodeReport(testNodeAddress, testReceiverAddress, report)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate signer public key")
+}
+
+func requireEncodedEd25519Signature(t *testing.T, value *stellartypes.ScVal) (publicKey, signature []byte) {
+	t.Helper()
+
+	require.NotNil(t, value)
+	require.Equal(t, stellartypes.ScValTypeMap, value.Type)
+	require.NotNil(t, value.Map)
+	require.Len(t, value.Map.Entries, 2)
+
+	publicKeyEntry := value.Map.Entries[0]
+	require.NotNil(t, publicKeyEntry.Key)
+	require.NotNil(t, publicKeyEntry.Key.Symbol)
+	require.Equal(t, "public_key", *publicKeyEntry.Key.Symbol)
+	require.NotNil(t, publicKeyEntry.Val)
+	require.Equal(t, stellartypes.ScValTypeBytes, publicKeyEntry.Val.Type)
+	require.Len(t, publicKeyEntry.Val.Bytes, ed25519.PublicKeySize)
+
+	signatureEntry := value.Map.Entries[1]
+	require.NotNil(t, signatureEntry.Key)
+	require.NotNil(t, signatureEntry.Key.Symbol)
+	require.Equal(t, "signature", *signatureEntry.Key.Symbol)
+	require.NotNil(t, signatureEntry.Val)
+	require.Equal(t, stellartypes.ScValTypeBytes, signatureEntry.Val.Type)
+	require.Len(t, signatureEntry.Val.Bytes, ed25519.SignatureSize)
+
+	return publicKeyEntry.Val.Bytes, signatureEntry.Val.Bytes
 }
 
 func TestEncodeQueryTransmissionInputs(t *testing.T) {

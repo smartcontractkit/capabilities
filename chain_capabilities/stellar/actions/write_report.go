@@ -18,18 +18,17 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	types "github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
 
 const (
-	ocrSignatureLen = 65
-
 	unknownIssueExecutingReceiverContractMessage       = "receiver contract execution failed"
 	writeReportUnexpectedSuccessfulTransmissionMessage = "WriteReport unexpected successful transmission"
 )
@@ -179,7 +178,7 @@ func (wr *writeReport) execute(
 		return nil, capabilities.ResponseMetadata{}, invalidTransmissionStateError(info.State)
 	}
 
-	if err := wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
+	if err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
@@ -204,13 +203,21 @@ func (wr *writeReport) execute(
 		// Transmission info may lag even when ReportProcessed events are already indexed (e.g. duplicate
 		// submit where another node's tx succeeded). Prefer the canonical event hash over local TXM data.
 		wr.lggr.Warnw("Failed to poll transmission info after submit, attempting event-based tx hash lookup", "error", pollErr)
-		if txHash, lookupErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx); lookupErr == nil {
+		txHash, lookupErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
+		if lookupErr == nil {
 			reply, buildErr := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
 			return reply, wr.meteringFromReply(reply), buildErr
 		}
-		wr.lggr.Warnw("Failed to poll transmission info after submit, returning reply from TXM outcome", "error", pollErr)
-		reply := wr.replyFromOwnTransaction(submitResp)
-		return reply, wr.meteringFromReply(reply), nil
+
+		wr.lggr.Errorw(
+			"Failed to determine canonical transmission outcome after submit",
+			"pollError", pollErr,
+			"eventLookupError", lookupErr,
+			"localTxHash", submitResp.TxHash,
+			"localTxStatus", submitResp.TxStatus,
+		)
+
+		return nil, capabilities.ResponseMetadata{}, errors.New("failed to retrieve transmission outcome after report submission")
 	}
 
 	switch postInfo.State {
@@ -267,12 +274,15 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 	if _, err := strkey.Decode(strkey.VersionByteContract, request.ContractId); err != nil {
 		return fmt.Errorf("%s invalid receiver contract address: %w", capcommon.UserError, err)
 	}
+	if len(request.Report.ReportContext) != ocrReportContextLen {
+		return fmt.Errorf("%s report context has invalid length: got %d, want %d", capcommon.UserError, len(request.Report.ReportContext), ocrReportContextLen)
+	}
 	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("%s signed report must contain at least one signature", capcommon.UserError)
 	}
 	for i, sig := range request.Report.Sigs {
-		if len(sig.GetSignature()) != ocrSignatureLen {
-			return fmt.Errorf("%s signature %d has invalid length: got %d, want %d", capcommon.UserError, i, len(sig.GetSignature()), ocrSignatureLen)
+		if len(sig.GetSignature()) != ed25519OCRSigLen {
+			return fmt.Errorf("%s signature %d has invalid length: got %d, want %d", capcommon.UserError, i, len(sig.GetSignature()), ed25519OCRSigLen)
 		}
 	}
 
@@ -465,7 +475,7 @@ func (wr *writeReport) replyFromTransaction(
 
 	message := errorMessage
 	if receiverStatus == stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
-		message = capcommon.Ptr(unknownIssueExecutingReceiverContractMessage)
+		message = new(unknownIssueExecutingReceiverContractMessage)
 	}
 
 	txStatus := stellarcap.TxStatus_TX_STATUS_SUCCESS
@@ -480,61 +490,15 @@ func (wr *writeReport) replyFromTransaction(
 		ErrorMessage:                    message,
 	}
 	if txResp.FeeStroops > 0 {
-		fee := txResp.FeeStroops
-		reply.TransactionFee = &fee
+		reply.TransactionFee = new(txResp.FeeStroops)
 	}
 	if txResp.LedgerCloseTime > 0 {
-		blockTimestamp := uint64(txResp.LedgerCloseTime) * 1_000_000
-		reply.BlockTimestamp = &blockTimestamp
+		reply.BlockTimestamp = new(uint64(txResp.LedgerCloseTime) * 1_000_000)
 	}
 	if txResp.LedgerSequence > 0 {
-		reply.LedgerSequence = capcommon.Ptr(txResp.LedgerSequence)
+		reply.LedgerSequence = new(txResp.LedgerSequence)
 	}
 	return reply, nil
-}
-
-// replyFromOwnTransaction builds a WriteReportReply directly from a SubmitTransactionResponse
-// when the post-submit transmission info poll fails or returns an unexpected state.
-func (wr *writeReport) replyFromOwnTransaction(resp *stellartypes.SubmitTransactionResponse) *stellarcap.WriteReportReply {
-	reply := &stellarcap.WriteReportReply{}
-	if resp == nil {
-		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_FATAL
-		return reply
-	}
-	populateReplyFromSubmit(reply, resp)
-	switch resp.TxStatus {
-	case stellartypes.TxSuccess:
-		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_SUCCESS
-		status := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
-		reply.ReceiverContractExecutionStatus = &status
-	case stellartypes.TxFailed:
-		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_REVERTED
-		status := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
-		reply.ReceiverContractExecutionStatus = &status
-		if resp.Error != "" {
-			reply.ErrorMessage = capcommon.Ptr("on-chain transaction failed: " + resp.Error)
-		}
-	default: // TxFatal
-		reply.TxStatus = stellarcap.TxStatus_TX_STATUS_FATAL
-	}
-	return reply
-}
-
-// populateReplyFromSubmit sets tx hash, fee, and block timestamp on the reply from a SubmitTransactionResponse.
-// Ledger sequence on submit paths is populated from get_transmission_info (post-submit poll), not from ResultMetaXDR.
-func populateReplyFromSubmit(reply *stellarcap.WriteReportReply, resp *stellartypes.SubmitTransactionResponse) {
-	if resp == nil {
-		return
-	}
-	if resp.TxHash != "" {
-		reply.TxHash = capcommon.Ptr(resp.TxHash)
-	}
-	if resp.TransactionFee != nil {
-		reply.TransactionFee = resp.TransactionFee
-	}
-	if resp.BlockTimestamp != nil {
-		reply.BlockTimestamp = resp.BlockTimestamp
-	}
 }
 
 func transmissionDebugID(id TransmissionID) string {

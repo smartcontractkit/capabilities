@@ -4,12 +4,13 @@ go 1.26.2
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260713160126-ac9205412b4c
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260714160921-4033d0253977
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260717225314-5fc9656c1b02
 	github.com/stellar/go-stellar-sdk v0.5.0
 )
 
 require (
 	github.com/smartcontractkit/chainlink-framework/metrics v0.0.0-20260401162955-be2bc6b5264b // indirect
+	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe // indirect
 	github.com/stellar/go-xdr v0.0.0-20260312225820-cc2b0611aabf // indirect
 )
 
