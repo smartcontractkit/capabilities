@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -74,21 +73,29 @@ func responseHeadersFromGateway(resp *gc.OutboundHTTPResponse) (headers map[stri
 		multiHeaders = make(map[string]*http.HeaderValues, len(resp.MultiHeaders))
 		headers = make(map[string]string, len(resp.MultiHeaders))
 		for k, v := range resp.MultiHeaders {
-			multiHeaders[k] = &http.HeaderValues{Values: slices.Clone(v)}
-			if len(v) > 0 {
-				headers[k] = strings.Join(v, ",")
+			// Sanitize invalid UTF-8: proto string fields must be valid UTF-8 to marshal over gRPC.
+			key := common.SanitizeUTF8(k)
+			sanitized := make([]string, len(v))
+			for i, val := range v {
+				sanitized[i] = common.SanitizeUTF8(val)
+			}
+			multiHeaders[key] = &http.HeaderValues{Values: sanitized}
+			if len(sanitized) > 0 {
+				headers[key] = strings.Join(sanitized, ",")
 			}
 		}
 		return headers, multiHeaders
 	}
 	// Source is Headers: populate headers, derive multiHeaders (single value per key).
-	headers = maps.Clone(resp.Headers) //nolint:staticcheck // Headers deprecated but gateway may send it
-	if headers == nil {
-		headers = make(map[string]string)
-	}
-	multiHeaders = make(map[string]*http.HeaderValues, len(headers))
-	for k, v := range headers {
-		multiHeaders[k] = &http.HeaderValues{Values: []string{v}}
+	// Sanitize invalid UTF-8: proto string fields must be valid UTF-8 to marshal over gRPC.
+	srcHeaders := resp.Headers //nolint:staticcheck // Headers deprecated but gateway may send it
+	headers = make(map[string]string, len(srcHeaders))
+	multiHeaders = make(map[string]*http.HeaderValues, len(srcHeaders))
+	for k, v := range srcHeaders {
+		key := common.SanitizeUTF8(k)
+		val := common.SanitizeUTF8(v)
+		headers[key] = val
+		multiHeaders[key] = &http.HeaderValues{Values: []string{val}}
 	}
 	return headers, multiHeaders
 }

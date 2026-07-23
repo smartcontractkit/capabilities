@@ -10,8 +10,10 @@ import (
 	"strconv"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/validate"
@@ -420,5 +422,55 @@ func TestToResponseHeaders(t *testing.T) {
 		require.Contains(t, multi, "X-Good")
 		require.NotContains(t, multi, "X-Bad")
 		require.Equal(t, "value", single["X-Good"])
+	})
+
+	t.Run("preserves valid UTF-8 untouched", func(t *testing.T) {
+		h := http.Header{
+			"Content-Type": []string{"application/json"},
+			"X-Multi":      []string{"héllo", "wörld", "日本語"},
+		}
+		multi, single := toResponseHeaders(h)
+		require.Equal(t, []string{"application/json"}, multi["Content-Type"].Values)
+		require.Equal(t, []string{"héllo", "wörld", "日本語"}, multi["X-Multi"].Values)
+		require.Equal(t, "héllo,wörld,日本語", single["X-Multi"])
+	})
+
+	t.Run("sanitizes invalid UTF-8 and stays marshalable", func(t *testing.T) {
+		invalidVal := "prefix" + string([]byte{0xff, 0xfe}) + "suffix"
+		invalidKey := "X-Bad" + string([]byte{0xff})
+		h := http.Header{
+			"X-Good":   []string{"clean"},
+			invalidKey: []string{invalidVal, "also-clean"},
+		}
+		multi, single := toResponseHeaders(h)
+
+		require.Equal(t, []string{"clean"}, multi["X-Good"].Values)
+
+		sanitizedKey := SanitizeUTF8(invalidKey)
+		require.True(t, utf8.ValidString(sanitizedKey))
+		require.Contains(t, multi, sanitizedKey)
+		require.Len(t, multi[sanitizedKey].Values, 2)
+		require.True(t, utf8.ValidString(multi[sanitizedKey].Values[0]))
+		require.Equal(t, "also-clean", multi[sanitizedKey].Values[1])
+		require.True(t, utf8.ValidString(single[sanitizedKey]))
+
+		// The whole Response must now marshal without the gRPC UTF-8 error.
+		resp := &httpactions.Response{MultiHeaders: multi, Headers: single}
+		_, err := proto.Marshal(resp)
+		require.NoError(t, err)
+	})
+}
+
+func TestSanitizeUTF8(t *testing.T) {
+	t.Run("returns valid strings unchanged", func(t *testing.T) {
+		for _, s := range []string{"", "ascii", "héllo wörld", "日本語", "emoji 🚀"} {
+			require.Equal(t, s, SanitizeUTF8(s))
+		}
+	})
+
+	t.Run("replaces invalid bytes with U+FFFD", func(t *testing.T) {
+		got := SanitizeUTF8("a" + string([]byte{0xff}) + "b")
+		require.True(t, utf8.ValidString(got))
+		require.Equal(t, "a�b", got)
 	})
 }
