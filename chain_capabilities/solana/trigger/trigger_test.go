@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -34,17 +33,9 @@ const (
 	testWorkflowID        = "test-workflow-1"
 	testWorkflowOwner     = "test-owner-1"
 	testChannelBufferSize = 100
-	testCapabilityID      = "test-cap"
 	testAddress           = "11111111111111111111111111111112"
 	testEventName         = "TestEvent"
 )
-
-func testLimitsFactory(tb testing.TB) limits.Factory {
-	tb.Helper()
-	g, err := settings.NewJSONGetter([]byte(`{}`))
-	require.NoError(tb, err)
-	return limits.Factory{Settings: g, Logger: logger.Test(tb)}
-}
 
 var (
 	testPublicKey    = createTestPublicKey(testAddress)
@@ -94,15 +85,9 @@ func createTestTelemetryContext() monitoring.TelemetryContext {
 func waitForTriggerRegistered(t *testing.T, service *SolanaLogTriggerService, triggerID string) {
 	t.Helper()
 	tests.AssertEventually(t, func() bool {
-		trigger, ok := service.triggers.Read(triggerID)
-		return ok && trigger.stopPolling != nil
+		_, ok := service.triggers.Read(triggerID)
+		return ok
 	})
-}
-
-func startBaseTrigger(t *testing.T, service *SolanaLogTriggerService) {
-	t.Helper()
-	require.NoError(t, service.baseTrigger.Start(t.Context()))
-	t.Cleanup(func() { service.baseTrigger.Stop() })
 }
 
 func startPollingAsync(
@@ -116,8 +101,6 @@ func startPollingAsync(
 	logCh chan capabilities.TriggerAndId[*solanacappb.Log],
 ) {
 	t.Helper()
-	startBaseTrigger(t, service)
-	service.baseTrigger.RegisterTrigger(triggerID, logCh)
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
@@ -133,7 +116,7 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 	lggr := logger.Test(t)
 
 	opts := LogTriggerServiceOpts{
-		SolanaService:                   mockSolanaService,
+		SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 		Logger:                          lggr,
 		BeholderProcessor:               NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -142,9 +125,7 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 		LogTriggerSendChannelBufferSize: testChannelBufferSize,
 		Retention:                       time.Hour * 24,
 		MaxLogsKept:                     10000,
-		LimitsFactory:                   testLimitsFactory(t),
-		TriggerEventStore:               capabilities.NewMemEventStore(),
-		CapabilityID:                    testCapabilityID,
+		LimitsFactory:                   limits.Factory{Logger: lggr},
 	}
 
 	service, err := NewLogTriggerService(opts)
@@ -641,7 +622,7 @@ func TestStartPolling(t *testing.T) {
 		store := NewSolanaLogTriggerStore()
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
 			Logger:                          logger.Nop(),
 			BeholderProcessor:               NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -650,9 +631,7 @@ func TestStartPolling(t *testing.T) {
 			LogTriggerSendChannelBufferSize: testChannelBufferSize,
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
-			LimitsFactory:                   testLimitsFactory(t),
-			TriggerEventStore:               capabilities.NewMemEventStore(),
-			CapabilityID:                    testCapabilityID,
+			LimitsFactory:                   limits.Factory{Logger: logger.Nop()},
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -746,15 +725,14 @@ func TestStartPolling(t *testing.T) {
 		<-polled
 	})
 
-	t.Run("handles full inbox without panic", func(t *testing.T) {
+	t.Run("drops events when channel is full", func(t *testing.T) {
 		mockSolanaService := mocks.NewSolanaService(t)
 		store := NewSolanaLogTriggerStore()
 
 		// Create service with very small buffer
-		lggr := logger.Test(t)
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
-			Logger:                          lggr,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
+			Logger:                          logger.Test(t),
 			Triggers:                        store,
 			LogTriggerPollInterval:          1 * time.Millisecond,
 			LogTriggerSendChannelBufferSize: 1, // Very small buffer
@@ -762,9 +740,6 @@ func TestStartPolling(t *testing.T) {
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   testLimitsFactory(t),
-			TriggerEventStore:               capabilities.NewMemEventStore(),
-			CapabilityID:                    testCapabilityID,
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -800,18 +775,17 @@ func TestStartPolling(t *testing.T) {
 		// Don't read from channel to force it to fill up
 		<-ctx.Done()
 
-		// Test passes if no panic occurs - events are persisted and retried via baseTrigger
+		// Test passes if no panic occurs - drops are handled gracefully
 		mockSolanaService.AssertExpectations(t)
 	})
 
-	t.Run("updates lastProcessedBlock when inbox is full", func(t *testing.T) {
+	t.Run("updates lastProcessedBlock even when logs are dropped", func(t *testing.T) {
 		mockSolanaService := mocks.NewSolanaService(t)
 		store := NewSolanaLogTriggerStore()
 
-		lggr := logger.Test(t)
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
-			Logger:                          lggr,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
+			Logger:                          logger.Test(t),
 			Triggers:                        store,
 			LogTriggerPollInterval:          10 * time.Millisecond,
 			LogTriggerSendChannelBufferSize: 1,
@@ -819,9 +793,6 @@ func TestStartPolling(t *testing.T) {
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   testLimitsFactory(t),
-			TriggerEventStore:               capabilities.NewMemEventStore(),
-			CapabilityID:                    testCapabilityID,
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -870,10 +841,9 @@ func TestStartPolling(t *testing.T) {
 		mockSolanaService := mocks.NewSolanaService(t)
 		store := NewSolanaLogTriggerStore()
 
-		lggr := logger.Test(t)
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockSolanaService,
-			Logger:                          lggr,
+			SolanaService:                   mocks.WrapSolanaService(mockSolanaService),
+			Logger:                          logger.Test(t),
 			Triggers:                        store,
 			LogTriggerPollInterval:          5 * time.Millisecond,
 			LogTriggerSendChannelBufferSize: testChannelBufferSize,
@@ -881,9 +851,6 @@ func TestStartPolling(t *testing.T) {
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   testLimitsFactory(t),
-			TriggerEventStore:               capabilities.NewMemEventStore(),
-			CapabilityID:                    testCapabilityID,
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -1105,16 +1072,12 @@ func BenchmarkSolanaLogTriggerService_BuildQueryExpressions(b *testing.B) {
 }
 
 func BenchmarkSolanaLogTriggerService_ToLogPollerFilter(b *testing.B) {
-	lggr := logger.Test(&testing.T{})
 	opts := LogTriggerServiceOpts{
-		Logger:            lggr,
+		Logger:            logger.Test(&testing.T{}),
 		BeholderProcessor: test.NopBeholderProcessor{},
 		MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		Retention:         time.Hour * 24,
 		MaxLogsKept:       10000,
-		LimitsFactory:     testLimitsFactory(b),
-		TriggerEventStore: capabilities.NewMemEventStore(),
-		CapabilityID:      testCapabilityID,
 	}
 
 	service, err := NewLogTriggerService(opts)
@@ -1148,9 +1111,6 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     testLimitsFactory(t),
-			TriggerEventStore: capabilities.NewMemEventStore(),
-			CapabilityID:      testCapabilityID,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, service)
@@ -1163,11 +1123,12 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 
 	t.Run("respects provided values", func(t *testing.T) {
 		mockService := mocks.NewSolanaService(t)
+		wrappedService := mocks.WrapSolanaService(mockService)
 		store := NewSolanaLogTriggerStore()
 		lggr := logger.Test(t)
 
 		opts := LogTriggerServiceOpts{
-			SolanaService:                   mockService,
+			SolanaService:                   wrappedService,
 			Logger:                          lggr,
 			Triggers:                        store,
 			LogTriggerPollInterval:          5 * time.Second,
@@ -1176,59 +1137,19 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			MaxLogsKept:                     20000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:                   testLimitsFactory(t),
-			TriggerEventStore:               capabilities.NewMemEventStore(),
-			CapabilityID:                    testCapabilityID,
 		}
 
 		service, err := NewLogTriggerService(opts)
 		require.NoError(t, err)
 		require.NotNil(t, service)
 
-		assert.Equal(t, mockService, service.SolanaService)
+		assert.Equal(t, wrappedService, service.SolanaService)
 		assert.Equal(t, store, service.triggers)
 		assert.Equal(t, 5*time.Second, service.logTriggerPollInterval)
 		assert.Equal(t, uint64(2000), service.logTriggerSendChannelBufferSize)
 		assert.Equal(t, 48*time.Hour, service.retention)
 		assert.Equal(t, int64(20000), service.maxLogsKept)
 	})
-
-	t.Run("requires trigger event store", func(t *testing.T) {
-		lggr := logger.Test(t)
-		_, err := NewLogTriggerService(LogTriggerServiceOpts{
-			Logger:            lggr,
-			BeholderProcessor: test.NopBeholderProcessor{},
-			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     testLimitsFactory(t),
-			CapabilityID:      testCapabilityID,
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no trigger event store provided")
-	})
-
-	t.Run("requires capability ID", func(t *testing.T) {
-		lggr := logger.Test(t)
-		_, err := NewLogTriggerService(LogTriggerServiceOpts{
-			Logger:            lggr,
-			BeholderProcessor: test.NopBeholderProcessor{},
-			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     testLimitsFactory(t),
-			TriggerEventStore: capabilities.NewMemEventStore(),
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "capabilityID must be non-empty")
-	})
-}
-
-func TestAckEvent(t *testing.T) {
-	service, _ := setupTest(t)
-	startBaseTrigger(t, service)
-
-	triggerID := "test-trigger"
-	logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 1)
-	service.baseTrigger.RegisterTrigger(triggerID, logCh)
-
-	require.Nil(t, service.AckEvent(t.Context(), triggerID, "event-1"))
 }
 
 func TestSolanaLogTriggerStore(t *testing.T) {
@@ -1301,9 +1222,6 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-			LimitsFactory:     testLimitsFactory(t),
-			TriggerEventStore: capabilities.NewMemEventStore(),
-			CapabilityID:      testCapabilityID,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, service)
@@ -1408,31 +1326,6 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		// The mock doesn't implement FilterNamesGetter, so cleanup should be skipped
 		service.cleanUpStaleFilters(t.Context())
 		// No panic, no error - just silently skips
-	})
-
-	t.Run("preserves filter when trigger is registered", func(t *testing.T) {
-		service, mockSolana := setupTest(t)
-		filterName := testTriggerID + SuffixLogTriggerFilterID
-
-		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{filterName}, nil).Once()
-
-		service.triggers.Write(testTriggerID, solanaLogTriggerState{
-			stopPolling: func() {},
-			filter:      createTestRequest(),
-		})
-
-		service.cleanUpStaleFilters(t.Context())
-		mockSolana.AssertNotCalled(t, "UnregisterLogTracking", mock.Anything, mock.Anything)
-	})
-
-	t.Run("removes orphan filter when trigger is not registered", func(t *testing.T) {
-		service, mockSolana := setupTest(t)
-		filterName := testTriggerID + SuffixLogTriggerFilterID
-
-		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{filterName}, nil).Once()
-		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, filterName).Return(nil).Once()
-
-		service.cleanUpStaleFilters(t.Context())
 	})
 }
 
