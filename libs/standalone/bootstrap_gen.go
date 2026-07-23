@@ -9,12 +9,12 @@ import (
 )
 
 // Run1 bootstraps the services built from 1 dependency.
-// fn receives the context and the 1 dependency, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 1 dependency, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run1[T0 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 ) error {
 
@@ -22,17 +22,17 @@ func Run1[T0 any](
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0)
+		return fn(ctx, bs.config, dep0)
 	})
 }
 
 // Run2 bootstraps the services built from 2 dependencies.
-// fn receives the context and the 2 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 2 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run2[T0 any, T1 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 ) error {
@@ -44,17 +44,17 @@ func Run2[T0 any, T1 any](
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1)
+		return fn(ctx, bs.config, dep0, dep1)
 	})
 }
 
 // Run3 bootstraps the services built from 3 dependencies.
-// fn receives the context and the 3 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 3 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run3[T0 any, T1 any, T2 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -70,17 +70,17 @@ func Run3[T0 any, T1 any, T2 any](
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2)
+		return fn(ctx, bs.config, dep0, dep1, dep2)
 	})
 }
 
 // Run4 bootstraps the services built from 4 dependencies.
-// fn receives the context and the 4 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 4 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run4[T0 any, T1 any, T2 any, T3 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -100,17 +100,17 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2, dep3)
+		return fn(ctx, bs.config, dep0, dep1, dep2, dep3)
 	})
 }
 
 // Run5 bootstraps the services built from 5 dependencies.
-// fn receives the context and the 5 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 5 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -134,17 +134,17 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2, dep3, dep4)
+		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4)
 	})
 }
 
 // Run6 bootstraps the services built from 6 dependencies.
-// fn receives the context and the 6 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 6 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -172,17 +172,17 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2, dep3, dep4, dep5)
+		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5)
 	})
 }
 
 // Run7 bootstraps the services built from 7 dependencies.
-// fn receives the context and the 7 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 7 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -214,17 +214,17 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2, dep3, dep4, dep5, dep6)
+		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6)
 	})
 }
 
 // Run8 bootstraps the services built from 8 dependencies.
-// fn receives the context and the 8 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 8 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -260,17 +260,17 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	dep7 := &dependency[T7]{bd: bootDep7, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7)
+		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7)
 	})
 }
 
 // Run9 bootstraps the services built from 9 dependencies.
-// fn receives the context and the 9 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 9 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -310,17 +310,17 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 	dep8 := &dependency[T8]{bd: bootDep8, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8)
+		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8)
 	})
 }
 
 // Run10 bootstraps the services built from 10 dependencies.
-// fn receives the context and the 10 dependencies, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the 10 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any, T9 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8], dep9 Dependency[T9]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8], dep9 Dependency[T9]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -364,6 +364,6 @@ func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 an
 	dep9 := &dependency[T9]{bd: bootDep9, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8, dep9)
+		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8, dep9)
 	})
 }

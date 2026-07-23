@@ -22,13 +22,19 @@ import (
 type Server struct {
 	creproxy.UnimplementedBinaryNetworkEndpointProxyServer
 
-	peerFactory types.BinaryNetworkEndpointFactory
+	peerFactory   types.BinaryNetworkEndpointFactory
+	inboundSizes  sizeRecorder
+	outboundSizes sizeRecorder
 }
 
 // NewServer returns a Server that serves endpoints created by the given
 // factory, typically networking.NewPeer(...).OCR2BinaryNetworkEndpointFactory().
-func NewServer(peerFactory types.BinaryNetworkEndpointFactory) *Server {
-	return &Server{peerFactory: peerFactory}
+func NewServer(peerFactory types.BinaryNetworkEndpointFactory, metrics *proxyMetrics) *Server {
+	return &Server{
+		peerFactory:   peerFactory,
+		inboundSizes:  metrics.sizes(endpointOCR2, directionInbound),
+		outboundSizes: metrics.sizes(endpointOCR2, directionOutbound),
+	}
 }
 
 func (s *Server) Connect(stream creproxy.BinaryNetworkEndpointProxy_ConnectServer) error {
@@ -60,6 +66,7 @@ func (s *Server) Connect(stream creproxy.BinaryNetworkEndpointProxy_ConnectServe
 
 	recvChan := endpoint.Receive()
 
+	ctx := stream.Context()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -68,6 +75,7 @@ func (s *Server) Connect(stream creproxy.BinaryNetworkEndpointProxy_ConnectServe
 				Msg:    msg.Msg,
 				Sender: uint32(msg.Sender),
 			}
+			s.inboundSizes.record(ctx, len(msg.Msg))
 			if err := stream.Send(pbMsg); err != nil {
 				return
 			}
@@ -87,8 +95,10 @@ func (s *Server) Connect(stream creproxy.BinaryNetworkEndpointProxy_ConnectServe
 		case *creproxy.BinaryNetworkClientRequest_NewEndpoint:
 			return fmt.Errorf("NewEndpointRequest not allowed after initial setup")
 		case *creproxy.BinaryNetworkClientRequest_SendTo:
+			s.outboundSizes.record(ctx, len(msg.SendTo.Payload))
 			endpoint.SendTo(msg.SendTo.Payload, commontypes.OracleID(msg.SendTo.ToOracleId))
 		case *creproxy.BinaryNetworkClientRequest_Broadcast:
+			s.outboundSizes.record(ctx, len(msg.Broadcast))
 			endpoint.Broadcast(msg.Broadcast)
 		}
 	}

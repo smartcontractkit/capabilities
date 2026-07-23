@@ -69,6 +69,11 @@ func (s *proxyService) start(ctx context.Context) error {
 	}
 	s.factoriesClose = factories.Close
 
+	metrics, err := newProxyMetrics()
+	if err != nil {
+		return fmt.Errorf("failed to create proxy metrics: %w", err)
+	}
+
 	lis, err := net.Listen("tcp", s.cfg.ProxyListenAddress)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", s.cfg.ProxyListenAddress, err)
@@ -77,9 +82,9 @@ func (s *proxyService) start(ctx context.Context) error {
 	// The factories back both surfaces over the same rage connection and
 	// discoverer: OCR endpoints and DON-to-DON peer groups.
 	s.grpcServer = grpc.NewServer()
-	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(factories.OCR2Endpoint))
-	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(factories.OCR3_1Endpoint))
-	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(factories.PeerGroup))
+	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(factories.OCR2Endpoint, metrics))
+	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(factories.OCR3_1Endpoint, metrics))
+	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(factories.PeerGroup, metrics))
 
 	// Gracefully stop the gRPC server when the engine cancels this context on
 	// Close; run the (blocking) Serve in a tracked goroutine so start returns

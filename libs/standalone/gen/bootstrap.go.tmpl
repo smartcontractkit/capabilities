@@ -9,12 +9,12 @@ import (
 {{- range . }}
 
 // Run{{.}} bootstraps the services built from {{.}} {{if eq . 1}}dependency{{else}}dependencies{{end}}.
-// fn receives the context and the {{.}} {{if eq . 1}}dependency{{else}}dependencies{{end}}, and returns the services to run.
+// fn receives the context, the StandaloneConfig, and the {{.}} {{if eq . 1}}dependency{{else}}dependencies{{end}}, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
 func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, {{range RangeNum .}}dep{{.}} Dependency[T{{.}}], {{end}}) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, {{range RangeNum .}}dep{{.}} Dependency[T{{.}}], {{end}}) []services.Service,
 	{{- range RangeNum .}}
 	bootDep{{.}} BootstrapDependency[T{{.}}],
 	{{- end}}
@@ -24,7 +24,7 @@ func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 	dep{{.}} :=  &dependency[T{{.}}]{bd: bootDep{{.}}, bs: bs}
 	{{end}}
 	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, {{range RangeNum .}}dep{{.}}, {{end}})
+		return fn(ctx, bs.config, {{range RangeNum .}}dep{{.}}, {{end}})
 	})
 }
 {{- end }}

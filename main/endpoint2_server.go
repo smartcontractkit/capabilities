@@ -27,13 +27,19 @@ const maxPendingRequestHandles = 8192
 type Endpoint2Server struct {
 	creproxy.UnimplementedEndpoint2ProxyServer
 
-	factory ocr2types.BinaryNetworkEndpoint2Factory
+	factory       ocr2types.BinaryNetworkEndpoint2Factory
+	inboundSizes  sizeRecorder
+	outboundSizes sizeRecorder
 }
 
 // NewEndpoint2Server returns an Endpoint2Server serving endpoints created by
 // the given factory, typically networking.NewPeer(...).OCR3_1BinaryNetworkEndpointFactory().
-func NewEndpoint2Server(factory ocr2types.BinaryNetworkEndpoint2Factory) *Endpoint2Server {
-	return &Endpoint2Server{factory: factory}
+func NewEndpoint2Server(factory ocr2types.BinaryNetworkEndpoint2Factory, metrics *proxyMetrics) *Endpoint2Server {
+	return &Endpoint2Server{
+		factory:       factory,
+		inboundSizes:  metrics.sizes(endpointOCR3_1, directionInbound),
+		outboundSizes: metrics.sizes(endpointOCR3_1, directionOutbound),
+	}
 }
 
 func (s *Endpoint2Server) Connect(stream creproxy.Endpoint2Proxy_ConnectServer) error {
@@ -54,12 +60,15 @@ func (s *Endpoint2Server) Connect(stream creproxy.Endpoint2Proxy_ConnectServer) 
 
 	c := &endpoint2Conn{stream: stream, handles: map[uint64]ocr2types.RequestHandle{}}
 
+	ctx := stream.Context()
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for msg := range endpoint.Receive() {
-			if err := c.send(c.inboundToPB(msg)); err != nil {
+			pb := c.inboundToPB(msg)
+			s.inboundSizes.record(ctx, len(pb.Payload))
+			if err := c.send(pb); err != nil {
 				return
 			}
 		}
@@ -80,10 +89,12 @@ func (s *Endpoint2Server) Connect(stream creproxy.Endpoint2Proxy_ConnectServer) 
 			return fmt.Errorf("NewEndpoint2Request not allowed after initial setup")
 		case *creproxy.Endpoint2ClientRequest_SendTo:
 			if out, ok := c.pbToOutbound(m.SendTo.Msg); ok {
+				s.outboundSizes.record(ctx, len(m.SendTo.Msg.Payload))
 				endpoint.SendTo(out, commontypes.OracleID(m.SendTo.ToOracleId))
 			}
 		case *creproxy.Endpoint2ClientRequest_Broadcast:
 			if out, ok := c.pbToOutbound(m.Broadcast.Msg); ok {
+				s.outboundSizes.record(ctx, len(m.Broadcast.Msg.Payload))
 				endpoint.Broadcast(out)
 			}
 		}

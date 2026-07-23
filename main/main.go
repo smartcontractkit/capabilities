@@ -11,7 +11,6 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -47,12 +46,8 @@ peer, or --proxy-address to delegate to another proxy.`,
 
 	root.PersistentFlags().StringVar(&cfg.ProxyListenAddress, "proxy-listen-address", ":50051", "address the proxy gRPC server listens on")
 
-	lggr, err := logger.New()
-	if err != nil {
-		return err
-	}
-
-	bootstrapper := standalone.NewBootstrapper(root, lggr)
+	bootstrapper := standalone.NewBootstrapper(root, standalone.WithOtelViews(metricViews()))
+	lggr := bootstrapper.Config().Logger
 
 	// The ocr dependency owns the libocr networking config (create vs proxy
 	// mode) and wraps the database dependency it needs for the P2P identity and
@@ -60,7 +55,7 @@ peer, or --proxy-address to delegate to another proxy.`,
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
 	ocrDep := ocr.Dependency(lggr, dbDep, ocrDiscovererTable)
 
-	return standalone.Run1(bootstrapper, func(ctx context.Context, factories standalone.Dependency[*ocr.Factories]) []services.Service {
-		return []services.Service{newProxyService(cfg, lggr, factories)}
+	return standalone.Run1(bootstrapper, func(ctx context.Context, scfg *standalone.StandaloneConfig, factories standalone.Dependency[*ocr.Factories]) []services.Service {
+		return []services.Service{newProxyService(cfg, scfg.Logger, factories)}
 	}, ocrDep)
 }

@@ -22,13 +22,19 @@ const configDigestLen = 32
 type PeerGroupServer struct {
 	creproxy.UnimplementedPeerGroupProxyServer
 
-	pgFactory creproxy.PeerGroupFactory
+	pgFactory     creproxy.PeerGroupFactory
+	inboundSizes  sizeRecorder
+	outboundSizes sizeRecorder
 }
 
 // NewPeerGroupServer returns a PeerGroupServer serving groups created by the
 // given factory.
-func NewPeerGroupServer(pgFactory creproxy.PeerGroupFactory) *PeerGroupServer {
-	return &PeerGroupServer{pgFactory: pgFactory}
+func NewPeerGroupServer(pgFactory creproxy.PeerGroupFactory, metrics *proxyMetrics) *PeerGroupServer {
+	return &PeerGroupServer{
+		pgFactory:     pgFactory,
+		inboundSizes:  metrics.sizes(endpointPeerGroup, directionInbound),
+		outboundSizes: metrics.sizes(endpointPeerGroup, directionOutbound),
+	}
 }
 
 func (s *PeerGroupServer) Connect(stream creproxy.PeerGroupProxy_ConnectServer) error {
@@ -47,7 +53,13 @@ func (s *PeerGroupServer) Connect(stream creproxy.PeerGroupProxy_ConnectServer) 
 		return fmt.Errorf("failed to create peer group: %w", err)
 	}
 
-	c := &peerGroupConn{stream: stream, group: group, streams: map[string]creproxy.PeerGroupStream{}}
+	c := &peerGroupConn{
+		stream:        stream,
+		group:         group,
+		streams:       map[string]creproxy.PeerGroupStream{},
+		inboundSizes:  s.inboundSizes,
+		outboundSizes: s.outboundSizes,
+	}
 	defer c.close()
 
 	for {
@@ -94,8 +106,10 @@ func (s *PeerGroupServer) newPeerGroup(req *creproxy.NewPeerGroupRequest) (crepr
 
 // peerGroupConn holds the per-connection state for a single PeerGroup.
 type peerGroupConn struct {
-	stream creproxy.PeerGroupProxy_ConnectServer
-	group  creproxy.PeerGroup
+	stream        creproxy.PeerGroupProxy_ConnectServer
+	group         creproxy.PeerGroup
+	inboundSizes  sizeRecorder
+	outboundSizes sizeRecorder
 
 	// sendMu serializes sends on the gRPC stream, which is written to by one
 	// goroutine per stream's receive loop.
@@ -135,6 +149,7 @@ func (c *peerGroupConn) newStream(req *creproxy.NewStreamRequest) error {
 	go func() {
 		defer c.wg.Done()
 		for payload := range recv {
+			c.inboundSizes.record(c.stream.Context(), len(payload))
 			if err := c.send(&creproxy.PeerGroupServerMessage{
 				Message: &creproxy.PeerGroupServerMessage_StreamRecv{
 					StreamRecv: &creproxy.StreamRecv{StreamId: streamID, Payload: payload},
@@ -152,6 +167,7 @@ func (c *peerGroupConn) sendTo(streamID string, payload []byte) {
 	st := c.streams[streamID]
 	c.mu.Unlock()
 	if st != nil {
+		c.outboundSizes.record(c.stream.Context(), len(payload))
 		st.SendMessage(payload)
 	}
 }
