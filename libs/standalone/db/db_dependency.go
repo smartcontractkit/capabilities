@@ -17,7 +17,9 @@ import (
 const dbURLEnvVar = "CL_DATABASE_URL"
 
 func Dependency(migrationsFS fs.FS, migrationTable string) standalone.BootstrapDependency[*sql.DB] {
-	return &dependency{migrationsFS: migrationsFS, migrationTable: migrationTable}
+	// Wrap in OnceBootstrapper so Get (which opens the DB and runs migrations)
+	// runs at most once even if several services resolve this dependency.
+	return standalone.OnceBootstrapper[*sql.DB](&dependency{migrationsFS: migrationsFS, migrationTable: migrationTable})
 }
 
 type dependency struct {

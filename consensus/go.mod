@@ -11,7 +11,7 @@ require (
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260601182856-0b9e9346b65c
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260622152157-c8e129347b8b
 	github.com/smartcontractkit/cre-sdk-go v0.9.0
-	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
+	github.com/smartcontractkit/libocr v0.0.0-20260508200755-99940c85383c
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0

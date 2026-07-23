@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/hashicorp/go-plugin"
@@ -107,4 +108,37 @@ type dependency[T any] struct {
 
 func (d dependency[T]) Get(ctx context.Context) (T, error) {
 	return d.bd.Get(ctx, d.bs.commonConfig)
+}
+
+// OnceBootstrapper wraps a BootstrapDependency so that Get is evaluated at most
+// once: the first call resolves the dependency and caches its (value, error),
+// and every subsequent call returns that same result without re-running Get
+// (the ctx and CommonConfig of later calls are ignored). AddCommands is
+// delegated unchanged.
+//
+// BootstrapDependency implementations are shared and may have Get called more
+// than once — e.g. one dependency resolving another, or the same dependency
+// feeding several services — so a New function should wrap its dependency with
+// OnceBootstrapper before returning it, making repeated Get calls safe and
+// side-effect-free.
+func OnceBootstrapper[T any](bd BootstrapDependency[T]) BootstrapDependency[T] {
+	return &onceBootstrapper[T]{bd: bd}
+}
+
+type onceBootstrapper[T any] struct {
+	bd   BootstrapDependency[T]
+	once sync.Once
+	val  T
+	err  error
+}
+
+func (o *onceBootstrapper[T]) Get(ctx context.Context, c CommonConfig) (T, error) {
+	o.once.Do(func() {
+		o.val, o.err = o.bd.Get(ctx, c)
+	})
+	return o.val, o.err
+}
+
+func (o *onceBootstrapper[T]) AddCommands(cmd *cobra.Command) {
+	o.bd.AddCommands(cmd)
 }
