@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
+	"crypto"
+	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -25,19 +25,18 @@ import (
 
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 
+	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/models"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 )
 
-// p2pPrivateKeyEnvVar holds the hex-encoded ed25519 key (a 32-byte seed or a
-// 64-byte private key) that determines this proxy's peer identity. It is read
-// from the environment rather than a flag so the secret never appears in the
-// process table.
-const p2pPrivateKeyEnvVar = "CL_P2P_PRIVATE_KEY"
+// keystorePasswordEnvVar is the keystore password used to decrypt the node's
+// key ring. The proxy shares the node's DB (CL_DATABASE_URL) and this password.
+const keystorePasswordEnvVar = "CL_PASSWORD_KEYSTORE"
 
 // Config is the proxy peer + gRPC server configuration, populated from CLI
-// flags (see main.go) plus the private key from the environment.
+// flags (see main.go).
 type Config struct {
 	// ProxyListenAddress is the address the proxy gRPC server listens on.
 	ProxyListenAddress string
@@ -55,47 +54,48 @@ type Config struct {
 	OutgoingBufferSize int
 }
 
-// loadPrivateKey reads and decodes the ed25519 key from p2pPrivateKeyEnvVar.
-func loadPrivateKey() (ed25519.PrivateKey, error) {
-	raw := os.Getenv(p2pPrivateKeyEnvVar)
-	if raw == "" {
-		return nil, fmt.Errorf("%s must be set", p2pPrivateKeyEnvVar)
+// loadPeerKeyring loads the P2P key from the node's keystore so the proxy uses
+// the SAME peer identity as the node it fronts (other DON members expect this
+// node's peer ID at this address). It reads the node's existing encrypted key
+// ring (the legacy `encrypted_key_rings` table, in chainlink-common's
+// corekeys/models format) and decrypts it with the keystore password. This is a
+// deliberately small copy of core's keyManager.Unlock using only
+// chainlink-common packages, so the proxy needn't import chainlink core.
+//
+// TODO: drop this once the keystore is migrated to chainlink-common's
+// keystore.Keystore + pgstore (as chainlink-ccv already uses), after which the
+// proxy can LoadKeystore from the shared table directly.
+func loadPeerKeyring(ctx context.Context, ds *sqlx.DB) (*peerKeyring, error) {
+	var encrypted []byte
+	if err := ds.GetContext(ctx, &encrypted, "SELECT encrypted_keys FROM encrypted_key_rings LIMIT 1"); err != nil {
+		return nil, fmt.Errorf("failed to read node key ring: %w", err)
 	}
-	b, err := hex.DecodeString(raw)
+	kr, err := models.EncryptedKeyRing{EncryptedKeys: encrypted}.Decrypt(os.Getenv(keystorePasswordEnvVar))
 	if err != nil {
-		return nil, fmt.Errorf("%s must be hex-encoded: %w", p2pPrivateKeyEnvVar, err)
+		return nil, fmt.Errorf("failed to decrypt node key ring: %w", err)
 	}
-	switch len(b) {
-	case ed25519.SeedSize:
-		return ed25519.NewKeyFromSeed(b), nil
-	case ed25519.PrivateKeySize:
-		return b, nil
-	default:
-		return nil, fmt.Errorf("%s must decode to %d (seed) or %d (private key) bytes, got %d",
-			p2pPrivateKeyEnvVar, ed25519.SeedSize, ed25519.PrivateKeySize, len(b))
+	for _, k := range kr.P2P {
+		pub, perr := ragetypes.PeerPublicKeyFromGenericPublicKey(k.Public())
+		if perr != nil {
+			return nil, fmt.Errorf("failed to derive peer public key: %w", perr)
+		}
+		return &peerKeyring{signer: k, publicKey: pub}, nil
 	}
+	return nil, errors.New("no P2P key found in node key ring")
 }
 
-// peerKeyring is a ragetypes.PeerKeyring backed by an ed25519 private key. It is
-// used in place of the deprecated PeerConfig.PrivKey field.
+// peerKeyring is a ragetypes.PeerKeyring backed by the node's P2P key (a
+// crypto.Signer), used in place of the deprecated PeerConfig.PrivKey field.
 type peerKeyring struct {
-	privKey   ed25519.PrivateKey
+	signer    crypto.Signer
 	publicKey ragetypes.PeerPublicKey
 }
 
 var _ ragetypes.PeerKeyring = (*peerKeyring)(nil)
 
-func newPeerKeyring(privKey ed25519.PrivateKey) (*peerKeyring, error) {
-	pub, err := ragetypes.PeerPublicKeyFromGenericPublicKey(privKey.Public())
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive peer public key: %w", err)
-	}
-	return &peerKeyring{privKey: privKey, publicKey: pub}, nil
-}
-
 // Sign returns an EdDSA-Ed25519 signature over msg, as required by PeerKeyring.
 func (k *peerKeyring) Sign(msg []byte) ([]byte, error) {
-	return ed25519.Sign(k.privKey, msg), nil
+	return k.signer.Sign(rand.Reader, msg, crypto.Hash(0))
 }
 
 func (k *peerKeyring) PublicKey() ragetypes.PeerPublicKey {
@@ -141,22 +141,19 @@ func (s *proxyService) start(ctx context.Context) error {
 		return errors.New("at least one --listen-addresses is required")
 	}
 
-	privKey, err := loadPrivateKey()
+	sqlDB, err := s.db.Get(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get database: %w", err)
 	}
-	keyring, err := newPeerKeyring(privKey)
+	ds := sqlx.NewDb(sqlDB, "pgx")
+
+	// Use the node's own P2P identity so the proxy is the same peer as the node.
+	keyring, err := loadPeerKeyring(ctx, ds)
 	if err != nil {
 		return err
 	}
 	peerID := ragetypes.PeerIDFromKeyring(keyring)
 
-	sqlDB, err := s.db.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get database: %w", err)
-	}
-
-	ds := sqlx.NewDb(sqlDB, "pgx")
 	discovererDB := NewOCRDiscovererDatabase(ds, peerID.String())
 
 	s.lggr.Infow("Starting p2p proxy peer",
@@ -197,6 +194,7 @@ func (s *proxyService) start(ctx context.Context) error {
 
 	s.grpcServer = grpc.NewServer()
 	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(ocrFactory))
+	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(peer.OCR3_1BinaryNetworkEndpointFactory()))
 	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(newNetworkingPeerGroupFactory(pgFactory)))
 
 	// Gracefully stop the gRPC server when the engine cancels this context on
