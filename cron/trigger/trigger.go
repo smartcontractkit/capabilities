@@ -241,6 +241,28 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			scheduledExecutionTimeUTC := trigger.nextRun.UTC()
 			currentTimeUTC := s.clock.Now().UTC()
 
+			nextExecutionTime, nextRunErr := job.NextRun()
+			if nextRunErr != nil {
+				// .NextRun() will error if the job no longer exists
+				// or if there is no next run to schedule, which shouldn't happen with cron jobs
+				s.lggr.Errorw("task callback failed to schedule next run", "triggerID", triggerID)
+			}
+
+			// Advance nextRun before blocking I/O so overlapping task invocations
+			// cannot reuse the same scheduled execution time.
+			muCh.Lock()
+			if callbackCh == nil {
+				muCh.Unlock()
+				return // unregistered already
+			}
+			s.triggers.Write(triggerID, cronTrigger{
+				job:        job,
+				nextRun:    nextExecutionTime,
+				workflowID: trigger.workflowID,
+				close:      closeCh,
+			})
+			muCh.Unlock()
+
 			response := createTriggerResponse(scheduledExecutionTimeUTC)
 
 			displayWorkflowName := metadata.DecodedWorkflowName
@@ -294,24 +316,11 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "isLegacyExecutionID", false, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
-			nextExecutionTime, nextRunErr := job.NextRun()
-			if nextRunErr != nil {
-				// .NextRun() will error if the job no longer exists
-				// or if there is no next run to schedule, which shouldn't happen with cron jobs
-				s.lggr.Errorw("task callback failed to schedule next run", "executionID", workflowExecutionID, "triggerID", triggerID)
-			}
-
 			muCh.RLock()
 			defer muCh.RUnlock()
 			if callbackCh == nil {
 				return // unregistered already
 			}
-			s.triggers.Write(triggerID, cronTrigger{
-				job:        job,
-				nextRun:    nextExecutionTime,
-				workflowID: metadata.WorkflowID,
-				close:      closeCh,
-			})
 
 			select {
 			case callbackCh <- response:
@@ -334,7 +343,12 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	}
 
 	// If service has already started, job will be scheduled immediately
-	job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(triggerID))
+	job, err = s.scheduler.NewJob(
+		jobDef,
+		task,
+		gocron.WithName(triggerID),
+		gocron.WithSingletonMode(gocron.LimitModeWait),
+	)
 	if err != nil {
 		s.lggr.Errorw("failed to create new job", "err", err)
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("RegisterTrigger failed to create new job: %s", err), caperrors.Internal)
