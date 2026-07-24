@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/main
+module github.com/smartcontractkit/capabilities/crecore
 
 go 1.26.2
 
