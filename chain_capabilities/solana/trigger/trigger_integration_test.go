@@ -27,6 +27,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/sqlutil/sqltest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	logreadtest "github.com/smartcontractkit/chainlink-solana/contracts/generated/log_read_test"
@@ -38,6 +40,19 @@ import (
 	solanamocks "github.com/smartcontractkit/chainlink-solana/pkg/solana/mocks"
 	solanatesting "github.com/smartcontractkit/chainlink-solana/pkg/solana/testing"
 )
+
+func testLimitsFactory(t *testing.T) limits.Factory {
+	t.Helper()
+	g, err := settings.NewJSONGetter([]byte(`{
+		"PerWorkflow": {
+			"LogTrigger": {
+				"EventRateLimit": "100000rps:100000"
+			}
+		}
+	}`))
+	require.NoError(t, err)
+	return limits.Factory{Logger: logger.Test(t), Settings: g}
+}
 
 func TestSolanaLogTrigger(t *testing.T) {
 	dbURL := sqltest.TestURL(t)
