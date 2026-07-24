@@ -3,6 +3,7 @@ package trigger
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,7 +18,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
@@ -101,6 +101,11 @@ func startPollingAsync(
 	logCh chan capabilities.TriggerAndId[*solanacappb.Log],
 ) {
 	t.Helper()
+	service.baseTrigger.RegisterTrigger(triggerID, logCh)
+	t.Cleanup(func() {
+		service.baseTrigger.UnregisterTrigger(triggerID)
+	})
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -127,7 +132,9 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 		LogTriggerSendChannelBufferSize: testChannelBufferSize,
 		Retention:                       time.Hour * 24,
 		MaxLogsKept:                     10000,
-		LimitsFactory:                   limits.Factory{Logger: lggr},
+		LimitsFactory:                   testLimitsFactory(t),
+		CapabilityID:                    "solana:123",
+		TriggerEventStore:               capabilities.NewMemEventStore(),
 	}
 
 	service, err := NewLogTriggerService(opts)
@@ -548,6 +555,76 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 }
 
 func TestStartPolling(t *testing.T) {
+	t.Run("uses cursor on follow-up polls after first committed log", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+		defer cancel()
+
+		meta := testRequestMetadata()
+		ctx := meta.ContextWithCRE(baseCtx)
+
+		config := createTestRequest()
+		triggerID := "test-trigger"
+		startingBlock := int64(100)
+		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
+
+		firstLog := &solana.Log{
+			Address:     testPublicKey,
+			EventSig:    testEventSig,
+			BlockNumber: 101,
+			LogIndex:    7,
+			TxHash:      solana.Signature{1, 2, 3, 4},
+			Data:        []byte("test log data"),
+		}
+
+		var (
+			mu         sync.Mutex
+			captured   []query.LimitAndSort
+			callNumber int32
+		)
+
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ []query.Expression, limit query.LimitAndSort) ([]*solana.Log, error) {
+				mu.Lock()
+				captured = append(captured, limit)
+				mu.Unlock()
+
+				n := atomic.AddInt32(&callNumber, 1)
+				if n == 1 {
+					return []*solana.Log{firstLog}, nil
+				}
+				return []*solana.Log{}, nil
+			}).Maybe()
+
+		telemetryContext := createTestTelemetryContext()
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
+
+		select {
+		case <-logCh:
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("Timeout waiting for first log")
+		}
+
+		tests.AssertEventually(t, func() bool {
+			return atomic.LoadInt32(&callNumber) >= 2
+		})
+
+		mu.Lock()
+		defer mu.Unlock()
+		require.GreaterOrEqual(t, len(captured), 2)
+
+		firstLimit := captured[0]
+		assert.False(t, firstLimit.HasCursorLimit(), "first query should not use cursor")
+		assert.Equal(t, uint64(defaultQueryLimit), firstLimit.Limit.Count)
+
+		secondLimit := captured[1]
+		assert.True(t, secondLimit.HasCursorLimit(), "follow-up query should use cursor")
+		assert.Equal(t, query.CursorFollowing, secondLimit.Limit.CursorDirection)
+		assert.Equal(t, uint64(defaultQueryLimit), secondLimit.Limit.Count)
+		expectedCursor := fmt.Sprintf("%d-%d-%x", firstLog.BlockNumber, firstLog.LogIndex, firstLog.TxHash)
+		assert.Equal(t, expectedCursor, secondLimit.Limit.Cursor)
+	})
+
 	t.Run("processes new blocks correctly", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		baseCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
@@ -633,7 +710,9 @@ func TestStartPolling(t *testing.T) {
 			LogTriggerSendChannelBufferSize: testChannelBufferSize,
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
-			LimitsFactory:                   limits.Factory{Logger: logger.Nop()},
+			LimitsFactory:                   testLimitsFactory(t),
+			CapabilityID:                    "solana:123",
+			TriggerEventStore:               capabilities.NewMemEventStore(),
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -740,8 +819,11 @@ func TestStartPolling(t *testing.T) {
 			LogTriggerSendChannelBufferSize: 1, // Very small buffer
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
+			LimitsFactory:                   testLimitsFactory(t),
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			CapabilityID:                    "solana:123",
+			TriggerEventStore:               capabilities.NewMemEventStore(),
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -793,8 +875,11 @@ func TestStartPolling(t *testing.T) {
 			LogTriggerSendChannelBufferSize: 1,
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
+			LimitsFactory:                   testLimitsFactory(t),
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			CapabilityID:                    "solana:123",
+			TriggerEventStore:               capabilities.NewMemEventStore(),
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -851,8 +936,11 @@ func TestStartPolling(t *testing.T) {
 			LogTriggerSendChannelBufferSize: testChannelBufferSize,
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
+			LimitsFactory:                   testLimitsFactory(t),
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			CapabilityID:                    "solana:123",
+			TriggerEventStore:               capabilities.NewMemEventStore(),
 		}
 
 		service, err := NewLogTriggerService(opts)

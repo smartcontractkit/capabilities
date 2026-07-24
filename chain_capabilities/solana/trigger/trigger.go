@@ -35,6 +35,7 @@ import (
 const (
 	SuffixLogTriggerFilterID = "-solana-log-trigger"
 	defaultQueryLimit        = 1000
+	defaultMaxPagesPerPoll   = 5
 )
 
 func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
@@ -482,8 +483,11 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 	defer ticker.Stop()
 	defer close(logCh)
 
-	// Use the finalized block number from registration as the starting point
+	// Commit cursor advances only for terminally processed logs and is used to build
+	// keyset pagination state. Keep a block offset for compatibility with existing
+	// telemetry and startup behavior.
 	lastProcessedBlock := startingBlock
+	committedCursor := logPollCursor{}
 
 	for {
 		select {
@@ -491,58 +495,80 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 			lts.lggr.Debugf("Context cancelled for triggerID: %s, stopping polling", triggerID)
 			return
 		case <-ticker.C:
-			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, lastProcessedBlock)
-			expressions, err := BuildQueryExpressions(config, lastProcessedBlock)
+			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d, cursorSet: %t", triggerID, lastProcessedBlock, committedCursor.hasValue)
+			expressions, err := BuildQueryExpressions(config, startingBlock)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to build query expressions for trigger %s: %v", triggerID, err)
 				lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
 				continue
 			}
 
-			limitAndSort := query.NewLimitAndSort(
-				query.CountLimit(defaultQueryLimit),
-				query.NewSortBySequence(query.Asc),
-			)
-
-			logs, err := lts.SolanaService.QueryTrackedLogs(ctx, expressions, limitAndSort)
-			if err != nil {
-				summary := fmt.Sprintf("Failed to query tracked logs for trigger %s: %v", triggerID, err)
-				lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
-				continue
-			}
-
 			sentCount := 0
-			calculatedLatestBlock := lastProcessedBlock
-			for _, log := range logs {
-				if log == nil {
-					lts.lggr.Warnw("Received nil log from QueryTrackedLogs, skipping", "triggerID", triggerID)
-					continue
+			processedPages := 0
+			for ; processedPages < defaultMaxPagesPerPoll; processedPages++ {
+				limit := query.CountLimit(defaultQueryLimit)
+				if committedCursor.hasValue {
+					limit = query.CursorLimit(committedCursor.String(), query.CursorFollowing, defaultQueryLimit)
 				}
 
-				// Track the highest block number from logs (all logs from log poller are already finalized)
-				if log.BlockNumber > calculatedLatestBlock {
-					calculatedLatestBlock = log.BlockNumber
+				limitAndSort := query.NewLimitAndSort(limit, query.NewSortBySequence(query.Asc))
+				logs, err := lts.SolanaService.QueryTrackedLogs(ctx, expressions, limitAndSort)
+				if err != nil {
+					summary := fmt.Sprintf("Failed to query tracked logs for trigger %s: %v", triggerID, err)
+					lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
+					break
 				}
 
-				protoLog := solanacappb.ConvertLogToProto(log)
-				eventID := lts.generateLogIdentifier(log)
-
-				checksLimitsOk := lts.checkLimitsOnLog(ctx, telemetryContext, protoLog, triggerID, eventID, log)
-				if !checksLimitsOk {
-					continue
+				if len(logs) == 0 {
+					break
 				}
 
-				if ctx.Err() != nil {
-					return
-				}
-				if lts.deliverLogReliably(ctx, telemetryContext, triggerID, protoLog, eventID, log) {
+				pageFailed := false
+				for _, log := range logs {
+					if log == nil {
+						lts.lggr.Warnw("Received nil log from QueryTrackedLogs, skipping", "triggerID", triggerID)
+						continue
+					}
+
+					protoLog := solanacappb.ConvertLogToProto(log)
+					eventID := lts.generateLogIdentifier(log)
+
+					checksLimitsOk := lts.checkLimitsOnLog(ctx, telemetryContext, protoLog, triggerID, eventID, log)
+					if !checksLimitsOk {
+						committedCursor.Commit(log)
+						if log.BlockNumber > lastProcessedBlock {
+							lastProcessedBlock = log.BlockNumber
+						}
+						continue
+					}
+
+					if ctx.Err() != nil {
+						return
+					}
+
+					if !lts.deliverLogReliably(ctx, telemetryContext, triggerID, protoLog, eventID, log) {
+						pageFailed = true
+						break
+					}
+
 					sentCount++
+					committedCursor.Commit(log)
+					if log.BlockNumber > lastProcessedBlock {
+						lastProcessedBlock = log.BlockNumber
+					}
+				}
+
+				if pageFailed {
+					break
+				}
+
+				if len(logs) < defaultQueryLimit {
+					break
 				}
 			}
 
-			lastProcessedBlock = calculatedLatestBlock
-			successMessage := fmt.Sprintf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d, sent logs: %d", triggerID, calculatedLatestBlock, sentCount)
-			lts.logAndEmitSuccess(ctx, successMessage, telemetryContext, triggerID, config, sentCount, calculatedLatestBlock)
+			successMessage := fmt.Sprintf("Finished polling triggerID: %s, BlockNumber: %d, sent logs: %d, pages processed: %d", triggerID, lastProcessedBlock, sentCount, processedPages)
+			lts.logAndEmitSuccess(ctx, successMessage, telemetryContext, triggerID, config, sentCount, lastProcessedBlock)
 		}
 	}
 }
