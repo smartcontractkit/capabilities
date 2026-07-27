@@ -143,7 +143,7 @@ func (s *Solana) GetBalance(
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
-		return response, 0, nil
+		return response, rawResponse.Slot, nil
 	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetBalanceReply](ctx, s.handler, cReq)
 	if err != nil {
