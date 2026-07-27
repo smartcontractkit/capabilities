@@ -1168,6 +1168,9 @@ func BenchmarkSolanaLogTriggerService_ToLogPollerFilter(b *testing.B) {
 		MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		Retention:         time.Hour * 24,
 		MaxLogsKept:       10000,
+		LimitsFactory:     testLimitsFactory(&testing.T{}),
+		TriggerEventStore: capabilities.NewMemEventStore(),
+		CapabilityID:      "solana:123",
 	}
 
 	service, err := NewLogTriggerService(opts)
@@ -1201,6 +1204,9 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			LimitsFactory:     testLimitsFactory(t),
+			TriggerEventStore: capabilities.NewMemEventStore(),
+			CapabilityID:      "solana:123",
 		})
 		require.NoError(t, err)
 		require.NotNil(t, service)
@@ -1225,8 +1231,11 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			LogTriggerSendChannelBufferSize: 2000,
 			Retention:                       48 * time.Hour,
 			MaxLogsKept:                     20000,
+			LimitsFactory:                   testLimitsFactory(t),
 			BeholderProcessor:               test.NopBeholderProcessor{},
 			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			TriggerEventStore:               capabilities.NewMemEventStore(),
+			CapabilityID:                    "solana:123",
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -1312,6 +1321,9 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
 			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			LimitsFactory:     testLimitsFactory(t),
+			TriggerEventStore: capabilities.NewMemEventStore(),
+			CapabilityID:      "solana:123",
 		})
 		require.NoError(t, err)
 		require.NotNil(t, service)
