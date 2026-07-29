@@ -52,6 +52,9 @@ const (
 	meteringResource = "trigger_registrations"
 	// meteringResourceType is the billing unit for cron registrations.
 	meteringResourceType = "operations"
+	// defaultProduct is the metering product cron falls back to when the host
+	// does not supply one via loop.EnvConfig (Deployment.Product empty).
+	defaultProduct = "cre"
 )
 
 type Config struct {
@@ -67,7 +70,6 @@ type cronTrigger struct {
 	job           gocron.Job
 	nextRun       time.Time
 	workflowID    string
-	workflowDonID uint32
 	workflowOwner string
 	orgID         string
 	close         func()
@@ -201,9 +203,21 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 	return s, nil
 }
 
-// donID returns the DON identifier stamped on metering identity and event labels.
-func (s *Service) donID() string {
-	return s.base.DonID()
+// ErrDonIDNotInitialised is returned by donID before Initialise has delivered
+// a non-zero CapabilityDonID from the host (StandardCapabilitiesDependencies).
+// The consumer workflow's DON ID is a different dimension and is never
+// substituted for it: callers either degrade explicitly at their own call site
+// (event labels, CRE-4409) or proceed with the DON dimension absent (metering).
+var ErrDonIDNotInitialised = errors.New("capability DON ID not initialised: waiting for Initialise to deliver StandardCapabilitiesDependencies.CapabilityDonID")
+
+// donID returns the capability DON identifier that Initialise stamped on the
+// base metering identity (host-injected CapabilityDonID), or
+// ErrDonIDNotInitialised when that value has not (yet) been delivered.
+func (s *Service) donID() (string, error) {
+	if id := s.base.DonID(); id != "" {
+		return id, nil
+	}
+	return "", ErrDonIDNotInitialised
 }
 
 // utilizationFields builds the per-trigger billing fields shared by the record
@@ -224,7 +238,15 @@ func (s *Service) utilizationFields(triggerID, orgID string) resourcemanager.Uti
 // change to the durable cron-registration level: register bills +1, unregister
 // bills -1. orgID is resolved by the caller before invoking this method.
 // Emission is fail-open and never affects the registration itself.
+//
+// The record's DON dimension is the capability DON stamped on the base
+// identity at Initialise. If that is not (yet) available the record is still
+// billed — level integrity beats dimension completeness — but with the DON
+// dimension absent rather than another DON's ID substituted.
 func (s *Service) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID, triggerID, orgID string) {
+	if _, err := s.donID(); err != nil {
+		s.lggr.Errorw("emitting meter record without DON ID", "err", err, "namespace", namespace, "workflowID", workflowID, "triggerID", triggerID)
+	}
 	eventID := resourcemanager.EventID(namespace, workflowID, triggerID)
 	s.meters.EmitDelta(ctx, s.base, eventID, delta, s.utilizationFields(triggerID, orgID))
 }
@@ -258,7 +280,13 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 
 	// Build the base metering identity. The deployment/node dimensions come from
 	// s.Deployment (delivered via loop.EnvConfig, set by main before Initialise).
-	s.base = resourcemanager.NewBaseIdentity(s.Deployment, meteringService, meteringResource)
+	// Product falls back to defaultProduct rather than NewBaseIdentity's generic
+	// UnsetProduct sentinel, since a cron capability is always a CRE product.
+	deployment := s.Deployment
+	if deployment.Product == "" {
+		deployment.Product = defaultProduct
+	}
+	s.base = resourcemanager.NewBaseIdentity(deployment, meteringService, meteringResource)
 	if dependencies.CapabilityDonID != 0 {
 		s.base = s.base.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
 	}
@@ -362,6 +390,15 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					}()
 				}
 
+				// CRE-4409: event labels prefer the capability DON ID but fall
+				// back to the consumer workflow's DON ID when it is not (yet)
+				// initialised — a best-effort label beats an absent one.
+				// Metering deliberately does NOT share this fallback (see donID).
+				donIDLabel, donIDErr := s.donID()
+				if donIDErr != nil && metadata.WorkflowDonID != 0 {
+					donIDLabel = strconv.FormatUint(uint64(metadata.WorkflowDonID), 10)
+				}
+
 				// Emit TriggerExecutionStarted event
 				labeler := custmsg.NewLabeler().With(
 					events.KeyTriggerID, response.Id,
@@ -369,7 +406,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					events.KeyWorkflowExecutionID, workflowExecutionID,
 					events.KeyWorkflowOwner, metadata.WorkflowOwner,
 					events.KeyWorkflowName, displayWorkflowName,
-					events.KeyDonID, s.donID(),
+					events.KeyDonID, donIDLabel,
 					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
 					events.KeyOrganizationID, orgID,
 					events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
@@ -405,7 +442,6 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				job:           job,
 				nextRun:       nextExecutionTime,
 				workflowID:    metadata.WorkflowID,
-				workflowDonID: metadata.WorkflowDonID,
 				workflowOwner: metadata.WorkflowOwner,
 				orgID:         trigger.orgID,
 				close:         closeCh,
@@ -462,7 +498,6 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		job:           job,
 		nextRun:       firstRunTime,
 		workflowID:    metadata.WorkflowID,
-		workflowDonID: metadata.WorkflowDonID,
 		workflowOwner: metadata.WorkflowOwner,
 		orgID:         orgID,
 		close:         closeCh,
@@ -523,8 +558,8 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	s.triggers.Delete(triggerID)
 
 	// Unregister bills a -1 delta. workflowID and orgID come from the STORED
-	// trigger (not the unregister request's metadata) so the delta reverses
-	// the exact identity the register +1 billed.
+	// trigger (not the unregister request's metadata) so the delta reverses the
+	// exact identity the register +1 billed.
 	s.emitMeterRecord(ctx, -1, "cron-unregister", trigger.workflowID, triggerID, trigger.orgID)
 
 	s.lggr.Debugw("UnregisterTrigger", "triggerId", triggerID, "jobId", jobID)
@@ -553,7 +588,6 @@ func (s *Service) start(ctx context.Context) error {
 			job:           trigger.job,
 			nextRun:       nextExecutionTime,
 			workflowID:    trigger.workflowID,
-			workflowDonID: trigger.workflowDonID,
 			workflowOwner: trigger.workflowOwner,
 			orgID:         trigger.orgID,
 			close:         trigger.close,

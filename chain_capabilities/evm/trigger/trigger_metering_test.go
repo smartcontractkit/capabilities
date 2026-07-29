@@ -195,28 +195,39 @@ func TestLogTriggerMetering_RegisterEmitsPositiveDelta(t *testing.T) {
 	require.Equal(t, "2", record.GetUtilizations()[0].GetValue(), "activation delta must equal the filter address count")
 	require.Equal(t, MeteringResourceType, record.GetUtilizations()[0].GetResourceType())
 	require.NotEmpty(t, record.GetUtilizations()[0].GetEventId(), "event_id is stamped per emission")
-	// The record carries the cll-meter billing domain.
-	require.Equal(t, "cll-meter", emitter.recordDomains[0])
-	// The metering identity DON and the events.KeyDonID label derive from the
-	// same resolveDONID, so they cannot diverge.
-	require.Equal(t, service.resolveDONID(meta.WorkflowDonID), record.GetIdentity().GetDon().GetDonId())
+	// The record carries the cll.meter billing domain.
+	require.Equal(t, "cll.meter", emitter.recordDomains[0])
+	// The metering identity DON is exactly the host-injected capability DON.
+	capDonID, donErr := service.donID()
+	require.NoError(t, donErr)
+	require.Equal(t, capDonID, record.GetIdentity().GetDon().GetDonId())
 }
 
-func TestLogTriggerMetering_DonIDFallbackToWorkflowDon(t *testing.T) {
+// TestLogTriggerMetering_DonIDNotInitialised asserts that when the host has
+// not injected a capability DON ID, the meter record is still billed but with
+// the DON dimension carrying only the node ID — the consumer workflow's DON ID
+// is never substituted — and donID surfaces ErrDonIDNotInitialised for callers
+// that degrade explicitly (event labels, CRE-4409).
+func TestLogTriggerMetering_DonIDNotInitialised(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
-	// Host did not inject a capability DON; the consumer's WorkflowDonID is the
-	// documented fallback resolved at emit time.
+	// Host did not inject a capability DON.
 	service.baseIdentity.Don = &resourcemanager.DonIdentity{NodeID: "csa-pubkey-hex"}
+
+	_, donErr := service.donID()
+	require.ErrorIs(t, donErr, ErrDonIDNotInitialised)
 
 	meta := capabilities.RequestMetadata{WorkflowID: "wf-id", WorkflowOwner: "0xOwner", WorkflowDonID: 7}
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID, meta, meteringTestInput())
 	require.NoError(t, err)
 
-	require.Len(t, emitter.records, 1)
-	require.Equal(t, "7", emitter.records[0].GetIdentity().GetDon().GetDonId(), "empty capability DON must fall back to WorkflowDonID")
+	require.Len(t, emitter.records, 1, "the record is still billed when the DON ID is unavailable")
+	require.Empty(t, emitter.records[0].GetIdentity().GetDon().GetDonId(),
+		"the consumer workflow's DON ID must never be substituted for the capability DON")
+	require.Equal(t, "csa-pubkey-hex", emitter.records[0].GetIdentity().GetDon().GetNodeId(),
+		"the node dimension is preserved even without a DON ID")
 }
 
 func TestLogTriggerMetering_NoReserveOnRegisterFailure(t *testing.T) {

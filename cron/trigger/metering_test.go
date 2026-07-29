@@ -167,8 +167,8 @@ func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	register := records[0]
 	// Producers emit only signed-delta UPDATE records; register is a +1 delta.
 	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, register.GetAction())
-	// The record carries the cll-meter billing domain.
-	assert.Equal(t, "cll-meter", emitter.recordDomains[0])
+	// The record carries the cll.meter billing domain.
+	assert.Equal(t, "cll.meter", emitter.recordDomains[0])
 
 	// Identity is populated from host-injected deps and points at the cron
 	// resource pool. Per-trigger fields are carried on utilization.
@@ -183,9 +183,10 @@ func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	assert.Equal(t, "clp-cre-wf-zone-a-1", id.GetDon().GetNodeId())
 	assert.Equal(t, "cron-trigger", id.GetService())
 	assert.Equal(t, "trigger_registrations", id.GetResourcePool())
-	// The metering identity DON and the events.KeyDonID label derive from the
-	// same resolver, so they cannot diverge.
-	assert.Equal(t, ts.donID(), id.GetDon().GetDonId())
+	// The metering identity DON is exactly the host-injected capability DON.
+	capDonID, donErr := ts.donID()
+	require.NoError(t, donErr)
+	assert.Equal(t, capDonID, id.GetDon().GetDonId())
 
 	require.Len(t, register.GetUtilizations(), 1)
 	assert.Equal(t, "1", register.GetUtilizations()[0].GetValue())
@@ -366,9 +367,12 @@ func TestCronTrigger_Metering_NoShutdownEmissions(t *testing.T) {
 	require.Len(t, emitter.Records(), 2, "graceful close must emit no meter records")
 }
 
-// TestCronTrigger_Metering_DonIDFallback asserts the DON ID falls back to the
-// consumer workflow's DON when the host has not injected a capability DON ID.
-func TestCronTrigger_Metering_DonIDFallback(t *testing.T) {
+// TestCronTrigger_Metering_DonIDNotInitialised asserts that when the host has
+// not injected a capability DON ID, the meter record is still billed but with
+// the DON dimension absent — the consumer workflow's DON ID is never
+// substituted — and donID returns ErrDonIDNotInitialised so callers that want
+// a best-effort value (event labels, CRE-4409) degrade explicitly themselves.
+func TestCronTrigger_Metering_DonIDNotInitialised(t *testing.T) {
 	t.Parallel()
 
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -384,18 +388,20 @@ func TestCronTrigger_Metering_DonIDFallback(t *testing.T) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 
-	// No CapabilityDonID injected (zero) → fall back to WorkflowDonID at emit.
+	// No CapabilityDonID injected (zero) → the DON dimension stays absent.
 	require.NoError(t, ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{Config: string(config)}))
+
+	_, donErr := ts.donID()
+	require.ErrorIs(t, donErr, ErrDonIDNotInitialised)
 
 	metadata := capabilities.RequestMetadata{WorkflowID: workflowID1, WorkflowOwner: "owner-1", WorkflowDonID: 42}
 	_, capErr := ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
 	require.Nil(t, capErr)
 
 	records := emitter.Records()
-	require.Len(t, records, 1)
-	assert.Equal(t, "42", records[0].GetIdentity().GetDon().GetDonId(), "DON ID falls back to WorkflowDonID")
-	// Metering identity DON and events.KeyDonID label share the same resolver.
-	assert.Equal(t, ts.donID(), records[0].GetIdentity().GetDon().GetDonId())
+	require.Len(t, records, 1, "the record is still billed when the DON ID is unavailable")
+	assert.Empty(t, records[0].GetIdentity().GetDon().GetDonId(),
+		"the consumer workflow's DON ID must never be substituted for the capability DON")
 	// Product falls back to the cron constant when the host injects none.
 	assert.Equal(t, "cre", records[0].GetIdentity().GetProduct())
 

@@ -67,8 +67,7 @@ type service struct {
 	limitsFactory    limits.Factory
 	orgResolver      orgresolver.OrgResolver
 	// metering is the resolved metering Config (ResourceManagerConfig +
-	// DeploymentIdentity) produced from loop.EnvConfig by
-	// EnvConfig.MeteringConfig in main.
+	// DeploymentIdentity) produced by loop.Server.MeteringConfig in main.
 	metering resourcemanager.Config
 }
 

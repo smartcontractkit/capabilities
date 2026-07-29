@@ -1263,7 +1263,7 @@ func TestRegisterWorkflow_RegisterThenSameIDReRegister(t *testing.T) {
 	// structured identity populated on the record.
 	require.Equal(t, []meteringpb.MeterAction{meteringpb.MeterAction_METER_ACTION_UPDATE}, emitter.actions())
 	record := emitter.records[0]
-	require.Equal(t, "cll-meter", emitter.recordDomains[0])
+	require.Equal(t, "cll.meter", emitter.recordDomains[0])
 	id := record.GetIdentity()
 	require.Equal(t, testBaseIdentity.Product, id.GetProduct())
 	require.Equal(t, testBaseIdentity.Tenant, id.GetTenant())
@@ -1274,9 +1274,10 @@ func TestRegisterWorkflow_RegisterThenSameIDReRegister(t *testing.T) {
 	require.Equal(t, testBaseIdentity.NodeID(), id.GetDon().GetNodeId())
 	require.Equal(t, meterService, id.GetService())
 	require.Equal(t, meterResource, id.GetResourcePool())
-	// The metering identity DON and events.KeyDonID label derive from the same
-	// donID resolver, so they cannot diverge.
-	require.Equal(t, handler.donID(input.Metadata.WorkflowDONID), id.GetDon().GetDonId())
+	// The metering identity DON is exactly the host-injected capability DON.
+	capDonID, donErr := handler.donID()
+	require.NoError(t, donErr)
+	require.Equal(t, capDonID, id.GetDon().GetDonId())
 	require.Equal(t, meterResourceType, record.GetUtilizations()[0].GetResourceType())
 	// resource_id is the workflow ID (HTTP registrations are workflow-scoped).
 	require.Equal(t, testWorkflowID, record.GetUtilizations()[0].GetResourceId())
@@ -1477,7 +1478,12 @@ func TestClose_EmitsNoShutdownRecords(t *testing.T) {
 // TestDONIDFallback_UsesWorkflowDON asserts that when the host did not inject a
 // capability DON (base DONID empty), records fall back to the per-registration
 // workflow DON.
-func TestDONIDFallback_UsesWorkflowDON(t *testing.T) {
+// TestDONIDNotInitialised_NoWorkflowDONSubstitution asserts that when the host
+// has not injected a capability DON ID, the meter record is still billed but
+// with the DON dimension carrying only the node ID — the consumer workflow's
+// DON ID is never substituted — and donID surfaces ErrDonIDNotInitialised for
+// callers that degrade explicitly (event labels, CRE-4409).
+func TestDONIDNotInitialised_NoWorkflowDONSubstitution(t *testing.T) {
 	lggr := logger.Test(t)
 	emitter := &fakeMeterEmitter{}
 	cfg := ServiceConfig{MetadataBatchSize: 10, MaxAuthorizedKeysPerWorkflow: 3}
@@ -1496,10 +1502,13 @@ func TestDONIDFallback_UsesWorkflowDON(t *testing.T) {
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 	require.NoError(t, handler.RegisterWorkflow(t.Context(), input, sendCh))
 
-	require.Len(t, emitter.records, 1)
-	require.Equal(t, "99", emitter.records[0].GetIdentity().GetDon().GetDonId())
-	// Metering identity DON and events.KeyDonID label share the same resolver.
-	require.Equal(t, handler.donID(input.Metadata.WorkflowDONID), emitter.records[0].GetIdentity().GetDon().GetDonId())
+	require.Len(t, emitter.records, 1, "the record is still billed when the DON ID is unavailable")
+	require.Empty(t, emitter.records[0].GetIdentity().GetDon().GetDonId(),
+		"the consumer workflow's DON ID must never be substituted for the capability DON")
+	require.Equal(t, "node-csa-pubkey", emitter.records[0].GetIdentity().GetDon().GetNodeId(),
+		"the node dimension is preserved even without a DON ID")
+	_, donErr := handler.donID()
+	require.ErrorIs(t, donErr, ErrDonIDNotInitialised)
 }
 
 // TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner tests that the workflowOwner

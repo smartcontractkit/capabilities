@@ -86,8 +86,8 @@ type LogTriggerService struct {
 	// dimensions plus service/resource_pool, built once at Initialise.
 	// Per-resource billing fields are set on Utilization.
 	// When the host did not inject a capability DON ID, baseIdentity has an
-	// empty DON identifier and is filled per-emit from the consumer's
-	// WorkflowDonID.
+	// empty DON identifier and meter records carry no DON dimension — the
+	// consumer workflow's DON ID is never substituted for it (see donID).
 	baseIdentity  resourcemanager.ResourceIdentity
 	chainSelector string // decimal chain selector, the chain label on meter records
 	// rmUnregister removes this service from the ResourceManager's snapshot
@@ -398,11 +398,19 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 			orgID = resolved
 		}
 	}
+	// Stamp the capability DON once at registration. If it is not (yet)
+	// available the filter's meter records are still billed — level integrity
+	// beats dimension completeness — but with the DON dimension absent rather
+	// than the consumer workflow's DON ID substituted.
+	capDonID, donErr := lts.donID()
+	if donErr != nil {
+		lts.lggr.Errorw("registering log filter without DON ID for metering", "err", donErr, "triggerID", triggerID)
+	}
 	loggedFilter := filter{
 		filterID:             filterID,
 		physicalFilterID:     physicalFilterID(lts.chainSelector, addresses, sigs, t2, t3, t4),
 		reservedAddressCount: int64(len(addresses)),
-		donID:                lts.resolveDONID(meta.WorkflowDonID),
+		donID:                capDonID,
 		workflowOwner:        meta.WorkflowOwner,
 		orgID:                orgID,
 		expressions:          expressions,
@@ -504,11 +512,22 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + SuffixLogTriggerFilterID
 }
 
-// resolveDONID returns the base identity's DON ID. The DON ID is stamped on
-// the identity at construction (via WithDonID) and is the single source of
-// truth for metering and event labels.
-func (lts *LogTriggerService) resolveDONID(workflowDonID uint32) string {
-	return lts.baseIdentity.DonID()
+// ErrDonIDNotInitialised is returned by donID before Initialise has delivered
+// a non-zero CapabilityDonID from the host (StandardCapabilitiesDependencies).
+// The consumer workflow's DON ID is a different dimension and is never
+// substituted for it: callers either degrade explicitly at their own call site
+// (event labels, CRE-4409) or proceed with the DON dimension absent (metering,
+// see the filter.donID stamp at registration).
+var ErrDonIDNotInitialised = errors.New("capability DON ID not initialised: waiting for Initialise to deliver StandardCapabilitiesDependencies.CapabilityDonID")
+
+// donID returns the capability DON identifier that Initialise stamped on the
+// base metering identity (host-injected CapabilityDonID), or
+// ErrDonIDNotInitialised when that value has not (yet) been delivered.
+func (lts *LogTriggerService) donID() (string, error) {
+	if id := lts.baseIdentity.DonID(); id != "" {
+		return id, nil
+	}
+	return "", ErrDonIDNotInitialised
 }
 
 // identity returns the base metering identity with DON ID resolved for one
@@ -726,14 +745,17 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowName, displayWorkflowName,
 		)
 
-		// Emit the *sending* capability DON ID (CRE-4409). resolveDONID applies
-		// contract rule 8: the authoritative host-injected CapDONID (carried on
-		// baseIdentity) wins, and the consumer workflow's WorkflowDonID is used
-		// only when CapDONID is 0. This is the SAME resolver the metering
-		// identity uses (filter.donID is set from resolveDONID at registration),
-		// so the event label and the meter record cannot diverge.
-		if donID := lts.resolveDONID(telemetryContext.WorkflowDonID); donID != "" {
-			labeler = labeler.With(events.KeyDonID, donID)
+		// CRE-4409: event labels prefer the capability DON ID but fall back to
+		// the consumer workflow's DON ID when it is not (yet) initialised — a
+		// best-effort label beats an absent one. Metering deliberately does NOT
+		// share this fallback (see donID): meter records carry the capability
+		// DON stamped at registration or nothing.
+		donIDLabel, donIDErr := lts.donID()
+		if donIDErr != nil && telemetryContext.WorkflowDonID != 0 {
+			donIDLabel = strconv.FormatUint(uint64(telemetryContext.WorkflowDonID), 10)
+		}
+		if donIDLabel != "" {
+			labeler = labeler.With(events.KeyDonID, donIDLabel)
 		}
 		if telemetryContext.WorkflowDonConfigVersion != 0 {
 			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.WorkflowDonConfigVersion)))

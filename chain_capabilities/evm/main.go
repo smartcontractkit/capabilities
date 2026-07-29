@@ -31,7 +31,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
-	"github.com/smartcontractkit/chainlink-common/pkg/durableemitter"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
@@ -49,9 +48,8 @@ type capabilityGRPCService struct {
 	lggr          logger.Logger
 	limitsFactory limits.Factory
 	// metering is the resolved metering Config (ResourceManagerConfig +
-	// DeploymentIdentity) produced from loop.EnvConfig by
-	// EnvConfig.MeteringConfig at startup. The zero value is valid and
-	// leaves those dimensions empty/disabled.
+	// DeploymentIdentity) produced by loop.Server.MeteringConfig at startup.
+	// The zero value is valid and leaves those dimensions empty/disabled.
 	metering resourcemanager.Config
 }
 
@@ -69,20 +67,14 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		// EnvConfig.MeteringConfig is the single, canonical loop-env -> metering
+		// Server.MeteringConfig is the single, canonical loop-env -> metering
 		// mapping (enable flags, snapshot interval, deployment identity); no
-		// per-main copy of that mapping. The durable emitter is resolved here
-		// and injected, since resourcemanager itself must not reach for the
-		// process-global emitter.
-		var emitter resourcemanager.Emitter
-		if de := durableemitter.GetGlobalEmitter(); de != nil {
-			emitter = de
-		}
-		meteringCfg := s.EnvConfig.MeteringConfig(emitter)
+		// per-main copy of that mapping, and no reaching for a process-global
+		// emitter (it injects the server's own durable emitter).
 		return evmcapserver.NewClientServer(&capabilityGRPCService{
 			lggr:          s.Logger,
 			limitsFactory: s.LimitsFactory,
-			metering:      meteringCfg,
+			metering:      s.MeteringConfig(),
 		})
 	}, loop.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
 }

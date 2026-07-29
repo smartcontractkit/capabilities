@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -191,12 +192,11 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 			input.WorkflowSelector.WorkflowID, input.WorkflowSelector.WorkflowOwner, input.WorkflowSelector.WorkflowName, err)
 	}
 	newWorkflowID := input.WorkflowSelector.WorkflowID
-	workflowDONID := input.Metadata.WorkflowDONID
 	owner := input.WorkflowSelector.WorkflowOwner
 	switch {
 	case evicted == nil:
 		// Brand-new registration: bill +1 for the new durable resource.
-		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, workflowDONID, owner)
+		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, owner)
 	case evicted.workflowSelector.WorkflowID == newWorkflowID:
 		// Same-ID re-register: the durable resource is unchanged, so there is
 		// no level delta to bill. Emit nothing.
@@ -205,8 +205,8 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 		// new workflow ID. Bill -1 against the evicted workflow's resource_id
 		// and +1 for the new, both derived from the atomically returned
 		// eviction so the old reservation cannot leak.
-		h.emitMeterRecord(ctx, -1, "http-unregister", evicted.workflowSelector.WorkflowID, evicted.metadata.WorkflowDONID, evicted.workflowSelector.WorkflowOwner)
-		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, workflowDONID, owner)
+		h.emitMeterRecord(ctx, -1, "http-unregister", evicted.workflowSelector.WorkflowID, evicted.workflowSelector.WorkflowOwner)
+		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, owner)
 	}
 	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
@@ -225,7 +225,14 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 // version update changes the workflow ID so its +1/-1 pair is distinct from the
 // prior version. The unregister path passes the same workflowID so its -1 hashes
 // symmetrically with the register +1 it reverses.
-func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID string, workflowDONID uint32, owner string) {
+// The record's DON dimension is the capability DON stamped on the base
+// identity at Initialise. If that is not (yet) available the record is still
+// billed — level integrity beats dimension completeness — but with the DON
+// dimension absent rather than another DON's ID substituted.
+func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID string, owner string) {
+	if _, err := h.donID(); err != nil {
+		h.lggr.Errorw("emitting meter record without DON ID", "err", err, "namespace", namespace, "workflowID", workflowID)
+	}
 	identity := h.baseIdentity
 	var orgID string
 	if h.orgResolver != nil && owner != "" {
@@ -243,9 +250,21 @@ func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, nam
 	})
 }
 
-// donID returns the DON identifier from the base metering identity.
-func (h *connectorHandler) donID(workflowDONID uint32) string {
-	return h.baseIdentity.DonID()
+// ErrDonIDNotInitialised is returned by donID before Initialise has delivered
+// a non-zero CapabilityDonID from the host (StandardCapabilitiesDependencies).
+// The consumer workflow's DON ID is a different dimension and is never
+// substituted for it: callers either degrade explicitly at their own call site
+// (event labels, CRE-4409) or proceed with the DON dimension absent (metering).
+var ErrDonIDNotInitialised = errors.New("capability DON ID not initialised: waiting for Initialise to deliver StandardCapabilitiesDependencies.CapabilityDonID")
+
+// donID returns the capability DON identifier that Initialise stamped on the
+// base metering identity (host-injected CapabilityDonID), or
+// ErrDonIDNotInitialised when that value has not (yet) been delivered.
+func (h *connectorHandler) donID() (string, error) {
+	if id := h.baseIdentity.DonID(); id != "" {
+		return id, nil
+	}
+	return "", ErrDonIDNotInitialised
 }
 
 // ResourceIdentity returns the HTTP trigger's base metering identity (six
@@ -312,12 +331,9 @@ func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKe
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
-	// Snapshot the workflow DON and owner before removal; the DON feeds the
-	// meter record's identity fallback and the owner resolves org at emit time.
-	var workflowDONID uint32
+	// Snapshot the owner before removal; it resolves org at emit time.
 	var owner string
 	if w, ok := h.workflowStore.getWorkflowByID(workflowID); ok {
-		workflowDONID = w.metadata.WorkflowDONID
 		owner = w.workflowSelector.WorkflowOwner
 	}
 	err := h.workflowStore.removeWorkflow(workflowID)
@@ -327,7 +343,7 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 	// Unregister bills a -1 delta against the workflow's resource_id. It hashes
 	// symmetrically with the register +1 (same workflowID, "http-unregister"
 	// namespace) so the consumer pairs them by workflowID.
-	h.emitMeterRecord(ctx, -1, "http-unregister", workflowID, workflowDONID, owner)
+	h.emitMeterRecord(ctx, -1, "http-unregister", workflowID, owner)
 	h.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }
@@ -437,13 +453,15 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		displayWorkflowName = workflowMetadata.WorkflowName
 	}
 
-	// Resolve the *sending* capability DON ID once (CRE-4409). h.donID applies
-	// contract rule 8: the authoritative host-injected CapDONID (carried on
-	// baseIdentity) wins, and the consumer workflow's WorkflowDONID is used only
-	// when CapDONID is 0. This is the SAME resolver the metering identity uses
-	// (identityForWorkflow -> donID), so the event label and the meter record
-	// cannot diverge.
-	donIDForEvent := h.donID(workflowMetadata.WorkflowDONID)
+	// CRE-4409: event labels prefer the capability DON ID but fall back to the
+	// consumer workflow's DON ID when it is not (yet) initialised — a
+	// best-effort label beats an absent one. Metering deliberately does NOT
+	// share this fallback (see donID): the meter record carries the capability
+	// DON or nothing.
+	donIDForEvent, donIDErr := h.donID()
+	if donIDErr != nil && workflowMetadata.WorkflowDONID != 0 {
+		donIDForEvent = strconv.FormatUint(uint64(workflowMetadata.WorkflowDONID), 10)
+	}
 
 	labeler := custmsg.NewLabeler().With(
 		events.KeyTriggerID, req.ID,
