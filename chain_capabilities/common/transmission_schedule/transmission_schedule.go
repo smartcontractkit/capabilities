@@ -16,6 +16,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 )
 
 // TransmissionScheduler handles capability-layer transmission scheduling by waiting for the appropriate delay
@@ -119,7 +121,15 @@ func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabili
 		return capabilities.DON{}, fmt.Errorf("capabilities registry is nil")
 	}
 
-	donsWithNodes, err := registry.DONsForCapability(ctx, capabilityID)
+	// The host node populates its capabilities metadata registry asynchronously
+	// (CapabilitiesLauncher.OnNewRegistry after the first on-chain registry sync).
+	// A plugin's Initialise can win the race and call in before that happens, in
+	// which case the registry returns "metadataRegistry information not available".
+	// Retry with backoff until the registry is ready or the host-provided ctx
+	// (bounded by the standard-capabilities startTimeout) expires.
+	donsWithNodes, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) ([]capabilities.DONWithNodes, error) {
+		return registry.DONsForCapability(ctx, capabilityID)
+	})
 	if err != nil {
 		lggr.Errorw("failed getting DONs for capability", "capabilityID", capabilityID, "error", err)
 		return capabilities.DON{}, fmt.Errorf("failed getting dons for capability: %w", err)
@@ -140,6 +150,9 @@ func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabili
 	}
 
 	// Legacy path: filter by local PeerID to find which DON(s) this node belongs to.
+	// No retry needed here: DONsForCapability above already gates on the metadata
+	// registry being populated, so by this point LocalNode will not hit the
+	// "metadataRegistry information not available" race.
 	localNode, err := registry.LocalNode(ctx)
 	if err != nil {
 		lggr.Errorw("failed to get local node", "error", err)
