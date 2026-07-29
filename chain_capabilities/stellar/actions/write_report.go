@@ -123,11 +123,6 @@ func (wr *writeReport) execute(
 
 	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID)
 
-	// TODO(follow-up): Consider simulating the on_report transaction before polling when the
-	// transmission has not yet been attempted. If simulation predicts a terminal failure we
-	// could skip delta-stage polling and/or submission. Open questions: simulation may fail on
-	// only some DON nodes (stale ledger, timing), so every node must still return the same
-	// WriteReportReply and metering semantics before enabling this shortcut.
 	info, err := wr.pollTransmissionInfo(ctx, request, telemetryContext, transmissionID, queuePosition)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
