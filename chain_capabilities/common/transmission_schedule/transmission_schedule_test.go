@@ -2,6 +2,7 @@ package transmissionschedule_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -183,6 +184,19 @@ func TestInitMyDON(t *testing.T) {
 		require.EqualValues(t, 20, got.ID)
 	})
 
+	t.Run("authoritative: returns correct DON by ID after failing once", func(t *testing.T) {
+		reg := mocks.NewCapabilitiesRegistry(t)
+		reg.EXPECT().DONsForCapability(mock.Anything, capID).Return(nil, errors.New("metadataRegistry information not available")).Once()
+		reg.EXPECT().DONsForCapability(mock.Anything, capID).Return(buildDONs(map[uint32][]p2ptypes.PeerID{
+			10: {myPeerID, otherPeerID},
+			20: {myPeerID, otherPeerID},
+		}), nil)
+
+		got, err := ts.InitMyDON(context.Background(), reg, capID, 20, logger.Test(t), false)
+		require.NoError(t, err)
+		require.EqualValues(t, 20, got.ID)
+	})
+
 	t.Run("authoritative: selects correct DON even when local node is not listed as a member of all DONs", func(t *testing.T) {
 		// Plex scenario: node serves DON 20 but the registry lists it only in DON 10's
 		// membership. With the authoritative ID we bypass peer-membership filtering
@@ -225,6 +239,19 @@ func TestInitMyDON(t *testing.T) {
 	t.Run("legacy: single matched DON returns that DON", func(t *testing.T) {
 		reg := mocks.NewCapabilitiesRegistry(t)
 		withLocalNode(reg)
+		reg.EXPECT().DONsForCapability(mock.Anything, capID).Return(buildDONs(map[uint32][]p2ptypes.PeerID{
+			10: {myPeerID, otherPeerID},
+		}), nil)
+
+		got, err := ts.InitMyDON(context.Background(), reg, capID, 0, logger.Test(t), false)
+		require.NoError(t, err)
+		require.EqualValues(t, 10, got.ID)
+	})
+
+	t.Run("legacy: single matched DON returns that DON after failing once", func(t *testing.T) {
+		reg := mocks.NewCapabilitiesRegistry(t)
+		withLocalNode(reg)
+		reg.EXPECT().DONsForCapability(mock.Anything, capID).Return(nil, errors.New("metadataRegistry information not available")).Once()
 		reg.EXPECT().DONsForCapability(mock.Anything, capID).Return(buildDONs(map[uint32][]p2ptypes.PeerID{
 			10: {myPeerID, otherPeerID},
 		}), nil)
