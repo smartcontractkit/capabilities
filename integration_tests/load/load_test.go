@@ -401,7 +401,8 @@ func (s *sampler) SampleCount() int {
 func (s *sampler) AggregatedByScheduledStartReport() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	report := s.outputHeader + "\n"
+	var report strings.Builder
+	report.WriteString(s.outputHeader + "\n")
 
 	// first calculate number of running workflows from the samples
 
@@ -419,7 +420,7 @@ func (s *sampler) AggregatedByScheduledStartReport() string {
 		return sortedStartTimes[i].Before(sortedStartTimes[j])
 	})
 
-	report += "ScheduledStartTime, Average Latency (ms), Number of Workflows Running, Average Actual Start Time, Num Workflows Registered\n"
+	report.WriteString("ScheduledStartTime, Average Latency (ms), Number of Workflows Running, Average Actual Start Time, Num Workflows Registered\n")
 
 	for _, scheduledStartTime := range sortedStartTimes {
 		samples := samplesByScheduledStartTime[scheduledStartTime]
@@ -435,22 +436,23 @@ func (s *sampler) AggregatedByScheduledStartReport() string {
 		averageActualStartTimeMs := averageActualStartTimeSum / int64(len(samples))
 		averageActualStartTime := time.UnixMilli(averageActualStartTimeMs)
 
-		report += fmt.Sprintf("%s, %d, %d, %s, %d\n", scheduledStartTime.Format(time.RFC3339), averageLatencyMs, samples[0].RunningWorkflowsCount, averageActualStartTime.Format(time.RFC3339), samples[0].RegisteredWorkflowCount)
+		fmt.Fprintf(&report, "%s, %d, %d, %s, %d\n", scheduledStartTime.Format(time.RFC3339), averageLatencyMs, samples[0].RunningWorkflowsCount, averageActualStartTime.Format(time.RFC3339), samples[0].RegisteredWorkflowCount)
 	}
 
-	return report
+	return report.String()
 }
 
 func (s *sampler) RawReport() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	str := s.outputHeader + "\n"
-	str += s.samples[0].ColumnTitle() + "\n"
+	var str strings.Builder
+	str.WriteString(s.outputHeader + "\n")
+	str.WriteString(s.samples[0].ColumnTitle() + "\n")
 	for _, sample := range s.samples {
-		str += sample.String() + "\n"
+		str.WriteString(sample.String() + "\n")
 	}
 
-	return str
+	return str.String()
 }
 
 type loadTestSample struct {

@@ -109,7 +109,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	if dependencies.CapabilityDonID != 0 {
 		baseIdentity = baseIdentity.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
 	}
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, resourceManager, baseIdentity)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory, resourceManager, baseIdentity)
 	if err != nil {
 		return err
 	}

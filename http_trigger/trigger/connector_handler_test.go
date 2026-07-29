@@ -20,6 +20,7 @@ import (
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -201,6 +202,7 @@ func setupWithTriggerChannelBuffer(t *testing.T, lggr logger.Logger, triggerChBu
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 		nil,
 		resourcemanager.ResourceIdentity{},
 	)
@@ -275,7 +277,7 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, triggerResp.WorkflowID)
 
-	executionID, err := workflows.GenerateExecutionIDWithTriggerIndex(strings.TrimPrefix(testWorkflowID, "0x"), req.ID, 0)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID) //nolint:staticcheck // SA1019 default FeatureMultiTrigger period is inactive
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
@@ -607,6 +609,7 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 		nil,
 		resourcemanager.ResourceIdentity{},
 	)
@@ -726,6 +729,7 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 		nil,
 		resourcemanager.ResourceIdentity{},
 	)
@@ -887,6 +891,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 		nil,
 		resourcemanager.ResourceIdentity{},
 	)
@@ -980,7 +985,7 @@ func TestHandleGatewayMessage_TriggerFailureDoesNotCacheThenSameRequestSucceeds(
 		t.Fatal("timed out waiting for trigger delivery")
 	}
 
-	executionID, err := workflows.GenerateExecutionIDWithTriggerIndex(strings.TrimPrefix(testWorkflowID, "0x"), req.ID, 0)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID) //nolint:staticcheck // SA1019 default FeatureMultiTrigger period is inactive
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
@@ -1065,6 +1070,7 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 		nil,
 		resourcemanager.ResourceIdentity{},
 	)
@@ -1221,6 +1227,7 @@ func setupWithMeterEmitter(t *testing.T, lggr logger.Logger, emitErr error) (*co
 		requestCache,
 		newMetrics(t),
 		nil,
+		limits.Factory{},
 		resourceManager,
 		testBaseIdentity,
 	)
@@ -1407,7 +1414,7 @@ func TestSnapshot_EmitsOneEntryPerActiveWorkflow(t *testing.T) {
 		SnapshotInterval:      time.Minute,
 		Clock:                 clock,
 	})
-	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, rm, testBaseIdentity)
+	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, limits.Factory{}, rm, testBaseIdentity)
 	require.NoError(t, err)
 	unregister := rm.Register(handler)
 	t.Cleanup(unregister)
@@ -1462,7 +1469,7 @@ func TestClose_EmitsNoShutdownRecords(t *testing.T) {
 		Emitter:               emitter,
 		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
 	})
-	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, rm, testBaseIdentity)
+	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, limits.Factory{}, rm, testBaseIdentity)
 	require.NoError(t, err)
 	require.NoError(t, handler.Start(t.Context()))
 
@@ -1494,7 +1501,7 @@ func TestDONIDNotInitialised_NoWorkflowDONSubstitution(t *testing.T) {
 	// Base identity WITHOUT a capability DON (host did not inject one).
 	base := testBaseIdentity
 	base.Don = &resourcemanager.DonIdentity{NodeID: "node-csa-pubkey"}
-	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, rm, base)
+	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, limits.Factory{}, rm, base)
 	require.NoError(t, err)
 
 	input := meterTestRegistrationInput()

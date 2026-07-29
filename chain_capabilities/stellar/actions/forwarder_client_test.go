@@ -21,6 +21,33 @@ func TestForwarderClient_ForwarderAddress(t *testing.T) {
 	require.Equal(t, testForwarderAddress, client.ForwarderAddress())
 }
 
+func TestForwarderClient_DefaultForwarderLookbackLedgers(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	svc := mocks.NewStellarService(t)
+	success := true
+	svc.EXPECT().GetLatestLedger(mock.Anything).
+		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
+	svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+		return req.StartLedger == 100
+	})).Return(stellartypes.GetEventsResponse{
+		Events: []stellartypes.EventInfo{{
+			TransactionHash: testTxHash,
+			Ledger:          150,
+			Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
+		}},
+	}, nil).Once()
+
+	client := newForwarderClient(svc, lggr, testForwarderAddress, 0)
+	events, err := client.GetReportProcessedEvents(t.Context(), transmissionID)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+}
+
 func TestForwarderClient_InvokeOnReport(t *testing.T) {
 	t.Parallel()
 	lggr := logger.Test(t)
