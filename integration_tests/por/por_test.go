@@ -69,9 +69,7 @@ func Test_PORReadbalances(t *testing.T) {
 	ctx := t.Context()
 
 	lggr := logger.Test(t)
-	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
-	}()
+	t.Cleanup(utils.RemoveCapabilitiesDir(t))
 
 	readBalancesWithConfigPath, err := filepath.Abs("../../workflows/readbalances-with-config/cmd")
 	require.NoError(t, err)
