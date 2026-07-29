@@ -703,7 +703,7 @@ func TestGetSignatureStatuses(t *testing.T) {
 
 		conf := uint64(10)
 		serviceReply := &soltypes.GetSignatureStatusesReply{
-			Results: []soltypes.GetSignatureStatusesResult{
+			Results: []*soltypes.GetSignatureStatusesResult{
 				{Slot: 42, Confirmations: &conf, ConfirmationStatus: soltypes.ConfirmationStatusConfirmed},
 			},
 		}
