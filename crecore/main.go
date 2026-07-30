@@ -47,15 +47,15 @@ peer, or --proxy-address to delegate to another proxy.`,
 	root.PersistentFlags().StringVar(&cfg.ProxyListenAddress, "proxy-listen-address", ":50051", "address the proxy gRPC server listens on")
 
 	bootstrapper := standalone.NewBootstrapper(root, standalone.WithOtelViews(metricViews()))
-	lggr := bootstrapper.Config().Logger
+	lggr := bootstrapper.Logger()
 
 	// The ocr dependency owns the libocr networking config (create vs proxy
 	// mode) and wraps the database dependency it needs for the P2P identity and
 	// OCR discoverer table.
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
-	ocrDep := ocr.Dependency(lggr, dbDep, ocrDiscovererTable)
+	ocrDep := ocr.Dependency(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
 
 	return standalone.Run1(bootstrapper, func(ctx context.Context, scfg *standalone.StandaloneConfig, factories standalone.Dependency[*ocr.Factories]) []services.Service {
-		return []services.Service{newProxyService(cfg, scfg.Logger, factories)}
+		return []services.Service{newProxyService(cfg, scfg.Logger.Named("proxy service"), factories)}
 	}, ocrDep)
 }

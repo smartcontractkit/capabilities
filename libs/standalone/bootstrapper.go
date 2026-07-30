@@ -74,9 +74,8 @@ func (b *Bootstrapper) close() {
 	_ = b.config.Logger.Sync()
 }
 
-// Config returns the StandaloneConfig that is also passed to the service
-// factory, for dependencies that need e.g. the Logger before Run is called.
-func (b *Bootstrapper) Config() *StandaloneConfig { return b.config }
+// Logger returns the logger instance. It is safe to call before running the binary
+func (b *Bootstrapper) Logger() logger.SugaredLogger { return b.config.Logger }
 
 // run composes the services returned by factory into a single supervising
 // service via services.Engine sub-services, so their health is aggregated the

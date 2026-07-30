@@ -46,14 +46,14 @@ func limitsDir() string { return filepath.Join(os.TempDir(), limitsDirName) }
 
 // Dependency returns a standalone.BootstrapDependency that binds the required
 // --http_port flag and resolves a *Runner.
-func Dependency(lggr logger.Logger) standalone.BootstrapDependency[*Runner] {
+func Dependency(lggr logger.SugaredLogger) standalone.BootstrapDependency[*Runner] {
 	// Wrap in OnceBootstrapper so Get runs at most once even if several
 	// services resolve this dependency.
 	return standalone.OnceBootstrapper[*Runner](&dependency{lggr: lggr})
 }
 
 type dependency struct {
-	lggr     logger.Logger
+	lggr     logger.SugaredLogger
 	httpPort int
 }
 
@@ -90,7 +90,7 @@ type Runner struct {
 	server *http.Server
 }
 
-func newRunner(lggr logger.Logger, httpPort int) *Runner {
+func newRunner(lggr logger.SugaredLogger, httpPort int) *Runner {
 	r := &Runner{
 		httpPort: httpPort,
 		// Seeded with defaults (CL_CRE_SETTINGS env var, if set) until the
@@ -99,7 +99,7 @@ func newRunner(lggr logger.Logger, httpPort int) *Runner {
 	}
 	r.LimitsFactory = limits.Factory{
 		Settings: r.settings,
-		Logger:   logger.Named(lggr, "LimitsFactory"),
+		Logger:   lggr.Named("LimitsFactory"),
 	}
 	r.Service, r.eng = services.Config{
 		Name:  "CapabilityRunner",
