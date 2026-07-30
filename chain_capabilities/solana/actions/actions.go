@@ -168,6 +168,14 @@ func (s *Solana) GetMultipleAccountsWithOpts(
 	return nil, GetError(errors.New("unimplemented"), false)
 }
 
+func (s *Solana) GetProgramAccounts(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	input *solcap.GetProgramAccountsRequest) (*capabilities.ResponseAndMetadata[*solcap.GetProgramAccountsReply], caperrors.Error) {
+	// TODO
+	return nil, GetError(errors.New("unimplemented"), false)
+}
+
 func (s *Solana) GetSignatureStatuses(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
