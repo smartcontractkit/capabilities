@@ -4,21 +4,28 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
 )
 
 const (
@@ -190,13 +197,14 @@ func setupWithTriggerChannelBuffer(t *testing.T, lggr logger.Logger, triggerChBu
 		lggr,
 		mockConnector,
 		cfg,
-		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
 		limits.Factory{},
+		nil,
+		resourcemanager.ResourceIdentity{},
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -596,13 +604,14 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
 		limits.Factory{},
+		nil,
+		resourcemanager.ResourceIdentity{},
 	)
 	require.NoError(t, err)
 
@@ -715,13 +724,14 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
 		limits.Factory{},
+		nil,
+		resourcemanager.ResourceIdentity{},
 	)
 	require.NoError(t, err)
 
@@ -876,13 +886,14 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
 		limits.Factory{},
+		nil,
+		resourcemanager.ResourceIdentity{},
 	)
 	require.NoError(t, err)
 
@@ -1054,13 +1065,14 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		0,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
 		nil,
 		limits.Factory{},
+		nil,
+		resourcemanager.ResourceIdentity{},
 	)
 	require.NoError(t, err)
 
@@ -1120,6 +1132,390 @@ func TestHandleGatewayMessage_NilRequest(t *testing.T) {
 	err := handler.HandleGatewayMessage(context.Background(), "gateway1", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "request cannot be nil")
+}
+
+// fakeMeterEmitter decodes and records the MeterRecords and MeterSnapshots
+// passed to Emit and can be configured to fail, for asserting fail-open
+// behavior. It dispatches on the beholder entity attribute so MeterRecord and
+// MeterSnapshot bodies are decoded with the correct type. Each MeterSnapshot
+// covers exactly one resource.
+type fakeMeterEmitter struct {
+	err           error
+	records       []*meteringpb.MeterRecord
+	recordDomains []string
+	snapshots     []*meteringpb.MeterSnapshot
+}
+
+func (f *fakeMeterEmitter) Emit(ctx context.Context, body []byte, attrKVs ...any) error {
+	if f.attr(attrKVs, beholder.AttrKeyEntity) == "metering.v1.MeterSnapshot" {
+		var snapshot meteringpb.MeterSnapshot
+		if err := proto.Unmarshal(body, &snapshot); err != nil {
+			return err
+		}
+		f.snapshots = append(f.snapshots, &snapshot)
+		return f.err
+	}
+	var record meteringpb.MeterRecord
+	if err := proto.Unmarshal(body, &record); err != nil {
+		return err
+	}
+	f.records = append(f.records, &record)
+	f.recordDomains = append(f.recordDomains, f.attr(attrKVs, beholder.AttrKeyDomain))
+	return f.err
+}
+
+// attr returns the value of a beholder attribute by key from the alternating
+// key/value attrKVs slice, or "" if absent.
+func (f *fakeMeterEmitter) attr(attrKVs []any, key string) string {
+	for i := 0; i+1 < len(attrKVs); i += 2 {
+		if k, ok := attrKVs[i].(string); ok && k == key {
+			if v, ok := attrKVs[i+1].(string); ok {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+func (f *fakeMeterEmitter) actions() []meteringpb.MeterAction {
+	actions := make([]meteringpb.MeterAction, len(f.records))
+	for i, r := range f.records {
+		actions[i] = r.GetAction()
+	}
+	return actions
+}
+
+// testBaseIdentity is the base metering identity used by metering tests. It
+// carries the six coarse dimensions plus the service-level resource_pool.
+var testBaseIdentity = resourcemanager.ResourceIdentity{
+	Product:         "cre-test",
+	Tenant:          "mainline",
+	NumericTenantID: "42",
+	Environment:     "staging",
+	Zone:            "wf-zone-a",
+	Don:             &resourcemanager.DonIdentity{DonID: "7", NodeID: "node-csa-pubkey"},
+	Service:         meterService,
+	ResourcePool:    meterResource,
+}
+
+// setupWithMeterEmitter builds a handler with metering enabled and a fake
+// emitter capturing emitted MeterRecords. The ResourceManager is started (so
+// the snapshot tick is wired) and the handler is registered as the snapshotted
+// Meterable; both are torn down on test cleanup. No workflows are registered.
+func setupWithMeterEmitter(t *testing.T, lggr logger.Logger, emitErr error) (*connectorHandler, *fakeMeterEmitter) {
+	t.Helper()
+	emitter := &fakeMeterEmitter{err: emitErr}
+	cfg := ServiceConfig{
+		MetadataBatchSize:            10,
+		MaxAuthorizedKeysPerWorkflow: 3,
+	}
+	store := newWorkflowStore(lggr)
+	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
+	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
+	resourceManager := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
+	})
+	handler, err := NewConnectorHandler(
+		lggr,
+		&mockGatewayConnector{},
+		cfg,
+		store,
+		metadataPublisher,
+		requestCache,
+		newMetrics(t),
+		nil,
+		limits.Factory{},
+		resourceManager,
+		testBaseIdentity,
+	)
+	require.NoError(t, err)
+	require.NoError(t, handler.Start(t.Context()))
+	t.Cleanup(func() { require.NoError(t, handler.Close()) })
+	return handler, emitter
+}
+
+func meterTestRegistrationInput() WorkflowRegistrationInput {
+	return WorkflowRegistrationInput{
+		WorkflowSelector: gateway_common.WorkflowSelector{
+			WorkflowID:    testWorkflowID,
+			WorkflowOwner: testWorkflowOwner,
+			WorkflowName:  testWorkflowName,
+			WorkflowTag:   testWorkflowTag,
+		},
+		Config: &http.Config{
+			AuthorizedKeys: []*http.AuthorizedKey{
+				{
+					PublicKey: publicKey,
+					Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
+				},
+			},
+		},
+		Metadata: WorkflowRegistrationMetadata{},
+	}
+}
+
+func TestRegisterWorkflow_RegisterThenSameIDReRegister(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, emitter := setupWithMeterEmitter(t, lggr, nil)
+	input := meterTestRegistrationInput()
+
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	err := handler.RegisterWorkflow(t.Context(), input, sendCh)
+	require.NoError(t, err)
+
+	// First registration bills a single +1 UPDATE delta with the full
+	// structured identity populated on the record.
+	require.Equal(t, []meteringpb.MeterAction{meteringpb.MeterAction_METER_ACTION_UPDATE}, emitter.actions())
+	record := emitter.records[0]
+	require.Equal(t, "cll.meter", emitter.recordDomains[0])
+	id := record.GetIdentity()
+	require.Equal(t, testBaseIdentity.Product, id.GetProduct())
+	require.Equal(t, testBaseIdentity.Tenant, id.GetTenant())
+	require.Equal(t, testBaseIdentity.NumericTenantID, id.GetNumericTenantId())
+	require.Equal(t, testBaseIdentity.Environment, id.GetEnvironment())
+	require.Equal(t, testBaseIdentity.Zone, id.GetZone())
+	require.Equal(t, testBaseIdentity.DonID(), id.GetDon().GetDonId())
+	require.Equal(t, testBaseIdentity.NodeID(), id.GetDon().GetNodeId())
+	require.Equal(t, meterService, id.GetService())
+	require.Equal(t, meterResource, id.GetResourcePool())
+	// The metering identity DON is exactly the host-injected capability DON.
+	capDonID, donErr := handler.donID()
+	require.NoError(t, donErr)
+	require.Equal(t, capDonID, id.GetDon().GetDonId())
+	require.Equal(t, meterResourceType, record.GetUtilizations()[0].GetResourceType())
+	// resource_id is the workflow ID (HTTP registrations are workflow-scoped).
+	require.Equal(t, testWorkflowID, record.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "1", record.GetUtilizations()[0].GetValue())
+	require.NotEmpty(t, record.GetUtilizations()[0].GetEventId(), "event_id is stamped per emission")
+
+	// Re-registering the SAME workflow ID is not a level change and emits
+	// nothing (no RESERVE/UPDATE): the durable resource is unchanged.
+	sendCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	err = handler.RegisterWorkflow(t.Context(), input, sendCh2)
+	require.NoError(t, err)
+	require.Equal(t, []meteringpb.MeterAction{meteringpb.MeterAction_METER_ACTION_UPDATE}, emitter.actions(),
+		"same-ID re-register emits no additional delta")
+}
+
+func TestRegisterWorkflow_VersionUpdate_MetersNegativeThenPositiveDelta(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, emitter := setupWithMeterEmitter(t, lggr, nil)
+
+	inputA := meterTestRegistrationInput()
+	inputA.WorkflowSelector.WorkflowID = testWorkflowID1
+	sendChA := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	require.NoError(t, handler.RegisterWorkflow(t.Context(), inputA, sendChA))
+
+	// Re-registering the same owner/name/tag reference with a NEW workflow ID
+	// is a version update: the previous workflow's resource is billed -1 before
+	// the new one is billed +1, so the old resource cannot leak.
+	inputB := meterTestRegistrationInput()
+	inputB.WorkflowSelector.WorkflowID = testWorkflowID2
+	sendChB := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	require.NoError(t, handler.RegisterWorkflow(t.Context(), inputB, sendChB))
+
+	require.Equal(t, []meteringpb.MeterAction{
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+	}, emitter.actions())
+
+	// +1 for the old workflow ID (via utilization.resource_id).
+	registerA := emitter.records[0]
+	require.Equal(t, testWorkflowID1, registerA.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "1", registerA.GetUtilizations()[0].GetValue())
+
+	// -1 targets the PREVIOUS (evicted) workflow ID.
+	release := emitter.records[1]
+	require.Equal(t, testWorkflowID1, release.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "-1", release.GetUtilizations()[0].GetValue())
+
+	// +1 for the new workflow ID.
+	registerB := emitter.records[2]
+	require.Equal(t, testWorkflowID2, registerB.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "1", registerB.GetUtilizations()[0].GetValue())
+
+	// event_ids are unique across all three emissions.
+	ids := map[string]struct{}{}
+	for _, r := range emitter.records {
+		ids[r.GetUtilizations()[0].GetEventId()] = struct{}{}
+	}
+	require.Len(t, ids, 3, "each emission gets a distinct event_id")
+}
+
+func TestUnregisterWorkflow_MetersNegativeDelta(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, emitter := setupWithMeterEmitter(t, lggr, nil)
+
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	err := handler.RegisterWorkflow(t.Context(), meterTestRegistrationInput(), sendCh)
+	require.NoError(t, err)
+
+	err = handler.UnregisterWorkflow(t.Context(), testWorkflowID)
+	require.NoError(t, err)
+	require.Equal(t, []meteringpb.MeterAction{
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+		meteringpb.MeterAction_METER_ACTION_UPDATE,
+	}, emitter.actions())
+	release := emitter.records[1]
+	require.Equal(t, testWorkflowID, release.GetUtilizations()[0].GetResourceId())
+	require.Equal(t, "-1", release.GetUtilizations()[0].GetValue())
+	require.NotEqual(t, emitter.records[0].GetUtilizations()[0].GetEventId(), release.GetUtilizations()[0].GetEventId())
+
+	// Unregistering an absent workflow fails and must not emit a delta.
+	err = handler.UnregisterWorkflow(t.Context(), testWorkflowID)
+	require.Error(t, err)
+	require.Len(t, emitter.records, 2)
+}
+
+func TestRegisterWorkflow_MeteringFailOpen(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, emitter := setupWithMeterEmitter(t, lggr, errors.New("emit failed"))
+
+	// Registration and unregistration succeed even though every emit fails.
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	err := handler.RegisterWorkflow(t.Context(), meterTestRegistrationInput(), sendCh)
+	require.NoError(t, err)
+	err = handler.UnregisterWorkflow(t.Context(), testWorkflowID)
+	require.NoError(t, err)
+	require.Len(t, emitter.records, 2)
+}
+
+// registerMeterWorkflow registers a workflow with the given ID/owner under the
+// metering test config (each registration uses a distinct reference so they
+// coexist).
+func registerMeterWorkflow(t *testing.T, handler *connectorHandler, workflowID, owner string) {
+	t.Helper()
+	input := meterTestRegistrationInput()
+	input.WorkflowSelector.WorkflowID = workflowID
+	input.WorkflowSelector.WorkflowOwner = owner
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	require.NoError(t, handler.RegisterWorkflow(t.Context(), input, sendCh))
+}
+
+// TestSnapshot_EmitsOneEntryPerActiveWorkflow starts the ResourceManager tick
+// and asserts one MeterSnapshot per active workflow, each carrying the full
+// per-workflow identity.
+func TestSnapshot_EmitsOneEntryPerActiveWorkflow(t *testing.T) {
+	lggr := logger.Test(t)
+	emitter := &fakeMeterEmitter{}
+	clock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	cfg := ServiceConfig{MetadataBatchSize: 10, MaxAuthorizedKeysPerWorkflow: 3}
+	store := newWorkflowStore(lggr)
+	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
+	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
+	rm := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      time.Minute,
+		Clock:                 clock,
+	})
+	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, limits.Factory{}, rm, testBaseIdentity)
+	require.NoError(t, err)
+	unregister := rm.Register(handler)
+	t.Cleanup(unregister)
+
+	registerMeterWorkflow(t, handler, testWorkflowID1, testWorkflowOwner1)
+	registerMeterWorkflow(t, handler, testWorkflowID2, testWorkflowOwner2)
+
+	// Drop the lifecycle RESERVE records; we assert only on the snapshot tick.
+	emitter.records = nil
+	servicetest.Run(t, rm)
+	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
+	clock.Advance(time.Minute)
+
+	require.Eventually(t, func() bool {
+		return len(emitter.snapshots) == 2
+	}, time.Second, time.Millisecond)
+
+	// One MeterSnapshot per active workflow, keyed by utilization.resource_id.
+	require.Len(t, emitter.snapshots, 2)
+	byWorkflowID := map[string]*meteringpb.MeterSnapshot{}
+	for _, s := range emitter.snapshots {
+		byWorkflowID[s.GetUtilization()[0].GetResourceId()] = s
+	}
+	require.Len(t, byWorkflowID, 2)
+
+	r1 := byWorkflowID[testWorkflowID1]
+	require.NotNil(t, r1)
+	require.Equal(t, testBaseIdentity.Product, r1.GetIdentity().GetProduct())
+	require.Equal(t, meterResource, r1.GetIdentity().GetResourcePool())
+	require.Equal(t, meterResourceType, r1.GetUtilization()[0].GetResourceType())
+	require.Equal(t, "1", r1.GetUtilization()[0].GetValue())
+
+	r2 := byWorkflowID[testWorkflowID2]
+	require.NotNil(t, r2)
+	require.Equal(t, "1", r2.GetUtilization()[0].GetValue())
+}
+
+// TestClose_EmitsNoShutdownRecords asserts a graceful close emits NO meter
+// records. Process-lifecycle emissions are deleted by design: an active
+// workflow is released by its absence from the next snapshot, not by a
+// close-time drain.
+func TestClose_EmitsNoShutdownRecords(t *testing.T) {
+	lggr := logger.Test(t)
+	emitter := &fakeMeterEmitter{}
+	cfg := ServiceConfig{MetadataBatchSize: 10, MaxAuthorizedKeysPerWorkflow: 3}
+	store := newWorkflowStore(lggr)
+	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
+	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
+	rm := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      resourcemanager.DefaultSnapshotInterval,
+	})
+	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, limits.Factory{}, rm, testBaseIdentity)
+	require.NoError(t, err)
+	require.NoError(t, handler.Start(t.Context()))
+
+	registerMeterWorkflow(t, handler, testWorkflowID1, testWorkflowOwner1)
+	registerMeterWorkflow(t, handler, testWorkflowID2, testWorkflowOwner2)
+
+	// Drop the register deltas; assert the close path emits nothing.
+	emitter.records = nil
+	require.NoError(t, handler.Close())
+	require.Empty(t, emitter.records, "graceful close must emit no meter records")
+}
+
+// TestDONIDFallback_UsesWorkflowDON asserts that when the host did not inject a
+// capability DON (base DONID empty), records fall back to the per-registration
+// workflow DON.
+// TestDONIDNotInitialised_NoWorkflowDONSubstitution asserts that when the host
+// has not injected a capability DON ID, the meter record is still billed but
+// with the DON dimension carrying only the node ID — the consumer workflow's
+// DON ID is never substituted — and donID surfaces ErrDonIDNotInitialised for
+// callers that degrade explicitly (event labels, CRE-4409).
+func TestDONIDNotInitialised_NoWorkflowDONSubstitution(t *testing.T) {
+	lggr := logger.Test(t)
+	emitter := &fakeMeterEmitter{}
+	cfg := ServiceConfig{MetadataBatchSize: 10, MaxAuthorizedKeysPerWorkflow: 3}
+	store := newWorkflowStore(lggr)
+	metadataPublisher := NewGatewayMetadataPublisher(lggr, &mockGatewayConnector{}, store, cfg, newMetrics(t))
+	requestCache := newRequestCache(logger.Sugared(lggr), newTestKVStore(), time.Hour)
+	rm := resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{MeterRecordsEnabled: true, Emitter: emitter})
+	// Base identity WITHOUT a capability DON (host did not inject one).
+	base := testBaseIdentity
+	base.Don = &resourcemanager.DonIdentity{NodeID: "node-csa-pubkey"}
+	handler, err := NewConnectorHandler(lggr, &mockGatewayConnector{}, cfg, store, metadataPublisher, requestCache, newMetrics(t), nil, limits.Factory{}, rm, base)
+	require.NoError(t, err)
+
+	input := meterTestRegistrationInput()
+	input.Metadata.WorkflowDONID = 99
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	require.NoError(t, handler.RegisterWorkflow(t.Context(), input, sendCh))
+
+	require.Len(t, emitter.records, 1, "the record is still billed when the DON ID is unavailable")
+	require.Empty(t, emitter.records[0].GetIdentity().GetDon().GetDonId(),
+		"the consumer workflow's DON ID must never be substituted for the capability DON")
+	require.Equal(t, "node-csa-pubkey", emitter.records[0].GetIdentity().GetDon().GetNodeId(),
+		"the node dimension is preserved even without a DON ID")
+	_, donErr := handler.donID()
+	require.ErrorIs(t, donErr, ErrDonIDNotInitialised)
 }
 
 // TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner tests that the workflowOwner

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -20,6 +22,17 @@ import (
 )
 
 const ServiceName = "HTTPTriggerCapability"
+
+// Metering identity constants for the HTTP trigger. Service is the stable
+// service constant (it must not encode environment or zone); resource pool and
+// utilization resource_type identify the HTTP workflow-registration pool and
+// its billing
+// unit.
+const (
+	meterService      = "http-trigger"
+	meterResource     = "http_workflows"
+	meterResourceType = "operations"
+)
 
 var _ server.HTTPCapability = &service{}
 
@@ -53,12 +66,16 @@ type service struct {
 	metrics          *Metrics
 	limitsFactory    limits.Factory
 	orgResolver      orgresolver.OrgResolver
+	// metering is the resolved metering Config (ResourceManagerConfig +
+	// DeploymentIdentity) produced by loop.Server.MeteringConfig in main.
+	metering resourcemanager.Config
 }
 
-func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
+func NewService(lggr logger.Logger, limitsFactory limits.Factory, metering resourcemanager.Config) *service {
 	return &service{
 		lggr:          logger.Sugared(logger.Named(lggr, ServiceName)),
 		limitsFactory: limitsFactory,
+		metering:      metering,
 	}
 }
 
@@ -73,9 +90,11 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 		}
 	}
 	s.cfg = applyDefaults(serviceConfig)
-	s.orgResolver = dependencies.OrgResolver
-	if s.orgResolver == nil {
+	if dependencies.OrgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, HTTP trigger capability will not be able to fetch organization ID")
+		s.orgResolver = nil
+	} else {
+		s.orgResolver = dependencies.OrgResolver
 	}
 	workflowStore := newWorkflowStore(s.lggr)
 	var err error
@@ -85,12 +104,12 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	// dependencies.CapabilityDonID is the on-chain DON ID this plugin process
-	// serves, used to label emitted events with the *sending* DON. Zero means the
-	// host could not resolve it authoritatively (a multi-DON job-spec node, or a
-	// core node that pre-dates CRE-4409); the handler then falls back to
-	// RequestMetadata.WorkflowDONID. See CRE-4409.
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, dependencies.CapabilityDonID, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory)
+	resourceManager := resourcemanager.NewResourceManager(s.lggr, s.metering.ResourceManagerConfig)
+	baseIdentity := resourcemanager.NewBaseIdentity(s.metering.DeploymentIdentity, meterService, meterResource)
+	if dependencies.CapabilityDonID != 0 {
+		baseIdentity = baseIdentity.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
+	}
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory, resourceManager, baseIdentity)
 	if err != nil {
 		return err
 	}
