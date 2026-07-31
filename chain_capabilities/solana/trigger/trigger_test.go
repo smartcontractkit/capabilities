@@ -1417,6 +1417,49 @@ func TestValidateFilterConfig(t *testing.T) {
 		err := validateFilterConfig(config)
 		require.NoError(t, err)
 	})
+
+	t.Run("rejects multiple distinct equality alternatives for one subkey", func(t *testing.T) {
+		config := &solanacappb.FilterLogTriggerRequest{
+			Address:         make([]byte, 32),
+			EventName:       "TestEvent",
+			Name:            "test-filter",
+			ContractIdlJson: []byte("{}"),
+			Subkeys: []*solanacappb.SubkeyConfig{
+				{
+					Path: []string{"token"},
+					Comparers: []*solanacappb.ValueComparator{
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+						{Value: []byte("ETH"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+					},
+				},
+			},
+		}
+
+		err := validateFilterConfig(config)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "conflicting equality filters")
+	})
+
+	t.Run("allows repeated equality with identical value", func(t *testing.T) {
+		config := &solanacappb.FilterLogTriggerRequest{
+			Address:         make([]byte, 32),
+			EventName:       "TestEvent",
+			Name:            "test-filter",
+			ContractIdlJson: []byte("{}"),
+			Subkeys: []*solanacappb.SubkeyConfig{
+				{
+					Path: []string{"token"},
+					Comparers: []*solanacappb.ValueComparator{
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+					},
+				},
+			},
+		}
+
+		err := validateFilterConfig(config)
+		require.NoError(t, err)
+	})
 }
 
 func TestCleanUpStaleFilters(t *testing.T) {
