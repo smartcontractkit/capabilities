@@ -39,6 +39,7 @@ const (
 
 var (
 	testPublicKey    = createTestPublicKey(testAddress)
+	testDestPublicKey = createTestPublicKey("22222222222222222222222222222223")
 	testEventSig     = createTestEventSignature("TestEvent(string,uint256)")
 	testEventIdlJSON = []byte("{}")
 	testSubkeys      = []*solanacappb.SubkeyConfig{
@@ -375,6 +376,21 @@ func TestToLogPollerFilter(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, filter)
 		assert.Contains(t, err.Error(), "invalid address length")
+	})
+
+	t.Run("uses distinct cpi destination address", func(t *testing.T) {
+		request := createTestRequest()
+		request.CpiFilterConfig = &solanacappb.CPIFilterConfig{
+			DestAddress: testDestPublicKey[:],
+			MethodName:  []byte("invoke_test"),
+		}
+
+		filter, err := service.ToLogPollerFilter(testTriggerID, request)
+		require.NoError(t, err)
+		require.NotNil(t, filter)
+		require.NotNil(t, filter.CPIFilterConfig)
+		assert.Equal(t, testDestPublicKey[:], filter.CPIFilterConfig.DestAddress[:])
+		assert.NotEqual(t, filter.Address[:], filter.CPIFilterConfig.DestAddress[:])
 	})
 }
 
@@ -1416,6 +1432,23 @@ func TestValidateFilterConfig(t *testing.T) {
 		}
 		err := validateFilterConfig(config)
 		require.NoError(t, err)
+	})
+
+	t.Run("invalid cpi destination address length", func(t *testing.T) {
+		config := &solanacappb.FilterLogTriggerRequest{
+			Address:         make([]byte, 32),
+			EventName:       "TestEvent",
+			Name:            "test-filter",
+			ContractIdlJson: []byte("{}"),
+			CpiFilterConfig: &solanacappb.CPIFilterConfig{
+				DestAddress: []byte{1, 2, 3},
+				MethodName:  []byte("invoke_test"),
+			},
+		}
+
+		err := validateFilterConfig(config)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid cpi filter destination address length")
 	})
 }
 
