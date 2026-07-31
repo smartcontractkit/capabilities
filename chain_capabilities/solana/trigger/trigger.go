@@ -54,10 +54,7 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if len(config.ContractIdlJson) == 0 {
 		return fmt.Errorf("event idl json cannot be empty")
 	}
-	if err := validateSubkeyComparers(config.Subkeys); err != nil {
-		return err
-	}
-	return nil
+	return validateSubkeyComparers(config.Subkeys)
 }
 
 func validateSubkeyComparers(subkeys []*solanacappb.SubkeyConfig) error {
