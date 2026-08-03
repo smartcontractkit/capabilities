@@ -9,11 +9,11 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260729165045-b00a39493e13
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
 	github.com/smartcontractkit/chain-selectors v1.0.104
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260803141410-4bcddefff191
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260803161028-985f5a5a03d9
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260707203317-661b54b51a33
-	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260803141723-dd9f47ed5102
-	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260803141723-dd9f47ed5102
+	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260803170030-90043607d911
+	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260803170030-90043607d911
 	github.com/smartcontractkit/libocr v0.0.0-20260403184524-b6409238958d
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.43.0
