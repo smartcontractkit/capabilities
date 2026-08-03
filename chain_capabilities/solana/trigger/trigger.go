@@ -36,6 +36,7 @@ const (
 	SuffixLogTriggerFilterID = "-solana-log-trigger"
 	defaultQueryLimit        = 1000
 	defaultMaxPagesPerPoll   = 5
+	maxSubkeysPerTrigger     = 4
 )
 
 func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
@@ -53,6 +54,9 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	}
 	if len(config.ContractIdlJson) == 0 {
 		return fmt.Errorf("event idl json cannot be empty")
+	}
+	if len(config.Subkeys) > maxSubkeysPerTrigger {
+		return fmt.Errorf("too many subkeys: maximum supported is %d, got %d", maxSubkeysPerTrigger, len(config.Subkeys))
 	}
 	return nil
 }
