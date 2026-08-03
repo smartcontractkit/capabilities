@@ -101,7 +101,7 @@ func TestErrorMode(t *testing.T) {
 						Observation: strToObservation(ob),
 					}
 				}
-				rawActualErrors, actualCount, err := modeForError(N, tc.F, requestID, aos)
+				rawActualErrors, actualCount, err := modeForError(N, tc.F, tc.F+1, requestID, aos)
 				if tc.ExpectedError != "" {
 					require.ErrorContains(t, err, tc.ExpectedError)
 				} else {
@@ -151,5 +151,88 @@ func TestErrorMode(t *testing.T) {
 			}, ob)
 		}
 		runTest(t, newObservation)
+	})
+}
+
+func TestErrorMode_TwoFPlusOneThreshold(t *testing.T) {
+	// N=7, F=2: with minMatching=5 (2F+1), we need 5 matching errors to succeed.
+	const requestID = "req-2f1"
+	N, F := 7, 2
+	minMatching := 2*F + 1 // 5
+
+	makeAos := func(errors []string) []attributedObservation {
+		aos := make([]attributedObservation, len(errors))
+		for i, e := range errors {
+			aos[i] = attributedObservation{
+				//nolint:gosec
+				Observer: commontypes.OracleID(i),
+				Observation: &types.Observation{
+					Observations: map[string]*types.RequestObservation{
+						requestID: {Observation: &types.RequestObservation_Error{Error: []byte(e)}},
+					},
+				},
+			}
+		}
+		return aos
+	}
+
+	t.Run("succeeds when minMatching number of identical errors are reported", func(t *testing.T) {
+		errors := []string{"err", "err", "err", "err", "err", "other", "other"}
+		result, actualCount, err := modeForError(N, F, minMatching, requestID, makeAos(errors))
+		require.NoError(t, err)
+		require.Equal(t, 5, actualCount)
+		require.Equal(t, []string{"err"}, func() []string {
+			s := make([]string, len(result))
+			for i, b := range result {
+				s[i] = string(b)
+			}
+			return s
+		}())
+	})
+
+	t.Run("succeeds when minMatching number of different errors are reported", func(t *testing.T) {
+		errors := []string{"err-a", "err-a", "err-b", "err-b", "err-c", "err-d", "err-e"}
+		result, actualCount, err := modeForError(N, F, minMatching, requestID, makeAos(errors))
+		require.NoError(t, err)
+		require.Equal(t, 5, actualCount)
+		require.Equal(t, []string{"err-a", "err-b", "err-c"}, func() []string {
+			s := make([]string, len(result))
+			for i, b := range result {
+				s[i] = string(b)
+			}
+			return s
+		}())
+	})
+
+	t.Run("fails when combined error observations don't reach minMatching", func(t *testing.T) {
+		// Only 4 error observations total (3 distinct errors), non-errors fill the remaining 3 slots
+		allObs := make([]attributedObservation, N)
+		errPayloads := []string{"err-a", "err-b", "err-a", "err-c"}
+		for i, e := range errPayloads {
+			allObs[i] = attributedObservation{
+				//nolint:gosec
+				Observer: commontypes.OracleID(i),
+				Observation: &types.Observation{
+					Observations: map[string]*types.RequestObservation{
+						requestID: {Observation: &types.RequestObservation_Error{Error: []byte(e)}},
+					},
+				},
+			}
+		}
+		// remaining 3 are non-error (EventuallyConsistent) — count toward totalNum but not error count
+		for i := len(errPayloads); i < N; i++ {
+			allObs[i] = attributedObservation{
+				//nolint:gosec
+				Observer: commontypes.OracleID(i),
+				Observation: &types.Observation{
+					Observations: map[string]*types.RequestObservation{
+						requestID: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value")}},
+					},
+				},
+			}
+		}
+		_, actualCount, err := modeForError(N, F, minMatching, requestID, allObs)
+		require.ErrorContains(t, err, "insufficient number of errors")
+		require.Equal(t, 4, actualCount)
 	})
 }

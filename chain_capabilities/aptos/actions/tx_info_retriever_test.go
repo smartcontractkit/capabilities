@@ -326,5 +326,23 @@ func TestPayloadMatching(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no matching failed transaction found")
 	})
+}
 
+func TestReceiverAddressesEqual(t *testing.T) {
+	t.Parallel()
+
+	// Incident: node 0 submitted WriteReport successfully, but nodes 1-9 could not
+	// find the tx hash because matchesTransmissionByReport compared receiver hex
+	// as raw strings. The Aptos API returned arg[0] without a leading zero hex
+	// digit for this on-chain tx:
+	// https://explorer.aptoslabs.com/txn/6208934644/userTxnOverview?network=mainnet
+	var expected aptos_sdk.AccountAddress
+	err := expected.ParseStringRelaxed("0x04476bcdb448e33b69d2745f9509570e104caee1393da08d7d53becf570cffa7")
+	require.NoError(t, err)
+
+	shortOnChainHex := "0x4476bcdb448e33b69d2745f9509570e104caee1393da08d7d53becf570cffa7"
+
+	require.True(t, receiverAddressesEqual(shortOnChainHex, expected))
+	require.True(t, receiverAddressesEqual("0x04476bcdb448e33b69d2745f9509570e104caee1393da08d7d53becf570cffa7", expected))
+	require.False(t, receiverAddressesEqual("0xbb", expected))
 }

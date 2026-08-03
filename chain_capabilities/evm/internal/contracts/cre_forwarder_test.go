@@ -2,8 +2,10 @@ package contracts_test
 
 import (
 	"context"
+	"crypto/sha3"
 	"errors"
 	"fmt"
+	"hash"
 	"math/big"
 	"testing"
 
@@ -11,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/sha3"
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -451,7 +452,7 @@ func legacyDebugID(t contracts.TransmissionID) string {
 // common/transmission_schedule.transmissionScheduleSeed, which is what actually
 // consumes the string and feeds it to the permutation.
 func transmissionScheduleSeed(transmissionID string) [16]byte {
-	hash := sha3.New256()
+	hash := hash.Hash(sha3.New256())
 	hash.Write([]byte(transmissionID))
 	var key [16]byte
 	copy(key[:], hash.Sum(nil))

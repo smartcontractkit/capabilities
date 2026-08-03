@@ -232,7 +232,7 @@ func Test_LogTriggerMultipleAddressesAndTopics(t *testing.T) {
 			deployContractsFn: func(t *testing.T, donContext framework.DonContext) []common.Address {
 				// deploy two instances of the same contract for testing multiple addresses emissions in the log trigger
 				addrs := make([]common.Address, 0, 2)
-				for i := 0; i < 2; i++ {
+				for range 2 {
 					addr, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
 					require.NoError(t, err)
 					addrs = append(addrs, addr)

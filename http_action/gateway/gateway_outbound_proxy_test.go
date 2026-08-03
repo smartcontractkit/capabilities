@@ -6,9 +6,11 @@ import (
 	"errors"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
@@ -852,6 +854,43 @@ func TestResponseHeadersFromGateway(t *testing.T) {
 		require.Len(t, multiHeaders, 2)
 		require.Equal(t, []string{"application/json"}, multiHeaders["Content-Type"].Values)
 		require.Equal(t, []string{"s1", "s2"}, multiHeaders["Set-Cookie"].Values)
+	})
+
+	t.Run("valid UTF-8 preserved untouched (MultiHeaders source)", func(t *testing.T) {
+		resp := &gateway_common.OutboundHTTPResponse{
+			MultiHeaders: map[string][]string{"X-Multi": {"héllo", "日本語"}},
+		}
+		headers, multiHeaders := responseHeadersFromGateway(resp)
+		require.Equal(t, []string{"héllo", "日本語"}, multiHeaders["X-Multi"].Values)
+		require.Equal(t, "héllo,日本語", headers["X-Multi"]) //nolint:staticcheck // Headers deprecated
+	})
+
+	t.Run("invalid UTF-8 sanitized and marshalable (MultiHeaders source)", func(t *testing.T) {
+		invalidVal := "x" + string([]byte{0xff, 0xfe})
+		invalidKey := "X-Bad" + string([]byte{0xff})
+		resp := &gateway_common.OutboundHTTPResponse{
+			MultiHeaders: map[string][]string{invalidKey: {invalidVal, "clean"}},
+		}
+		_, multiHeaders := responseHeadersFromGateway(resp)
+		key := common.SanitizeUTF8(invalidKey)
+		require.Contains(t, multiHeaders, key)
+		require.True(t, utf8.ValidString(multiHeaders[key].Values[0]))
+		require.Equal(t, "clean", multiHeaders[key].Values[1])
+
+		_, err := proto.Marshal(&http.Response{MultiHeaders: multiHeaders})
+		require.NoError(t, err)
+	})
+
+	t.Run("invalid UTF-8 sanitized (Headers source)", func(t *testing.T) {
+		invalidKey := "X-Bad" + string([]byte{0xff})
+		resp := &gateway_common.OutboundHTTPResponse{
+			Headers: map[string]string{invalidKey: "v" + string([]byte{0xfe})}, //nolint:staticcheck // Headers deprecated, testing
+		}
+		headers, multiHeaders := responseHeadersFromGateway(resp)
+		key := common.SanitizeUTF8(invalidKey)
+		require.Contains(t, multiHeaders, key)
+		require.True(t, utf8.ValidString(headers[key])) //nolint:staticcheck // Headers deprecated
+		require.True(t, utf8.ValidString(multiHeaders[key].Values[0]))
 	})
 }
 
