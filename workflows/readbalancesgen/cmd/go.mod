@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/workflows/readbalancesgen
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/ethereum/go-ethereum v1.17.0
