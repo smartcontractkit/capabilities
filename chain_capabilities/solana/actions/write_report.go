@@ -459,6 +459,12 @@ func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.F
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
+	if tx == nil {
+		return nil, errors.New("failed to get transaction fee: empty transaction response")
+	}
+	if tx.Meta == nil {
+		return nil, errors.New("failed to get transaction fee: empty transaction meta")
+	}
 
 	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(tx.Meta.Fee), big.NewFloat(1e9))
 
