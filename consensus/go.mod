@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/consensus
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/cloudevents/sdk-go/v2 v2.16.1

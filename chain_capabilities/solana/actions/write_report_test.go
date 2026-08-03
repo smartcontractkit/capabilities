@@ -324,7 +324,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) *testHelper {
 	mockTrInfo := NewTransmissionInfoProvider_mock(t)
 	mockClient := NewCREForwarderClient_mock(t)
 	service := &Solana{
-		SolanaService:            mockSolanaService,
+		SolanaService:            mocks.WrapSolanaService(mockSolanaService),
 		forwarderClient:          mockClient,
 		transmissionInfoProvider: mockTrInfo,
 		beholderProcessor:        NopBeholderProcessor{},
@@ -736,7 +736,7 @@ func TestGetFee(t *testing.T) {
 		mockSolanaService := mocks.NewSolanaService(t)
 
 		wr := &WriteReport{
-			SolanaService: mockSolanaService,
+			SolanaService: mocks.WrapSolanaService(mockSolanaService),
 			lggr:          testLogger,
 		}
 
@@ -756,7 +756,7 @@ func TestGetFee(t *testing.T) {
 		mockSolanaService := mocks.NewSolanaService(t)
 
 		wr := &WriteReport{
-			SolanaService: mockSolanaService,
+			SolanaService: mocks.WrapSolanaService(mockSolanaService),
 			lggr:          testLogger,
 		}
 
@@ -776,7 +776,7 @@ func TestGetFee(t *testing.T) {
 		mockSolanaService := mocks.NewSolanaService(t)
 
 		wr := &WriteReport{
-			SolanaService: mockSolanaService,
+			SolanaService: mocks.WrapSolanaService(mockSolanaService),
 			lggr:          testLogger,
 		}
 
