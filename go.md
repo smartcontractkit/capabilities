@@ -28,22 +28,11 @@ flowchart LR
 	capabilities/integration_tests --> capabilities/chain_capabilities/evm
 	capabilities/integration_tests --> capabilities/http_action
 	capabilities/integration_tests --> capabilities/http_trigger
-	capabilities/integration_tests --> capabilities/loadtestwritetarget
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
-	capabilities/loadtestwritetarget --> capabilities/libs
-	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
-	capabilities/readcontract --> capabilities/libs
-	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
-	capabilities/workflowevent --> capabilities/libs
-	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
-	capabilities/workflows --> chainlink-common
-	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
-	capabilities/workflows/readbalancesgen --> chainlink-common
-	click capabilities/workflows/readbalancesgen href "https://github.com/smartcontractkit/capabilities"
 	ccip-contract-examples/chains/evm
 	click ccip-contract-examples/chains/evm href "https://github.com/smartcontractkit/ccip-contract-examples"
 	ccip-owner-contracts
@@ -261,11 +250,6 @@ flowchart LR
 		 capabilities/http_trigger
 		 capabilities/integration_tests
 		 capabilities/libs
-		 capabilities/loadtestwritetarget
-		 capabilities/readcontract
-		 capabilities/workflowevent
-		 capabilities/workflows
-		 capabilities/workflows/readbalancesgen
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 
