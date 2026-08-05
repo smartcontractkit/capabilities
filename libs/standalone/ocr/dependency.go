@@ -51,6 +51,12 @@ type Factories struct {
 	// PeerGroup creates DON-to-DON peer groups.
 	PeerGroup creproxy.PeerGroupFactory
 
+	// PeerID is the node's rage P2P identity, loaded from the keystore. Both
+	// modes resolve it, and consumers other than libocr need it: the on-chain
+	// CapabilitiesRegistry keys node records by peer ID, so anything reading
+	// registry metadata must know which node it is.
+	PeerID ragetypes.PeerID
+
 	closer io.Closer
 }
 
@@ -173,6 +179,7 @@ func (d *dependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, 
 		OCR2Endpoint:   peer.OCR2BinaryNetworkEndpointFactory(),
 		OCR3_1Endpoint: peer.OCR3_1BinaryNetworkEndpointFactory(),
 		PeerGroup:      newNetworkingPeerGroupFactory(peer.PeerGroupFactory()),
+		PeerID:         peerID,
 		closer:         peer,
 	}, nil
 }
@@ -204,6 +211,7 @@ func (d *dependency) proxyFactories(peerID ragetypes.PeerID) (*Factories, error)
 		OCR2Endpoint:   endpointFactory,
 		OCR3_1Endpoint: endpoint2Factory,
 		PeerGroup:      pgFactory,
+		PeerID:         peerID,
 		closer:         multiCloser{endpointFactory, endpoint2Factory, pgFactory},
 	}, nil
 }
