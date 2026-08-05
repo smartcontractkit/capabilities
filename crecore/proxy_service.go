@@ -39,6 +39,11 @@ type proxyService struct {
 	lggr      logger.Logger
 	factories standalone.Dependency[*ocr.Factories]
 
+	// registrars attach additional gRPC services to this server before it
+	// Serves. Used so co-located services (e.g. the CapabilitiesRegistry) share
+	// one address instead of each opening a listener.
+	registrars []func(*grpc.Server)
+
 	grpcServer     *grpc.Server
 	factoriesClose func() error
 }
@@ -48,8 +53,8 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(cfg *Config, lggr logger.Logger, factories standalone.Dependency[*ocr.Factories]) *proxyService {
-	s := &proxyService{cfg: cfg, lggr: lggr, factories: factories}
+func newProxyService(cfg *Config, lggr logger.Logger, factories standalone.Dependency[*ocr.Factories], registrars ...func(*grpc.Server)) *proxyService {
+	s := &proxyService{cfg: cfg, lggr: lggr, factories: factories, registrars: registrars}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",
 		Start: s.start,
@@ -85,6 +90,10 @@ func (s *proxyService) start(ctx context.Context) error {
 	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(factories.OCR2Endpoint, metrics))
 	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(factories.OCR3_1Endpoint, metrics))
 	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(factories.PeerGroup, metrics))
+
+	for _, register := range s.registrars {
+		register(s.grpcServer)
+	}
 
 	// Gracefully stop the gRPC server when the engine cancels this context on
 	// Close; run the (blocking) Serve in a tracked goroutine so start returns
