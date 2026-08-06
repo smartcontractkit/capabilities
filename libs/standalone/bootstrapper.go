@@ -5,6 +5,8 @@ package standalone
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -17,6 +19,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/otelhealth"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/promhealth"
+
+	"github.com/grafana/pyroscope-go"
 )
 
 // StandaloneConfig holds the process-wide dependencies the Bootstrapper provides
@@ -27,13 +33,22 @@ type StandaloneConfig struct {
 	// can parse and re-level the entries when this process runs under one,
 	// while remaining plain JSON logs when run standalone.
 	Logger logger.SugaredLogger
+
+	// BeholderClient is the process-wide telemetry client, nil unless
+	// CL_TELEMETRY_ENDPOINT is configured. Exposed so a factory can build its
+	// own otel instruments (meters, tracers) consistent with the rest of the
+	// process, the same way a LOOP plugin would reach beholder.GetClient().
+	BeholderClient *beholder.Client
 }
 
 type Bootstrapper struct {
-	root           *cobra.Command
-	config         *StandaloneConfig
-	commonConfig   CommonConfig
-	beholderClient *beholder.Client // nil unless CL_TELEMETRY_ENDPOINT is configured
+	root         *cobra.Command
+	config       *StandaloneConfig
+	commonConfig CommonConfig
+	profiler     *pyroscope.Profiler // nil unless CL_PYROSCOPE_SERVER_ADDRESS is configured
+
+	closersMu sync.Mutex
+	closers   []io.Closer // resolved dependency values that implement io.Closer
 }
 
 // NewBootstrapper creates a new Bootstrapper using the cobra command as its root.
@@ -61,17 +76,51 @@ func NewBootstrapper(root *cobra.Command, opts ...Option) *Bootstrapper {
 		slggr.Fatalf("Failed to start telemetry: %s", err)
 	}
 
-	bs := &Bootstrapper{root: root, config: &StandaloneConfig{Logger: slggr}, beholderClient: beholderClient}
+	profiler, err := startProfiler(root.Name())
+	if err != nil {
+		slggr.Fatalf("Failed to start profiler: %s", err)
+	}
+
+	bs := &Bootstrapper{
+		root:     root,
+		config:   &StandaloneConfig{Logger: slggr, BeholderClient: beholderClient},
+		profiler: profiler,
+	}
 	root.PersistentFlags().BoolVar(&bs.commonConfig.Fake, "fake", false, "use fake dependencies instead of real ones")
 	return bs
 }
 
-// close flushes telemetry and logs: the counterpart to the setup in NewBootstrapper.
+// close closes resolved dependencies (in reverse resolution order), stops
+// profiling, flushes telemetry, and syncs logs: the counterpart to the setup
+// in NewBootstrapper and to dependency resolution during run.
 func (b *Bootstrapper) close() {
-	if b.beholderClient != nil {
-		b.config.Logger.ErrorIfFn(b.beholderClient.Close, "Failed to close beholder client")
+	b.closersMu.Lock()
+	closers := b.closers
+	b.closersMu.Unlock()
+
+	for i := len(closers) - 1; i >= 0; i-- {
+		b.config.Logger.ErrorIfFn(closers[i].Close, "Failed to close dependency")
+	}
+
+	if b.profiler != nil {
+		b.config.Logger.ErrorIfFn(b.profiler.Stop, "Failed to stop pyroscope profiler")
+	}
+	if b.config.BeholderClient != nil {
+		b.config.Logger.ErrorIfFn(b.config.BeholderClient.Close, "Failed to close beholder client")
 	}
 	_ = b.config.Logger.Sync()
+}
+
+// registerCloser records v for closing on shutdown if it implements
+// io.Closer. Safe to call concurrently.
+func (b *Bootstrapper) registerCloser(v any) {
+	c, ok := v.(io.Closer)
+	if !ok {
+		return
+	}
+	b.closersMu.Lock()
+	b.closers = append(b.closers, c)
+	b.closersMu.Unlock()
 }
 
 // Logger returns the logger instance. It is safe to call before running the binary
@@ -80,7 +129,11 @@ func (b *Bootstrapper) Logger() logger.SugaredLogger { return b.config.Logger }
 // run composes the services returned by factory into a single supervising
 // service via services.Engine sub-services, so their health is aggregated the
 // same way the rest of the stack does it (services.Config.NewSubServices +
-// HealthReport). It starts them, then blocks until an interrupt, then closes.
+// HealthReport). It starts them along with a health checker (registered
+// against the aggregated root service) and, if CL_PROMETHEUS_PORT is set, a
+// web server on that port serving /metrics, /debug/pprof, and /healthz +
+// /readyz (backed by the health checker), then blocks until an interrupt,
+// then closes everything in reverse.
 func (b *Bootstrapper) run(factory func(ctx context.Context) []services.Service) error {
 	defer b.close()
 
@@ -99,6 +152,28 @@ func (b *Bootstrapper) run(factory func(ctx context.Context) []services.Service)
 			return err
 		}
 		defer func() { _ = root.Close() }()
+
+		checker, err := b.startHealthChecker(root)
+		if err != nil {
+			stop()
+			return err
+		}
+		defer func() { b.config.Logger.ErrorIfFn(checker.Close, "Failed to close health checker") }()
+
+		if port, ok, err := prometheusPort(); err != nil {
+			stop()
+			return err
+		} else if ok {
+			http.HandleFunc("/healthz", healthHandler(checker.IsHealthy))
+			http.HandleFunc("/readyz", healthHandler(checker.IsReady))
+
+			web := loop.WebServerOpts{}.New(b.config.Logger, port)
+			if err := web.Start(ctx); err != nil {
+				stop()
+				return fmt.Errorf("failed to start prometheus web server: %w", err)
+			}
+			defer func() { b.config.Logger.ErrorIfFn(web.Close, "Failed to close prometheus web server") }()
+		}
 
 		if underPluginHost() {
 			// Launched by a go-plugin host (e.g. the core node): expose the empty
@@ -120,6 +195,50 @@ func (b *Bootstrapper) run(factory func(ctx context.Context) []services.Service)
 	}
 
 	return b.root.Execute()
+}
+
+// healthHandler adapts a services.HealthChecker.IsHealthy/IsReady-shaped func into
+// an HTTP handler: 200 with each check's status when ok, 503 and the failing
+// checks' errors otherwise.
+func healthHandler(check func() (bool, map[string]error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		ok, errs := check()
+		if !ok {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		for name, err := range errs {
+			if err != nil {
+				fmt.Fprintf(w, "%s: %s\n", name, err)
+			}
+		}
+		if ok {
+			fmt.Fprintln(w, "ok")
+		}
+	}
+}
+
+// startHealthChecker builds a services.HealthChecker that mirrors reporter (usually
+// the aggregated root service) as prometheus metrics ("health", "uptime_seconds",
+// "version") and, when telemetry is configured, as otel metrics through the same
+// beholder client/meter the rest of the process uses.
+func (b *Bootstrapper) startHealthChecker(reporter services.HealthReporter) (*services.HealthChecker, error) {
+	cfg := promhealth.ConfigureHooks(services.HealthCheckerConfig{})
+	if bc := b.config.BeholderClient; bc != nil {
+		var err error
+		cfg, err = otelhealth.ConfigureHooks(cfg, bc.Meter)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure health checker otel hooks: %w", err)
+		}
+	}
+
+	checker := cfg.New()
+	if err := checker.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start health checker: %w", err)
+	}
+	if err := checker.Register(reporter); err != nil {
+		return nil, fmt.Errorf("failed to register health checker reporter: %w", err)
+	}
+	return checker, nil
 }
 
 // underPluginHost reports whether this process was launched by a go-plugin host,
@@ -151,10 +270,16 @@ type BootstrapDependency[T any] interface {
 type dependency[T any] struct {
 	bs *Bootstrapper
 	bd BootstrapDependency[T]
+
+	registerOnce sync.Once // guards registering the resolved value with bs, since Get may be called more than once
 }
 
-func (d dependency[T]) Get(ctx context.Context) (T, error) {
-	return d.bd.Get(ctx, d.bs.commonConfig)
+func (d *dependency[T]) Get(ctx context.Context) (T, error) {
+	v, err := d.bd.Get(ctx, d.bs.commonConfig)
+	if err == nil {
+		d.registerOnce.Do(func() { d.bs.registerCloser(v) })
+	}
+	return v, err
 }
 
 // OnceBootstrapper wraps a BootstrapDependency so that Get is evaluated at most
