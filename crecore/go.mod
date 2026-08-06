@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/ethereum/go-ethereum v1.17.3
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260805175532-500ba79bfb4d
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260806142134-6ce85e626bf1
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260805174449-86b0bd040b49
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260728111445-96c471be2872
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20260512150409-b4068bf735e6
