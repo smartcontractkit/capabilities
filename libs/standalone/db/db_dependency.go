@@ -57,10 +57,6 @@ func (d *dependency) AddCommands(command *cobra.Command) {
 	standalone.BindWithEnvVar(f.Lookup("db-url"))
 }
 
-func (d *dependency) Close() {
-	_ = d.db.Close()
-}
-
 func pgDb() (*sql.DB, error) {
 
 	dbURL := os.Getenv(dbURLEnvVar)
