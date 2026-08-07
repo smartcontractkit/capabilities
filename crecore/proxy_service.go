@@ -8,20 +8,34 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/smartcontractkit/capabilities/crecore/registry"
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 )
 
-// Config is the proxy gRPC server configuration, populated from CLI flags (see
-// main.go). The libocr peer / proxy-client configuration lives on the ocr
-// bootstrap dependency instead.
+// Config is the root command's configuration, populated by flags.RegisterCommandFlags (see
+// main.go). The libocr peer / proxy-client configuration lives on the ocr bootstrap dependency
+// instead.
 type Config struct {
 	// ProxyListenAddress is the address the proxy gRPC server listens on.
-	ProxyListenAddress string
+	ProxyListenAddress string `toml:"proxy-listen-address" usage:"address the proxy gRPC server listens on"`
+
+	// RegistryAddress is the on-chain CapabilitiesRegistry (v2) contract address. The registry
+	// always runs, so this is as required in practice as the registry itself.
+	RegistryAddress string `toml:"capabilities-registry-address" usage:"on-chain CapabilitiesRegistry (v2) contract address" validate:"required" example:"'0xYourRegistryAddress'"`
+
+	// RegistrySyncInterval is how often the on-chain registry is re-read.
+	RegistrySyncInterval config.Duration `toml:"capabilities-registry-sync-interval" usage:"how often the on-chain registry is re-read"`
+}
+
+var defaultConfig = Config{
+	ProxyListenAddress:   ":50051",
+	RegistrySyncInterval: *config.MustNewDuration(registry.DefaultSyncInterval),
 }
 
 // proxyService exposes the libocr rage networking factories over gRPC so that
