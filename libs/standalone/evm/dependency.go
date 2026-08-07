@@ -1,28 +1,15 @@
-// Package evm provides a standalone.BootstrapDependency that supplies an EVM RPC
-// client to a standalone binary.
-//
-// The client is chainlink-evm's multinode-backed client.Client, not a bare geth
-// *ethclient.Client. That is deliberate: multinode is where the RPC reliability
-// behaviour lives (per-node health polling, sync-threshold detection, dead-node
-// declaration, primary selection, load-balanced RPC support). A standalone process
-// reading a contract needs exactly those properties and should not reimplement
-// them.
-//
-// What this does not bring along is the relayer / ContractReader stack. Callers
-// get a client.Client and make bind.ContractCaller view calls against generated
-// gethwrappers directly, which is a far shorter path to follow than
-// relayer -> ContractReader -> codec -> ReadIdentifier.
 package evm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
+	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	evmclient "github.com/smartcontractkit/chainlink-evm/pkg/client"
@@ -54,7 +41,7 @@ const (
 // Dependency returns a standalone.BootstrapDependency that resolves a dialed,
 // multinode-backed EVM client.
 //
-// At least one --evm-http-url is required. WebSocket URLs are optional; without
+// At least one --evm.http-url is required. WebSocket URLs are optional; without
 // them the client polls for heads rather than subscribing, which is enough for
 // view calls.
 func Dependency(lggr logger.Logger) standalone.BootstrapDependency[evmclient.Client] {
@@ -63,65 +50,72 @@ func Dependency(lggr logger.Logger) standalone.BootstrapDependency[evmclient.Cli
 	return standalone.OnceBootstrapper[evmclient.Client](&dependency{lggr: lggr})
 }
 
+// Config is the EVM client configuration. At least one http-url is required; WebSocket URLs
+// are optional, and without them the client polls for heads rather than subscribing, which is
+// enough for view calls.
+type Config struct {
+	HTTPURLs  []string `toml:"http-url" usage:"EVM RPC HTTP URL(s); repeat or comma-separate for a multinode pool" validate:"required" example:"['https://rpc.example.com']"`
+	WSURLs    []string `toml:"ws-url" usage:"EVM RPC WebSocket URL(s), positionally paired with --evm.http-url; optional" validate:"excluded_without=HTTPURLs"`
+	ChainID   string   `toml:"chain-id" usage:"EVM chain ID" validate:"required" example:"'1'"`
+	ChainType string   `toml:"chain-type" usage:"EVM chain type (empty for a generic EVM chain)"`
+
+	FinalityTagEnabled bool            `toml:"finality-tag-enabled" usage:"use the finalized block tag instead of a finality depth"`
+	FinalityDepth      uint32          `toml:"finality-depth" usage:"finality depth, used when --evm.finality-tag-enabled=false"`
+	PollInterval       config.Duration `toml:"poll-interval" usage:"per-node health poll interval"`
+}
+
+var defaultConfig = Config{
+	FinalityTagEnabled: true,
+	FinalityDepth:      defaultFinalityDepth,
+	PollInterval:       *config.MustNewDuration(defaultPollInterval),
+}
+
 type dependency struct {
 	lggr logger.Logger
 
 	client evmclient.Client
-
-	httpURLs           []string
-	wsURLs             []string
-	chainID            string
-	chainType          string
-	finalityTagEnabled bool
-	finalityDepth      uint32
-	pollInterval       time.Duration
+	cfg    Config
 }
 
 var _ standalone.BootstrapDependency[evmclient.Client] = (*dependency)(nil)
 
-func (d *dependency) AddCommands(cmd *cobra.Command) {
-	f := cmd.PersistentFlags()
-	f.StringSliceVar(&d.httpURLs, "evm-http-url", nil, "EVM RPC HTTP URL(s); repeat or comma-separate for a multinode pool")
-	f.StringSliceVar(&d.wsURLs, "evm-ws-url", nil, "EVM RPC WebSocket URL(s), positionally paired with --evm-http-url; optional")
-	f.StringVar(&d.chainID, "evm-chain-id", "", "EVM chain ID")
-	f.StringVar(&d.chainType, "evm-chain-type", "", "EVM chain type (empty for a generic EVM chain)")
-	f.BoolVar(&d.finalityTagEnabled, "evm-finality-tag-enabled", true, "use the finalized block tag instead of a finality depth")
-	f.Uint32Var(&d.finalityDepth, "evm-finality-depth", defaultFinalityDepth, "finality depth, used when --evm-finality-tag-enabled=false")
-	f.DurationVar(&d.pollInterval, "evm-poll-interval", defaultPollInterval, "per-node health poll interval")
+// Namespace groups the EVM settings under evm.* (--evm.http-url, CRE_EVM_HTTP_URL).
+func (d *dependency) Namespace() string { return "evm" }
 
-	standalone.BindWithEnvVar(f.Lookup("evm-http-url"))
-	standalone.BindWithEnvVar(f.Lookup("evm-ws-url"))
-	standalone.BindWithEnvVar(f.Lookup("evm-chain-id"))
+func (d *dependency) AddCommands(cmd *cobra.Command) {
+	d.cfg = defaultConfig
+	opts := flags.DefaultTOMLOptions("CRE", "CL")
+	opts.Namespace = d.Namespace()
+	if err := flags.RegisterCommandFlags(cmd, &d.cfg, opts); err != nil {
+		panic(err)
+	}
 }
 
 func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (evmclient.Client, error) {
-	if len(d.httpURLs) == 0 {
-		return nil, errors.New("at least one --evm-http-url is required")
-	}
-	if len(d.wsURLs) > 0 && len(d.wsURLs) != len(d.httpURLs) {
-		return nil, fmt.Errorf("--evm-ws-url count (%d) must match --evm-http-url count (%d) when provided", len(d.wsURLs), len(d.httpURLs))
+	if len(d.cfg.WSURLs) > 0 && len(d.cfg.WSURLs) != len(d.cfg.HTTPURLs) {
+		return nil, fmt.Errorf("--evm.ws-url count (%d) must match --evm.http-url count (%d) when provided", len(d.cfg.WSURLs), len(d.cfg.HTTPURLs))
 	}
 
-	chainID, ok := new(big.Int).SetString(d.chainID, 10)
+	chainID, ok := new(big.Int).SetString(d.cfg.ChainID, 10)
 	if !ok {
-		return nil, fmt.Errorf("invalid --evm-chain-id %q", d.chainID)
+		return nil, fmt.Errorf("invalid --evm.chain-id %q", d.cfg.ChainID)
 	}
 
-	nodeCfgs := make([]evmclient.NodeConfig, len(d.httpURLs))
-	for i := range d.httpURLs {
+	nodeCfgs := make([]evmclient.NodeConfig, len(d.cfg.HTTPURLs))
+	for i := range d.cfg.HTTPURLs {
 		name := fmt.Sprintf("node-%d", i)
 		order := int32(1)
 		sendOnly := false
 		loadBalanced := false
 		cfg := evmclient.NodeConfig{
 			Name:              &name,
-			HTTPURL:           &d.httpURLs[i],
+			HTTPURL:           &d.cfg.HTTPURLs[i],
 			Order:             &order,
 			SendOnly:          &sendOnly,
 			IsLoadBalancedRPC: &loadBalanced,
 		}
-		if len(d.wsURLs) > 0 {
-			cfg.WSURL = &d.wsURLs[i]
+		if len(d.cfg.WSURLs) > 0 {
+			cfg.WSURL = &d.cfg.WSURLs[i]
 		}
 		nodeCfgs[i] = cfg
 	}
@@ -131,8 +125,8 @@ func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (evmcli
 	pollSuccessThreshold := defaultPollSuccessThreshold
 	syncThreshold := defaultSyncThreshold
 	nodeIsSyncingEnabled := false
-	finalityDepth := d.finalityDepth
-	finalityTagEnabled := d.finalityTagEnabled
+	finalityDepth := d.cfg.FinalityDepth
+	finalityTagEnabled := d.cfg.FinalityTagEnabled
 	safeTagSupported := false
 	finalizedBlockOffset := defaultFinalizedBlockOffset
 	enforceRepeatableRead := true
@@ -141,11 +135,11 @@ func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (evmcli
 	chainCfg, nodePool, nodes, err := evmclient.NewClientConfigs(
 		&selectionMode,
 		defaultLeaseDuration,
-		d.chainType,
+		d.cfg.ChainType,
 		nodeCfgs,
 		&pollFailureThreshold,
 		&pollSuccessThreshold,
-		d.pollInterval,
+		d.cfg.PollInterval.Duration(),
 		&syncThreshold,
 		&nodeIsSyncingEnabled,
 		defaultNoNewHeadsThreshold,
@@ -167,7 +161,7 @@ func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (evmcli
 
 	// clientErrors is nil: it only feeds ClassifySendError on the transaction send
 	// path, and this client is read-only.
-	cl, err := evmclient.NewEvmClient(nodePool, chainCfg, nil, d.lggr, chainID, nodes, chaintype.ChainType(d.chainType))
+	cl, err := evmclient.NewEvmClient(nodePool, chainCfg, nil, d.lggr, chainID, nodes, chaintype.ChainType(d.cfg.ChainType))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create evm client: %w", err)
 	}

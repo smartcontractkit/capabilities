@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/jmoiron/sqlx"
 
@@ -14,10 +13,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/models"
 )
-
-// keystorePasswordEnvVar is the keystore password used to decrypt the node's
-// key ring. This process shares the node's DB (CL_DATABASE_URL) and password.
-const keystorePasswordEnvVar = "CL_PASSWORD_KEYSTORE"
 
 // loadPeerKeyring loads the P2P key from the node's keystore so this process
 // uses the SAME peer identity as the node it fronts (other DON members expect
@@ -27,15 +22,18 @@ const keystorePasswordEnvVar = "CL_PASSWORD_KEYSTORE"
 // deliberately small copy of core's keyManager.Unlock using only
 // chainlink-common packages, so this binary needn't import chainlink core.
 //
+// password is the node's keystore password: this process shares the node's
+// database and therefore its keystore password.
+//
 // TODO: drop this once the keystore is migrated to chainlink-common's
 // keystore.Keystore + pgstore (as chainlink-ccv already uses), after which we
 // can LoadKeystore from the shared table directly.
-func loadPeerKeyring(ctx context.Context, ds *sqlx.DB) (*peerKeyring, error) {
+func loadPeerKeyring(ctx context.Context, ds *sqlx.DB, password string) (*peerKeyring, error) {
 	var encrypted []byte
 	if err := ds.GetContext(ctx, &encrypted, "SELECT encrypted_keys FROM encrypted_key_rings LIMIT 1"); err != nil {
 		return nil, fmt.Errorf("failed to read node key ring: %w", err)
 	}
-	kr, err := models.EncryptedKeyRing{EncryptedKeys: encrypted}.Decrypt(os.Getenv(keystorePasswordEnvVar))
+	kr, err := models.EncryptedKeyRing{EncryptedKeys: encrypted}.Decrypt(password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt node key ring: %w", err)
 	}
