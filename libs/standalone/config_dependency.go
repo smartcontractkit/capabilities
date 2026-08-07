@@ -26,6 +26,9 @@ func (c *configDependency[T]) Get(_ context.Context, _ CommonConfig) (T, error) 
 	return c.parse(content)
 }
 
+// Namespace is empty: --config-file is a process-wide setting, not one dependency's.
+func (c *configDependency[T]) Namespace() string { return "" }
+
 func (c *configDependency[T]) AddCommands(command *cobra.Command) {
 	command.PersistentFlags().StringVar(&c.file, "config-file", "", "specifies the config file to load from")
 }

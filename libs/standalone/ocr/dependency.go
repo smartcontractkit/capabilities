@@ -5,20 +5,19 @@
 // It has two mutually exclusive modes, mirroring core's SingletonPeerWrapper:
 //
 //   - create: build a local libocr peer (networking.NewPeer) and expose its
-//     factories. Requires --listen-addresses and uses the node's P2P identity
+//     factories. Requires --ocr.listen-addresses and uses the node's P2P identity
 //     and OCR discoverer table from the database.
 //   - proxy:  delegate rage networking to an out-of-process proxy at
-//     --proxy-address, exposing proxy-client-backed factories instead of a
+//     --ocr.proxy-address, exposing proxy-client-backed factories instead of a
 //     local peer.
 //
 // The two modes are wired as a cobra "one of" set: exactly one of
-// --listen-addresses / --proxy-address may (and must) be provided.
+// --ocr.listen-addresses / --ocr.proxy-address may (and must) be provided.
 package ocr
 
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -32,6 +31,8 @@ import (
 	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
+	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	commonocr "github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
@@ -78,47 +79,65 @@ func Dependency(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql
 	return standalone.OnceBootstrapper[*Factories](&dependency{lggr: lggr, db: db, discovererTable: discovererTable})
 }
 
+// Config is the libocr networking configuration.
+//
+// The two modes are expressed as validator tags rather than cobra's
+// MarkFlagsMutuallyExclusive/MarkFlagsOneRequired: those only inspect whether a flag was
+// literally typed on the command line, so they would reject a mode that was selected via a
+// config file or env var. required_without/excluded_with are checked against the decoded
+// values instead, so exactly-one-of holds no matter which source supplied it.
+type Config struct {
+	// create-mode config
+	ListenAddresses   []string        `toml:"listen-addresses" usage:"rage p2p V2 listen addresses (host:port); creates a local peer" validate:"required_without=ProxyAddress,excluded_with=ProxyAddress" example:"['127.0.0.1:1234']"`
+	AnnounceAddresses []string        `toml:"announce-addresses" usage:"rage p2p V2 announce addresses (host:port); defaults to the listen addresses" validate:"excluded_without=ListenAddresses"`
+	DeltaReconcile    config.Duration `toml:"delta-reconcile" usage:"rage p2p V2 delta reconcile interval"`
+	DeltaDial         config.Duration `toml:"delta-dial" usage:"rage p2p V2 minimum interval between dial attempts"`
+
+	IncomingBufferSize int `toml:"incoming-buffer-size" usage:"per-remote incoming message buffer size"`
+	OutgoingBufferSize int `toml:"outgoing-buffer-size" usage:"per-remote outgoing message buffer size"`
+
+	// KeystorePassword unlocks the node's key ring, which is where the shared P2P identity
+	// comes from. Both modes need it: the peer ID is what other DON members expect at this
+	// address, whether this process runs the peer itself or delegates to a proxy. Typed as a
+	// SecretString so it redacts itself in logs, docs and the example config.
+	KeystorePassword config.SecretString `toml:"keystore-password" usage:"password for the node keystore holding the shared P2P identity" validate:"required"`
+
+	// proxy-mode config
+	ProxyAddress string `toml:"proxy-address" usage:"delegate rage networking to a proxy at this gRPC address instead of creating a local peer" validate:"excluded_with=ListenAddresses"`
+}
+
+var defaultConfig = Config{
+	DeltaReconcile:     *config.MustNewDuration(time.Minute),
+	DeltaDial:          *config.MustNewDuration(5 * time.Second),
+	IncomingBufferSize: 100,
+	OutgoingBufferSize: 100,
+}
+
 type dependency struct {
 	lggr            commonlogger.Logger
 	db              standalone.BootstrapDependency[*sql.DB]
 	discovererTable string
 
-	// create-mode config
-	listenAddresses    []string
-	announceAddresses  []string
-	deltaReconcile     time.Duration
-	deltaDial          time.Duration
-	incomingBufferSize int
-	outgoingBufferSize int
-
-	// proxy-mode config
-	proxyAddress string
+	cfg Config
 }
 
 var _ standalone.BootstrapDependency[*Factories] = (*dependency)(nil)
 
+// Namespace groups the libocr networking settings under ocr.* (--ocr.listen-addresses,
+// CRE_OCR_LISTEN_ADDRESSES).
+func (d *dependency) Namespace() string { return "ocr" }
+
 func (d *dependency) AddCommands(cmd *cobra.Command) {
 	// The database is a create/proxy-shared input (P2P identity, discoverer
-	// table), so surface its flags too.
+	// table), so surface its flags too - under its own namespace.
 	d.db.AddCommands(cmd)
 
-	f := cmd.PersistentFlags()
-	// create-mode flags
-	f.StringSliceVar(&d.listenAddresses, "listen-addresses", nil, "rage p2p V2 listen addresses (host:port); creates a local peer")
-	f.StringSliceVar(&d.announceAddresses, "announce-addresses", nil, "rage p2p V2 announce addresses (host:port); defaults to the listen addresses")
-	f.DurationVar(&d.deltaReconcile, "delta-reconcile", time.Minute, "rage p2p V2 delta reconcile interval")
-	f.DurationVar(&d.deltaDial, "delta-dial", 5*time.Second, "rage p2p V2 minimum interval between dial attempts")
-	f.IntVar(&d.incomingBufferSize, "incoming-buffer-size", 100, "per-remote incoming message buffer size")
-	f.IntVar(&d.outgoingBufferSize, "outgoing-buffer-size", 100, "per-remote outgoing message buffer size")
-	// proxy-mode flag
-	f.StringVar(&d.proxyAddress, "proxy-address", "", "delegate rage networking to a proxy at this gRPC address instead of creating a local peer")
-
-	// Exactly one mode: --listen-addresses (create) xor --proxy-address (proxy).
-	cmd.MarkFlagsMutuallyExclusive("listen-addresses", "proxy-address")
-	cmd.MarkFlagsOneRequired("listen-addresses", "proxy-address")
-	// announce-addresses is optional in create mode (libocr defaults it to the
-	// listen addresses) but is meaningless in proxy mode.
-	cmd.MarkFlagsMutuallyExclusive("announce-addresses", "proxy-address")
+	d.cfg = defaultConfig
+	opts := flags.DefaultTOMLOptions("CRE", "CL")
+	opts.Namespace = d.Namespace()
+	if err := flags.RegisterCommandFlags(cmd, &d.cfg, opts); err != nil {
+		panic(err)
+	}
 }
 
 func (d *dependency) Get(ctx context.Context, cc standalone.CommonConfig) (*Factories, error) {
@@ -130,13 +149,13 @@ func (d *dependency) Get(ctx context.Context, cc standalone.CommonConfig) (*Fact
 
 	// Both modes use the node's own P2P identity so this process is the same
 	// peer as the node it fronts.
-	keyring, err := loadPeerKeyring(ctx, ds)
+	keyring, err := loadPeerKeyring(ctx, ds, string(d.cfg.KeystorePassword))
 	if err != nil {
 		return nil, err
 	}
 	peerID := ragetypes.PeerIDFromKeyring(keyring)
 
-	if d.proxyAddress != "" {
+	if d.cfg.ProxyAddress != "" {
 		return d.proxyFactories(peerID)
 	}
 	return d.localFactories(ds, keyring, peerID)
@@ -144,29 +163,25 @@ func (d *dependency) Get(ctx context.Context, cc standalone.CommonConfig) (*Fact
 
 // localFactories builds a real libocr peer and exposes its factories.
 func (d *dependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, peerID ragetypes.PeerID) (*Factories, error) {
-	if len(d.listenAddresses) == 0 {
-		return nil, errors.New("at least one --listen-addresses is required")
-	}
-
 	discovererDB := commonocr.NewDiscovererDatabase(ds, peerID.String(), d.discovererTable)
 
 	d.lggr.Infow("Creating local p2p peer",
 		"peerID", peerID.String(),
-		"listenAddresses", d.listenAddresses,
-		"announceAddresses", d.announceAddresses,
+		"listenAddresses", d.cfg.ListenAddresses,
+		"announceAddresses", d.cfg.AnnounceAddresses,
 	)
 
 	peer, err := networking.NewPeer(networking.PeerConfig{
 		PeerKeyring:          keyring,
 		Logger:               commonlogger.NewOCRWrapper(d.lggr, false, func(string) {}),
-		V2ListenAddresses:    d.listenAddresses,
-		V2AnnounceAddresses:  d.announceAddresses,
-		V2DeltaReconcile:     d.deltaReconcile,
-		V2DeltaDial:          d.deltaDial,
+		V2ListenAddresses:    d.cfg.ListenAddresses,
+		V2AnnounceAddresses:  d.cfg.AnnounceAddresses,
+		V2DeltaReconcile:     d.cfg.DeltaReconcile.Duration(),
+		V2DeltaDial:          d.cfg.DeltaDial.Duration(),
 		V2DiscovererDatabase: discovererDB,
 		V2EndpointConfig: networking.EndpointConfigV2{
-			IncomingMessageBufferSize: d.incomingBufferSize,
-			OutgoingMessageBufferSize: d.outgoingBufferSize,
+			IncomingMessageBufferSize: d.cfg.IncomingBufferSize,
+			OutgoingMessageBufferSize: d.cfg.OutgoingBufferSize,
 		},
 		MetricsRegisterer:            prometheus.DefaultRegisterer,
 		LatencyMetricsServiceConfigs: rageping.DefaultConfigs(),
@@ -186,26 +201,26 @@ func (d *dependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, 
 
 // proxyFactories delegates rage networking to an out-of-process proxy: no local
 // peer is created; the factories are backed by proxy clients connected to
-// d.proxyAddress. The node's raw peer ID is passed to the endpoint factories,
+// d.cfg.ProxyAddress. The node's raw peer ID is passed to the endpoint factories,
 // as libocr compares it against the peer IDs in the OCR config.
 func (d *dependency) proxyFactories(peerID ragetypes.PeerID) (*Factories, error) {
-	endpointFactory, err := creproxy.NewProxyEndpointFactory(peerID.String(), d.proxyAddress)
+	endpointFactory, err := creproxy.NewProxyEndpointFactory(peerID.String(), d.cfg.ProxyAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create proxy OCR endpoint factory: %w", err)
 	}
-	endpoint2Factory, err := creproxy.NewProxyEndpoint2Factory(peerID.String(), d.proxyAddress)
+	endpoint2Factory, err := creproxy.NewProxyEndpoint2Factory(peerID.String(), d.cfg.ProxyAddress)
 	if err != nil {
 		_ = endpointFactory.Close()
 		return nil, fmt.Errorf("failed to create proxy OCR3.1 endpoint factory: %w", err)
 	}
-	pgFactory, err := creproxy.NewProxyPeerGroupFactory(d.proxyAddress)
+	pgFactory, err := creproxy.NewProxyPeerGroupFactory(d.cfg.ProxyAddress)
 	if err != nil {
 		_ = endpointFactory.Close()
 		_ = endpoint2Factory.Close()
 		return nil, fmt.Errorf("failed to create proxy peer group factory: %w", err)
 	}
 
-	d.lggr.Infow("Delegating rage networking to proxy", "proxyAddress", d.proxyAddress, "peerID", peerID.String())
+	d.lggr.Infow("Delegating rage networking to proxy", "proxyAddress", d.cfg.ProxyAddress, "peerID", peerID.String())
 
 	return &Factories{
 		OCR2Endpoint:   endpointFactory,
