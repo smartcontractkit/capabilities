@@ -77,7 +77,7 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		factories standalone.Dependency[*ocr.Factories],
 		evmClient standalone.Dependency[evmclient.Client],
 	) []services.Service {
-		regSvc := newRegistryService(cfg.RegistryAddress, cfg.RegistrySyncInterval.Duration(),
+		regSvc := newRegistryService(cfg.CapabilitiesRegistryAddress, cfg.CapabilitiesRegistrySyncInterval.Duration(),
 			scfg.Logger.Named("capabilities registry"), evmClient, factories)
 		// The registry attaches to the proxy's gRPC server, so core reaches both
 		// over the single --proxy-listen-address it already configures.

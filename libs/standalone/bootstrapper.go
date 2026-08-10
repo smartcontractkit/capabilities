@@ -280,7 +280,7 @@ func underPluginHost() bool {
 type CommonConfig struct {
 	// Kept out of the example config: the example shows a real run, and --fake selects a
 	// different set of dependencies than the ones it illustrates.
-	Fake bool `toml:"fake" usage:"use fake dependencies instead of real ones" flagdocs:"noexample"`
+	Fake bool `usage:"use fake dependencies instead of real ones" flagdocs:"noexample"`
 }
 
 type Dependency[T any] interface {
