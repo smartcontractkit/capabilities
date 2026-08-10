@@ -107,11 +107,9 @@ func startPollingAsync(
 	})
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
-	}()
+	})
 	t.Cleanup(wg.Wait)
 }
 
@@ -653,7 +651,7 @@ func TestStartPolling(t *testing.T) {
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		receivedLogs := make([]*solanacappb.Log, 0)
-		for i := 0; i < len(expectedLogs); i++ {
+		for range expectedLogs {
 			select {
 			case response := <-logCh:
 				receivedLogs = append(receivedLogs, response.Trigger)
