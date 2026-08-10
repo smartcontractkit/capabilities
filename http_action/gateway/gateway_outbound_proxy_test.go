@@ -112,6 +112,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 
 			c := &gatewayOutboundProxy{
 				gatewayConnector: mockConnector,
+				metrics:          newMetrics(t),
 			}
 
 			ctx := tc.ctxSetup()
@@ -546,6 +547,7 @@ func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {
 
 		proxy := &gatewayOutboundProxy{
 			gatewayConnector: mockConnector,
+			metrics:          newMetrics(t),
 			gatewayConnectionConfig: common.GatewayConnectionConfig{
 				InitialIntervalMs: 50,
 				MaxElapsedTimeMs:  1000,
