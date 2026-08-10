@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -86,7 +87,12 @@ func NewBootstrapper(root *cobra.Command, opts ...Option) *Bootstrapper {
 		config:   &StandaloneConfig{Logger: slggr, BeholderClient: beholderClient},
 		profiler: profiler,
 	}
-	root.PersistentFlags().BoolVar(&bs.commonConfig.Fake, "fake", false, "use fake dependencies instead of real ones")
+	// Registered through pkg/config/flags like every other config struct, so --fake is
+	// documented alongside the settings it interacts with rather than being invisible to the
+	// generated docs. It stays at the top level: it is process-wide, not one dependency's.
+	if err := flags.RegisterCommandFlags(root, &bs.commonConfig, flags.DefaultTOMLOptions("CRE", "CL")); err != nil {
+		slggr.Fatalf("Failed to register common flags: %s", err)
+	}
 	return bs
 }
 
@@ -251,7 +257,9 @@ func underPluginHost() bool {
 }
 
 type CommonConfig struct {
-	Fake bool
+	// Kept out of the example config: the example shows a real run, and --fake selects a
+	// different set of dependencies than the ones it illustrates.
+	Fake bool `toml:"fake" usage:"use fake dependencies instead of real ones" flagdocs:"noexample"`
 }
 
 type Dependency[T any] interface {
@@ -260,6 +268,12 @@ type Dependency[T any] interface {
 
 type BootstrapCommand interface {
 	AddCommands(*cobra.Command)
+
+	// Namespace roots this dependency's configuration, so its settings group together and
+	// same-named settings from different dependencies don't collide - "database" gives
+	// --database.url, the key database.url and the env var CRE_DATABASE_URL. Return "" to
+	// keep the settings at the top level.
+	Namespace() string
 }
 
 type BootstrapDependency[T any] interface {
@@ -314,3 +328,5 @@ func (o *onceBootstrapper[T]) Get(ctx context.Context, c CommonConfig) (T, error
 func (o *onceBootstrapper[T]) AddCommands(cmd *cobra.Command) {
 	o.bd.AddCommands(cmd)
 }
+
+func (o *onceBootstrapper[T]) Namespace() string { return o.bd.Namespace() }
