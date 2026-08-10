@@ -6,24 +6,28 @@ import (
 	"fmt"
 	"io/fs"
 
-	// Register the pgx database/sql driver under the name "pgx".
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/smartcontractkit/chainlink-common/pkg/sqlutil"
 
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 )
 
-// Config is the database configuration. Its two settings are related to --fake, which this
-// struct does not own:
+// Config is the database configuration: the connection settings that belong to the database
+// itself (sqlutil.Config, which also knows how to open it), plus the one setting that only
+// exists because this framework has a --fake mode.
+//
+// Both settings are related to --fake, which this struct does not own:
 //
 //   - real-db only means something in fake mode, so it is rejected without --fake.
-//   - database-url is needed whenever a real database is actually used: always in normal mode,
-//     and in fake mode only when --real-db asks for one.
+//   - url is needed whenever a real database is actually used: always in normal mode, and in
+//     fake mode only when --real-db asks for one.
 //
 // Neither rule is expressible as a `validate` tag (both reference --fake), so neither shows up
 // in the generated docs on its own - the usage text spells them out so the docs still explain
 // when each setting applies.
 type Config struct {
-	URL string `toml:"url" usage:"database url; required unless running with --fake and without --real-db" example:"'postgresql://user:password@localhost:5432/chainlink?sslmode=disable'"`
+	// Embedded as a pointer so this struct adds to the shared settings rather than copying
+	// them; inline so its fields sit alongside real-db under database.* instead of nesting.
+	*sqlutil.Config `toml:",inline"`
 
 	// Kept out of the example config: the example shows a normal run against a real database,
 	// where this setting does not apply. It is still documented.
@@ -31,7 +35,13 @@ type Config struct {
 }
 
 func Dependency(migrationsFS fs.FS, migrationTable string) standalone.BootstrapDependency[*sql.DB] {
-	return standalone.OnceBootstrapper[*sql.DB](&dependency{migrationsFS: migrationsFS, migrationTable: migrationTable})
+	return standalone.OnceBootstrapper[*sql.DB](&dependency{
+		migrationsFS:   migrationsFS,
+		migrationTable: migrationTable,
+		// The embedded pointer is non-nil so the shared settings are bound and defaulted from
+		// here, the same way every other dependency starts from its config's defaults.
+		cfg: Config{Config: &sqlutil.Config{}},
+	})
 }
 
 type dependency struct {
@@ -59,7 +69,7 @@ func (d *dependency) Get(ctx context.Context, commonConfig standalone.CommonConf
 	}
 
 	var err error
-	d.db, err = sql.Open("pgx", d.cfg.URL)
+	d.db, err = sqlutil.OpenDB(*d.cfg.Config)
 	if err != nil {
 		return nil, err
 	}

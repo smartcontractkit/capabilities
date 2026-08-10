@@ -7,8 +7,6 @@
 proxy-listen-address = ':50051'
 capabilities-registry-address = '0xYourRegistryAddress'
 capabilities-registry-sync-interval = '12s'
-[database]
-url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable'
 [ocr]
 listen-addresses = ['127.0.0.1:1234']
 delta-reconcile = '1m0s'
@@ -16,6 +14,8 @@ delta-dial = '5s'
 incoming-buffer-size = 100
 outgoing-buffer-size = 100
 keystore-password = 'xxxxx'
+[database]
+url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable'
 [evm]
 http-url = ['https://rpc.example.com']
 chain-id = '1'
@@ -61,25 +61,6 @@ fake = false # Docs only
 ```
 fake use fake dependencies instead of real ones
 
-## database
-```toml
-[database]
-url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
-```
-
-
-### url
-```toml
-url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
-```
-url database url; required unless running with --fake and without --real-db
-
-### real-db
-```toml
-real-db = false # Docs only
-```
-real-db use a real database even though --fake is set; requires --fake, and a url to point at
-
 ## ocr
 ```toml
 [ocr]
@@ -90,7 +71,7 @@ delta-dial = '5s' # Default
 incoming-buffer-size = 100 # Default
 outgoing-buffer-size = 100 # Default
 keystore-password = 'xxxxx' # Example
-proxy-address = '' # Default
+proxy-address = '' # Example
 ```
 
 
@@ -98,7 +79,7 @@ proxy-address = '' # Default
 ```toml
 listen-addresses = ['127.0.0.1:1234'] # Example
 ```
-listen-addresses rage p2p V2 listen addresses (host:port); creates a local peer (required unless proxy-address is set; must not be set when proxy-address is set)
+listen-addresses rage p2p V2 listen addresses (host:port); creates a local peer
 
 ### announce-addresses
 ```toml
@@ -138,9 +119,28 @@ keystore-password password for the node keystore holding the shared P2P identity
 
 ### proxy-address
 ```toml
-proxy-address = '' # Default
+proxy-address = '' # Example
 ```
-proxy-address delegate rage networking to a proxy at this gRPC address instead of creating a local peer (must not be set when listen-addresses is set)
+proxy-address delegate rage networking to a proxy at this gRPC address instead of creating a local peer (required unless listen-addresses is set; must not be set when listen-addresses is set)
+
+## database
+```toml
+[database]
+url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
+```
+
+
+### url
+```toml
+url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
+```
+url database url
+
+### real-db
+```toml
+real-db = false # Docs only
+```
+real-db use a real database even though --fake is set; requires --fake, and a url to point at
 
 ## evm
 ```toml

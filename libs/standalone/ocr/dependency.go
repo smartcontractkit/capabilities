@@ -11,8 +11,9 @@
 //     --ocr.proxy-address, exposing proxy-client-backed factories instead of a
 //     local peer.
 //
-// The two modes are wired as a cobra "one of" set: exactly one of
-// --ocr.listen-addresses / --ocr.proxy-address may (and must) be provided.
+// Exactly one of --ocr.listen-addresses / --ocr.proxy-address may (and must) be
+// provided; the peer's own settings come from chainlink-common's ocrcommon.Config,
+// which this package's Config embeds and adds proxy mode to.
 package ocr
 
 import (
@@ -32,7 +33,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
-	commonocr "github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
+	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 
 	"github.com/smartcontractkit/capabilities/libs/standalone"
@@ -74,41 +75,41 @@ func (f *Factories) Close() error {
 func Dependency(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql.DB], discovererTable string) standalone.BootstrapDependency[*Factories] {
 	// Wrap in OnceBootstrapper so Get (which creates the peer or proxy clients)
 	// runs at most once even if several services resolve this dependency.
-	return standalone.OnceBootstrapper[*Factories](&dependency{lggr: lggr, db: db, discovererTable: discovererTable, cfg: defaultConfig})
+	return standalone.OnceBootstrapper[*Factories](&dependency{lggr: lggr, db: db, discovererTable: discovererTable, cfg: defaultConfig()})
 }
 
-// Config is the libocr networking configuration.
+// Config is the libocr networking configuration: the settings of the local peer itself
+// (ocrcommon.Config, shared with anything else that runs one), plus proxy mode, which is this
+// framework's own alternative to running that peer.
 //
 // The two modes are expressed as validator tags rather than cobra's
 // MarkFlagsMutuallyExclusive/MarkFlagsOneRequired: those only inspect whether a flag was
 // literally typed on the command line, so they would reject a mode that was selected via a
 // config file or env var. required_without/excluded_with are checked against the decoded
-// values instead, so exactly-one-of holds no matter which source supplied it.
+// values instead, so exactly-one-of holds no matter which source supplied it. Both rules sit on
+// ProxyAddress, the field this struct owns: a rule on the embedded ListenAddresses could not
+// name a field outside its own struct.
 type Config struct {
-	// create-mode config
-	ListenAddresses   []string        `toml:"listen-addresses" usage:"rage p2p V2 listen addresses (host:port); creates a local peer" validate:"required_without=ProxyAddress,excluded_with=ProxyAddress" example:"['127.0.0.1:1234']"`
-	AnnounceAddresses []string        `toml:"announce-addresses" usage:"rage p2p V2 announce addresses (host:port); defaults to the listen addresses" validate:"excluded_without=ListenAddresses"`
-	DeltaReconcile    config.Duration `toml:"delta-reconcile" usage:"rage p2p V2 delta reconcile interval"`
-	DeltaDial         config.Duration `toml:"delta-dial" usage:"rage p2p V2 minimum interval between dial attempts"`
-
-	IncomingBufferSize int `toml:"incoming-buffer-size" usage:"per-remote incoming message buffer size"`
-	OutgoingBufferSize int `toml:"outgoing-buffer-size" usage:"per-remote outgoing message buffer size"`
-
-	// KeystorePassword unlocks the node's key ring, which is where the shared P2P identity
-	// comes from. Both modes need it: the peer ID is what other DON members expect at this
-	// address, whether this process runs the peer itself or delegates to a proxy. Typed as a
-	// SecretString so it redacts itself in logs, docs and the example config.
-	KeystorePassword config.SecretString `toml:"keystore-password" usage:"password for the node keystore holding the shared P2P identity" validate:"required"`
+	// Embedded as a pointer so this struct adds proxy mode to the shared peer settings rather
+	// than copying them; inline so its fields sit alongside proxy-address under ocr.* instead
+	// of nesting.
+	*ocrcommon.Config `toml:",inline"`
 
 	// proxy-mode config
-	ProxyAddress string `toml:"proxy-address" usage:"delegate rage networking to a proxy at this gRPC address instead of creating a local peer" validate:"excluded_with=ListenAddresses"`
+	ProxyAddress string `toml:"proxy-address" usage:"delegate rage networking to a proxy at this gRPC address instead of creating a local peer" validate:"required_without=ListenAddresses,excluded_with=ListenAddresses"`
 }
 
-var defaultConfig = Config{
-	DeltaReconcile:     *config.MustNewDuration(time.Minute),
-	DeltaDial:          *config.MustNewDuration(5 * time.Second),
-	IncomingBufferSize: 100,
-	OutgoingBufferSize: 100,
+// defaultConfig is the instance the flags are bound to and decoded into, so an unset setting
+// keeps the value it is given here. The embedded pointer is fresh per call rather than a shared
+// package-level value, so two dependencies can never decode into the same peer settings. Proxy
+// mode has no default: an unset proxy address is what selects a local peer.
+func defaultConfig() Config {
+	return Config{Config: &ocrcommon.Config{
+		DeltaReconcile:     *config.MustNewDuration(time.Minute),
+		DeltaDial:          *config.MustNewDuration(5 * time.Second),
+		IncomingBufferSize: 100,
+		OutgoingBufferSize: 100,
+	}}
 }
 
 type dependency struct {
@@ -156,7 +157,7 @@ func (d *dependency) Get(ctx context.Context, cc standalone.CommonConfig) (*Fact
 
 // localFactories builds a real libocr peer and exposes its factories.
 func (d *dependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, peerID ragetypes.PeerID) (*Factories, error) {
-	discovererDB := commonocr.NewDiscovererDatabase(ds, peerID.String(), d.discovererTable)
+	discovererDB := ocrcommon.NewDiscovererDatabase(ds, peerID.String(), d.discovererTable)
 
 	d.lggr.Infow("Creating local p2p peer",
 		"peerID", peerID.String(),
