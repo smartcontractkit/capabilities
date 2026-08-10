@@ -20,10 +20,10 @@ type observation[keyT comparable, valueT any] struct {
 }
 
 // mode - returns most frequent value and its support count, if total number of observations is at least (N+F)/2+1 and
-// number of values with identical keys is at least F+1. Returns error, otherwise.
+// number of values with identical keys is at least minMatching. Returns error, otherwise.
 // If multiple values have identical number of observations, prefers value reported by oracle with the lowest oracleID.
 // The returned int is the count of nodes that observed the winning value (i.e. the number of identical responses).
-func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commontypes.OracleID, *observation[keyT, valueT]]) (valueT, int, error) {
+func mode[keyT comparable, valueT any](N, F, minMatching int, observations iter.Seq2[commontypes.OracleID, *observation[keyT, valueT]]) (valueT, int, error) {
 	counters := make(map[keyT]*counter[valueT])
 	var totalNum int
 	for nodeID, nodeObservation := range observations {
@@ -66,9 +66,9 @@ func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commonty
 		return zero, 0, errors.New("unexpected state: highestCounter is nil")
 	}
 
-	if highestCounter.count < F+1 {
+	if highestCounter.count < minMatching {
 		var zero valueT
-		return zero, highestCounter.count, fmt.Errorf("insufficient number of identical observations: expected %d, got %d", F+1, highestCounter.count)
+		return zero, highestCounter.count, fmt.Errorf("insufficient number of identical observations: expected %d, got %d", minMatching, highestCounter.count)
 	}
 
 	return highestCounter.value, highestCounter.count, nil

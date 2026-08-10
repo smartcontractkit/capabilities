@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/doyensec/safeurl"
 	"github.com/google/uuid"
@@ -116,10 +117,29 @@ func toResponseHeaders(header http.Header) (map[string]*httpcap.HeaderValues, ma
 		if len(v) == 0 {
 			continue
 		}
-		multiHeaders[k] = &httpcap.HeaderValues{Values: slices.Clone(v)}
-		headers[k] = strings.Join(v, ",") // Join via "," for backwards compatibility.
+		// HTTP header names and values may contain arbitrary bytes, but the proto
+		// HeaderValues fields are strings and must be valid UTF-8 to be marshaled
+		// over gRPC. Sanitize any invalid UTF-8 to avoid marshaling failures.
+		key := SanitizeUTF8(k)
+		sanitized := make([]string, len(v))
+		for i, val := range v {
+			sanitized[i] = SanitizeUTF8(val)
+		}
+		multiHeaders[key] = &httpcap.HeaderValues{Values: sanitized}
+		headers[key] = strings.Join(sanitized, ",") // Join via "," for backwards compatibility.
 	}
 	return multiHeaders, headers
+}
+
+// SanitizeUTF8 returns s unchanged if it is already valid UTF-8, otherwise it
+// replaces every invalid byte with the Unicode replacement character (U+FFFD).
+// HTTP header names/values may contain arbitrary bytes, but proto string fields
+// must be valid UTF-8 to marshal over gRPC.
+func SanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, "�")
 }
 
 func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error) {
