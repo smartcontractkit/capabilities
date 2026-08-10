@@ -18,12 +18,11 @@ func Run1[T0 any](
 	bootDep0 BootstrapDependency[T0],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0)
-	})
+	}, bootDep0)
 }
 
 // Run2 bootstraps the services built from 2 dependencies.
@@ -37,15 +36,13 @@ func Run2[T0 any, T1 any](
 	bootDep1 BootstrapDependency[T1],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1)
-	})
+	}, bootDep0, bootDep1)
 }
 
 // Run3 bootstraps the services built from 3 dependencies.
@@ -60,18 +57,15 @@ func Run3[T0 any, T1 any, T2 any](
 	bootDep2 BootstrapDependency[T2],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2)
-	})
+	}, bootDep0, bootDep1, bootDep2)
 }
 
 // Run4 bootstraps the services built from 4 dependencies.
@@ -87,21 +81,17 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 	bootDep3 BootstrapDependency[T3],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
-	bootDep3.AddCommands(bs.root)
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2, dep3)
-	})
+	}, bootDep0, bootDep1, bootDep2, bootDep3)
 }
 
 // Run5 bootstraps the services built from 5 dependencies.
@@ -118,24 +108,19 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	bootDep4 BootstrapDependency[T4],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
-	bootDep3.AddCommands(bs.root)
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
-	bootDep4.AddCommands(bs.root)
 	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4)
-	})
+	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4)
 }
 
 // Run6 bootstraps the services built from 6 dependencies.
@@ -153,27 +138,21 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	bootDep5 BootstrapDependency[T5],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
-	bootDep3.AddCommands(bs.root)
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
-	bootDep4.AddCommands(bs.root)
 	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
 
-	bootDep5.AddCommands(bs.root)
 	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5)
-	})
+	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5)
 }
 
 // Run7 bootstraps the services built from 7 dependencies.
@@ -192,30 +171,23 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	bootDep6 BootstrapDependency[T6],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
-	bootDep3.AddCommands(bs.root)
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
-	bootDep4.AddCommands(bs.root)
 	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
 
-	bootDep5.AddCommands(bs.root)
 	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
 
-	bootDep6.AddCommands(bs.root)
 	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6)
-	})
+	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6)
 }
 
 // Run8 bootstraps the services built from 8 dependencies.
@@ -235,33 +207,25 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	bootDep7 BootstrapDependency[T7],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
-	bootDep3.AddCommands(bs.root)
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
-	bootDep4.AddCommands(bs.root)
 	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
 
-	bootDep5.AddCommands(bs.root)
 	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
 
-	bootDep6.AddCommands(bs.root)
 	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
 
-	bootDep7.AddCommands(bs.root)
 	dep7 := &dependency[T7]{bd: bootDep7, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7)
-	})
+	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7)
 }
 
 // Run9 bootstraps the services built from 9 dependencies.
@@ -282,36 +246,27 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 	bootDep8 BootstrapDependency[T8],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
-	bootDep3.AddCommands(bs.root)
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
-	bootDep4.AddCommands(bs.root)
 	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
 
-	bootDep5.AddCommands(bs.root)
 	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
 
-	bootDep6.AddCommands(bs.root)
 	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
 
-	bootDep7.AddCommands(bs.root)
 	dep7 := &dependency[T7]{bd: bootDep7, bs: bs}
 
-	bootDep8.AddCommands(bs.root)
 	dep8 := &dependency[T8]{bd: bootDep8, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8)
-	})
+	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8)
 }
 
 // Run10 bootstraps the services built from 10 dependencies.
@@ -333,37 +288,27 @@ func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 an
 	bootDep9 BootstrapDependency[T9],
 ) error {
 
-	bootDep0.AddCommands(bs.root)
 	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
 
-	bootDep1.AddCommands(bs.root)
 	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
 
-	bootDep2.AddCommands(bs.root)
 	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
 
-	bootDep3.AddCommands(bs.root)
 	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
 
-	bootDep4.AddCommands(bs.root)
 	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
 
-	bootDep5.AddCommands(bs.root)
 	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
 
-	bootDep6.AddCommands(bs.root)
 	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
 
-	bootDep7.AddCommands(bs.root)
 	dep7 := &dependency[T7]{bd: bootDep7, bs: bs}
 
-	bootDep8.AddCommands(bs.root)
 	dep8 := &dependency[T8]{bd: bootDep8, bs: bs}
 
-	bootDep9.AddCommands(bs.root)
 	dep9 := &dependency[T9]{bd: bootDep9, bs: bs}
 
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8, dep9)
-	})
+	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8, bootDep9)
 }

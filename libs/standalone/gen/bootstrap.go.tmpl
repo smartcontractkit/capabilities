@@ -20,11 +20,10 @@ func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 	{{- end}}
 ) error {
 	{{range RangeNum .}}
-	bootDep{{.}}.AddCommands(bs.root)
 	dep{{.}} :=  &dependency[T{{.}}]{bd: bootDep{{.}}, bs: bs}
 	{{end}}
 	return bs.run(func(ctx context.Context) []services.Service {
 		return fn(ctx, bs.config, {{range RangeNum .}}dep{{.}}, {{end}})
-	})
+	}, {{range RangeNum .}}bootDep{{.}},{{end}})
 }
 {{- end }}

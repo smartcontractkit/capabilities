@@ -140,8 +140,12 @@ func (b *Bootstrapper) Logger() logger.SugaredLogger { return b.config.Logger }
 // web server on that port serving /metrics, /debug/pprof, and /healthz +
 // /readyz (backed by the health checker), then blocks until an interrupt,
 // then closes everything in reverse.
-func (b *Bootstrapper) run(factory func(ctx context.Context) []services.Service) error {
+func (b *Bootstrapper) run(factory func(ctx context.Context) []services.Service, commands ...BootstrapCommand) error {
 	defer b.close()
+
+	if err := b.setupCommands(commands); err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -201,6 +205,23 @@ func (b *Bootstrapper) run(factory func(ctx context.Context) []services.Service)
 	}
 
 	return b.root.Execute()
+}
+
+func (b *Bootstrapper) setupCommands(commands []BootstrapCommand) error {
+	allCommands := make([]BootstrapCommand, 0, len(commands))
+	for _, cmd := range commands {
+		allCommands = append(allCommands, cmd)
+		allCommands = append(allCommands, cmd.Dependencies()...)
+	}
+
+	for _, cmd := range allCommands {
+		opts := flags.DefaultTOMLOptions("CRE", "CL")
+		opts.Namespace = cmd.Namespace()
+		if err := flags.RegisterCommandFlags(b.root, cmd.Config(), opts); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // healthHandler adapts a services.HealthChecker.IsHealthy/IsReady-shaped func into
@@ -267,7 +288,8 @@ type Dependency[T any] interface {
 }
 
 type BootstrapCommand interface {
-	AddCommands(*cobra.Command)
+	Config() any
+	Dependencies() []BootstrapCommand
 
 	// Namespace roots this dependency's configuration, so its settings group together and
 	// same-named settings from different dependencies don't collide - "database" gives
@@ -297,36 +319,27 @@ func (d *dependency[T]) Get(ctx context.Context) (T, error) {
 }
 
 // OnceBootstrapper wraps a BootstrapDependency so that Get is evaluated at most
-// once: the first call resolves the dependency and caches its (value, error),
+// onceGet: the first call resolves the dependency and caches its (value, error),
 // and every subsequent call returns that same result without re-running Get
-// (the ctx and CommonConfig of later calls are ignored). AddCommands is
-// delegated unchanged.
+// (the ctx and CommonConfig of later calls are ignored). Other commands are all delegated
 //
 // BootstrapDependency implementations are shared and may have Get called more
-// than once — e.g. one dependency resolving another, or the same dependency
+// than onceGet — e.g. one dependency resolving another, or the same dependency
 // feeding several services — so a New function should wrap its dependency with
 // OnceBootstrapper before returning it, making repeated Get calls safe and
 // side-effect-free.
 func OnceBootstrapper[T any](bd BootstrapDependency[T]) BootstrapDependency[T] {
-	return &onceBootstrapper[T]{bd: bd}
+	return &onceBootstrapper[T]{BootstrapDependency: bd}
 }
 
 type onceBootstrapper[T any] struct {
-	bd   BootstrapDependency[T]
+	BootstrapDependency[T]
 	once sync.Once
 	val  T
 	err  error
 }
 
 func (o *onceBootstrapper[T]) Get(ctx context.Context, c CommonConfig) (T, error) {
-	o.once.Do(func() {
-		o.val, o.err = o.bd.Get(ctx, c)
-	})
+	o.once.Do(func() { o.val, o.err = o.BootstrapDependency.Get(ctx, c) })
 	return o.val, o.err
 }
-
-func (o *onceBootstrapper[T]) AddCommands(cmd *cobra.Command) {
-	o.bd.AddCommands(cmd)
-}
-
-func (o *onceBootstrapper[T]) Namespace() string { return o.bd.Namespace() }

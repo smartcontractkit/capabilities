@@ -24,7 +24,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/spf13/cobra"
 
 	"github.com/smartcontractkit/libocr/networking"
 	"github.com/smartcontractkit/libocr/networking/rageping"
@@ -32,7 +31,6 @@ import (
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
-	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	commonocr "github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
@@ -76,7 +74,7 @@ func (f *Factories) Close() error {
 func Dependency(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql.DB], discovererTable string) standalone.BootstrapDependency[*Factories] {
 	// Wrap in OnceBootstrapper so Get (which creates the peer or proxy clients)
 	// runs at most once even if several services resolve this dependency.
-	return standalone.OnceBootstrapper[*Factories](&dependency{lggr: lggr, db: db, discovererTable: discovererTable})
+	return standalone.OnceBootstrapper[*Factories](&dependency{lggr: lggr, db: db, discovererTable: discovererTable, cfg: defaultConfig})
 }
 
 // Config is the libocr networking configuration.
@@ -127,17 +125,12 @@ var _ standalone.BootstrapDependency[*Factories] = (*dependency)(nil)
 // CRE_OCR_LISTEN_ADDRESSES).
 func (d *dependency) Namespace() string { return "ocr" }
 
-func (d *dependency) AddCommands(cmd *cobra.Command) {
-	// The database is a create/proxy-shared input (P2P identity, discoverer
-	// table), so surface its flags too - under its own namespace.
-	d.db.AddCommands(cmd)
+func (d *dependency) Config() any {
+	return &d.cfg
+}
 
-	d.cfg = defaultConfig
-	opts := flags.DefaultTOMLOptions("CRE", "CL")
-	opts.Namespace = d.Namespace()
-	if err := flags.RegisterCommandFlags(cmd, &d.cfg, opts); err != nil {
-		panic(err)
-	}
+func (d *dependency) Dependencies() []standalone.BootstrapCommand {
+	return []standalone.BootstrapCommand{d.db}
 }
 
 func (d *dependency) Get(ctx context.Context, cc standalone.CommonConfig) (*Factories, error) {

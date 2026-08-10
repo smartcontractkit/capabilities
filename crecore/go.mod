@@ -291,3 +291,9 @@ require (
 	pgregory.net/rapid v1.1.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace github.com/smartcontractkit/chainlink-common => ../../chainlink-common
+
+replace github.com/smartcontractkit/chainlink-evm => ../../chainlink-evm
+
+replace github.com/smartcontractkit/capabilities/libs => ../libs
