@@ -6,10 +6,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
-	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	evmclient "github.com/smartcontractkit/chainlink-evm/pkg/client"
@@ -47,7 +44,7 @@ const (
 func Dependency(lggr logger.Logger) standalone.BootstrapDependency[evmclient.Client] {
 	// Wrap in OnceBootstrapper so Get (which dials every configured RPC) runs at
 	// most once even if several services resolve this dependency.
-	return standalone.OnceBootstrapper[evmclient.Client](&dependency{lggr: lggr})
+	return standalone.OnceBootstrapper[evmclient.Client](&dependency{lggr: lggr, cfg: defaultConfig})
 }
 
 // Config is the EVM client configuration. At least one http-url is required; WebSocket URLs
@@ -82,13 +79,12 @@ var _ standalone.BootstrapDependency[evmclient.Client] = (*dependency)(nil)
 // Namespace groups the EVM settings under evm.* (--evm.http-url, CRE_EVM_HTTP_URL).
 func (d *dependency) Namespace() string { return "evm" }
 
-func (d *dependency) AddCommands(cmd *cobra.Command) {
-	d.cfg = defaultConfig
-	opts := flags.DefaultTOMLOptions("CRE", "CL")
-	opts.Namespace = d.Namespace()
-	if err := flags.RegisterCommandFlags(cmd, &d.cfg, opts); err != nil {
-		panic(err)
-	}
+func (d *dependency) Config() any {
+	return &d.cfg
+}
+
+func (d *dependency) Dependencies() []standalone.BootstrapCommand {
+	return []standalone.BootstrapCommand{}
 }
 
 func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (evmclient.Client, error) {
