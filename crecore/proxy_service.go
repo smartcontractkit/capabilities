@@ -23,19 +23,19 @@ import (
 // instead.
 type Config struct {
 	// ProxyListenAddress is the address the proxy gRPC server listens on.
-	ProxyListenAddress string `toml:"proxy-listen-address" usage:"address the proxy gRPC server listens on"`
+	ProxyListenAddress string `usage:"address the proxy gRPC server listens on"`
 
-	// RegistryAddress is the on-chain CapabilitiesRegistry (v2) contract address. The registry
+	// CapabilitiesRegistryAddress is the on-chain CapabilitiesRegistry (v2) contract address. The registry
 	// always runs, so this is as required in practice as the registry itself.
-	RegistryAddress string `toml:"capabilities-registry-address" usage:"on-chain CapabilitiesRegistry (v2) contract address" validate:"required" example:"'0xYourRegistryAddress'"`
+	CapabilitiesRegistryAddress string `usage:"on-chain CapabilitiesRegistry (v2) contract address" validate:"required" example:"'0xYourRegistryAddress'"`
 
-	// RegistrySyncInterval is how often the on-chain registry is re-read.
-	RegistrySyncInterval config.Duration `toml:"capabilities-registry-sync-interval" usage:"how often the on-chain registry is re-read"`
+	// CapabilitiesRegistrySyncInterval is how often the on-chain registry is re-read.
+	CapabilitiesRegistrySyncInterval config.Duration `usage:"how often the on-chain registry is re-read"`
 }
 
 var defaultConfig = Config{
-	ProxyListenAddress:   ":50051",
-	RegistrySyncInterval: *config.MustNewDuration(registry.DefaultSyncInterval),
+	ProxyListenAddress:               ":50051",
+	CapabilitiesRegistrySyncInterval: *config.MustNewDuration(registry.DefaultSyncInterval),
 }
 
 // proxyService exposes the libocr rage networking factories over gRPC so that

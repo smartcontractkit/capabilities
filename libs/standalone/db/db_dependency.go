@@ -31,7 +31,7 @@ type Config struct {
 
 	// Kept out of the example config: the example shows a normal run against a real database,
 	// where this setting does not apply. It is still documented.
-	UseRealDBForFake bool `toml:"real-db" usage:"use a real database even though --fake is set; requires --fake, and a url to point at" flagdocs:"noexample"`
+	RealDB bool `usage:"use a real database even though --fake is set; requires --fake, and a url to point at" flagdocs:"noexample"`
 }
 
 func Dependency(migrationsFS fs.FS, migrationTable string) standalone.BootstrapDependency[*sql.DB] {
@@ -60,7 +60,7 @@ func (d *dependency) Dependencies() []standalone.BootstrapCommand {
 }
 
 func (d *dependency) Get(ctx context.Context, commonConfig standalone.CommonConfig) (*sql.DB, error) {
-	if commonConfig.Fake && !d.cfg.UseRealDBForFake {
+	if commonConfig.Fake && !d.cfg.RealDB {
 		if d.cfg.URL != "" {
 			return nil, fmt.Errorf("database url set when using fake database")
 		}

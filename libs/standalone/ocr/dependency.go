@@ -96,7 +96,7 @@ type Config struct {
 	*ocrcommon.Config `toml:",inline"`
 
 	// proxy-mode config
-	ProxyAddress string `toml:"proxy-address" usage:"delegate rage networking to a proxy at this gRPC address instead of creating a local peer" validate:"required_without=ListenAddresses,excluded_with=ListenAddresses"`
+	ProxyAddress string `usage:"delegate rage networking to a proxy at this gRPC address instead of creating a local peer" validate:"required_without=ListenAddresses,excluded_with=ListenAddresses"`
 }
 
 // defaultConfig is the instance the flags are bound to and decoded into, so an unset setting
