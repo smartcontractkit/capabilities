@@ -125,7 +125,7 @@ Run a task for the affected projects only:
 Update libs for chain capabilities:
 
 ```sh
-nx run-many -t update-libs -p aptos,solana,evm,stellar --args='--version=v1.2.3' && nx run integration_tests:tidy
+nx run-many -t update-libs -p aptos,solana,evm,stellar --args='--version=v1.2.3'
 ```
 
 [More info on Nx Tasks](https://nx.dev/features/run-tasks).

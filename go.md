@@ -25,63 +25,21 @@ flowchart LR
 	click capabilities/http_action href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_trigger --> capabilities/libs
 	click capabilities/http_trigger href "https://github.com/smartcontractkit/capabilities"
-	capabilities/integration_tests --> capabilities/chain_capabilities/evm
-	capabilities/integration_tests --> capabilities/http_action
-	capabilities/integration_tests --> capabilities/http_trigger
-	capabilities/integration_tests --> chainlink/v2
-	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
-	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
-	ccip-contract-examples/chains/evm
-	click ccip-contract-examples/chains/evm href "https://github.com/smartcontractkit/ccip-contract-examples"
-	ccip-owner-contracts
-	click ccip-owner-contracts href "https://github.com/smartcontractkit/ccip-owner-contracts"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
 	chainlink-aptos --> chainlink-common
 	click chainlink-aptos href "https://github.com/smartcontractkit/chainlink-aptos"
-	chainlink-aptos/codec --> chainlink-common
-	click chainlink-aptos/codec href "https://github.com/smartcontractkit/chainlink-aptos"
-	chainlink-automation --> chainlink-common
-	click chainlink-automation href "https://github.com/smartcontractkit/chainlink-automation"
 	chainlink-ccip --> chainlink-common
 	chainlink-ccip --> chainlink-evm/gethwrappers/helpers
 	chainlink-ccip --> chainlink-protos/rmn/v1.6/go
 	click chainlink-ccip href "https://github.com/smartcontractkit/chainlink-ccip"
-	chainlink-ccip/chains/evm --> ccip-contract-examples/chains/evm
-	chainlink-ccip/chains/evm --> ccip-owner-contracts
-	chainlink-ccip/chains/evm --> chainlink-aptos
-	chainlink-ccip/chains/evm --> chainlink-ccip/deployment
-	chainlink-ccip/chains/evm --> chainlink-ccv
-	chainlink-ccip/chains/evm --> chainlink-ccv/deployment
-	chainlink-ccip/chains/evm --> chainlink-deployments-framework
-	chainlink-ccip/chains/evm --> chainlink-protos/job-distributor
-	chainlink-ccip/chains/evm --> chainlink-protos/op-catalog
-	chainlink-ccip/chains/evm --> chainlink-sui
-	chainlink-ccip/chains/evm --> chainlink-testing-framework/seth
-	chainlink-ccip/chains/evm --> chainlink-ton
-	chainlink-ccip/chains/evm --> mcms
-	click chainlink-ccip/chains/evm href "https://github.com/smartcontractkit/chainlink-ccip"
 	chainlink-ccip/chains/solana --> chainlink-ccip/chains/solana/gobindings
 	chainlink-ccip/chains/solana --> chainlink-common
 	click chainlink-ccip/chains/solana href "https://github.com/smartcontractkit/chainlink-ccip"
 	chainlink-ccip/chains/solana/gobindings
 	click chainlink-ccip/chains/solana/gobindings href "https://github.com/smartcontractkit/chainlink-ccip"
-	chainlink-ccip/deployment
-	click chainlink-ccip/deployment href "https://github.com/smartcontractkit/chainlink-ccip"
-	chainlink-ccv --> chainlink-ccip/chains/evm
-	chainlink-ccv --> chainlink-evm
-	chainlink-ccv --> chainlink-protos/chainlink-ccv/committee-verifier
-	chainlink-ccv --> chainlink-protos/chainlink-ccv/heartbeat
-	chainlink-ccv --> chainlink-protos/chainlink-ccv/message-discovery
-	chainlink-ccv --> chainlink-protos/chainlink-ccv/message-rules
-	chainlink-ccv --> chainlink-protos/orchestrator
-	chainlink-ccv --> chainlink-solana
-	chainlink-ccv --> chainlink-testing-framework/framework
-	click chainlink-ccv href "https://github.com/smartcontractkit/chainlink-ccv"
-	chainlink-ccv/deployment
-	click chainlink-ccv/deployment href "https://github.com/smartcontractkit/chainlink-ccv"
 	chainlink-common --> chainlink-common/pkg/chipingress
 	chainlink-common --> chainlink-protos/billing/go
 	chainlink-common --> chainlink-protos/cre/go
@@ -89,6 +47,7 @@ flowchart LR
 	chainlink-common --> chainlink-protos/metering/go
 	chainlink-common --> chainlink-protos/node-platform
 	chainlink-common --> chainlink-protos/storage-service
+	chainlink-common --> chainlink-protos/workflows/go
 	chainlink-common --> freeport
 	chainlink-common --> grpc-proxy
 	chainlink-common --> libocr
@@ -101,27 +60,23 @@ flowchart LR
 	click chainlink-common/pkg/chipingress href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-common/pkg/monitoring
 	click chainlink-common/pkg/monitoring href "https://github.com/smartcontractkit/chainlink-common"
-	chainlink-data-streams --> chainlink-common/keystore
-	chainlink-data-streams --> chainlink-evm/gethwrappers
+	chainlink-data-streams
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
 	chainlink-deployments-framework
 	click chainlink-deployments-framework href "https://github.com/smartcontractkit/chainlink-deployments-framework"
-	chainlink-evm --> chainlink-automation
+	chainlink-evm --> chainlink-common/keystore
 	chainlink-evm --> chainlink-data-streams
+	chainlink-evm --> chainlink-evm/gethwrappers
 	chainlink-evm --> chainlink-framework/capabilities
 	chainlink-evm --> chainlink-framework/chains
 	chainlink-evm --> chainlink-protos/svr
 	chainlink-evm --> chainlink-tron/relayer
 	click chainlink-evm href "https://github.com/smartcontractkit/chainlink-evm"
-	chainlink-evm/contracts/cre/gobindings --> chainlink-evm/gethwrappers/helpers
-	click chainlink-evm/contracts/cre/gobindings href "https://github.com/smartcontractkit/chainlink-evm"
-	chainlink-evm/gethwrappers --> chainlink-evm/gethwrappers/helpers
+	chainlink-evm/gethwrappers
 	click chainlink-evm/gethwrappers href "https://github.com/smartcontractkit/chainlink-evm"
 	chainlink-evm/gethwrappers/helpers
 	click chainlink-evm/gethwrappers/helpers href "https://github.com/smartcontractkit/chainlink-evm"
-	chainlink-feeds --> chainlink-common
-	click chainlink-feeds href "https://github.com/smartcontractkit/chainlink-feeds"
-	chainlink-framework/capabilities --> chainlink-common
+	chainlink-framework/capabilities
 	click chainlink-framework/capabilities href "https://github.com/smartcontractkit/chainlink-framework"
 	chainlink-framework/chains --> chainlink-framework/multinode
 	click chainlink-framework/chains href "https://github.com/smartcontractkit/chainlink-framework"
@@ -129,36 +84,16 @@ flowchart LR
 	click chainlink-framework/metrics href "https://github.com/smartcontractkit/chainlink-framework"
 	chainlink-framework/multinode --> chainlink-framework/metrics
 	click chainlink-framework/multinode href "https://github.com/smartcontractkit/chainlink-framework"
-	chainlink-protos/billing/go --> chainlink-protos/workflows/go
+	chainlink-protos/billing/go
 	click chainlink-protos/billing/go href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/chainlink-ccv/committee-verifier --> chainlink-protos/chainlink-ccv/verifier
-	click chainlink-protos/chainlink-ccv/committee-verifier href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/chainlink-ccv/heartbeat
-	click chainlink-protos/chainlink-ccv/heartbeat href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/chainlink-ccv/message-discovery --> chainlink-protos/chainlink-ccv/verifier
-	click chainlink-protos/chainlink-ccv/message-discovery href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/chainlink-ccv/message-rules
-	click chainlink-protos/chainlink-ccv/message-rules href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/chainlink-ccv/verifier
-	click chainlink-protos/chainlink-ccv/verifier href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/cre/go --> chain-selectors
 	click chainlink-protos/cre/go href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/data-feeds
-	click chainlink-protos/data-feeds href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/job-distributor
-	click chainlink-protos/job-distributor href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/linking-service/go
 	click chainlink-protos/linking-service/go href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/metering/go
 	click chainlink-protos/metering/go href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/node-platform
 	click chainlink-protos/node-platform href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/op-catalog
-	click chainlink-protos/op-catalog href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/orchestrator --> wsrpc
-	click chainlink-protos/orchestrator href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-protos/ring/go
-	click chainlink-protos/ring/go href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/rmn/v1.6/go
 	click chainlink-protos/rmn/v1.6/go href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/storage-service
@@ -178,45 +113,12 @@ flowchart LR
 	chainlink-solana/contracts --> chainlink-testing-framework/framework
 	chainlink-solana/contracts --> chainlink-tron/relayer
 	click chainlink-solana/contracts href "https://github.com/smartcontractkit/chainlink-solana"
-	chainlink-sui
-	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
-	chainlink-sui/codec --> chainlink-common
-	click chainlink-sui/codec href "https://github.com/smartcontractkit/chainlink-sui"
 	chainlink-testing-framework/framework
 	click chainlink-testing-framework/framework href "https://github.com/smartcontractkit/chainlink-testing-framework"
-	chainlink-testing-framework/seth
-	click chainlink-testing-framework/seth href "https://github.com/smartcontractkit/chainlink-testing-framework"
-	chainlink-ton
-	click chainlink-ton href "https://github.com/smartcontractkit/chainlink-ton"
-	chainlink-ton/cciplib --> chainlink-common
-	click chainlink-ton/cciplib href "https://github.com/smartcontractkit/chainlink-ton"
-	chainlink-tron/relayer --> chainlink-common
+	chainlink-tron/relayer
 	click chainlink-tron/relayer href "https://github.com/smartcontractkit/chainlink-tron"
-	chainlink/v2 --> chainlink-aptos/codec
-	chainlink/v2 --> chainlink-evm/contracts/cre/gobindings
-	chainlink/v2 --> chainlink-feeds
-	chainlink/v2 --> chainlink-protos/chainlink-ccv/committee-verifier
-	chainlink/v2 --> chainlink-protos/chainlink-ccv/heartbeat
-	chainlink/v2 --> chainlink-protos/chainlink-ccv/message-discovery
-	chainlink/v2 --> chainlink-protos/chainlink-ccv/message-rules
-	chainlink/v2 --> chainlink-protos/data-feeds
-	chainlink/v2 --> chainlink-protos/ring/go
-	chainlink/v2 --> chainlink-protos/svr
-	chainlink/v2 --> chainlink-sui/codec
-	chainlink/v2 --> chainlink-ton/cciplib
-	chainlink/v2 --> chainlink-tron/relayer
-	chainlink/v2 --> cre-sdk-go/capabilities/networking/http
-	chainlink/v2 --> cre-sdk-go/capabilities/scheduler/cron
-	chainlink/v2 --> tdh2/go/ocr2/decryptionplugin
-	click chainlink/v2 href "https://github.com/smartcontractkit/chainlink"
 	cre-sdk-go --> chainlink-protos/cre/go
 	click cre-sdk-go href "https://github.com/smartcontractkit/cre-sdk-go"
-	cre-sdk-go/capabilities/blockchain/evm --> cre-sdk-go
-	click cre-sdk-go/capabilities/blockchain/evm href "https://github.com/smartcontractkit/cre-sdk-go"
-	cre-sdk-go/capabilities/networking/http
-	click cre-sdk-go/capabilities/networking/http href "https://github.com/smartcontractkit/cre-sdk-go"
-	cre-sdk-go/capabilities/scheduler/cron --> cre-sdk-go
-	click cre-sdk-go/capabilities/scheduler/cron href "https://github.com/smartcontractkit/cre-sdk-go"
 	freeport
 	click freeport href "https://github.com/smartcontractkit/freeport"
 	go-sumtype2
@@ -225,16 +127,8 @@ flowchart LR
 	click grpc-proxy href "https://github.com/smartcontractkit/grpc-proxy"
 	libocr --> go-sumtype2
 	click libocr href "https://github.com/smartcontractkit/libocr"
-	mcms
-	click mcms href "https://github.com/smartcontractkit/mcms"
-	smdkg --> libocr
-	smdkg --> tdh2/go/tdh2
+	smdkg
 	click smdkg href "https://github.com/smartcontractkit/smdkg"
-	tdh2/go/ocr2/decryptionplugin --> libocr
-	tdh2/go/ocr2/decryptionplugin --> tdh2/go/tdh2
-	click tdh2/go/ocr2/decryptionplugin href "https://github.com/smartcontractkit/tdh2"
-	tdh2/go/tdh2
-	click tdh2/go/tdh2 href "https://github.com/smartcontractkit/tdh2"
 	wsrpc
 	click wsrpc href "https://github.com/smartcontractkit/wsrpc"
 
@@ -248,31 +142,16 @@ flowchart LR
 		 capabilities/cron
 		 capabilities/http_action
 		 capabilities/http_trigger
-		 capabilities/integration_tests
 		 capabilities/libs
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 
-	subgraph chainlink-aptos-repo[chainlink-aptos]
-		 chainlink-aptos
-		 chainlink-aptos/codec
-	end
-	click chainlink-aptos-repo href "https://github.com/smartcontractkit/chainlink-aptos"
-
 	subgraph chainlink-ccip-repo[chainlink-ccip]
 		 chainlink-ccip
-		 chainlink-ccip/chains/evm
 		 chainlink-ccip/chains/solana
 		 chainlink-ccip/chains/solana/gobindings
-		 chainlink-ccip/deployment
 	end
 	click chainlink-ccip-repo href "https://github.com/smartcontractkit/chainlink-ccip"
-
-	subgraph chainlink-ccv-repo[chainlink-ccv]
-		 chainlink-ccv
-		 chainlink-ccv/deployment
-	end
-	click chainlink-ccv-repo href "https://github.com/smartcontractkit/chainlink-ccv"
 
 	subgraph chainlink-common-repo[chainlink-common]
 		 chainlink-common
@@ -284,7 +163,6 @@ flowchart LR
 
 	subgraph chainlink-evm-repo[chainlink-evm]
 		 chainlink-evm
-		 chainlink-evm/contracts/cre/gobindings
 		 chainlink-evm/gethwrappers
 		 chainlink-evm/gethwrappers/helpers
 	end
@@ -300,20 +178,10 @@ flowchart LR
 
 	subgraph chainlink-protos-repo[chainlink-protos]
 		 chainlink-protos/billing/go
-		 chainlink-protos/chainlink-ccv/committee-verifier
-		 chainlink-protos/chainlink-ccv/heartbeat
-		 chainlink-protos/chainlink-ccv/message-discovery
-		 chainlink-protos/chainlink-ccv/message-rules
-		 chainlink-protos/chainlink-ccv/verifier
 		 chainlink-protos/cre/go
-		 chainlink-protos/data-feeds
-		 chainlink-protos/job-distributor
 		 chainlink-protos/linking-service/go
 		 chainlink-protos/metering/go
 		 chainlink-protos/node-platform
-		 chainlink-protos/op-catalog
-		 chainlink-protos/orchestrator
-		 chainlink-protos/ring/go
 		 chainlink-protos/rmn/v1.6/go
 		 chainlink-protos/storage-service
 		 chainlink-protos/svr
@@ -327,38 +195,6 @@ flowchart LR
 	end
 	click chainlink-solana-repo href "https://github.com/smartcontractkit/chainlink-solana"
 
-	subgraph chainlink-sui-repo[chainlink-sui]
-		 chainlink-sui
-		 chainlink-sui/codec
-	end
-	click chainlink-sui-repo href "https://github.com/smartcontractkit/chainlink-sui"
-
-	subgraph chainlink-testing-framework-repo[chainlink-testing-framework]
-		 chainlink-testing-framework/framework
-		 chainlink-testing-framework/seth
-	end
-	click chainlink-testing-framework-repo href "https://github.com/smartcontractkit/chainlink-testing-framework"
-
-	subgraph chainlink-ton-repo[chainlink-ton]
-		 chainlink-ton
-		 chainlink-ton/cciplib
-	end
-	click chainlink-ton-repo href "https://github.com/smartcontractkit/chainlink-ton"
-
-	subgraph cre-sdk-go-repo[cre-sdk-go]
-		 cre-sdk-go
-		 cre-sdk-go/capabilities/blockchain/evm
-		 cre-sdk-go/capabilities/networking/http
-		 cre-sdk-go/capabilities/scheduler/cron
-	end
-	click cre-sdk-go-repo href "https://github.com/smartcontractkit/cre-sdk-go"
-
-	subgraph tdh2-repo[tdh2]
-		 tdh2/go/ocr2/decryptionplugin
-		 tdh2/go/tdh2
-	end
-	click tdh2-repo href "https://github.com/smartcontractkit/tdh2"
-
 	classDef outline stroke-dasharray:6,fill:none;
-	class capabilities-repo,chainlink-aptos-repo,chainlink-ccip-repo,chainlink-ccv-repo,chainlink-common-repo,chainlink-evm-repo,chainlink-framework-repo,chainlink-protos-repo,chainlink-solana-repo,chainlink-sui-repo,chainlink-testing-framework-repo,chainlink-ton-repo,cre-sdk-go-repo,tdh2-repo outline
+	class capabilities-repo,chainlink-ccip-repo,chainlink-common-repo,chainlink-evm-repo,chainlink-framework-repo,chainlink-protos-repo,chainlink-solana-repo outline
 ```

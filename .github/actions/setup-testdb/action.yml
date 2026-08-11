@@ -19,7 +19,8 @@ runs:
       working-directory: ${{ github.action_path }}/../setup-postgres
 
     - name: Prepare Test Schema
-      run: go -C integration_tests tool preparetest
+      run: |
+        go -C $(go mod download -json github.com/smartcontractkit/chainlink/v2@latest | jq -r '.Dir') run ./core/store/cmd/preparetest
       shell: bash
       env:
         CL_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
