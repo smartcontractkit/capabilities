@@ -4,30 +4,40 @@ package standalone
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
 // Run1 bootstraps the services built from 1 dependency.
-// fn receives the context, the StandaloneConfig, and the 1 dependency, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 1 dependency, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependency is resolved before fn is called, and failing to resolve it stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run1[T0 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
 		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			return fn(ctx, cfg, value0), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0},
@@ -39,17 +49,21 @@ func Run1[T0 any](
 }
 
 // Run2 bootstraps the services built from 2 dependencies.
-// fn receives the context, the StandaloneConfig, and the 2 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 2 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run2[T0 any, T1 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 ) error {
@@ -59,8 +73,18 @@ func Run2[T0 any, T1 any](
 
 		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1},
@@ -72,17 +96,21 @@ func Run2[T0 any, T1 any](
 }
 
 // Run3 bootstraps the services built from 3 dependencies.
-// fn receives the context, the StandaloneConfig, and the 3 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 3 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run3[T0 any, T1 any, T2 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -95,8 +123,23 @@ func Run3[T0 any, T1 any, T2 any](
 
 		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2},
@@ -108,17 +151,21 @@ func Run3[T0 any, T1 any, T2 any](
 }
 
 // Run4 bootstraps the services built from 4 dependencies.
-// fn receives the context, the StandaloneConfig, and the 4 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 4 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run4[T0 any, T1 any, T2 any, T3 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -134,8 +181,28 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 
 		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2, dep3)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			value3, err := dep3.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 3: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2, value3), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3},
@@ -147,17 +214,21 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 }
 
 // Run5 bootstraps the services built from 5 dependencies.
-// fn receives the context, the StandaloneConfig, and the 5 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 5 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -176,8 +247,33 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 
 		dep4 := instanceOf(bs, bootDep4, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			value3, err := dep3.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 3: %w", err)
+			}
+
+			value4, err := dep4.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 4: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2, value3, value4), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4},
@@ -189,17 +285,21 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 }
 
 // Run6 bootstraps the services built from 6 dependencies.
-// fn receives the context, the StandaloneConfig, and the 6 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 6 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -221,8 +321,38 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 
 		dep5 := instanceOf(bs, bootDep5, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			value3, err := dep3.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 3: %w", err)
+			}
+
+			value4, err := dep4.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 4: %w", err)
+			}
+
+			value5, err := dep5.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 5: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5},
@@ -234,17 +364,21 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 }
 
 // Run7 bootstraps the services built from 7 dependencies.
-// fn receives the context, the StandaloneConfig, and the 7 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 7 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -269,8 +403,43 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 
 		dep6 := instanceOf(bs, bootDep6, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			value3, err := dep3.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 3: %w", err)
+			}
+
+			value4, err := dep4.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 4: %w", err)
+			}
+
+			value5, err := dep5.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 5: %w", err)
+			}
+
+			value6, err := dep6.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 6: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6},
@@ -282,17 +451,21 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 }
 
 // Run8 bootstraps the services built from 8 dependencies.
-// fn receives the context, the StandaloneConfig, and the 8 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 8 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6, dep7 T7) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -320,8 +493,48 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 
 		dep7 := instanceOf(bs, bootDep7, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			value3, err := dep3.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 3: %w", err)
+			}
+
+			value4, err := dep4.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 4: %w", err)
+			}
+
+			value5, err := dep5.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 5: %w", err)
+			}
+
+			value6, err := dep6.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 6: %w", err)
+			}
+
+			value7, err := dep7.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 7: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6, value7), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7},
@@ -333,17 +546,21 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 }
 
 // Run9 bootstraps the services built from 9 dependencies.
-// fn receives the context, the StandaloneConfig, and the 9 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 9 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6, dep7 T7, dep8 T8) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -374,8 +591,53 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 
 		dep8 := instanceOf(bs, bootDep8, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			value3, err := dep3.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 3: %w", err)
+			}
+
+			value4, err := dep4.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 4: %w", err)
+			}
+
+			value5, err := dep5.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 5: %w", err)
+			}
+
+			value6, err := dep6.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 6: %w", err)
+			}
+
+			value7, err := dep7.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 7: %w", err)
+			}
+
+			value8, err := dep8.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 8: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6, value7, value8), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8},
@@ -387,17 +649,21 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 }
 
 // Run10 bootstraps the services built from 10 dependencies.
-// fn receives the context, the StandaloneConfig, and the 10 dependencies, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved 10 dependencies, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The dependencies are resolved before fn is called, and failing to resolve any of them stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any, T9 any](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8], dep9 Dependency[T9]) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6, dep7 T7, dep8 T8, dep9 T9) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
@@ -431,8 +697,58 @@ func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 an
 
 		dep9 := instanceOf(bs, bootDep9, index, embed)
 
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8, dep9)
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			value0, err := dep0.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 0: %w", err)
+			}
+
+			value1, err := dep1.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 1: %w", err)
+			}
+
+			value2, err := dep2.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 2: %w", err)
+			}
+
+			value3, err := dep3.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 3: %w", err)
+			}
+
+			value4, err := dep4.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 4: %w", err)
+			}
+
+			value5, err := dep5.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 5: %w", err)
+			}
+
+			value6, err := dep6.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 6: %w", err)
+			}
+
+			value7, err := dep7.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 7: %w", err)
+			}
+
+			value8, err := dep8.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 8: %w", err)
+			}
+
+			value9, err := dep9.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency 9: %w", err)
+			}
+
+			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6, value7, value8, value9), nil
 		}
 	},
 		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8, bootDep9},

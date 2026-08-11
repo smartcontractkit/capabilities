@@ -147,8 +147,11 @@ func (b *Bootstrapper) registerCloser(v any) {
 // Logger returns the logger instance. It is safe to call before running the binary
 func (b *Bootstrapper) Logger() logger.SugaredLogger { return b.config.Logger }
 
-// instanceServices builds the services of one instance, given that instance's StandaloneConfig.
-type instanceServices func(ctx context.Context, cfg *StandaloneConfig) []services.Service
+// instanceServices resolves one instance's dependencies and builds its services from them, given
+// that instance's StandaloneConfig. It fails when a dependency cannot be resolved, which is why the
+// services are built here rather than by the engine that supervises them: the engine's constructor
+// has nowhere to report that.
+type instanceServices func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error)
 
 // instantiator returns the factory building instance index's services. The generated Run helpers
 // supply it, since only they know the dependencies' types; embed says whether to replace each
@@ -272,9 +275,14 @@ func (b *Bootstrapper) runInstances(ctx context.Context, stop context.CancelFunc
 func (b *Bootstrapper) startInstance(ctx context.Context, index, count int, factory instanceServices) error {
 	cfg := b.instanceConfig(index, count)
 
+	svcs, err := factory(ctx, cfg)
+	if err != nil {
+		return err
+	}
+
 	root, _ := services.Config{
 		Name:           instanceName(index, count),
-		NewSubServices: func(logger.Logger) []services.Service { return factory(ctx, cfg) },
+		NewSubServices: func(logger.Logger) []services.Service { return svcs },
 	}.NewServiceEngine(cfg.Logger)
 
 	if err := root.Start(ctx); err != nil {
@@ -494,10 +502,6 @@ type embedConfig struct {
 
 func defaultEmbedConfig() embedConfig { return embedConfig{Instances: 1} }
 
-type Dependency[T any] interface {
-	Get(ctx context.Context) (T, error)
-}
-
 type BootstrapCommand interface {
 	// Config returns the settings to bind, as a pointer to the struct they are decoded into, or nil
 	// when there are none - which is the usual answer from an embedded dependency, having derived or
@@ -537,6 +541,9 @@ type BootstrapDependency[T any] interface {
 	BootstrapCommand
 }
 
+// dependency resolves one instance's copy of a BootstrapDependency, and hands the value's lifetime
+// to the bootstrapper: whatever it resolves is closed on shutdown, after the services built from it.
+// The generated Run helpers resolve these and pass the values on, so a service never holds one.
 type dependency[T any] struct {
 	bs *Bootstrapper
 	bd BootstrapDependency[T]

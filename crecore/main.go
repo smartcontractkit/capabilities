@@ -83,12 +83,12 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	return standalone.Run3(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
-		factories standalone.Dependency[*ocr.Factories],
-		evmClient standalone.Dependency[evmclient.Client],
-		lis standalone.Dependency[net.Listener],
+		factories *ocr.Factories,
+		evmClient evmclient.Client,
+		lis net.Listener,
 	) []services.Service {
 		regSvc := newRegistryService(cfg.CapabilitiesRegistryAddress, cfg.CapabilitiesRegistrySyncInterval.Duration(),
-			scfg.Logger.Named("capabilities registry"), evmClient, factories)
+			scfg.Logger.Named("capabilities registry"), evmClient, factories.PeerID)
 		// The registry attaches to the proxy's gRPC server, so core reaches both
 		// over the single address it already configures.
 		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), lis, factories, regSvc.Register)

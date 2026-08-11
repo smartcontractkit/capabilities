@@ -2,6 +2,7 @@ package standalone
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
@@ -9,17 +10,21 @@ import (
 {{- range . }}
 
 // Run{{.}} bootstraps the services built from {{.}} {{if eq . 1}}dependency{{else}}dependencies{{end}}.
-// fn receives the context, the StandaloneConfig, and the {{.}} {{if eq . 1}}dependency{{else}}dependencies{{end}}, and returns the services to run.
-// The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
+// fn receives the context, the StandaloneConfig, and the resolved {{.}} {{if eq . 1}}dependency{{else}}dependencies{{end}}, and returns the services to run.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// The {{if eq . 1}}dependency is{{else}}dependencies are{{end}} resolved before fn is called, and failing to resolve {{if eq . 1}}it{{else}}any of them{{end}} stops the
+// binary there. So a service is handed what it needs rather than the means to fetch it: it has one
+// less thing to fail at, and a misconfiguration is reported before anything starts rather than
+// part-way through starting.
 //
 // fn is called once per instance: a single time for `run`, and once for each of the instances
 // `embed` starts. For an embedded instance every dependency is first replaced by the form serving
-// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
-// already theirs.
+// that instance (BootstrapDependency.ForEmbedding), so what fn is handed already belongs to that
+// instance.
 func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 	bs *Bootstrapper,
-	fn func(ctx context.Context, cfg *StandaloneConfig, {{range RangeNum .}}dep{{.}} Dependency[T{{.}}], {{end}}) []services.Service,
+	fn func(ctx context.Context, cfg *StandaloneConfig, {{range RangeNum .}}dep{{.}} T{{.}}, {{end}}) []services.Service,
 	{{- range RangeNum .}}
 	bootDep{{.}} BootstrapDependency[T{{.}}],
 	{{- end}}
@@ -28,8 +33,14 @@ func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 		{{range RangeNum .}}
 		dep{{.}} := instanceOf(bs, bootDep{{.}}, index, embed)
 		{{end}}
-		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
-			return fn(ctx, cfg, {{range RangeNum .}}dep{{.}}, {{end}})
+		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
+			{{- range RangeNum .}}
+			value{{.}}, err := dep{{.}}.Get(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve dependency {{.}}: %w", err)
+			}
+			{{end}}
+			return fn(ctx, cfg, {{range RangeNum .}}value{{.}}, {{end}}), nil
 		}
 	},
 		[]BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}, {{end}} },
