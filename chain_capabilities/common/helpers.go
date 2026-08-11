@@ -22,8 +22,10 @@ import (
 const UserError = "user error:"
 
 // Ptr returns a pointer to the given value.
+//
+//go:fix inline
 func Ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 // RequestID builds a stable request identifier from workflow metadata.

@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -20,6 +21,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
+	"github.com/stellar/go-stellar-sdk/xdr"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
@@ -90,7 +92,7 @@ func (s *Stellar) Close() error {
 func (s *Stellar) GetLatestLedger(ctx context.Context, metadata capabilities.RequestMetadata, _ *stellarcap.GetLatestLedgerRequest) (*capabilities.ResponseAndMetadata[*stellarcap.GetLatestLedgerResponse], caperrors.Error) {
 	s.lggr.Debug("Received GetLatestLedger request")
 
-	observe := func(_ context.Context, height *ctypes.ChainHeight) (*stellarcap.GetLatestLedgerResponse, error) {
+	observe := func(ctx context.Context, height *ctypes.ChainHeight) (*stellarcap.GetLatestLedgerResponse, error) {
 		if height == nil || height.Latest <= 0 {
 			return nil, fmt.Errorf("no agreed chain height available for GetLatestLedger consensus")
 		}
@@ -98,8 +100,7 @@ func (s *Stellar) GetLatestLedger(ctx context.Context, metadata capabilities.Req
 		if height.Latest > math.MaxUint32 {
 			return nil, fmt.Errorf("agreed ledger sequence %d exceeds uint32", height.Latest)
 		}
-		// TODO PLEX-3243 implement a by sequence ledger fetch to populate block metadata
-		return &stellarcap.GetLatestLedgerResponse{Sequence: uint32(height.Latest)}, nil
+		return s.fetchLatestLedgerMetadata(ctx, uint32(height.Latest))
 	}
 
 	request := ctypes.NewLockableToBlockHashableRequest(
@@ -207,6 +208,65 @@ func (s *Stellar) isUserErrorWriteReport(err error) bool {
 
 func (s *Stellar) Info() (capabilities.CapabilityInfo, error) {
 	return capabilities.CapabilityInfo{}, nil
+}
+
+func (s *Stellar) fetchLatestLedgerMetadata(ctx context.Context, latestLedger uint32) (*stellarcap.GetLatestLedgerResponse, error) {
+	resp, err := s.GetLedgers(ctx, stellartypes.GetLedgersRequest{
+		StartLedger: latestLedger,
+		Pagination:  &stellartypes.LedgerPaginationOptions{Limit: 1},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to GetLedgers: %w", err)
+	}
+
+	if len(resp.Ledgers) == 0 {
+		return nil, fmt.Errorf("no ledger returned for sequence %d", latestLedger)
+	}
+	ledger := resp.Ledgers[0]
+	if ledger.Sequence != latestLedger {
+		return nil, fmt.Errorf("rpc returned ledger %d, expected %d", ledger.Sequence, latestLedger)
+	}
+
+	out := &stellarcap.GetLatestLedgerResponse{
+		Sequence:        latestLedger,
+		LedgerCloseTime: ledger.LedgerCloseTime,
+	}
+
+	hash, err := hex.DecodeString(ledger.Hash)
+	if err != nil {
+		return nil, fmt.Errorf("decode ledger hash %q: %w", ledger.Hash, err)
+	}
+	out.Hash = hash
+
+	// extract encoded data for cleaner sdk response (ok when fetching one block)
+	if ledger.LedgerHeaderXDR != "" {
+		var hist xdr.LedgerHeaderHistoryEntry
+		if err = xdr.SafeUnmarshalBase64(ledger.LedgerHeaderXDR, &hist); err != nil {
+			return nil, fmt.Errorf("failed  to decode ledger header xdr: %w", err)
+		}
+		headerBin, err := hist.Header.MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal ledger header: %w", err)
+		}
+		out.LedgerHeaderXdr = headerBin
+		out.ProtocolVersion = uint32(hist.Header.LedgerVersion)
+	}
+
+	if ledger.LedgerMetadataXDR != "" {
+		var meta xdr.LedgerCloseMeta
+		if err = xdr.SafeUnmarshalBase64(ledger.LedgerMetadataXDR, &meta); err != nil {
+			return nil, fmt.Errorf("failed to decode ledger metadata xdr: %w", err)
+		}
+		if v2, ok := meta.GetV2(); ok {
+			metaBin, err := v2.MarshalBinary()
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal ledger close meta v2: %w", err)
+			}
+			out.LedgerMetadataXdr = metaBin
+		}
+	}
+
+	return out, nil
 }
 
 func isUserError(err error) bool {

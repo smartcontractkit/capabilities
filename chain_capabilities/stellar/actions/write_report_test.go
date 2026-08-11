@@ -31,6 +31,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
@@ -124,7 +125,7 @@ func newWRReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMe
 		ContractId: testReceiverAddress,
 		Report: &workflowpb.ReportResponse{
 			RawReport:     encoded,
-			ReportContext: make([]byte, 96),
+			ReportContext: make([]byte, ocrReportContextLen),
 			Sigs:          wrTestSigs(),
 		},
 	}
@@ -132,9 +133,13 @@ func newWRReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMe
 }
 
 func wrTestSigs() []*workflowpb.AttributedSignature {
-	sig := make([]byte, ocrSignatureLen)
-	sig[0] = 0xAB
-	return []*workflowpb.AttributedSignature{{Signature: sig}, {Signature: sig}}
+	// ed25519 OCR sigs: 32-byte pubkey || 64-byte signature. Distinct leading
+	// pubkey bytes so the codec's ascending-by-pubkey ordering is well-defined.
+	sigA := make([]byte, ed25519OCRSigLen)
+	sigA[0] = 0xAB
+	sigB := make([]byte, ed25519OCRSigLen)
+	sigB[0] = 0xCD
+	return []*workflowpb.AttributedSignature{{Signature: sigA}, {Signature: sigB}}
 }
 
 // ─── XDR helpers ─────────────────────────────────────────────────────────────
@@ -270,7 +275,7 @@ func (h *writeReportHelper) expectPostSubmitFailedTxLookup(t *testing.T, rm ocrt
 }
 
 // expectEventTxHashLookupUnavailable makes GetSuccessfulTransmissionHash fail so poll-timeout
-// paths can fall back to the local TXM submit response.
+// paths return an error because the canonical transmission outcome cannot be determined.
 func (h *writeReportHelper) expectEventTxHashLookupUnavailable(t *testing.T) {
 	t.Helper()
 	h.svc.EXPECT().GetLatestLedger(mock.Anything).
@@ -338,6 +343,18 @@ func TestWriteReport_Validation(t *testing.T) {
 		require.Contains(t, err.Error(), "invalid receiver contract address")
 	})
 
+	t.Run("invalid report context length", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		req.Report.ReportContext = make([]byte, ocrReportContextLen-1)
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "report context has invalid length")
+		require.Contains(t, err.Error(), "want 96")
+	})
+
 	t.Run("no signatures", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
@@ -358,7 +375,7 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
 		require.Contains(t, err.Error(), "signature 0 has invalid length")
-		require.Contains(t, err.Error(), "want 65")
+		require.Contains(t, err.Error(), "want 96")
 	})
 
 	t.Run("report metadata cannot be decoded", func(t *testing.T) {
@@ -367,7 +384,11 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, reqMeta, _ := newWRReportFixture(t)
 		req := &stellarcap.WriteReportRequest{
 			ContractId: testReceiverAddress,
-			Report:     &workflowpb.ReportResponse{RawReport: []byte("garbage"), Sigs: wrTestSigs()},
+			Report: &workflowpb.ReportResponse{
+				RawReport:     []byte("garbage"),
+				ReportContext: make([]byte, ocrReportContextLen),
+				Sigs:          wrTestSigs(),
+			},
 		}
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
@@ -434,7 +455,7 @@ func TestWriteReport_Validation(t *testing.T) {
 			ContractId: testReceiverAddress,
 			Report: &workflowpb.ReportResponse{
 				RawReport:     append(encoded, make([]byte, 20_000)...),
-				ReportContext: make([]byte, 96),
+				ReportContext: make([]byte, ocrReportContextLen),
 				Sigs:          wrTestSigs(),
 			},
 		}
@@ -577,7 +598,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		require.Contains(t, capErr.Error(), "failed to submit forwarder report transaction")
 	})
 
-	t.Run("post-submit poll times out - falls back to TXM reply", func(t *testing.T) {
+	t.Run("post-submit poll and event lookup fail - returns error", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
@@ -587,7 +608,8 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(successSubmitResp(), nil).Once()
-		// Post-submit poll always returns NotAttempted → times out → TXM fallback.
+		// Post-submit polling remains NotAttempted and event lookup is unavailable,
+		// so the canonical receiver outcome cannot be determined.
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 		h.expectEventTxHashLookupUnavailable(t)
@@ -596,15 +618,9 @@ func TestWriteReport_Submit(t *testing.T) {
 		defer cancel()
 
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
-		require.Nil(t, capErr)
-		// Reply comes from the TXM submit response.
-		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
-		require.NotNil(t, result.Response.TxHash)
-		require.Equal(t, testTxHash, *result.Response.TxHash)
-		require.NotNil(t, result.Response.TransactionFee)
-		require.Equal(t, testFee, *result.Response.TransactionFee)
-		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
+		require.Nil(t, result)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 	})
 
 	t.Run("post-submit shows InvalidReceiver - reply with error message and canonical tx hash", func(t *testing.T) {
@@ -660,7 +676,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 	})
 
-	t.Run("own TxFailed - on-chain error string appears in ErrorMessage", func(t *testing.T) {
+	t.Run("own TxFailed with unavailable canonical outcome returns error", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
@@ -678,7 +694,6 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(failedResp, nil).Once()
-		// Post-submit poll stays NotAttempted → context deadline triggers TXM fallback.
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 		h.expectEventTxHashLookupUnavailable(t)
@@ -687,12 +702,9 @@ func TestWriteReport_Submit(t *testing.T) {
 		defer cancel()
 
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
-		require.Nil(t, capErr)
-		// replyFromOwnTransaction maps TxFailed to REVERTED.
-		require.Equal(t, stellarcap.TxStatus_TX_STATUS_REVERTED, result.Response.TxStatus)
-		require.NotNil(t, result.Response.ErrorMessage)
-		require.Contains(t, *result.Response.ErrorMessage, "on-chain transaction failed")
-		require.Contains(t, *result.Response.ErrorMessage, "InvokeHostFunctionTrapped")
+		require.Nil(t, result)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 	})
 
 	t.Run("submit superseded by prior success - post-submit succeeds", func(t *testing.T) {
@@ -1037,7 +1049,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 		require.Contains(t, err.Error(), "all GetTransmissionInfo polls failed during delta stage window")
 	})
 
-	t.Run("context cancel returns timeout error", func(t *testing.T) {
+	t.Run("context cancel preserves cancellation error", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithCancel(t.Context())
 		wr, mockSvc, transmissionID, req := newPollTransmissionInfoHarness(t, 5*time.Second)
@@ -1050,7 +1062,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 
 		_, err := wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 2)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "timed out waiting for transmission info")
+		require.Contains(t, err.Error(), "waiting for transmission info")
 	})
 }
 
@@ -1061,28 +1073,7 @@ func TestInvalidTransmissionStateError(t *testing.T) {
 	require.Contains(t, err.Error(), "unexpected transmission state: 99")
 }
 
-func TestReplyFromOwnTransaction(t *testing.T) {
-	t.Parallel()
-	wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
-
-	t.Run("nil response is fatal", func(t *testing.T) {
-		t.Parallel()
-		reply := wr.replyFromOwnTransaction(nil)
-		require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, reply.TxStatus)
-	})
-
-	t.Run("tx fatal maps to fatal status", func(t *testing.T) {
-		t.Parallel()
-		reply := wr.replyFromOwnTransaction(&stellartypes.SubmitTransactionResponse{
-			TxStatus: stellartypes.TxFatal,
-			TxHash:   testTxHash,
-		})
-		require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, reply.TxStatus)
-		require.NotNil(t, reply.TxHash)
-	})
-}
-
-func TestWriteReport_TxFatalSubmitFallback(t *testing.T) {
+func TestWriteReport_TxFatalSubmitWithoutCanonicalOutcomeReturnsError(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
 	_, reqMeta, req := newWRReportFixture(t)
@@ -1103,9 +1094,9 @@ func TestWriteReport_TxFatalSubmitFallback(t *testing.T) {
 	defer cancel()
 
 	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
-	require.Nil(t, capErr)
-	require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
-	require.NotNil(t, result.Response.TxHash)
+	require.Nil(t, result)
+	require.NotNil(t, capErr)
+	require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 }
 
 func TestReplyBuilders(t *testing.T) {
@@ -1161,23 +1152,6 @@ func TestReplyBuilders(t *testing.T) {
 		require.Empty(t, wr.meteringFromReply(nil).Metering)
 		require.Empty(t, wr.meteringFromReply(&stellarcap.WriteReportReply{}).Metering)
 	})
-}
-
-func TestPopulateReplyFromSubmit(t *testing.T) {
-	t.Parallel()
-	reply := &stellarcap.WriteReportReply{}
-	populateReplyFromSubmit(reply, nil)
-	require.Nil(t, reply.TxHash)
-
-	fee := testFee
-	blockTs := testBlockTimestamp
-	populateReplyFromSubmit(reply, &stellartypes.SubmitTransactionResponse{
-		TxHash:         testTxHash,
-		TransactionFee: &fee,
-		BlockTimestamp: &blockTs,
-	})
-	require.Equal(t, testTxHash, *reply.TxHash)
-	require.Equal(t, testFee, *reply.TransactionFee)
 }
 
 func TestWriteReport_ObservedRevertReplyBuildError(t *testing.T) {

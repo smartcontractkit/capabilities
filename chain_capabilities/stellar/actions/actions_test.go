@@ -2,10 +2,12 @@ package actions
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -120,10 +122,55 @@ func TestGetLatestLedger(t *testing.T) {
 		helper := newMockedStellar(t)
 		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 123})}
 
+		// The RPC returns a LedgerHeaderHistoryEntry and a LedgerCloseMeta union; the
+		// capability response carries the inner LedgerHeader and the V2 close-meta arm.
+		hist := xdr.LedgerHeaderHistoryEntry{
+			Header: xdr.LedgerHeader{LedgerVersion: 22, LedgerSeq: 123},
+		}
+		headerB64, err := xdr.MarshalBase64(hist)
+		require.NoError(t, err)
+		wantHeaderBin, err := hist.Header.MarshalBinary()
+		require.NoError(t, err)
+
+		txSet, err := xdr.NewGeneralizedTransactionSet(1, xdr.TransactionSetV1{})
+		require.NoError(t, err)
+		v2 := xdr.LedgerCloseMetaV2{TxSet: txSet}
+		closeMeta, err := xdr.NewLedgerCloseMeta(2, v2)
+		require.NoError(t, err)
+		metaB64, err := xdr.MarshalBase64(closeMeta)
+		require.NoError(t, err)
+		wantMetaBin, err := v2.MarshalBinary()
+		require.NoError(t, err)
+
+		const hashHex = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+		wantHash, err := hex.DecodeString(hashHex)
+		require.NoError(t, err)
+
+		helper.stellarService.EXPECT().
+			GetLedgers(mock.Anything, stellartypes.GetLedgersRequest{
+				StartLedger: 123,
+				Pagination:  &stellartypes.LedgerPaginationOptions{Limit: 1},
+			}).
+			Return(stellartypes.GetLedgersResponse{
+				Ledgers: []stellartypes.LedgerInfo{{
+					Sequence:          123,
+					Hash:              hashHex,
+					LedgerCloseTime:   456,
+					LedgerHeaderXDR:   headerB64,
+					LedgerMetadataXDR: metaB64,
+				}},
+			}, nil).
+			Once()
+
 		resp, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, uint32(123), resp.Response.GetSequence())
+		require.Equal(t, int64(456), resp.Response.GetLedgerCloseTime())
+		require.Equal(t, wantHash, resp.Response.GetHash())
+		require.Equal(t, uint32(22), resp.Response.GetProtocolVersion())
+		require.Equal(t, wantHeaderBin, resp.Response.GetLedgerHeaderXdr())
+		require.Equal(t, wantMetaBin, resp.Response.GetLedgerMetadataXdr())
 	})
 
 	t.Run("no agreed height", func(t *testing.T) {

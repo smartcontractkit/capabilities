@@ -26,7 +26,7 @@ func TestObservationBatchCapacityCalculation(t *testing.T) {
 	testMetrics := newTestMetrics(t, "observation")
 	observationBatch := batching.NewObservationBatch(ctx, testLogger, 100_000_000, testMetrics)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		added := observationBatch.AddObservation(ctx, &oracletypes.RequestObservation{
 			Metadata: &oracletypes.RequestMetaData{
 				RequestId:           uuid.NewString(),
@@ -65,7 +65,7 @@ func TestObservationBatchCapacityExceeded(t *testing.T) {
 	observationBatch := batching.NewObservationBatch(ctx, testLogger, 100, testMetrics)
 
 	addedAtLeastOnce := false
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		added := observationBatch.AddObservation(ctx, &oracletypes.RequestObservation{
 			Metadata: &oracletypes.RequestMetaData{
 				RequestId:           uuid.NewString(),

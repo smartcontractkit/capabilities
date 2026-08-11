@@ -44,8 +44,8 @@ type userTxData struct {
 
 type entryFunctionPayload struct {
 	Inner struct {
-		Function  string        `json:"Function"`
-		Arguments []interface{} `json:"Arguments"`
+		Function  string `json:"Function"`
+		Arguments []any  `json:"Arguments"`
 	} `json:"Inner"`
 }
 
@@ -457,7 +457,7 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 
 // matchesTransmissionByReport checks if a transaction's receiver and raw_report
 // match exactly what this node would submit.
-func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{}) bool {
+func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []any) bool {
 	if len(arguments) < 3 {
 		thr.lggr.Debugw("Payload mismatch: expected at least 3 arguments", "got", len(arguments))
 		return false

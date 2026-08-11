@@ -174,6 +174,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		if err != nil {
 			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 		}
+	} else {
+		return fmt.Errorf("delta stage has to be set")
 	}
 
 	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)

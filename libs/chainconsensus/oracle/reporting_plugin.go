@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	"google.golang.org/protobuf/types/known/structpb"
@@ -621,7 +622,7 @@ func medianUInt64(heights []uint64) float64 {
 	if len(heights) == 0 {
 		return 0
 	}
-	sort.Slice(heights, func(i, j int) bool { return heights[i] < heights[j] })
+	slices.Sort(heights)
 	n := len(heights)
 	if n%2 == 1 {
 		return float64(heights[n/2])
