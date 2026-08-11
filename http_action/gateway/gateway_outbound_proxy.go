@@ -276,6 +276,7 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 			return "", ctx.Err()
 		default:
 			if len(selector.Members()) == 0 {
+				p.metrics.IncrementNoGatewaysAvailable(ctx, donID, lggr)
 				lggr.Warn("no available gateways found, retrying after backoff")
 				select {
 				case <-ctx.Done():
@@ -320,6 +321,7 @@ func (p *gatewayOutboundProxy) gatewayIDsForDon(ctx context.Context, donID strin
 		return nil, fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
 	if len(gatewayIDs) == 0 {
+		p.metrics.IncrementNoGatewaysAvailable(ctx, donID, p.lggr)
 		return nil, fmt.Errorf("no gateways configured for DON %q", donID)
 	}
 	return gatewayIDs, nil
