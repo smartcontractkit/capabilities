@@ -57,6 +57,11 @@ func (d *dependency) Dependencies() []standalone.BootstrapCommand {
 	return []standalone.BootstrapCommand{}
 }
 
+// ForEmbedding returns the receiver, so every embedded instance shares one client: they are
+// reading the same chain over the same RPCs, and a client per instance would multiply the request
+// rate without telling any of them anything new.
+func (d *dependency) ForEmbedding(int) standalone.BootstrapDependency[evmclient.Client] { return d }
+
 func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (evmclient.Client, error) {
 	cl, err := evmclient.NewClientFromConfig(ctx, d.lggr, d.cfg)
 	if err != nil {
