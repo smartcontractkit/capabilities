@@ -36,6 +36,8 @@ const (
 	SuffixLogTriggerFilterID = "-solana-log-trigger"
 	defaultQueryLimit        = 1000
 	defaultMaxPagesPerPoll   = 5
+	maxSubkeysPerTrigger     = 4
+	maxComparersPerSubkey    = 10
 )
 
 func publicKeyFromBytes(fieldName string, raw []byte) (solana.PublicKey, error) {
@@ -64,11 +66,16 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 		return fmt.Errorf("event idl json cannot be empty")
 	}
 
+	if len(config.Subkeys) > maxSubkeysPerTrigger {
+		return fmt.Errorf("too many subkeys: maximum supported is %d, got %d", maxSubkeysPerTrigger, len(config.Subkeys))
+	}
+
 	if config.CpiFilterConfig != nil {
 		if _, err := publicKeyFromBytes("cpi filter destination address", config.CpiFilterConfig.DestAddress); err != nil {
 			return err
 		}
 	}
+
 	return validateSubkeyComparers(config.Subkeys)
 }
 
@@ -76,6 +83,9 @@ func validateSubkeyComparers(subkeys []*solanacappb.SubkeyConfig) error {
 	for i, subkey := range subkeys {
 		if subkey == nil || len(subkey.Comparers) < 2 {
 			continue
+		}
+		if len(subkey.Comparers) > maxComparersPerSubkey {
+			return fmt.Errorf("subkey %d has too many comparers: %d limit: %d", i, len(subkey.Comparers), maxComparersPerSubkey)
 		}
 
 		eqValues := make(map[string]struct{})
