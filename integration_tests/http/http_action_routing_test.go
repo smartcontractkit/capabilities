@@ -122,7 +122,7 @@ func setupMultiDonRoutingEnv(
 	require.True(t, ok, "gateway connector must implement multi-gateway routing")
 	recordingConnector := &recordingGatewayConnector{MultiGatewayConnector: multiGC}
 
-	settingsGetter, err := settings.NewJSONGetter([]byte(fmt.Sprintf(`{
+	settingsGetter, err := settings.NewJSONGetter(fmt.Appendf(nil, `{
 		"org": {
 			%q: {
 				"PerWorkflow": {
@@ -132,7 +132,7 @@ func setupMultiDonRoutingEnv(
 				}
 			}
 		}
-	}`, multiDonTestOrgID, gatewayProxyDonID)))
+	}`, multiDonTestOrgID, gatewayProxyDonID))
 	require.NoError(t, err)
 
 	httpCapability := httpcap.NewService(lggr, limits.Factory{

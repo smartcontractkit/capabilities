@@ -107,11 +107,9 @@ func startPollingAsync(
 	})
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
-	}()
+	})
 	t.Cleanup(wg.Wait)
 }
 
@@ -671,7 +669,7 @@ func TestStartPolling(t *testing.T) {
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		receivedLogs := make([]*solanacappb.Log, 0)
-		for i := 0; i < len(expectedLogs); i++ {
+		for range expectedLogs {
 			select {
 			case response := <-logCh:
 				receivedLogs = append(receivedLogs, response.Trigger)
@@ -1432,6 +1430,49 @@ func TestValidateFilterConfig(t *testing.T) {
 			Name:            "test-filter",
 			ContractIdlJson: []byte("{}"),
 		}
+		err := validateFilterConfig(config)
+		require.NoError(t, err)
+	})
+
+	t.Run("rejects multiple distinct equality alternatives for one subkey", func(t *testing.T) {
+		config := &solanacappb.FilterLogTriggerRequest{
+			Address:         make([]byte, 32),
+			EventName:       "TestEvent",
+			Name:            "test-filter",
+			ContractIdlJson: []byte("{}"),
+			Subkeys: []*solanacappb.SubkeyConfig{
+				{
+					Path: []string{"token"},
+					Comparers: []*solanacappb.ValueComparator{
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+						{Value: []byte("ETH"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+					},
+				},
+			},
+		}
+
+		err := validateFilterConfig(config)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "conflicting equality filters")
+	})
+
+	t.Run("allows repeated equality with identical value", func(t *testing.T) {
+		config := &solanacappb.FilterLogTriggerRequest{
+			Address:         make([]byte, 32),
+			EventName:       "TestEvent",
+			Name:            "test-filter",
+			ContractIdlJson: []byte("{}"),
+			Subkeys: []*solanacappb.SubkeyConfig{
+				{
+					Path: []string{"token"},
+					Comparers: []*solanacappb.ValueComparator{
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+					},
+				},
+			},
+		}
+
 		err := validateFilterConfig(config)
 		require.NoError(t, err)
 	})

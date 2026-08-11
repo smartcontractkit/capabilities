@@ -222,13 +222,6 @@ func (wr *writeReport) execute(
 		wr.lggr.Errorw("InvokeOnReport failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to invoke forwarder report: %w", err)
 	}
-	invokeOnReportDuration := time.Since(invokeOnReportStart)
-	monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportInvokeOnReportDuration(
-		telemetryContext,
-		int64(math.Max(float64(invokeOnReportDuration.Milliseconds()), 0)),
-		int32(txReply.TxStatus), //nolint:gosec // txReply.TxStatus is a small enum value: 0, 1, 2.
-	))
-
 	wr.lggr.Debugw("InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus, "txIdempotencyKey", txReply.TxIdempotencyKey)
 
 	// Resolve V_ours up-front so the post-submit forwarder read pins to it; reading at >=V_ours
@@ -246,6 +239,20 @@ func (wr *writeReport) execute(
 		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
 		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctas, "ledgerVersion", ownLedgerVersion)
+	}
+
+	// Measured to the transaction's on-chain block timestamp rather than to when the submit call
+	// returned, so the value excludes TxManager poll-loop overshoot. ownBlockTimestamp is 0 when the
+	// tx lookup failed or the chain reported a negative timestamp; skip the metric in that case.
+	if ownBlockTimestamp > 0 {
+		inclusionDuration := time.UnixMicro(int64(ownBlockTimestamp)).Sub(invokeOnReportStart) //nolint:gosec // Aptos micros timestamp fits in int64
+		monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportInvokeOnReportDuration(
+			telemetryContext,
+			int64(math.Max(float64(inclusionDuration.Milliseconds()), 0)),
+			int32(txReply.TxStatus), //nolint:gosec // txReply.TxStatus is a small enum value: 0, 1, 2.
+		))
+	} else {
+		wr.lggr.Warnw("No block timestamp available, skipping InvokeOnReport duration metric", "txHash", txReply.TxHash)
 	}
 
 	newTransmissionInfo, err := capcommon.WithPollingRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
@@ -605,10 +612,8 @@ func (wr *writeReport) pollTransmissionInfo(
 			}
 		}
 
-		wait := (100 * time.Millisecond) << min(attempt, 5) // exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms, then capped at 2s
-		if wait > 2*time.Second {
-			wait = 2 * time.Second
-		}
+		// exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms, then capped at 2s
+		wait := min((100*time.Millisecond)<<min(attempt, 5), 2*time.Second)
 		attempt++
 
 		select {

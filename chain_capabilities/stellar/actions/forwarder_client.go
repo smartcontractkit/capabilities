@@ -21,6 +21,8 @@ const (
 	forwarderReportFunction              = "report"
 	forwarderGetTransmissionInfoFunction = "get_transmission_info"
 	defaultLedgerBoundsOffset            = uint32(20)
+	// DefaultForwarderLookbackLedgers is how many ledgers back to search for ReportProcessed events.
+	DefaultForwarderLookbackLedgers = int64(100)
 )
 
 type TransmissionState uint32
@@ -111,7 +113,7 @@ type ReportProcessedEvent struct {
 
 func newForwarderClient(service types.StellarService, lggr logger.Logger, forwarderAddress string, forwarderLookbackLedgers int64) CREForwarderClient {
 	if forwarderLookbackLedgers <= 0 {
-		forwarderLookbackLedgers = defaultForwarderLookbackLedgers
+		forwarderLookbackLedgers = DefaultForwarderLookbackLedgers
 	}
 	return &forwarderClient{
 		StellarService:           service,

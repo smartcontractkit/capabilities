@@ -37,14 +37,24 @@ const (
 	defaultQueryLimit        = 1000
 	defaultMaxPagesPerPoll   = 5
 	maxSubkeysPerTrigger     = 4
+	maxComparersPerSubkey    = 10
 )
+
+func publicKeyFromBytes(fieldName string, raw []byte) (solana.PublicKey, error) {
+	var key solana.PublicKey
+	if len(raw) != solana.PublicKeyLength {
+		return key, fmt.Errorf("invalid %s length: expected %d bytes, got %d", fieldName, solana.PublicKeyLength, len(raw))
+	}
+	copy(key[:], raw)
+	return key, nil
+}
 
 func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
 	}
-	if len(config.Address) != 32 {
-		return fmt.Errorf("invalid address length: expected 32 bytes, got %d", len(config.Address))
+	if _, err := publicKeyFromBytes("address", config.Address); err != nil {
+		return err
 	}
 	if config.EventName == "" {
 		return fmt.Errorf("event name cannot be empty")
@@ -55,9 +65,42 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if len(config.ContractIdlJson) == 0 {
 		return fmt.Errorf("event idl json cannot be empty")
 	}
+
 	if len(config.Subkeys) > maxSubkeysPerTrigger {
 		return fmt.Errorf("too many subkeys: maximum supported is %d, got %d", maxSubkeysPerTrigger, len(config.Subkeys))
 	}
+
+	if config.CpiFilterConfig != nil {
+		if _, err := publicKeyFromBytes("cpi filter destination address", config.CpiFilterConfig.DestAddress); err != nil {
+			return err
+		}
+	}
+
+	return validateSubkeyComparers(config.Subkeys)
+}
+
+func validateSubkeyComparers(subkeys []*solanacappb.SubkeyConfig) error {
+	for i, subkey := range subkeys {
+		if subkey == nil || len(subkey.Comparers) < 2 {
+			continue
+		}
+		if len(subkey.Comparers) > maxComparersPerSubkey {
+			return fmt.Errorf("subkey %d has too many comparers: %d limit: %d", i, len(subkey.Comparers), maxComparersPerSubkey)
+		}
+
+		eqValues := make(map[string]struct{})
+		for _, comp := range subkey.Comparers {
+			if comp == nil || comp.Operator != solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ {
+				continue
+			}
+			eqValues[string(comp.Value)] = struct{}{}
+		}
+
+		if len(eqValues) > 1 {
+			return fmt.Errorf("subkey %d has conflicting equality filters", i)
+		}
+	}
+
 	return nil
 }
 
@@ -66,16 +109,19 @@ func newUserError(err error) caperrors.Error {
 }
 
 func (lts *SolanaLogTriggerService) ToLogPollerFilter(triggerID string, config *solanacappb.FilterLogTriggerRequest) (*solana.LPFilterQuery, error) {
-	var address solana.PublicKey
-	if len(config.Address) != len(address) {
-		return nil, fmt.Errorf("invalid address length: expected %d bytes, got %d", len(address), len(config.Address))
+	address, err := publicKeyFromBytes("address", config.Address)
+	if err != nil {
+		return nil, err
 	}
-	copy(address[:], config.Address)
 
 	var cpiFilterConfig *solana.CPIFilterConfig
 	if config.CpiFilterConfig != nil {
+		destAddress, err := publicKeyFromBytes("cpi filter destination address", config.CpiFilterConfig.DestAddress)
+		if err != nil {
+			return nil, err
+		}
 		cpiFilterConfig = &solana.CPIFilterConfig{
-			DestAddress: address,
+			DestAddress: destAddress,
 			MethodName:  string(config.CpiFilterConfig.MethodName),
 		}
 	}
