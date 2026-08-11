@@ -194,10 +194,6 @@ jobs:
         if: matrix.projects != 'solana'
         run: ./nx run ${{ matrix.projects }}:race
 
-
-  integration-tests:
-    uses: ./.github/workflows/integration-tests.yml
-
   tidy-and-generate:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
@@ -312,7 +308,6 @@ jobs:
       - test
       - race
       - tidy-and-generate
-      - integration-tests
       - modgraph
     if: always()
     steps:

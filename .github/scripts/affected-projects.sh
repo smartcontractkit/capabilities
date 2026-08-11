@@ -38,10 +38,6 @@ for target in "${targets[@]}"; do
   # Add --head=HEAD to ensure consistency (compared against --base)
   projects_with_target=$(./nx show projects --affected -t $target --json --base=$base --head=HEAD)
 
-  if [ "$target" == "test" ]; then
-    projects_with_target=$(echo $projects_with_target | jq 'del(.[] | select(. == "integration_tests"))')
-  fi
-
   json_output=$(echo "$json_output" | jq --argjson target_projects "$projects_with_target" --arg target "$target" \
     '. + {"projects_with_\($target)": $target_projects}')
 
