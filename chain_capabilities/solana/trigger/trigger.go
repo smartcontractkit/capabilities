@@ -40,8 +40,8 @@ const (
 
 func publicKeyFromBytes(fieldName string, raw []byte) (solana.PublicKey, error) {
 	var key solana.PublicKey
-	if len(raw) != len(key) {
-		return key, fmt.Errorf("invalid %s length: expected %d bytes, got %d", fieldName, len(key), len(raw))
+	if len(raw) != solana.PublicKeyLength {
+		return key, fmt.Errorf("invalid %s length: expected %d bytes, got %d", fieldName, solana.PublicKeyLength, len(raw))
 	}
 	copy(key[:], raw)
 	return key, nil
