@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 
@@ -19,12 +18,9 @@ import (
 )
 
 // Config is the root command's configuration, populated by flags.RegisterCommandFlags (see
-// main.go). The libocr peer / proxy-client configuration lives on the ocr bootstrap dependency
-// instead.
+// main.go). The libocr peer configuration lives on the ocr bootstrap dependency, and the address
+// this process serves on lives on the listener dependency.
 type Config struct {
-	// ProxyListenAddress is the address the proxy gRPC server listens on.
-	ProxyListenAddress string `usage:"address the proxy gRPC server listens on"`
-
 	// CapabilitiesRegistryAddress is the on-chain CapabilitiesRegistry (v2) contract address. The registry
 	// always runs, so this is as required in practice as the registry itself.
 	CapabilitiesRegistryAddress string `usage:"on-chain CapabilitiesRegistry (v2) contract address" validate:"required" example:"'0xYourRegistryAddress'"`
@@ -34,7 +30,6 @@ type Config struct {
 }
 
 var defaultConfig = Config{
-	ProxyListenAddress:               ":50051",
 	CapabilitiesRegistrySyncInterval: *config.MustNewDuration(registry.DefaultSyncInterval),
 }
 
@@ -49,8 +44,11 @@ type proxyService struct {
 	services.Service
 	eng *services.Engine
 
-	cfg       *Config
-	lggr      logger.Logger
+	lggr logger.Logger
+	// listener is where this process serves. Resolved as a dependency rather than opened from a
+	// configured address, so a process running several instances gives each of them a socket of
+	// its own without this service knowing that more than one exists.
+	listener  standalone.Dependency[net.Listener]
 	factories standalone.Dependency[*ocr.Factories]
 
 	// registrars attach additional gRPC services to this server before it
@@ -67,8 +65,8 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(cfg *Config, lggr logger.Logger, factories standalone.Dependency[*ocr.Factories], registrars ...func(*grpc.Server)) *proxyService {
-	s := &proxyService{cfg: cfg, lggr: lggr, factories: factories, registrars: registrars}
+func newProxyService(lggr logger.Logger, listener standalone.Dependency[net.Listener], factories standalone.Dependency[*ocr.Factories], registrars ...func(*grpc.Server)) *proxyService {
+	s := &proxyService{lggr: lggr, listener: listener, factories: factories, registrars: registrars}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",
 		Start: s.start,
@@ -78,10 +76,6 @@ func newProxyService(cfg *Config, lggr logger.Logger, factories standalone.Depen
 }
 
 func (s *proxyService) start(ctx context.Context) error {
-	if s.cfg.ProxyListenAddress == "" {
-		return errors.New("--proxy-listen-address is required")
-	}
-
 	factories, err := s.factories.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get libocr factories: %w", err)
@@ -93,9 +87,9 @@ func (s *proxyService) start(ctx context.Context) error {
 		return fmt.Errorf("failed to create proxy metrics: %w", err)
 	}
 
-	lis, err := net.Listen("tcp", s.cfg.ProxyListenAddress)
+	lis, err := s.listener.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", s.cfg.ProxyListenAddress, err)
+		return fmt.Errorf("failed to get listener: %w", err)
 	}
 
 	// The factories back both surfaces over the same rage connection and

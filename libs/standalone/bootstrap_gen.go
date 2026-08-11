@@ -12,43 +12,74 @@ import (
 // fn receives the context, the StandaloneConfig, and the 1 dependency, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run1[T0 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0)
-	}, bootDep0)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0)
+		}
+	},
+		[]BootstrapCommand{bootDep0},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0)},
+	)
 }
 
 // Run2 bootstraps the services built from 2 dependencies.
 // fn receives the context, the StandaloneConfig, and the 2 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run2[T0 any, T1 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1]) []services.Service,
 	bootDep0 BootstrapDependency[T0],
 	bootDep1 BootstrapDependency[T1],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1)
-	}, bootDep0, bootDep1)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0)},
+	)
 }
 
 // Run3 bootstraps the services built from 3 dependencies.
 // fn receives the context, the StandaloneConfig, and the 3 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run3[T0 any, T1 any, T2 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2]) []services.Service,
@@ -56,22 +87,35 @@ func Run3[T0 any, T1 any, T2 any](
 	bootDep1 BootstrapDependency[T1],
 	bootDep2 BootstrapDependency[T2],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2)
-	}, bootDep0, bootDep1, bootDep2)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0)},
+	)
 }
 
 // Run4 bootstraps the services built from 4 dependencies.
 // fn receives the context, the StandaloneConfig, and the 4 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run4[T0 any, T1 any, T2 any, T3 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3]) []services.Service,
@@ -80,24 +124,37 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 	bootDep2 BootstrapDependency[T2],
 	bootDep3 BootstrapDependency[T3],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
+		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2, dep3)
-	}, bootDep0, bootDep1, bootDep2, bootDep3)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2, dep3)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0)},
+	)
 }
 
 // Run5 bootstraps the services built from 5 dependencies.
 // fn receives the context, the StandaloneConfig, and the 5 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4]) []services.Service,
@@ -107,26 +164,39 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	bootDep3 BootstrapDependency[T3],
 	bootDep4 BootstrapDependency[T4],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
+		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
+		dep4 := instanceOf(bs, bootDep4, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4)
-	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0)},
+	)
 }
 
 // Run6 bootstraps the services built from 6 dependencies.
 // fn receives the context, the StandaloneConfig, and the 6 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5]) []services.Service,
@@ -137,28 +207,41 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	bootDep4 BootstrapDependency[T4],
 	bootDep5 BootstrapDependency[T5],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
+		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
+		dep4 := instanceOf(bs, bootDep4, index, embed)
 
-	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
+		dep5 := instanceOf(bs, bootDep5, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5)
-	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0)},
+	)
 }
 
 // Run7 bootstraps the services built from 7 dependencies.
 // fn receives the context, the StandaloneConfig, and the 7 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6]) []services.Service,
@@ -170,30 +253,43 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	bootDep5 BootstrapDependency[T5],
 	bootDep6 BootstrapDependency[T6],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
+		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
+		dep4 := instanceOf(bs, bootDep4, index, embed)
 
-	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
+		dep5 := instanceOf(bs, bootDep5, index, embed)
 
-	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
+		dep6 := instanceOf(bs, bootDep6, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6)
-	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0)},
+	)
 }
 
 // Run8 bootstraps the services built from 8 dependencies.
 // fn receives the context, the StandaloneConfig, and the 8 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7]) []services.Service,
@@ -206,32 +302,45 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	bootDep6 BootstrapDependency[T6],
 	bootDep7 BootstrapDependency[T7],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
+		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
+		dep4 := instanceOf(bs, bootDep4, index, embed)
 
-	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
+		dep5 := instanceOf(bs, bootDep5, index, embed)
 
-	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
+		dep6 := instanceOf(bs, bootDep6, index, embed)
 
-	dep7 := &dependency[T7]{bd: bootDep7, bs: bs}
+		dep7 := instanceOf(bs, bootDep7, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7)
-	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0)},
+	)
 }
 
 // Run9 bootstraps the services built from 9 dependencies.
 // fn receives the context, the StandaloneConfig, and the 9 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8]) []services.Service,
@@ -245,34 +354,47 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 	bootDep7 BootstrapDependency[T7],
 	bootDep8 BootstrapDependency[T8],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
+		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
+		dep4 := instanceOf(bs, bootDep4, index, embed)
 
-	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
+		dep5 := instanceOf(bs, bootDep5, index, embed)
 
-	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
+		dep6 := instanceOf(bs, bootDep6, index, embed)
 
-	dep7 := &dependency[T7]{bd: bootDep7, bs: bs}
+		dep7 := instanceOf(bs, bootDep7, index, embed)
 
-	dep8 := &dependency[T8]{bd: bootDep8, bs: bs}
+		dep8 := instanceOf(bs, bootDep8, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8)
-	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0)},
+	)
 }
 
 // Run10 bootstraps the services built from 10 dependencies.
 // fn receives the context, the StandaloneConfig, and the 10 dependencies, and returns the services to run.
 // The dependencies are wrapped into a factory that only needs the context, which is handed to bootstrap.
 // The returned services are started together and their health is aggregated by the bootstrapper.
+//
+// fn is called once per instance: a single time for `run`, and once for each of the instances
+// `embed` starts. For an embedded instance every dependency is first replaced by the form serving
+// that instance (BootstrapDependency.ForEmbedding), so a dependency these services resolve is
+// already theirs.
 func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any, T9 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 Dependency[T0], dep1 Dependency[T1], dep2 Dependency[T2], dep3 Dependency[T3], dep4 Dependency[T4], dep5 Dependency[T5], dep6 Dependency[T6], dep7 Dependency[T7], dep8 Dependency[T8], dep9 Dependency[T9]) []services.Service,
@@ -287,28 +409,36 @@ func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 an
 	bootDep8 BootstrapDependency[T8],
 	bootDep9 BootstrapDependency[T9],
 ) error {
+	return bs.run(func(index int, embed bool) instanceServices {
 
-	dep0 := &dependency[T0]{bd: bootDep0, bs: bs}
+		dep0 := instanceOf(bs, bootDep0, index, embed)
 
-	dep1 := &dependency[T1]{bd: bootDep1, bs: bs}
+		dep1 := instanceOf(bs, bootDep1, index, embed)
 
-	dep2 := &dependency[T2]{bd: bootDep2, bs: bs}
+		dep2 := instanceOf(bs, bootDep2, index, embed)
 
-	dep3 := &dependency[T3]{bd: bootDep3, bs: bs}
+		dep3 := instanceOf(bs, bootDep3, index, embed)
 
-	dep4 := &dependency[T4]{bd: bootDep4, bs: bs}
+		dep4 := instanceOf(bs, bootDep4, index, embed)
 
-	dep5 := &dependency[T5]{bd: bootDep5, bs: bs}
+		dep5 := instanceOf(bs, bootDep5, index, embed)
 
-	dep6 := &dependency[T6]{bd: bootDep6, bs: bs}
+		dep6 := instanceOf(bs, bootDep6, index, embed)
 
-	dep7 := &dependency[T7]{bd: bootDep7, bs: bs}
+		dep7 := instanceOf(bs, bootDep7, index, embed)
 
-	dep8 := &dependency[T8]{bd: bootDep8, bs: bs}
+		dep8 := instanceOf(bs, bootDep8, index, embed)
 
-	dep9 := &dependency[T9]{bd: bootDep9, bs: bs}
+		dep9 := instanceOf(bs, bootDep9, index, embed)
 
-	return bs.run(func(ctx context.Context) []services.Service {
-		return fn(ctx, bs.config, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8, dep9)
-	}, bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8, bootDep9)
+		return func(ctx context.Context, cfg *StandaloneConfig) []services.Service {
+			return fn(ctx, cfg, dep0, dep1, dep2, dep3, dep4, dep5, dep6, dep7, dep8, dep9)
+		}
+	},
+		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8, bootDep9},
+		// The embedded form of each dependency, so its settings are registered on the command that
+		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
+		// each instance builds its own when it starts.
+		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0), bootDep9.ForEmbedding(0)},
+	)
 }

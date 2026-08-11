@@ -4,9 +4,42 @@
 
 ```toml
 # ----- Global Configuration -----
-proxy-listen-address = ':50051'
 capabilities-registry-address = '0xYourRegistryAddress'
 capabilities-registry-sync-interval = '12s'
+[telemetry]
+endpoint = ''
+insecure-connection = false
+ca-cert-file = ''
+attributes = ['env=staging']
+auth-pub-key-hex = ''
+auth-headers-ttl = '0s'
+prometheus-bridge-enabled = false
+[tracing]
+enabled = false
+sampling-ratio = 1
+tls-cert-file = ''
+[chip-ingress]
+endpoint = ''
+insecure-connection = false
+[pyroscope]
+server-address = ''
+environment = ''
+[prometheus]
+port = -1
+[evm]
+http-url = ['https://rpc.example.com']
+chain-id = '1'
+chain-type = ''
+finality-tag-enabled = true
+finality-depth = 50
+poll-interval = '10s'
+[proxy]
+listen-address = ':50051'
+
+# ----- Command: main embed -----
+instances = 1
+
+# ----- Command: main run -----
 [ocr]
 listen-addresses = ['127.0.0.1:1234']
 delta-reconcile = '1m0s'
@@ -16,32 +49,18 @@ outgoing-buffer-size = 100
 keystore-password = 'xxxxx'
 [database]
 url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable'
-[evm]
-http-url = ['https://rpc.example.com']
-chain-id = '1'
-chain-type = ''
-finality-tag-enabled = true
-finality-depth = 50
-poll-interval = '10s'
 
 
 ```
 
 ## Global
 ```toml
-proxy-listen-address = ':50051' # Default
 capabilities-registry-address = '0xYourRegistryAddress' # Example
 capabilities-registry-sync-interval = '12s' # Default
 ```
 
 
 # Global Configuration
-
-### proxy-listen-address
-```toml
-proxy-listen-address = ':50051' # Default
-```
-proxy-listen-address address the proxy gRPC server listens on
 
 ### capabilities-registry-address
 ```toml
@@ -55,92 +74,152 @@ capabilities-registry-sync-interval = '12s' # Default
 ```
 capabilities-registry-sync-interval how often the on-chain registry is re-read
 
-### fake
+## telemetry
 ```toml
-fake = false # Docs only
-```
-fake use fake dependencies instead of real ones
-
-## ocr
-```toml
-[ocr]
-listen-addresses = ['127.0.0.1:1234'] # Example
-announce-addresses = [] # Default
-delta-reconcile = '1m0s' # Default
-delta-dial = '5s' # Default
-incoming-buffer-size = 100 # Default
-outgoing-buffer-size = 100 # Default
-keystore-password = 'xxxxx' # Example
-proxy-address = '' # Example
+[telemetry]
+endpoint = '' # Default
+insecure-connection = false # Default
+ca-cert-file = '' # Default
+attributes = ['env=staging'] # Example
+auth-pub-key-hex = '' # Default
+auth-headers-ttl = '0s' # Default
+prometheus-bridge-enabled = false # Default
 ```
 
 
-### listen-addresses
+### endpoint
 ```toml
-listen-addresses = ['127.0.0.1:1234'] # Example
+endpoint = '' # Default
 ```
-listen-addresses rage p2p V2 listen addresses (host:port); creates a local peer
+endpoint OTLP gRPC endpoint telemetry is exported to; telemetry is disabled when unset
 
-### announce-addresses
+### insecure-connection
 ```toml
-announce-addresses = [] # Default
+insecure-connection = false # Default
 ```
-announce-addresses rage p2p V2 announce addresses (host:port); defaults to the listen addresses (must not be set unless listen-addresses is set)
+insecure-connection export telemetry over an insecure connection
 
-### delta-reconcile
+### ca-cert-file
 ```toml
-delta-reconcile = '1m0s' # Default
+ca-cert-file = '' # Default
 ```
-delta-reconcile rage p2p V2 delta reconcile interval
+ca-cert-file CA certificate file used to verify the telemetry endpoint
 
-### delta-dial
+### attributes
 ```toml
-delta-dial = '5s' # Default
+attributes = ['env=staging'] # Example
 ```
-delta-dial rage p2p V2 minimum interval between dial attempts
+attributes extra telemetry resource attributes, as key=value pairs
 
-### incoming-buffer-size
+### auth-headers
 ```toml
-incoming-buffer-size = 100 # Default
+auth-headers = [] # Docs only
 ```
-incoming-buffer-size per-remote incoming message buffer size
+auth-headers telemetry auth headers, as key=value pairs
 
-### outgoing-buffer-size
+### auth-pub-key-hex
 ```toml
-outgoing-buffer-size = 100 # Default
+auth-pub-key-hex = '' # Default
 ```
-outgoing-buffer-size per-remote outgoing message buffer size
+auth-pub-key-hex public key the telemetry auth headers are derived from
 
-### keystore-password
+### auth-headers-ttl
 ```toml
-keystore-password = 'xxxxx' # Example
+auth-headers-ttl = '0s' # Default
 ```
-keystore-password password for the node keystore holding the shared P2P identity
+auth-headers-ttl how long generated telemetry auth headers are valid for
 
-### proxy-address
+### prometheus-bridge-enabled
 ```toml
-proxy-address = '' # Example
+prometheus-bridge-enabled = false # Default
 ```
-proxy-address delegate rage networking to a proxy at this gRPC address instead of creating a local peer (required unless listen-addresses is set; must not be set when listen-addresses is set)
+prometheus-bridge-enabled feed metrics registered on the prometheus registry into the telemetry pipeline
 
-## database
+## tracing
 ```toml
-[database]
-url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
+[tracing]
+enabled = false # Default
+sampling-ratio = 1 # Default
+tls-cert-file = '' # Default
 ```
 
 
-### url
+### enabled
 ```toml
-url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
+enabled = false # Default
 ```
-url database url
+enabled export traces to the telemetry endpoint
 
-### real-db
+### sampling-ratio
 ```toml
-real-db = false # Docs only
+sampling-ratio = 1 # Default
 ```
-real-db use a real database even though --fake is set; requires --fake, and a url to point at
+sampling-ratio fraction of traces sampled, from 0 to 1
+
+### tls-cert-file
+```toml
+tls-cert-file = '' # Default
+```
+tls-cert-file TLS certificate file used by the trace exporter
+
+## chip-ingress
+```toml
+[chip-ingress]
+endpoint = '' # Default
+insecure-connection = false # Default
+```
+
+
+### endpoint
+```toml
+endpoint = '' # Default
+```
+endpoint chip ingress gRPC endpoint; the emitter is disabled when unset
+
+### insecure-connection
+```toml
+insecure-connection = false # Default
+```
+insecure-connection connect to chip ingress over an insecure connection
+
+## pyroscope
+```toml
+[pyroscope]
+server-address = '' # Default
+environment = '' # Default
+```
+
+
+### server-address
+```toml
+server-address = '' # Default
+```
+server-address pyroscope server address; profiling is disabled when unset
+
+### auth-token
+```toml
+auth-token = 'xxxxx' # Docs only
+```
+auth-token pyroscope auth token
+
+### environment
+```toml
+environment = '' # Default
+```
+environment tag attached to profiles
+
+## prometheus
+```toml
+[prometheus]
+port = -1 # Default
+```
+
+
+### port
+```toml
+port = -1 # Default
+```
+port serving /metrics, /debug/pprof, /healthz and /readyz; -1 disables the server, 0 asks the OS for an ephemeral port. Instance i of an embed run listens on this port plus i
 
 ## evm
 ```toml
@@ -196,4 +275,96 @@ finality-depth finality depth, used when --evm.finality-tag-enabled=false
 poll-interval = '10s' # Default
 ```
 poll-interval per-node health poll interval
+
+## proxy
+```toml
+[proxy]
+listen-address = ':50051' # Default
+instances = 1 # Default
+```
+
+
+### listen-address
+```toml
+listen-address = ':50051' # Default
+```
+listen-address address (host:port) this server listens on; instance i of an embed run listens on the port plus i
+
+# Command: main embed
+
+### instances
+```toml
+instances = 1 # Default
+```
+instances number of instances to run in this process
+
+# Command: main run
+
+## ocr
+```toml
+[ocr]
+listen-addresses = ['127.0.0.1:1234'] # Example
+announce-addresses = [] # Default
+delta-reconcile = '1m0s' # Default
+delta-dial = '5s' # Default
+incoming-buffer-size = 100 # Default
+outgoing-buffer-size = 100 # Default
+keystore-password = 'xxxxx' # Default
+```
+
+
+### listen-addresses
+```toml
+listen-addresses = ['127.0.0.1:1234'] # Example
+```
+listen-addresses rage p2p V2 listen addresses (host:port); creates a local peer
+
+### announce-addresses
+```toml
+announce-addresses = [] # Default
+```
+announce-addresses rage p2p V2 announce addresses (host:port); defaults to the listen addresses (must not be set unless listen-addresses is set)
+
+### delta-reconcile
+```toml
+delta-reconcile = '1m0s' # Default
+```
+delta-reconcile rage p2p V2 delta reconcile interval
+
+### delta-dial
+```toml
+delta-dial = '5s' # Default
+```
+delta-dial rage p2p V2 minimum interval between dial attempts
+
+### incoming-buffer-size
+```toml
+incoming-buffer-size = 100 # Default
+```
+incoming-buffer-size per-remote incoming message buffer size
+
+### outgoing-buffer-size
+```toml
+outgoing-buffer-size = 100 # Default
+```
+outgoing-buffer-size per-remote outgoing message buffer size
+
+### keystore-password
+```toml
+keystore-password = 'xxxxx' # Default
+```
+keystore-password password for the node keystore holding the shared P2P identity; required unless the identity is derived, as it is under embed
+
+## database
+```toml
+[database]
+url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
+```
+
+
+### url
+```toml
+url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable' # Example
+```
+url database url
 

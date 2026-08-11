@@ -4,12 +4,14 @@ import (
 	"context"
 	"embed"
 	"log"
+	"net"
 
 	"github.com/spf13/cobra"
 
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
 	"github.com/smartcontractkit/capabilities/libs/standalone/evm"
+	"github.com/smartcontractkit/capabilities/libs/standalone/listener"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
@@ -25,6 +27,9 @@ const migrationsTable = "proxy_migrations"
 // ocrDiscovererTable is the table backing OCR p2p announcements. Must match the
 // CREATE TABLE in migrations/0001_*.sql.
 const ocrDiscovererTable = "proxy_ocr_discoverer_announcements"
+
+// defaultListenAddress is where the proxy and registry are served when no address is configured.
+const defaultListenAddress = ":50051"
 
 func main() {
 	if err := run(); err != nil {
@@ -61,27 +66,32 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	bootstrapper := standalone.NewBootstrapper(root, standalone.WithOtelViews(metricViews()))
 	lggr := bootstrapper.Logger()
 
-	// The ocr dependency owns the libocr networking config (create vs proxy
-	// mode, and the keystore password that unlocks the peer identity) and wraps
-	// the database dependency it needs for that identity and the OCR discoverer
-	// table.
+	// This binary is the process that hosts the peer, so it takes the ocr host dependency rather
+	// than the proxy one: it owns the libocr networking config (the peer's own settings, and the
+	// keystore password that unlocks its identity) and wraps the database dependency it needs for
+	// that identity and the OCR discoverer table.
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
-	ocrDep := ocr.Dependency(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
+	ocrDep := ocr.Host(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
 	// The registry always runs, so the EVM client is always resolved and the
 	// evm settings are as required in practice as the registry address is.
 	evmDep := evm.Dependency(lggr.Named("EVM"))
+	// Where this process serves, as a dependency rather than a setting the proxy service reads:
+	// the address is the one thing two instances in one process cannot agree on, and resolving it
+	// per instance keeps that entirely out of the service.
+	listenerDep := listener.Dependency("proxy", defaultListenAddress)
 
-	return standalone.Run2(bootstrapper, func(
+	return standalone.Run3(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
 		factories standalone.Dependency[*ocr.Factories],
 		evmClient standalone.Dependency[evmclient.Client],
+		lis standalone.Dependency[net.Listener],
 	) []services.Service {
 		regSvc := newRegistryService(cfg.CapabilitiesRegistryAddress, cfg.CapabilitiesRegistrySyncInterval.Duration(),
 			scfg.Logger.Named("capabilities registry"), evmClient, factories)
 		// The registry attaches to the proxy's gRPC server, so core reaches both
-		// over the single --proxy-listen-address it already configures.
-		proxySvc := newProxyService(&cfg, scfg.Logger.Named("proxy service"), factories, regSvc.Register)
+		// over the single address it already configures.
+		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), lis, factories, regSvc.Register)
 		return []services.Service{proxySvc, regSvc}
-	}, ocrDep, evmDep)
+	}, ocrDep, evmDep, listenerDep)
 }
