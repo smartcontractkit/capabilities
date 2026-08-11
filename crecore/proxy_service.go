@@ -8,7 +8,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/smartcontractkit/capabilities/crecore/registry"
-	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -36,28 +35,26 @@ var defaultConfig = Config{
 // proxyService exposes the libocr rage networking factories over gRPC so that
 // core can delegate its OCR networking (and, in future, DON-to-DON networking)
 // to this process. The factories come from the ocr bootstrap dependency, which
-// either creates a local peer or is backed by another proxy.
-//
-// NOTE: per the standalone framework, Start blocks until shutdown (the
-// Bootstrapper returns the result of Start directly).
+// hosts a local peer, is backed by another proxy, or is in-process for an
+// embedded instance - this service cannot tell, and neither can core.
 type proxyService struct {
 	services.Service
 	eng *services.Engine
 
 	lggr logger.Logger
-	// listener is where this process serves. Resolved as a dependency rather than opened from a
-	// configured address, so a process running several instances gives each of them a socket of
-	// its own without this service knowing that more than one exists.
-	listener  standalone.Dependency[net.Listener]
-	factories standalone.Dependency[*ocr.Factories]
+	// listener is where this process serves. It arrives resolved rather than as an address to open,
+	// so a process running several instances gives each of them a socket of its own without this
+	// service knowing that more than one exists. Its lifetime is the bootstrapper's, as the
+	// factories' is: both outlive this service's own start and close.
+	listener  net.Listener
+	factories *ocr.Factories
 
 	// registrars attach additional gRPC services to this server before it
 	// Serves. Used so co-located services (e.g. the CapabilitiesRegistry) share
 	// one address instead of each opening a listener.
 	registrars []func(*grpc.Server)
 
-	grpcServer     *grpc.Server
-	factoriesClose func() error
+	grpcServer *grpc.Server
 }
 
 var _ services.Service = (*proxyService)(nil)
@@ -65,39 +62,27 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(lggr logger.Logger, listener standalone.Dependency[net.Listener], factories standalone.Dependency[*ocr.Factories], registrars ...func(*grpc.Server)) *proxyService {
+func newProxyService(lggr logger.Logger, listener net.Listener, factories *ocr.Factories, registrars ...func(*grpc.Server)) *proxyService {
 	s := &proxyService{lggr: lggr, listener: listener, factories: factories, registrars: registrars}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",
 		Start: s.start,
-		Close: s.close,
 	}.NewServiceEngine(lggr)
 	return s
 }
 
-func (s *proxyService) start(ctx context.Context) error {
-	factories, err := s.factories.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get libocr factories: %w", err)
-	}
-	s.factoriesClose = factories.Close
-
+func (s *proxyService) start(context.Context) error {
 	metrics, err := newProxyMetrics()
 	if err != nil {
 		return fmt.Errorf("failed to create proxy metrics: %w", err)
 	}
 
-	lis, err := s.listener.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get listener: %w", err)
-	}
-
 	// The factories back both surfaces over the same rage connection and
 	// discoverer: OCR endpoints and DON-to-DON peer groups.
 	s.grpcServer = grpc.NewServer()
-	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(factories.OCR2Endpoint, metrics))
-	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(factories.OCR3_1Endpoint, metrics))
-	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(factories.PeerGroup, metrics))
+	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(s.factories.OCR2Endpoint, metrics))
+	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(s.factories.OCR3_1Endpoint, metrics))
+	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(s.factories.PeerGroup, metrics))
 
 	for _, register := range s.registrars {
 		register(s.grpcServer)
@@ -111,20 +96,10 @@ func (s *proxyService) start(ctx context.Context) error {
 		s.grpcServer.GracefulStop()
 	})
 	s.eng.Go(func(context.Context) {
-		s.lggr.Infow("p2p proxy serving", "address", lis.Addr().String())
-		if err := s.grpcServer.Serve(lis); err != nil {
+		s.lggr.Infow("p2p proxy serving", "address", s.listener.Addr().String())
+		if err := s.grpcServer.Serve(s.listener); err != nil {
 			s.eng.Errorw("proxy gRPC server stopped", "err", err)
 		}
 	})
-	return nil
-}
-
-// close tears down the libocr factories (local peer or proxy clients). The gRPC
-// server is gracefully stopped by the goroutine started in start once the
-// engine cancels its context.
-func (s *proxyService) close() error {
-	if s.factoriesClose != nil {
-		return s.factoriesClose()
-	}
 	return nil
 }

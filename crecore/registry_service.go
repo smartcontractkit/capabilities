@@ -14,8 +14,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/capabilities/crecore/registry"
-	"github.com/smartcontractkit/capabilities/libs/standalone"
-	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 
 	regserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/server"
 
@@ -42,9 +40,11 @@ type registryService struct {
 	contractAddress string
 	syncInterval    time.Duration
 
-	lggr      logger.Logger
-	evm       standalone.Dependency[evmclient.Client]
-	factories standalone.Dependency[*ocr.Factories]
+	lggr logger.Logger
+	evm  evmclient.Client
+	// peerID is this node's own, from the same identity the rage networking uses, so the node record
+	// this process resolves is the node it fronts.
+	peerID ragetypes.PeerID
 
 	syncer   *registry.Syncer
 	registry *regserver.Registry
@@ -56,15 +56,15 @@ func newRegistryService(
 	contractAddress string,
 	syncInterval time.Duration,
 	lggr logger.Logger,
-	evm standalone.Dependency[evmclient.Client],
-	factories standalone.Dependency[*ocr.Factories],
+	evm evmclient.Client,
+	peerID ragetypes.PeerID,
 ) *registryService {
 	s := &registryService{
 		contractAddress: contractAddress,
 		syncInterval:    syncInterval,
 		lggr:            lggr,
 		evm:             evm,
-		factories:       factories,
+		peerID:          peerID,
 		// The Registry exists from construction so it can be attached to the
 		// proxy's gRPC server before either service starts. Its metadata source is
 		// installed later, in start.
@@ -83,23 +83,11 @@ func (s *registryService) start(ctx context.Context) error {
 		return fmt.Errorf("--capabilities-registry-address is required and must be a hex address, got %q", s.contractAddress)
 	}
 
-	cl, err := s.evm.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get evm client: %w", err)
-	}
-
-	// The peer ID comes from the same keystore-backed identity the rage peer uses,
-	// so the node record this process resolves is the node it fronts.
-	factories, err := s.factories.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get libocr factories: %w", err)
-	}
-	peerID := factories.PeerID
-	getPeerID := func() (ragetypes.PeerID, error) { return peerID, nil }
+	getPeerID := func() (ragetypes.PeerID, error) { return s.peerID, nil }
 
 	syncer, err := registry.NewSyncer(
 		s.lggr,
-		cl,
+		s.evm,
 		common.HexToAddress(s.contractAddress),
 		getPeerID,
 		s.syncInterval,
@@ -115,7 +103,7 @@ func (s *registryService) start(ctx context.Context) error {
 	}
 
 	s.lggr.Infow("CapabilitiesRegistry started",
-		"contract", s.contractAddress, "syncInterval", s.syncInterval, "peerID", peerID.String())
+		"contract", s.contractAddress, "syncInterval", s.syncInterval, "peerID", s.peerID.String())
 	return nil
 }
 
