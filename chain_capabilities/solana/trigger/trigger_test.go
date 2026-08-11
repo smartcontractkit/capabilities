@@ -39,7 +39,6 @@ const (
 
 var (
 	testPublicKey    = createTestPublicKey(testAddress)
-	testDestPublicKey = createTestPublicKey("22222222222222222222222222222223")
 	testEventSig     = createTestEventSignature("TestEvent(string,uint256)")
 	testEventIdlJSON = []byte("{}")
 	testSubkeys      = []*solanacappb.SubkeyConfig{
@@ -108,11 +107,9 @@ func startPollingAsync(
 	})
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
-	}()
+	})
 	t.Cleanup(wg.Wait)
 }
 
@@ -376,21 +373,6 @@ func TestToLogPollerFilter(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, filter)
 		assert.Contains(t, err.Error(), "invalid address length")
-	})
-
-	t.Run("uses distinct cpi destination address", func(t *testing.T) {
-		request := createTestRequest()
-		request.CpiFilterConfig = &solanacappb.CPIFilterConfig{
-			DestAddress: testDestPublicKey[:],
-			MethodName:  []byte("invoke_test"),
-		}
-
-		filter, err := service.ToLogPollerFilter(testTriggerID, request)
-		require.NoError(t, err)
-		require.NotNil(t, filter)
-		require.NotNil(t, filter.CPIFilterConfig)
-		assert.Equal(t, testDestPublicKey[:], filter.CPIFilterConfig.DestAddress[:])
-		assert.NotEqual(t, filter.Address[:], filter.CPIFilterConfig.DestAddress[:])
 	})
 }
 
@@ -669,7 +651,7 @@ func TestStartPolling(t *testing.T) {
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		receivedLogs := make([]*solanacappb.Log, 0)
-		for i := 0; i < len(expectedLogs); i++ {
+		for range expectedLogs {
 			select {
 			case response := <-logCh:
 				receivedLogs = append(receivedLogs, response.Trigger)
@@ -1434,21 +1416,47 @@ func TestValidateFilterConfig(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("invalid cpi destination address length", func(t *testing.T) {
+	t.Run("rejects multiple distinct equality alternatives for one subkey", func(t *testing.T) {
 		config := &solanacappb.FilterLogTriggerRequest{
 			Address:         make([]byte, 32),
 			EventName:       "TestEvent",
 			Name:            "test-filter",
 			ContractIdlJson: []byte("{}"),
-			CpiFilterConfig: &solanacappb.CPIFilterConfig{
-				DestAddress: []byte{1, 2, 3},
-				MethodName:  []byte("invoke_test"),
+			Subkeys: []*solanacappb.SubkeyConfig{
+				{
+					Path: []string{"token"},
+					Comparers: []*solanacappb.ValueComparator{
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+						{Value: []byte("ETH"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+					},
+				},
 			},
 		}
 
 		err := validateFilterConfig(config)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid cpi filter destination address length")
+		assert.Contains(t, err.Error(), "conflicting equality filters")
+	})
+
+	t.Run("allows repeated equality with identical value", func(t *testing.T) {
+		config := &solanacappb.FilterLogTriggerRequest{
+			Address:         make([]byte, 32),
+			EventName:       "TestEvent",
+			Name:            "test-filter",
+			ContractIdlJson: []byte("{}"),
+			Subkeys: []*solanacappb.SubkeyConfig{
+				{
+					Path: []string{"token"},
+					Comparers: []*solanacappb.ValueComparator{
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+						{Value: []byte("BTC"), Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ},
+					},
+				},
+			},
+		}
+
+		err := validateFilterConfig(config)
+		require.NoError(t, err)
 	})
 }
 

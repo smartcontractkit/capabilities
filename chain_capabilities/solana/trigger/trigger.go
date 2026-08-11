@@ -63,11 +63,34 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if len(config.ContractIdlJson) == 0 {
 		return fmt.Errorf("event idl json cannot be empty")
 	}
+
 	if config.CpiFilterConfig != nil {
 		if _, err := publicKeyFromBytes("cpi filter destination address", config.CpiFilterConfig.DestAddress); err != nil {
 			return err
 		}
 	}
+	return validateSubkeyComparers(config.Subkeys)
+}
+
+func validateSubkeyComparers(subkeys []*solanacappb.SubkeyConfig) error {
+	for i, subkey := range subkeys {
+		if subkey == nil || len(subkey.Comparers) < 2 {
+			continue
+		}
+
+		eqValues := make(map[string]struct{})
+		for _, comp := range subkey.Comparers {
+			if comp == nil || comp.Operator != solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ {
+				continue
+			}
+			eqValues[string(comp.Value)] = struct{}{}
+		}
+
+		if len(eqValues) > 1 {
+			return fmt.Errorf("subkey %d has conflicting equality filters", i)
+		}
+	}
+
 	return nil
 }
 

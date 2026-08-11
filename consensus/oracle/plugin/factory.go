@@ -123,7 +123,7 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		"maxReportLengthBytes", configProto.MaxReportLengthBytes,
 		"maxReportCount", configProto.MaxReportCount,
 		"maxBatchSize(UNUSED)", configProto.MaxBatchSize, // UNUSED - batch size is now determined by max byte length limits
-		"outcomePruningThreshold", configProto.OutcomePruningThreshold,
+		"outcomePruningThreshold(UNUSED)", configProto.OutcomePruningThreshold, // UNUSED - pruning is now based on historicalOutcomeExpirySeqNrSpan
 		"requestTimeout", configProto.RequestTimeout.AsDuration(),
 		"historicalOutcomeExpirySeqNrSpan", configProto.HistoricalOutcomeExpirySeqNrSpan,
 		// top-level OCR config fields (ocr3types.ReportingPluginConfig)

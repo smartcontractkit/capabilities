@@ -12,9 +12,7 @@ import (
 )
 
 const (
-	reportProcessedTopicPrefix      = "forwarder_ReportProcessed"
-	defaultForwarderLookbackLedgers = int64(100)
-	failedToRetrieveTxHashErrorMsg  = "failed to retrieve tx hash for report"
+	failedToRetrieveTxHashErrorMsg = "failed to retrieve tx hash for report"
 )
 
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
@@ -95,6 +93,9 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 				ErrUnexpectedSuccessfulTransmission, d.txHash)
 		}
 	}
+	if len(details) == 0 {
+		return "", 0, fmt.Errorf("no failed transmission found")
+	}
 
 	earliestIdx := 0
 	for i, d := range details {
@@ -103,14 +104,15 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 		}
 	}
 
+	selectedHash := details[earliestIdx].txHash
 	r.lggr.Debugw("Returning earliest failed transmission",
 		append([]any{
 			"txCount", len(details),
-			"selectedTxHash", details[earliestIdx].txHash,
+			"selectedTxHash", selectedHash,
 		}, r.transmissionID.LogAttrs()...)...,
 	)
 
-	return details[earliestIdx].txHash, len(details), nil
+	return selectedHash, len(details), nil
 }
 
 func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context) (eventDetailsList, error) {

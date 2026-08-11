@@ -183,7 +183,7 @@ func (wr *WriteReport) executeWriteReport(
 			"returning without a transmission attempt - transmission already attempted and failed",
 			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.failedWriteReportReply(&transmissionInfo.Signature, capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
+		return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("unexpected transmission state: %d", transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
@@ -239,7 +239,7 @@ func (wr *WriteReport) executeWriteReport(
 
 	case TransmissionStateFailed:
 		wr.lggr.Errorw("WriteReport failed (receiver execution reverted)", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
-		return wr.failedWriteReportReply(&last.Signature, capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)), meteringMetadata, nil
+		return wr.failedWriteReportReply(&last.Signature, new(UnknownIssueExecutingReceiverContractMessage)), meteringMetadata, nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("transmission state not expected after submit: %d", last.State)), meteringMetadata, nil
@@ -423,10 +423,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 			}
 		}
 
-		wait := (100 * time.Millisecond) << min(attempt, 5)
-		if wait > 2*time.Second {
-			wait = 2 * time.Second
-		}
+		wait := min((100*time.Millisecond)<<min(attempt, 5), 2*time.Second)
 		attempt++
 
 		select {
@@ -459,6 +456,12 @@ func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.F
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
+	if tx == nil {
+		return nil, errors.New("failed to get transaction fee: empty transaction response")
+	}
+	if tx.Meta == nil {
+		return nil, errors.New("failed to get transaction fee: empty transaction meta")
+	}
 
 	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(tx.Meta.Fee), big.NewFloat(1e9))
 
@@ -486,7 +489,7 @@ func (wr *WriteReport) failedWriteReportReply(sig *solana.Signature, msg *string
 func (wr *WriteReport) fatalWriteReportReply(message string) *solcap.WriteReportReply {
 	r := &solcap.WriteReportReply{}
 	r.TxStatus = solcap.TxStatus_TX_STATUS_FATAL
-	r.ErrorMessage = capcommon.Ptr(message)
+	r.ErrorMessage = new(message)
 
 	return r
 }

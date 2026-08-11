@@ -149,7 +149,7 @@ func failedLogData() []byte {
 	return make([]byte, 32)
 }
 
-func nonNilPositiveGasCfgMatcher() interface{} {
+func nonNilPositiveGasCfgMatcher() any {
 	return mock.MatchedBy(func(gc *evm.GasConfig) bool {
 		return gc != nil && gc.GasLimit > 0
 	})
@@ -728,7 +728,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    capcommon.Ptr(fixture.transmissionID.InvalidReceiverMessage()),
+			ErrorMessage:                    new(fixture.transmissionID.InvalidReceiverMessage()),
 		}, txResult.Response)
 
 		// No metering because we did not submit a new tx locally.
@@ -842,7 +842,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    capcommon.Ptr("receiver contract execution failure"),
+			ErrorMessage:                    new("receiver contract execution failure"),
 		}, txResult.Response)
 		require.Len(t, txResult.ResponseMetadata.Metering, 0)
 	})
@@ -935,7 +935,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 					TxHash:                          receipt.TxHash[:],
 					ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 					TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-					ErrorMessage:                    capcommon.Ptr("receiver contract execution failure"),
+					ErrorMessage:                    new("receiver contract execution failure"),
 				}, txResult.Response)
 				require.Len(t, txResult.ResponseMetadata.Metering, 0)
 			})
@@ -2389,7 +2389,7 @@ func createTestRequestMetadata(metadata ocrtypes.Metadata) capabilities.RequestM
 func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *ts.TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
 	t.Helper()
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, err := reportMetadata.Encode()
 		require.NoError(t, err)

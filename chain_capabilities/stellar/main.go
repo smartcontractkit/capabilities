@@ -38,10 +38,9 @@ const CapabilityName = "stellar"
 
 const (
 	// Default values for optional Stellar consensus/read settings when not provided in config.
-	defaultObservationPollPeriod    = 3 * time.Second
-	defaultPollerWorkersCount       = 10
-	defaultUnknownRequestsTTL       = 10 * time.Second
-	defaultForwarderLookbackLedgers = int64(100)
+	defaultObservationPollPeriod = 3 * time.Second
+	defaultPollerWorkersCount    = 10
+	defaultUnknownRequestsTTL    = 10 * time.Second
 )
 
 // capabilityGRPCService is the top-level server wrapping the Stellar capability.
@@ -175,6 +174,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		if err != nil {
 			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 		}
+	} else {
+		return fmt.Errorf("delta stage has to be set")
 	}
 
 	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
@@ -217,7 +218,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	processor := &monitoring.Processor{
 		Lggr:    c.lggr,
-		Metrics: metrics,
+		Metrics: &metrics,
 	}
 
 	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
@@ -280,7 +281,7 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
 	}
 	if cfg.ForwarderLookbackLedgers == 0 {
-		cfg.ForwarderLookbackLedgers = defaultForwarderLookbackLedgers
+		cfg.ForwarderLookbackLedgers = actions.DefaultForwarderLookbackLedgers
 		c.lggr.Infof("ForwarderLookbackLedgers is zero, setting to %d.", cfg.ForwarderLookbackLedgers)
 	}
 
