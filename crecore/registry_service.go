@@ -5,27 +5,26 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"google.golang.org/grpc"
 
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
-
 	"github.com/smartcontractkit/capabilities/crecore/registry"
 
 	regserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/server"
-
-	evmclient "github.com/smartcontractkit/chainlink-evm/pkg/client"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
-// registryService owns the on-chain registry poller and serves the
+// registryService keeps the registry snapshot fresh and serves the
 // CapabilitiesRegistry gRPC service.
 //
+// Where the registry is read from is not its business: it is handed a reader
+// (the on-chain one lives in chainlink-evm) and wraps it in the syncer that owns
+// the polling, the snapshot and the health of both.
+//
 // There is no enable switch: this binary running is what enables the registry,
-// and core does not start without it. So a missing or malformed contract address
-// is a startup failure rather than a reason to run degraded.
+// and core does not start without it.
 //
 // It attaches to the proxy's gRPC server rather than opening a listener of its
 // own: a node that delegates rage networking to this process already has a
@@ -35,13 +34,11 @@ type registryService struct {
 	services.Service
 	eng *services.Engine
 
-	// contractAddress is the on-chain CapabilitiesRegistry (v2) address, and
-	// syncInterval how often it is re-read. Both come from CLI flags; see main.go.
-	contractAddress string
-	syncInterval    time.Duration
+	// syncInterval is how often the registry is re-read; see main.go.
+	syncInterval time.Duration
 
-	lggr logger.Logger
-	evm  evmclient.Client
+	lggr   logger.Logger
+	reader registry.Reader
 	// peerID is this node's own, from the same identity the rage networking uses, so the node record
 	// this process resolves is the node it fronts.
 	peerID ragetypes.PeerID
@@ -53,18 +50,16 @@ type registryService struct {
 var _ services.Service = (*registryService)(nil)
 
 func newRegistryService(
-	contractAddress string,
 	syncInterval time.Duration,
 	lggr logger.Logger,
-	evm evmclient.Client,
+	reader registry.Reader,
 	peerID ragetypes.PeerID,
 ) *registryService {
 	s := &registryService{
-		contractAddress: contractAddress,
-		syncInterval:    syncInterval,
-		lggr:            lggr,
-		evm:             evm,
-		peerID:          peerID,
+		syncInterval: syncInterval,
+		lggr:         lggr,
+		reader:       reader,
+		peerID:       peerID,
 		// The Registry exists from construction so it can be attached to the
 		// proxy's gRPC server before either service starts. Its metadata source is
 		// installed later, in start.
@@ -79,19 +74,9 @@ func newRegistryService(
 }
 
 func (s *registryService) start(ctx context.Context) error {
-	if !common.IsHexAddress(s.contractAddress) {
-		return fmt.Errorf("--capabilities-registry-address is required and must be a hex address, got %q", s.contractAddress)
-	}
-
 	getPeerID := func() (ragetypes.PeerID, error) { return s.peerID, nil }
 
-	syncer, err := registry.NewSyncer(
-		s.lggr,
-		s.evm,
-		common.HexToAddress(s.contractAddress),
-		getPeerID,
-		s.syncInterval,
-	)
+	syncer, err := registry.NewSyncer(s.lggr, s.reader, getPeerID, s.syncInterval)
 	if err != nil {
 		return fmt.Errorf("failed to create registry syncer: %w", err)
 	}
@@ -103,7 +88,7 @@ func (s *registryService) start(ctx context.Context) error {
 	}
 
 	s.lggr.Infow("CapabilitiesRegistry started",
-		"contract", s.contractAddress, "syncInterval", s.syncInterval, "peerID", s.peerID.String())
+		"syncInterval", s.syncInterval, "peerID", s.peerID.String())
 	return nil
 }
 

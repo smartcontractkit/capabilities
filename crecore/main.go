@@ -8,15 +8,17 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/smartcontractkit/capabilities/crecore/registry"
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
-	"github.com/smartcontractkit/capabilities/libs/standalone/evm"
 	"github.com/smartcontractkit/capabilities/libs/standalone/listener"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 
+	"github.com/smartcontractkit/chainlink-evm/pkg/cre/evm"
+	evmregistry "github.com/smartcontractkit/chainlink-evm/pkg/cre/registry"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	evmclient "github.com/smartcontractkit/chainlink-evm/pkg/client"
 )
 
 //go:embed migrations/*.sql
@@ -72,9 +74,10 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	// that identity and the OCR discoverer table.
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
 	ocrDep := ocr.Host(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
-	// The registry always runs, so the EVM client is always resolved and the
-	// evm settings are as required in practice as the registry address is.
-	evmDep := evm.Dependency(lggr.Named("EVM"))
+	// The registry always runs, so its reader is always resolved. Reading it off a chain is
+	// chainlink-evm's business: this names the dependency and never sees an EVM type, and the
+	// client it needs is a dependency of its own rather than one this binary has to hold.
+	readerDep := evmregistry.Dependency(lggr.Named("CapabilitiesRegistry"), evm.Dependency(lggr.Named("EVM")))
 	// Where this process serves, as a dependency rather than a setting the proxy service reads:
 	// the address is the one thing two instances in one process cannot agree on, and resolving it
 	// per instance keeps that entirely out of the service.
@@ -84,14 +87,14 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
 		factories *ocr.Factories,
-		evmClient evmclient.Client,
+		reader registry.Reader,
 		lis net.Listener,
 	) []services.Service {
-		regSvc := newRegistryService(cfg.CapabilitiesRegistryAddress, cfg.CapabilitiesRegistrySyncInterval.Duration(),
-			scfg.Logger.Named("capabilities registry"), evmClient, factories.PeerID)
+		regSvc := newRegistryService(cfg.CapabilitiesRegistrySyncInterval.Duration(),
+			scfg.Logger.Named("capabilities registry"), reader, factories.PeerID)
 		// The registry attaches to the proxy's gRPC server, so core reaches both
 		// over the single address it already configures.
 		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), lis, factories, regSvc.Register)
 		return []services.Service{proxySvc, regSvc}
-	}, ocrDep, evmDep, listenerDep)
+	}, ocrDep, readerDep, listenerDep)
 }

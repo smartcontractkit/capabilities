@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	contract "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -26,7 +27,7 @@ func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, {{range RangeNum .}}dep{{.}} T{{.}}, {{end}}) []services.Service,
 	{{- range RangeNum .}}
-	bootDep{{.}} BootstrapDependency[T{{.}}],
+	bootDep{{.}} contract.BootstrapDependency[T{{.}}],
 	{{- end}}
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
@@ -43,11 +44,11 @@ func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 			return fn(ctx, cfg, {{range RangeNum .}}value{{.}}, {{end}}), nil
 		}
 	},
-		[]BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}, {{end}} },
+		[]contract.BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}, {{end}} },
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}.ForEmbedding(0), {{end}} },
+		[]contract.BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}.ForEmbedding(0), {{end}} },
 	)
 }
 {{- end }}

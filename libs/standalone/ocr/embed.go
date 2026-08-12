@@ -7,7 +7,7 @@ import (
 
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 )
 
 // embedded is one embedded instance's rage networking: an identity derived from the instance index

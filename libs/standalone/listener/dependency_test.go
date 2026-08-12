@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 )
 
 func TestDependency(t *testing.T) {

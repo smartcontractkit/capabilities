@@ -10,7 +10,7 @@ import (
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 )
 
 // ProxyConfig is the configuration of a process that delegates its rage networking to a p2p proxy

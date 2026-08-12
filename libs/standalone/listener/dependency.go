@@ -17,7 +17,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 )
 
 // Config is where the server listens.
