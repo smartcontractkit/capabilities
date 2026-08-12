@@ -48,10 +48,10 @@ type Config struct {
 // table holding p2p announcements.
 //
 // An embedded instance resolves neither: see ForEmbedding.
-func Host(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql.DB], discovererTable string) standalone.BootstrapDependency[*Factories] {
+func Host(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql.DB], discovererTable string) standalone.BootstrapDependency[*RageFactories] {
 	// Wrap in OnceBootstrapper so Get (which creates the peer) runs at most once even if several
 	// services resolve this dependency.
-	return standalone.OnceBootstrapper[*Factories](&hostDependency{
+	return standalone.OnceBootstrapper[*RageFactories](&hostDependency{
 		lggr:            lggr,
 		db:              db,
 		discovererTable: discovererTable,
@@ -67,7 +67,7 @@ type hostDependency struct {
 	cfg Config
 }
 
-var _ standalone.BootstrapDependency[*Factories] = (*hostDependency)(nil)
+var _ standalone.BootstrapDependency[*RageFactories] = (*hostDependency)(nil)
 
 // Namespace groups the libocr networking settings under ocr.* (--ocr.listen-addresses,
 // CRE_OCR_LISTEN_ADDRESSES).
@@ -82,11 +82,11 @@ func (d *hostDependency) Dependencies() []standalone.BootstrapCommand {
 // ForEmbedding returns the in-process form, which hosts no peer at all: an embedded instance's peers
 // are goroutines beside it, so there is nothing for a rage peer to listen on, announce to or
 // discover. None of this dependency's settings survive into it - see embedded.
-func (d *hostDependency) ForEmbedding(i int) standalone.BootstrapDependency[*Factories] {
+func (d *hostDependency) ForEmbedding(i int) standalone.BootstrapDependency[*RageFactories] {
 	return &embedded{lggr: d.lggr, index: i}
 }
 
-func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*Factories, error) {
+func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*RageFactories, error) {
 	if len(d.cfg.ListenAddresses) == 0 {
 		return nil, errors.New("--ocr.listen-addresses is required to host a peer")
 	}
@@ -123,7 +123,7 @@ func (d *hostDependency) keystoreIdentity(ctx context.Context, cc standalone.Com
 }
 
 // localFactories builds a real libocr peer and exposes its factories.
-func (d *hostDependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, peerID ragetypes.PeerID) (*Factories, error) {
+func (d *hostDependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, peerID ragetypes.PeerID) (*RageFactories, error) {
 	discovererDB := ocrcommon.NewDiscovererDatabase(ds, peerID.String(), d.discovererTable)
 
 	d.lggr.Infow("Creating local p2p peer",
@@ -151,11 +151,14 @@ func (d *hostDependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyri
 		return nil, fmt.Errorf("failed to create rage peer: %w", err)
 	}
 
-	return &Factories{
-		OCR2Endpoint:   peer.OCR2BinaryNetworkEndpointFactory(),
-		OCR3_1Endpoint: peer.OCR3_1BinaryNetworkEndpointFactory(),
-		PeerGroup:      newNetworkingPeerGroupFactory(peer.PeerGroupFactory()),
-		PeerID:         peerID,
-		closer:         peer,
+	return &RageFactories{
+		OCRFactories: OCRFactories{
+			OCR2Endpoint:   peer.OCR2BinaryNetworkEndpointFactory(),
+			OCR3_1Endpoint: peer.OCR3_1BinaryNetworkEndpointFactory(),
+			PeerID:         peerID,
+			closer:         peer,
+		},
+		PeerGroup: peer.PeerGroupFactory(),
+		Keyring:   keyring,
 	}, nil
 }

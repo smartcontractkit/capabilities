@@ -13,9 +13,8 @@ import (
 
 // Attribute values for the endpoint kind and message direction on proxy metrics.
 const (
-	endpointOCR2      = "ocr2"
-	endpointOCR3_1    = "ocr3_1"
-	endpointPeerGroup = "peergroup"
+	endpointOCR2   = "ocr2"
+	endpointOCR3_1 = "ocr3_1"
 
 	directionInbound  = "inbound"
 	directionOutbound = "outbound"

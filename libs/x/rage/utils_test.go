@@ -1,0 +1,28 @@
+package rage_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/capabilities/libs/x/rage"
+)
+
+const (
+	peerID1 = "peer1"
+	peerID2 = "peer2"
+	ann1    = "announcement1"
+	ann2    = "announcement2"
+)
+
+func TestInMemoryDiscovererDatabase(t *testing.T) {
+	db := rage.NewInMemoryDiscovererDatabase()
+	require.NoError(t, db.StoreAnnouncement(t.Context(), peerID1, []byte(ann1)))
+	require.NoError(t, db.StoreAnnouncement(t.Context(), peerID2, []byte(ann2)))
+	state, err := db.ReadAnnouncements(t.Context(), []string{peerID1, peerID2})
+	require.NoError(t, err)
+	require.Equal(t, map[string][]byte{peerID1: []byte(ann1), peerID2: []byte(ann2)}, state)
+	state, err = db.ReadAnnouncements(t.Context(), []string{peerID2})
+	require.NoError(t, err)
+	require.Equal(t, map[string][]byte{peerID2: []byte(ann2)}, state)
+}

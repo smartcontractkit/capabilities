@@ -86,7 +86,7 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	return standalone.Run3(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
-		factories *ocr.Factories,
+		factories *ocr.RageFactories,
 		reader registry.Reader,
 		lis net.Listener,
 	) []services.Service {
@@ -94,7 +94,10 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 			scfg.Logger.Named("capabilities registry"), reader, factories.PeerID)
 		// The registry attaches to the proxy's gRPC server, so core reaches both
 		// over the single address it already configures.
-		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), lis, factories, regSvc.Register)
-		return []services.Service{proxySvc, regSvc}
+		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), lis, &factories.OCRFactories, regSvc.Register)
+		// The dispatcher runs the real DON-to-DON work over the same rage connection, rather than
+		// core running it and this process merely fronting it.
+		dispatcherSvc := newDispatcherService(cfg.Dispatcher, scfg.Logger.Named("dispatcher"), factories, regSvc.CapabilitiesRegistry())
+		return []services.Service{proxySvc, regSvc, dispatcherSvc}
 	}, ocrDep, readerDep, listenerDep)
 }

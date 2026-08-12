@@ -44,10 +44,10 @@ type ProxyConfig struct {
 // It needs no database: everything a delegating process knows about its identity, it is told.
 //
 // An embedded instance delegates to nothing: see ForEmbedding.
-func Proxy(lggr commonlogger.Logger) standalone.BootstrapDependency[*Factories] {
+func Proxy(lggr commonlogger.Logger) standalone.BootstrapDependency[*OCRFactories] {
 	// Wrap in OnceBootstrapper so Get (which dials the proxy) runs at most once even if several
 	// services resolve this dependency.
-	return standalone.OnceBootstrapper[*Factories](&proxyDependency{lggr: lggr})
+	return standalone.OnceBootstrapper[*OCRFactories](&proxyDependency{lggr: lggr})
 }
 
 type proxyDependency struct {
@@ -56,7 +56,7 @@ type proxyDependency struct {
 	cfg ProxyConfig
 }
 
-var _ standalone.BootstrapDependency[*Factories] = (*proxyDependency)(nil)
+var _ standalone.BootstrapDependency[*OCRFactories] = (*proxyDependency)(nil)
 
 // Namespace groups the settings under ocr.* (--ocr.proxy-address, CRE_OCR_PROXY_ADDRESS), the same
 // namespace a hosted peer's settings use: a binary is one or the other, so the names never meet.
@@ -72,11 +72,11 @@ func (d *proxyDependency) Dependencies() []standalone.BootstrapCommand {
 // hop between instances of one process, since the peer this would delegate to is a goroutine beside
 // it and delegating would mean serialising a message so a gRPC connection to this process could hand
 // it back. None of this dependency's settings survive into it - see embedded.
-func (d *proxyDependency) ForEmbedding(i int) standalone.BootstrapDependency[*Factories] {
-	return &embedded{lggr: d.lggr, index: i}
+func (d *proxyDependency) ForEmbedding(i int) standalone.BootstrapDependency[*OCRFactories] {
+	return embeddedOCR{&embedded{lggr: d.lggr, index: i}}
 }
 
-func (d *proxyDependency) Get(context.Context, standalone.CommonConfig) (*Factories, error) {
+func (d *proxyDependency) Get(context.Context, standalone.CommonConfig) (*OCRFactories, error) {
 	if d.cfg.ProxyAddress == "" {
 		return nil, errors.New("--ocr.proxy-address is required to delegate rage networking")
 	}
@@ -96,20 +96,13 @@ func (d *proxyDependency) Get(context.Context, standalone.CommonConfig) (*Factor
 		_ = endpointFactory.Close()
 		return nil, fmt.Errorf("failed to create proxy OCR3.1 endpoint factory: %w", err)
 	}
-	pgFactory, err := creproxy.NewProxyPeerGroupFactory(d.cfg.ProxyAddress)
-	if err != nil {
-		_ = endpointFactory.Close()
-		_ = endpoint2Factory.Close()
-		return nil, fmt.Errorf("failed to create proxy peer group factory: %w", err)
-	}
 
 	d.lggr.Infow("Delegating rage networking to proxy", "proxyAddress", d.cfg.ProxyAddress, "peerID", peerID.String())
 
-	return &Factories{
+	return &OCRFactories{
 		OCR2Endpoint:   endpointFactory,
 		OCR3_1Endpoint: endpoint2Factory,
-		PeerGroup:      pgFactory,
 		PeerID:         peerID,
-		closer:         multiCloser{endpointFactory, endpoint2Factory, pgFactory},
+		closer:         multiCloser{endpointFactory, endpoint2Factory},
 	}, nil
 }

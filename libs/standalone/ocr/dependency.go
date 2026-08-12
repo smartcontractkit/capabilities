@@ -27,25 +27,23 @@ import (
 	"io"
 	"time"
 
+	"github.com/smartcontractkit/libocr/networking"
 	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
-	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 )
 
-// Factories bundles the libocr rage networking factories the caller serves or drives. Any of the
+// OCRFactories bundles the libocr OCR networking factories the caller serves or drives. Any of the
 // forms above produces it; the caller does not need to know which. Close tears down the underlying
 // peer (a hosted one) or the proxy client connections (a delegating one), and nothing at all for an
 // embedded instance, which holds neither.
-type Factories struct {
+type OCRFactories struct {
 	// OCR2Endpoint creates OCR2 BinaryNetworkEndpoints.
 	OCR2Endpoint ocr2types.BinaryNetworkEndpointFactory
 	// OCR3_1Endpoint creates OCR3.1 BinaryNetworkEndpoint2s.
 	OCR3_1Endpoint ocr2types.BinaryNetworkEndpoint2Factory
-	// PeerGroup creates DON-to-DON peer groups.
-	PeerGroup creproxy.PeerGroupFactory
 
 	// PeerID is the node's rage P2P identity: unlocked from the keystore, configured directly, or
 	// derived from the instance index. Every form resolves it, and consumers other than libocr need
@@ -57,11 +55,24 @@ type Factories struct {
 }
 
 // Close releases the underlying peer or proxy clients.
-func (f *Factories) Close() error {
+func (f *OCRFactories) Close() error {
 	if f == nil || f.closer == nil {
 		return nil
 	}
 	return f.closer.Close()
+}
+
+// RageFactories is OCRFactories plus what only a real, locally hosted peer can give: a factory for
+// DON-to-DON peer groups over that same rage connection, and the keyring to sign with the same key
+// it uses. don2don.Dispatcher takes both.
+type RageFactories struct {
+	OCRFactories
+
+	// PeerGroup creates DON-to-DON peer groups.
+	PeerGroup networking.PeerGroupFactory
+	// Keyring signs with the same P2P key the peer above uses, for don2don.Dispatcher's
+	// message-level signatures.
+	Keyring ragetypes.PeerKeyring
 }
 
 // defaultPeerConfig is the peer settings the flags are bound to and decoded into, so an unset

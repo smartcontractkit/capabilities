@@ -28,7 +28,7 @@ type embedded struct {
 	index int
 }
 
-var _ standalone.BootstrapDependency[*Factories] = (*embedded)(nil)
+var _ standalone.BootstrapDependency[*RageFactories] = (*embedded)(nil)
 
 // Namespace is the same ocr.* the configured forms use, though it names nothing: there is no
 // configuration here to root under it.
@@ -47,11 +47,11 @@ func (d *embedded) Dependencies() []standalone.BootstrapCommand {
 
 // ForEmbedding returns the dependency of instance i, so an already-embedded dependency embedded
 // again is that instance's rather than a nesting of them.
-func (d *embedded) ForEmbedding(i int) standalone.BootstrapDependency[*Factories] {
+func (d *embedded) ForEmbedding(i int) standalone.BootstrapDependency[*RageFactories] {
 	return &embedded{lggr: d.lggr, index: i}
 }
 
-func (d *embedded) Get(context.Context, standalone.CommonConfig) (*Factories, error) {
+func (d *embedded) Get(context.Context, standalone.CommonConfig) (*RageFactories, error) {
 	keyring, err := DeterministicKeyring(d.index)
 	if err != nil {
 		return nil, err
@@ -63,12 +63,35 @@ func (d *embedded) Get(context.Context, standalone.CommonConfig) (*Factories, er
 		"peerID", peerID.String(),
 	)
 
-	// Nothing here is closed: the endpoints and peer groups are closed by whoever created them, and
-	// the transport itself holds no resource beyond the maps they register in.
-	return &Factories{
-		OCR2Endpoint:   ocr2Factory{net: embedNetwork, peerID: peerID.String(), bufferSize: defaultBufferSize},
-		OCR3_1Endpoint: ocr31Factory{net: embedNetwork, peerID: peerID.String(), bufferSize: defaultBufferSize},
-		PeerGroup:      inprocPeerGroupFactory{net: embedNetwork, peerID: peerID.String()},
-		PeerID:         peerID,
+	// Nothing here is closed: the endpoints are closed by whoever created them, and the transport
+	// itself holds no resource beyond the maps they register in. PeerGroup and Keyring are left
+	// unset: there is no in-process peer group simulation, so an embedded instance cannot host
+	// don2don.Dispatcher.
+	return &RageFactories{
+		OCRFactories: OCRFactories{
+			OCR2Endpoint:   ocr2Factory{net: embedNetwork, peerID: peerID.String(), bufferSize: defaultBufferSize},
+			OCR3_1Endpoint: ocr31Factory{net: embedNetwork, peerID: peerID.String(), bufferSize: defaultBufferSize},
+			PeerID:         peerID,
+		},
 	}, nil
+}
+
+// embeddedOCR adapts embedded to standalone.BootstrapDependency[*OCRFactories], for Proxy's
+// ForEmbedding: a delegating process only ever needs the OCR half.
+type embeddedOCR struct {
+	*embedded
+}
+
+var _ standalone.BootstrapDependency[*OCRFactories] = embeddedOCR{}
+
+func (d embeddedOCR) ForEmbedding(i int) standalone.BootstrapDependency[*OCRFactories] {
+	return embeddedOCR{&embedded{lggr: d.lggr, index: i}}
+}
+
+func (d embeddedOCR) Get(ctx context.Context, cc standalone.CommonConfig) (*OCRFactories, error) {
+	f, err := d.embedded.Get(ctx, cc)
+	if err != nil {
+		return nil, err
+	}
+	return &f.OCRFactories, nil
 }
