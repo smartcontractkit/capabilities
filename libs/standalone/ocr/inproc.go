@@ -8,8 +8,6 @@ import (
 
 	"github.com/smartcontractkit/libocr/commontypes"
 	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
-
-	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 )
 
 // This file implements the rage networking factories as in-process message passing, for embed
@@ -31,12 +29,11 @@ import (
 // message in flight the way it could not over a real socket.
 
 // network is the in-process transport shared by every instance in the process: a registry of
-// mailboxes keyed by config digest and peer ID, plus the streams peer groups open between them.
+// mailboxes keyed by config digest and peer ID.
 type network struct {
-	mu      sync.Mutex
-	ocr2    map[endpointKey]*ocr2Endpoint
-	ocr31   map[endpointKey]*binaryNetworkEndpoint2
-	streams map[streamKey]*peerGroupStream
+	mu    sync.Mutex
+	ocr2  map[endpointKey]*ocr2Endpoint
+	ocr31 map[endpointKey]*binaryNetworkEndpoint2
 }
 
 // embedNetwork is the process's in-process network. It is package-level for the same reason
@@ -47,9 +44,8 @@ var embedNetwork = newNetwork()
 
 func newNetwork() *network {
 	return &network{
-		ocr2:    map[endpointKey]*ocr2Endpoint{},
-		ocr31:   map[endpointKey]*binaryNetworkEndpoint2{},
-		streams: map[streamKey]*peerGroupStream{},
+		ocr2:  map[endpointKey]*ocr2Endpoint{},
+		ocr31: map[endpointKey]*binaryNetworkEndpoint2{},
 	}
 }
 
@@ -58,15 +54,6 @@ func newNetwork() *network {
 type endpointKey struct {
 	digest ocr2types.ConfigDigest
 	peerID string
-}
-
-// streamKey identifies one direction of one peer group stream: the stream owner is where messages
-// arrive, and remote is who sends them.
-type streamKey struct {
-	digest [32]byte
-	name   string
-	owner  string
-	remote string
 }
 
 // senderIndex is the oracle ID the receiver knows sender by. The two ends of a link index oracles
@@ -357,129 +344,4 @@ var _ ocr2types.RequestHandle = requestHandle{}
 
 func (h requestHandle) MakeResponse(payload []byte) ocr2types.OutboundBinaryMessageResponse {
 	return ocr2types.MustMakeOutboundBinaryMessageResponse(h, payload, h.priority)
-}
-
-// inprocPeerGroupFactory creates in-process DON-to-DON peer groups for one peer.
-type inprocPeerGroupFactory struct {
-	net    *network
-	peerID string
-}
-
-var _ creproxy.PeerGroupFactory = inprocPeerGroupFactory{}
-
-func (f inprocPeerGroupFactory) NewPeerGroup(digest [32]byte, peerIDs []string, _ []creproxy.BootstrapperInfo) (creproxy.PeerGroup, error) {
-	if !slices.Contains(peerIDs, f.peerID) {
-		return nil, fmt.Errorf("peer %s is not a member of peer group %x", f.peerID, digest)
-	}
-	return &inprocPeerGroup{net: f.net, digest: digest, peerID: f.peerID, peerIDs: slices.Clone(peerIDs)}, nil
-}
-
-// inprocPeerGroup hands out streams to other members of the group. Its streams are closed with
-// it, per the creproxy.PeerGroup contract.
-type inprocPeerGroup struct {
-	net     *network
-	digest  [32]byte
-	peerID  string
-	peerIDs []string
-
-	mu      sync.Mutex
-	streams []*peerGroupStream
-	closed  bool
-}
-
-var _ creproxy.PeerGroup = (*inprocPeerGroup)(nil)
-
-func (g *inprocPeerGroup) NewStream(remotePeerID string, args creproxy.StreamArgs) (creproxy.PeerGroupStream, error) {
-	if !slices.Contains(g.peerIDs, remotePeerID) {
-		return nil, fmt.Errorf("peer %s is not a member of peer group %x", remotePeerID, g.digest)
-	}
-
-	s := &peerGroupStream{
-		net: g.net,
-		// Keyed by where messages arrive, so the two ends of the same named stream are each
-		// other's mirror: what this end sends is looked up under the remote's key.
-		key:    streamKey{digest: g.digest, name: args.StreamName, owner: g.peerID, remote: remotePeerID},
-		in:     make(chan []byte, bufferSize(args.IncomingBufferSize, defaultBufferSize)),
-		closed: make(chan struct{}),
-	}
-
-	g.mu.Lock()
-	if g.closed {
-		g.mu.Unlock()
-		return nil, fmt.Errorf("peer group %x is closed", g.digest)
-	}
-	g.streams = append(g.streams, s)
-	g.mu.Unlock()
-
-	g.net.mu.Lock()
-	defer g.net.mu.Unlock()
-	if _, exists := g.net.streams[s.key]; exists {
-		return nil, fmt.Errorf("stream %q to peer %s already exists in peer group %x", args.StreamName, remotePeerID, g.digest)
-	}
-	g.net.streams[s.key] = s
-	return s, nil
-}
-
-func (g *inprocPeerGroup) Close() error {
-	g.mu.Lock()
-	if g.closed {
-		g.mu.Unlock()
-		return nil
-	}
-	g.closed = true
-	streams := g.streams
-	g.streams = nil
-	g.mu.Unlock()
-
-	var err error
-	for _, s := range streams {
-		if cerr := s.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}
-	return err
-}
-
-// peerGroupStream is one end of a named bidirectional stream between two group members.
-type peerGroupStream struct {
-	net *network
-	key streamKey
-	in  chan []byte
-
-	closeOnce sync.Once
-	closed    chan struct{}
-}
-
-var _ creproxy.PeerGroupStream = (*peerGroupStream)(nil)
-
-// SendMessage delivers to the stream the remote end opened back to us, dropping the message if it
-// has not opened one yet or its buffer is full - the same outcome as sending on a rage stream to a
-// peer that is not connected.
-func (s *peerGroupStream) SendMessage(data []byte) {
-	mirror := streamKey{digest: s.key.digest, name: s.key.name, owner: s.key.remote, remote: s.key.owner}
-
-	s.net.mu.Lock()
-	peer := s.net.streams[mirror]
-	s.net.mu.Unlock()
-	if peer == nil {
-		return
-	}
-
-	select {
-	case <-peer.closed:
-	case peer.in <- slices.Clone(data):
-	default:
-	}
-}
-
-func (s *peerGroupStream) ReceiveMessages() <-chan []byte { return s.in }
-
-func (s *peerGroupStream) Close() error {
-	s.closeOnce.Do(func() {
-		close(s.closed)
-		s.net.mu.Lock()
-		delete(s.net.streams, s.key)
-		s.net.mu.Unlock()
-	})
-	return nil
 }

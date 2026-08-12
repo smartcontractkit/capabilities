@@ -9,8 +9,6 @@ import (
 
 	"github.com/smartcontractkit/libocr/commontypes"
 	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
-
-	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 )
 
 // receiveTimeout is how long a test waits for a message that should already be on its way. The
@@ -164,68 +162,6 @@ func TestInprocOCR31Endpoints(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, e.Close()) })
 
 		assert.Equal(t, size, cap(e.(*binaryNetworkEndpoint2).in))
-	})
-}
-
-func TestInprocPeerGroupStreams(t *testing.T) {
-	net := newNetwork()
-	peerIDs := testPeerIDs(t, 2)
-	var digest [32]byte
-	digest[0] = 42
-
-	groups := make([]creproxy.PeerGroup, len(peerIDs))
-	for i, peerID := range peerIDs {
-		g, err := inprocPeerGroupFactory{net: net, peerID: peerID}.NewPeerGroup(digest, peerIDs, nil)
-		require.NoError(t, err)
-		groups[i] = g
-	}
-
-	args := creproxy.StreamArgs{StreamName: "stream", IncomingBufferSize: 10, OutgoingBufferSize: 10}
-	streamFrom0, err := groups[0].NewStream(peerIDs[1], args)
-	require.NoError(t, err)
-	streamFrom1, err := groups[1].NewStream(peerIDs[0], args)
-	require.NoError(t, err)
-
-	t.Run("messages flow both ways between the two ends", func(t *testing.T) {
-		streamFrom0.SendMessage([]byte("ping"))
-		assert.Equal(t, []byte("ping"), receive(t, streamFrom1.ReceiveMessages()))
-
-		streamFrom1.SendMessage([]byte("pong"))
-		assert.Equal(t, []byte("pong"), receive(t, streamFrom0.ReceiveMessages()))
-	})
-
-	t.Run("a differently named stream is a different stream", func(t *testing.T) {
-		other, err := groups[0].NewStream(peerIDs[1], creproxy.StreamArgs{StreamName: "other", IncomingBufferSize: 10})
-		require.NoError(t, err)
-
-		// Nothing is listening on "other" at the remote end, so this is dropped rather than
-		// delivered to the stream that happens to connect the same two peers.
-		other.SendMessage([]byte("nowhere"))
-		assertNothingReceived(t, streamFrom1.ReceiveMessages())
-	})
-
-	t.Run("a non-member cannot be streamed to", func(t *testing.T) {
-		stranger, err := DeterministicPeerID(len(peerIDs) + 1)
-		require.NoError(t, err)
-
-		_, err = groups[0].NewStream(stranger.String(), args)
-		require.ErrorContains(t, err, "is not a member of peer group")
-	})
-
-	t.Run("closing a group closes its streams and stops delivery", func(t *testing.T) {
-		require.NoError(t, groups[1].Close())
-
-		streamFrom0.SendMessage([]byte("after close"))
-		assertNothingReceived(t, streamFrom1.ReceiveMessages())
-
-		// Closing again is a no-op, as is closing a stream the group already closed.
-		require.NoError(t, groups[1].Close())
-		require.NoError(t, streamFrom1.Close())
-
-		_, err := groups[1].NewStream(peerIDs[0], args)
-		require.ErrorContains(t, err, "is closed")
-
-		require.NoError(t, groups[0].Close())
 	})
 }
 

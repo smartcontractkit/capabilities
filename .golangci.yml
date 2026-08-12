@@ -174,6 +174,17 @@ linters:
       - linters:
           - depguard
         path: integration_tests
+      # libs/x holds code moved verbatim from chainlink core while both repos build against it,
+      # on its way into crecore. It is kept as close to its origin as possible so the move stays
+      # reviewable as a move, so it is held to core's linting rather than this repo's - including
+      # the go-ethereum dependency this repo otherwise keeps out. These exclusions go away with
+      # the package.
+      - linters:
+          - depguard
+          - revive
+          - staticcheck
+          - unused
+        path: libs/x/
     paths:
       - third_party$
       - builtin$

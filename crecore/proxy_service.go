@@ -22,16 +22,19 @@ import (
 type Config struct {
 	// CapabilitiesRegistrySyncInterval is how often the on-chain registry is re-read.
 	CapabilitiesRegistrySyncInterval config.Duration `usage:"how often the on-chain registry is re-read"`
+
+	// Dispatcher configures the DON-to-DON dispatcher this process runs over its own rage peer.
+	Dispatcher DispatcherConfig
 }
 
 var defaultConfig = Config{
 	CapabilitiesRegistrySyncInterval: *config.MustNewDuration(registry.DefaultSyncInterval),
+	Dispatcher:                       defaultDispatcherConfig,
 }
 
 // proxyService exposes the libocr rage networking factories over gRPC so that
-// core can delegate its OCR networking (and, in future, DON-to-DON networking)
-// to this process. The factories come from the ocr bootstrap dependency, which
-// hosts a local peer, is backed by another proxy, or is in-process for an
+// core can delegate its OCR networking to this process. The factories come from the ocr bootstrap
+// dependency, which hosts a local peer, is backed by another proxy, or is in-process for an
 // embedded instance - this service cannot tell, and neither can core.
 type proxyService struct {
 	services.Service
@@ -43,7 +46,7 @@ type proxyService struct {
 	// service knowing that more than one exists. Its lifetime is the bootstrapper's, as the
 	// factories' is: both outlive this service's own start and close.
 	listener  net.Listener
-	factories *ocr.Factories
+	factories *ocr.OCRFactories
 
 	// registrars attach additional gRPC services to this server before it
 	// Serves. Used so co-located services (e.g. the CapabilitiesRegistry) share
@@ -58,7 +61,7 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(lggr logger.Logger, listener net.Listener, factories *ocr.Factories, registrars ...func(*grpc.Server)) *proxyService {
+func newProxyService(lggr logger.Logger, listener net.Listener, factories *ocr.OCRFactories, registrars ...func(*grpc.Server)) *proxyService {
 	s := &proxyService{lggr: lggr, listener: listener, factories: factories, registrars: registrars}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",
@@ -73,12 +76,10 @@ func (s *proxyService) start(context.Context) error {
 		return fmt.Errorf("failed to create proxy metrics: %w", err)
 	}
 
-	// The factories back both surfaces over the same rage connection and
-	// discoverer: OCR endpoints and DON-to-DON peer groups.
+	// The factories back both surfaces over the same rage connection and discoverer.
 	s.grpcServer = grpc.NewServer()
 	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(s.factories.OCR2Endpoint, metrics))
 	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(s.factories.OCR3_1Endpoint, metrics))
-	creproxy.RegisterPeerGroupProxyServer(s.grpcServer, NewPeerGroupServer(s.factories.PeerGroup, metrics))
 
 	for _, register := range s.registrars {
 		register(s.grpcServer)
