@@ -1,9 +1,10 @@
-// Package registry implements the CapabilitiesRegistry that crecore serves over
-// plain gRPC (see libs/creregistry/pb).
+// Package registry keeps this binary's view of the CapabilitiesRegistry fresh and answerable: who
+// the DONs are, which nodes belong to them, which capabilities they host, and which node this is.
 //
-// The on-chain view is read with an EVM client and generated gethwrappers
-// directly. There is no relayer, no ContractReader, no codec and no
-// ReadIdentifier indirection: three view calls, decoded by the wrapper.
+// Where the registry actually lives is not this package's business - a registry.Reader supplies
+// whole snapshots from wherever it is written, and the on-chain one lives in chainlink-evm. What is
+// here is the Syncer that keeps asking, the snapshot lookups the metadata API needs, and the
+// adapter that serves them.
 package registry
 
 import (
@@ -15,43 +16,20 @@ import (
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	commonregistry "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-// DonID is a DON's registry ID.
-type DonID uint32
-
-// DON pairs a DON's identity with the raw capability configuration blobs the
-// contract stores for it.
-type DON struct {
-	capabilities.DON
-	// CapabilityConfigurations maps capability ID to the wire-encoded
-	// capabilities/pb.CapabilityConfig the contract holds for this DON.
-	//
-	// The bytes are deliberately left undecoded. crecore has no reason to
-	// interpret them: it serves them verbatim over ConfigForCapability and the
-	// caller unmarshals. That keeps ~150 lines of config-decoding logic (and its
-	// drift risk) out of this process entirely.
-	CapabilityConfigurations map[string][]byte
-}
-
-// NodeInfo is a node's on-chain record.
-type NodeInfo struct {
-	NodeOperatorID      uint32
-	ConfigCount         uint32
-	WorkflowDONID       uint32
-	Signer              [32]byte
-	P2pID               [32]byte
-	EncryptionPublicKey [32]byte
-	CsaKey              [32]byte
-	CapabilityIDs       []string
-}
-
-// Capability is a capability's on-chain record.
-type Capability struct {
-	ID             string
-	CapabilityType capabilities.CapabilityType
-}
+// The registry's own vocabulary comes from the contract a Reader fills in, aliased so this package
+// reads as though it owned them.
+type (
+	DonID      = commonregistry.DonID
+	DON        = commonregistry.DON
+	NodeInfo   = commonregistry.NodeInfo
+	Capability = commonregistry.Capability
+	Snapshot   = commonregistry.Snapshot
+	Reader     = commonregistry.Reader
+)
 
 // LocalRegistry is an immutable snapshot of the on-chain registry, plus the
 // lookups the metadata API needs. It is ported from chainlink's

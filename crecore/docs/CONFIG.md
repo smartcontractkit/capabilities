@@ -4,7 +4,6 @@
 
 ```toml
 # ----- Global Configuration -----
-capabilities-registry-address = '0xYourRegistryAddress'
 capabilities-registry-sync-interval = '12s'
 [telemetry]
 endpoint = ''
@@ -26,6 +25,8 @@ server-address = ''
 environment = ''
 [prometheus]
 port = -1
+[capabilities-registry]
+address = '0xYourRegistryAddress'
 [evm]
 http-url = ['https://rpc.example.com']
 chain-id = '1'
@@ -55,18 +56,11 @@ url = 'postgresql://user:password@localhost:5432/chainlink?sslmode=disable'
 
 ## Global
 ```toml
-capabilities-registry-address = '0xYourRegistryAddress' # Example
 capabilities-registry-sync-interval = '12s' # Default
 ```
 
 
 # Global Configuration
-
-### capabilities-registry-address
-```toml
-capabilities-registry-address = '0xYourRegistryAddress' # Example
-```
-capabilities-registry-address on-chain CapabilitiesRegistry (v2) contract address
 
 ### capabilities-registry-sync-interval
 ```toml
@@ -220,6 +214,19 @@ port = -1 # Default
 port = -1 # Default
 ```
 port serving /metrics, /debug/pprof, /healthz and /readyz; -1 disables the server, 0 asks the OS for an ephemeral port. Instance i of an embed run listens on this port plus i
+
+## capabilities-registry
+```toml
+[capabilities-registry]
+address = '0xYourRegistryAddress' # Example
+```
+
+
+### address
+```toml
+address = '0xYourRegistryAddress' # Example
+```
+address of the on-chain CapabilitiesRegistry (v2) contract
 
 ## evm
 ```toml

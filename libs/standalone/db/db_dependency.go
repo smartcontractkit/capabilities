@@ -10,7 +10,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/sqlutil"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 )
 
 // Dependency returns a standalone.BootstrapDependency that resolves an opened, migrated database.

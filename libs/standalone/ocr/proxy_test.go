@@ -10,7 +10,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 )
 
 func TestProxy(t *testing.T) {

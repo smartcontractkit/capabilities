@@ -20,10 +20,6 @@ import (
 // main.go). The libocr peer configuration lives on the ocr bootstrap dependency, and the address
 // this process serves on lives on the listener dependency.
 type Config struct {
-	// CapabilitiesRegistryAddress is the on-chain CapabilitiesRegistry (v2) contract address. The registry
-	// always runs, so this is as required in practice as the registry itself.
-	CapabilitiesRegistryAddress string `usage:"on-chain CapabilitiesRegistry (v2) contract address" validate:"required" example:"'0xYourRegistryAddress'"`
-
 	// CapabilitiesRegistrySyncInterval is how often the on-chain registry is re-read.
 	CapabilitiesRegistrySyncInterval config.Duration `usage:"how often the on-chain registry is re-read"`
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	contract "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -25,7 +26,7 @@ import (
 func Run1[T0 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0) []services.Service,
-	bootDep0 BootstrapDependency[T0],
+	bootDep0 contract.BootstrapDependency[T0],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -40,11 +41,11 @@ func Run1[T0 any](
 			return fn(ctx, cfg, value0), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0},
+		[]contract.BootstrapCommand{bootDep0},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0)},
 	)
 }
 
@@ -64,8 +65,8 @@ func Run1[T0 any](
 func Run2[T0 any, T1 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -87,11 +88,11 @@ func Run2[T0 any, T1 any](
 			return fn(ctx, cfg, value0, value1), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1},
+		[]contract.BootstrapCommand{bootDep0, bootDep1},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0)},
 	)
 }
 
@@ -111,9 +112,9 @@ func Run2[T0 any, T1 any](
 func Run3[T0 any, T1 any, T2 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -142,11 +143,11 @@ func Run3[T0 any, T1 any, T2 any](
 			return fn(ctx, cfg, value0, value1, value2), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0)},
 	)
 }
 
@@ -166,10 +167,10 @@ func Run3[T0 any, T1 any, T2 any](
 func Run4[T0 any, T1 any, T2 any, T3 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
-	bootDep3 BootstrapDependency[T3],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
+	bootDep3 contract.BootstrapDependency[T3],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -205,11 +206,11 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 			return fn(ctx, cfg, value0, value1, value2, value3), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0)},
 	)
 }
 
@@ -229,11 +230,11 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
-	bootDep3 BootstrapDependency[T3],
-	bootDep4 BootstrapDependency[T4],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
+	bootDep3 contract.BootstrapDependency[T3],
+	bootDep4 contract.BootstrapDependency[T4],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -276,11 +277,11 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 			return fn(ctx, cfg, value0, value1, value2, value3, value4), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0)},
 	)
 }
 
@@ -300,12 +301,12 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
-	bootDep3 BootstrapDependency[T3],
-	bootDep4 BootstrapDependency[T4],
-	bootDep5 BootstrapDependency[T5],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
+	bootDep3 contract.BootstrapDependency[T3],
+	bootDep4 contract.BootstrapDependency[T4],
+	bootDep5 contract.BootstrapDependency[T5],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -355,11 +356,11 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0)},
 	)
 }
 
@@ -379,13 +380,13 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
-	bootDep3 BootstrapDependency[T3],
-	bootDep4 BootstrapDependency[T4],
-	bootDep5 BootstrapDependency[T5],
-	bootDep6 BootstrapDependency[T6],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
+	bootDep3 contract.BootstrapDependency[T3],
+	bootDep4 contract.BootstrapDependency[T4],
+	bootDep5 contract.BootstrapDependency[T5],
+	bootDep6 contract.BootstrapDependency[T6],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -442,11 +443,11 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0)},
 	)
 }
 
@@ -466,14 +467,14 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6, dep7 T7) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
-	bootDep3 BootstrapDependency[T3],
-	bootDep4 BootstrapDependency[T4],
-	bootDep5 BootstrapDependency[T5],
-	bootDep6 BootstrapDependency[T6],
-	bootDep7 BootstrapDependency[T7],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
+	bootDep3 contract.BootstrapDependency[T3],
+	bootDep4 contract.BootstrapDependency[T4],
+	bootDep5 contract.BootstrapDependency[T5],
+	bootDep6 contract.BootstrapDependency[T6],
+	bootDep7 contract.BootstrapDependency[T7],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -537,11 +538,11 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6, value7), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0)},
 	)
 }
 
@@ -561,15 +562,15 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6, dep7 T7, dep8 T8) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
-	bootDep3 BootstrapDependency[T3],
-	bootDep4 BootstrapDependency[T4],
-	bootDep5 BootstrapDependency[T5],
-	bootDep6 BootstrapDependency[T6],
-	bootDep7 BootstrapDependency[T7],
-	bootDep8 BootstrapDependency[T8],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
+	bootDep3 contract.BootstrapDependency[T3],
+	bootDep4 contract.BootstrapDependency[T4],
+	bootDep5 contract.BootstrapDependency[T5],
+	bootDep6 contract.BootstrapDependency[T6],
+	bootDep7 contract.BootstrapDependency[T7],
+	bootDep8 contract.BootstrapDependency[T8],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -640,11 +641,11 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6, value7, value8), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0)},
 	)
 }
 
@@ -664,16 +665,16 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any, T9 any](
 	bs *Bootstrapper,
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0, dep1 T1, dep2 T2, dep3 T3, dep4 T4, dep5 T5, dep6 T6, dep7 T7, dep8 T8, dep9 T9) []services.Service,
-	bootDep0 BootstrapDependency[T0],
-	bootDep1 BootstrapDependency[T1],
-	bootDep2 BootstrapDependency[T2],
-	bootDep3 BootstrapDependency[T3],
-	bootDep4 BootstrapDependency[T4],
-	bootDep5 BootstrapDependency[T5],
-	bootDep6 BootstrapDependency[T6],
-	bootDep7 BootstrapDependency[T7],
-	bootDep8 BootstrapDependency[T8],
-	bootDep9 BootstrapDependency[T9],
+	bootDep0 contract.BootstrapDependency[T0],
+	bootDep1 contract.BootstrapDependency[T1],
+	bootDep2 contract.BootstrapDependency[T2],
+	bootDep3 contract.BootstrapDependency[T3],
+	bootDep4 contract.BootstrapDependency[T4],
+	bootDep5 contract.BootstrapDependency[T5],
+	bootDep6 contract.BootstrapDependency[T6],
+	bootDep7 contract.BootstrapDependency[T7],
+	bootDep8 contract.BootstrapDependency[T8],
+	bootDep9 contract.BootstrapDependency[T9],
 ) error {
 	return bs.run(func(index int, embed bool) instanceServices {
 
@@ -751,10 +752,10 @@ func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 an
 			return fn(ctx, cfg, value0, value1, value2, value3, value4, value5, value6, value7, value8, value9), nil
 		}
 	},
-		[]BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8, bootDep9},
+		[]contract.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8, bootDep9},
 		// The embedded form of each dependency, so its settings are registered on the command that
 		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
 		// each instance builds its own when it starts.
-		[]BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0), bootDep9.ForEmbedding(0)},
+		[]contract.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0), bootDep9.ForEmbedding(0)},
 	)
 }
