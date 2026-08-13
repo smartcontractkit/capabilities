@@ -490,6 +490,24 @@ func (wr *writeReport) replyFromTransaction(
 	if txResp.LedgerSequence > 0 {
 		reply.LedgerSequence = new(txResp.LedgerSequence)
 	}
+
+	logAttrs := []any{
+		"txHash", txHash,
+		"txStatus", txStatus,
+		"receiverStatus", receiverStatus,
+		"errorMessage", message,
+	}
+	if reply.TransactionFee != nil {
+		logAttrs = append(logAttrs, "transactionFeeStroops", *reply.TransactionFee)
+	}
+	if reply.LedgerSequence != nil {
+		logAttrs = append(logAttrs, "ledgerSequence", *reply.LedgerSequence)
+	}
+	if reply.BlockTimestamp != nil {
+		logAttrs = append(logAttrs, "blockTimestamp", *reply.BlockTimestamp)
+	}
+	wr.lggr.Infow("Successfully fetched transaction", logAttrs...)
+
 	return reply, nil
 }
 

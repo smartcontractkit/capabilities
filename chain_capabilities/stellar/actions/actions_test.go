@@ -70,6 +70,36 @@ func validReadContractRequest() *stellarcap.ReadContractRequest {
 	}
 }
 
+func validLatestLedgerInfo(t *testing.T, sequence uint32) (stellartypes.LedgerInfo, []byte, []byte) {
+	t.Helper()
+
+	hist := xdr.LedgerHeaderHistoryEntry{
+		Header: xdr.LedgerHeader{LedgerVersion: 22, LedgerSeq: xdr.Uint32(sequence)},
+	}
+	headerB64, err := xdr.MarshalBase64(hist)
+	require.NoError(t, err)
+	headerBin, err := hist.Header.MarshalBinary()
+	require.NoError(t, err)
+
+	txSet, err := xdr.NewGeneralizedTransactionSet(1, xdr.TransactionSetV1{})
+	require.NoError(t, err)
+	v2 := xdr.LedgerCloseMetaV2{TxSet: txSet}
+	closeMeta, err := xdr.NewLedgerCloseMeta(2, v2)
+	require.NoError(t, err)
+	metaB64, err := xdr.MarshalBase64(closeMeta)
+	require.NoError(t, err)
+	metaBin, err := v2.MarshalBinary()
+	require.NoError(t, err)
+
+	return stellartypes.LedgerInfo{
+		Sequence:          sequence,
+		Hash:              "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		LedgerCloseTime:   456,
+		LedgerHeaderXDR:   headerB64,
+		LedgerMetadataXDR: metaB64,
+	}, headerBin, metaBin
+}
+
 func TestNewStellar(t *testing.T) {
 	t.Parallel()
 
@@ -122,28 +152,9 @@ func TestGetLatestLedger(t *testing.T) {
 		helper := newMockedStellar(t)
 		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 123})}
 
-		// The RPC returns a LedgerHeaderHistoryEntry and a LedgerCloseMeta union; the
-		// capability response carries the inner LedgerHeader and the V2 close-meta arm.
-		hist := xdr.LedgerHeaderHistoryEntry{
-			Header: xdr.LedgerHeader{LedgerVersion: 22, LedgerSeq: 123},
-		}
-		headerB64, err := xdr.MarshalBase64(hist)
-		require.NoError(t, err)
-		wantHeaderBin, err := hist.Header.MarshalBinary()
-		require.NoError(t, err)
+		ledgerInfo, wantHeaderBin, wantMetaBin := validLatestLedgerInfo(t, 123)
 
-		txSet, err := xdr.NewGeneralizedTransactionSet(1, xdr.TransactionSetV1{})
-		require.NoError(t, err)
-		v2 := xdr.LedgerCloseMetaV2{TxSet: txSet}
-		closeMeta, err := xdr.NewLedgerCloseMeta(2, v2)
-		require.NoError(t, err)
-		metaB64, err := xdr.MarshalBase64(closeMeta)
-		require.NoError(t, err)
-		wantMetaBin, err := v2.MarshalBinary()
-		require.NoError(t, err)
-
-		const hashHex = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
-		wantHash, err := hex.DecodeString(hashHex)
+		wantHash, err := hex.DecodeString(ledgerInfo.Hash)
 		require.NoError(t, err)
 
 		helper.stellarService.EXPECT().
@@ -152,13 +163,7 @@ func TestGetLatestLedger(t *testing.T) {
 				Pagination:  &stellartypes.LedgerPaginationOptions{Limit: 1},
 			}).
 			Return(stellartypes.GetLedgersResponse{
-				Ledgers: []stellartypes.LedgerInfo{{
-					Sequence:          123,
-					Hash:              hashHex,
-					LedgerCloseTime:   456,
-					LedgerHeaderXDR:   headerB64,
-					LedgerMetadataXDR: metaB64,
-				}},
+				Ledgers: []stellartypes.LedgerInfo{ledgerInfo},
 			}, nil).
 			Once()
 
@@ -180,6 +185,69 @@ func TestGetLatestLedger(t *testing.T) {
 
 		_, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
 		require.Error(t, err)
+	})
+
+	t.Run("missing header xdr fails", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedStellar(t)
+		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 123})}
+		ledgerInfo, _, _ := validLatestLedgerInfo(t, 123)
+		ledgerInfo.LedgerHeaderXDR = ""
+
+		helper.stellarService.EXPECT().
+			GetLedgers(mock.Anything, stellartypes.GetLedgersRequest{
+				StartLedger: 123,
+				Pagination:  &stellartypes.LedgerPaginationOptions{Limit: 1},
+			}).
+			Return(stellartypes.GetLedgersResponse{Ledgers: []stellartypes.LedgerInfo{ledgerInfo}}, nil).
+			Once()
+
+		_, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ledger header xdr is required")
+	})
+
+	t.Run("missing metadata xdr fails", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedStellar(t)
+		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 123})}
+		ledgerInfo, _, _ := validLatestLedgerInfo(t, 123)
+		ledgerInfo.LedgerMetadataXDR = ""
+
+		helper.stellarService.EXPECT().
+			GetLedgers(mock.Anything, stellartypes.GetLedgersRequest{
+				StartLedger: 123,
+				Pagination:  &stellartypes.LedgerPaginationOptions{Limit: 1},
+			}).
+			Return(stellartypes.GetLedgersResponse{Ledgers: []stellartypes.LedgerInfo{ledgerInfo}}, nil).
+			Once()
+
+		_, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ledger metadata xdr is required")
+	})
+
+	t.Run("non-v2 metadata fails", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedStellar(t)
+		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 123})}
+		ledgerInfo, _, _ := validLatestLedgerInfo(t, 123)
+		closeMeta, err := xdr.NewLedgerCloseMeta(0, xdr.LedgerCloseMetaV0{})
+		require.NoError(t, err)
+		ledgerInfo.LedgerMetadataXDR, err = xdr.MarshalBase64(closeMeta)
+		require.NoError(t, err)
+
+		helper.stellarService.EXPECT().
+			GetLedgers(mock.Anything, stellartypes.GetLedgersRequest{
+				StartLedger: 123,
+				Pagination:  &stellartypes.LedgerPaginationOptions{Limit: 1},
+			}).
+			Return(stellartypes.GetLedgersResponse{Ledgers: []stellartypes.LedgerInfo{ledgerInfo}}, nil).
+			Once()
+
+		_, err = helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ledger metadata xdr version 0 is unsupported")
 	})
 }
 
