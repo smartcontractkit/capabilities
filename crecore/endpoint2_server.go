@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 	"time"
 
@@ -78,7 +80,7 @@ func (s *Endpoint2Server) Connect(stream creproxy.Endpoint2Proxy_ConnectServer) 
 	for {
 		req, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
@@ -88,9 +90,15 @@ func (s *Endpoint2Server) Connect(stream creproxy.Endpoint2Proxy_ConnectServer) 
 		case *creproxy.Endpoint2ClientRequest_NewEndpoint:
 			return fmt.Errorf("NewEndpoint2Request not allowed after initial setup")
 		case *creproxy.Endpoint2ClientRequest_SendTo:
+			// See toOracleID: an out-of-range ID is refused rather than truncated into some
+			// other oracle's.
+			to, ok := toOracleID(m.SendTo.ToOracleId)
+			if !ok {
+				return fmt.Errorf("oracle ID %d is out of range", m.SendTo.ToOracleId)
+			}
 			if out, ok := c.pbToOutbound(m.SendTo.Msg); ok {
 				s.outboundSizes.record(ctx, len(m.SendTo.Msg.Payload))
-				endpoint.SendTo(out, commontypes.OracleID(m.SendTo.ToOracleId))
+				endpoint.SendTo(out, to)
 			}
 		case *creproxy.Endpoint2ClientRequest_Broadcast:
 			if out, ok := c.pbToOutbound(m.Broadcast.Msg); ok {
@@ -207,6 +215,11 @@ func (c *endpoint2Conn) inboundToPB(msg ocr2types.InboundBinaryMessageWithSender
 
 func (c *endpoint2Conn) pbToOutbound(msg *creproxy.OutboundMessage2) (ocr2types.OutboundBinaryMessage, bool) {
 	if msg == nil {
+		return nil, false
+	}
+	// Priority is a byte on libocr's side and a uint32 on the wire, so a value that does not fit
+	// is refused: truncating it would quietly send the message at a priority nobody asked for.
+	if msg.Priority > math.MaxUint8 {
 		return nil, false
 	}
 	priority := ocr2types.BinaryMessageOutboundPriority(msg.Priority)

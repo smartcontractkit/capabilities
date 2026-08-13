@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"log"
 	"net"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
 
 	"github.com/smartcontractkit/capabilities/crecore/registry"
@@ -13,6 +15,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
 	"github.com/smartcontractkit/capabilities/libs/standalone/listener"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
+	"github.com/smartcontractkit/capabilities/libs/x/registrysyncer"
 
 	"github.com/smartcontractkit/chainlink-evm/pkg/cre/evm"
 	evmregistry "github.com/smartcontractkit/chainlink-evm/pkg/cre/registry"
@@ -29,6 +32,10 @@ const migrationsTable = "proxy_migrations"
 // ocrDiscovererTable is the table backing OCR p2p announcements. Must match the
 // CREATE TABLE in migrations/0001_*.sql.
 const ocrDiscovererTable = "proxy_ocr_discoverer_announcements"
+
+// registrySnapshotsTable is where the last known registry is kept, so a restart can answer registry
+// lookups before its first on-chain read lands. Must match the CREATE TABLE in migrations/0002_*.sql.
+const registrySnapshotsTable = "proxy_registry_snapshots"
 
 // defaultListenAddress is where the proxy and registry are served when no address is configured.
 const defaultListenAddress = ":50051"
@@ -83,15 +90,22 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	// per instance keeps that entirely out of the service.
 	listenerDep := listener.Dependency("proxy", defaultListenAddress)
 
-	return standalone.Run3(bootstrapper, func(
+	return standalone.Run4(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
 		factories *ocr.RageFactories,
 		reader registry.Reader,
 		lis net.Listener,
+		database *sql.DB,
 	) []services.Service {
+		// Where the last known registry is kept. Resolving the database again costs nothing - it is
+		// the same dependency the OCR host already took, opened once - and taking it here is what
+		// keeps the registry's own table its own business rather than the OCR host's.
+		regORM := registrysyncer.NewORM(sqlx.NewDb(database, "pgx"),
+			scfg.Logger.Named("registry snapshots"), registrySnapshotsTable)
+
 		regSvc := newRegistryService(cfg.CapabilitiesRegistrySyncInterval.Duration(),
-			scfg.Logger.Named("capabilities registry"), reader, factories.PeerID)
+			scfg.Logger.Named("capabilities registry"), reader, regORM, factories.PeerID)
 		// The registry attaches to the proxy's gRPC server, so core reaches both
 		// over the single address it already configures.
 		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), lis, &factories.OCRFactories, regSvc.Register)
@@ -99,5 +113,5 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		// core running it and this process merely fronting it.
 		dispatcherSvc := newDispatcherService(cfg.Dispatcher, scfg.Logger.Named("dispatcher"), factories, regSvc.CapabilitiesRegistry())
 		return []services.Service{proxySvc, regSvc, dispatcherSvc}
-	}, ocrDep, readerDep, listenerDep)
+	}, ocrDep, readerDep, listenerDep, dbDep)
 }

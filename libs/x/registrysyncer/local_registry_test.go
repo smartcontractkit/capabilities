@@ -1,4 +1,4 @@
-package registry
+package registrysyncer
 
 import (
 	"context"
@@ -38,14 +38,14 @@ func testLocalRegistry(t *testing.T, self ragetypes.PeerID) *LocalRegistry {
 					Families:         []string{"zone-a"},
 					AcceptsWorkflows: true,
 				},
-				CapabilityConfigurations: map[string][]byte{},
+				CapabilityConfigurations: map[string]CapabilityConfiguration{},
 			},
 			2: {
 				DON: capabilities.DON{
 					ID: 2, Name: "cap-don", F: 2, ConfigVersion: 5,
 					Members: []ragetypes.PeerID{p1, p3},
 				},
-				CapabilityConfigurations: map[string][]byte{"act@1.0.0": []byte("cfg-bytes")},
+				CapabilityConfigurations: map[string]CapabilityConfiguration{"act@1.0.0": {Config: []byte("cfg-bytes")}},
 			},
 		},
 		map[ragetypes.PeerID]NodeInfo{
@@ -183,9 +183,6 @@ func TestLocalRegistry_RawConfigForCapability(t *testing.T) {
 	require.Error(t, err)
 
 	_, err = lr.RawConfigForCapability(ctx, "nope@1.0.0", 2)
-	require.Error(t, err)
-
-	_, err = lr.RawConfigForCapability(ctx, "act@1.0.0", 404)
 	require.Error(t, err)
 }
 

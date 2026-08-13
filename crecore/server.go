@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 
 	"github.com/smartcontractkit/libocr/commontypes"
@@ -85,7 +87,7 @@ func (s *Server) Connect(stream creproxy.BinaryNetworkEndpointProxy_ConnectServe
 	for {
 		req, err := stream.Recv()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
@@ -95,8 +97,15 @@ func (s *Server) Connect(stream creproxy.BinaryNetworkEndpointProxy_ConnectServe
 		case *creproxy.BinaryNetworkClientRequest_NewEndpoint:
 			return fmt.Errorf("NewEndpointRequest not allowed after initial setup")
 		case *creproxy.BinaryNetworkClientRequest_SendTo:
+			// The wire carries the oracle ID as a uint32 and an OracleID is a uint8, so a value
+			// that does not fit is refused rather than converted: converting would silently
+			// truncate it into some other oracle's ID and send the message there.
+			to, ok := toOracleID(msg.SendTo.ToOracleId)
+			if !ok {
+				return fmt.Errorf("oracle ID %d is out of range", msg.SendTo.ToOracleId)
+			}
 			s.outboundSizes.record(ctx, len(msg.SendTo.Payload))
-			endpoint.SendTo(msg.SendTo.Payload, commontypes.OracleID(msg.SendTo.ToOracleId))
+			endpoint.SendTo(msg.SendTo.Payload, to)
 		case *creproxy.BinaryNetworkClientRequest_Broadcast:
 			s.outboundSizes.record(ctx, len(msg.Broadcast))
 			endpoint.Broadcast(msg.Broadcast)
@@ -141,4 +150,15 @@ func (s *Server) handleNewEndpoint(req *creproxy.NewEndpointRequest) (commontype
 	}
 
 	return endpoint, nil
+}
+
+// toOracleID narrows a wire oracle ID to libocr's, reporting whether it fits.
+//
+// Shared by both proxy servers: an OracleID is a uint8, the wire field is a uint32, and nothing
+// upstream constrains it, so every conversion has to be able to refuse.
+func toOracleID(id uint32) (commontypes.OracleID, bool) {
+	if id > math.MaxUint8 {
+		return 0, false
+	}
+	return commontypes.OracleID(id), true
 }
