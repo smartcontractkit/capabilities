@@ -238,33 +238,36 @@ func (s *Stellar) fetchLatestLedgerMetadata(ctx context.Context, latestLedger ui
 	}
 	out.Hash = hash
 
-	// extract encoded data for cleaner sdk response (ok when fetching one block)
-	if ledger.LedgerHeaderXDR != "" {
-		var hist xdr.LedgerHeaderHistoryEntry
-		if err = xdr.SafeUnmarshalBase64(ledger.LedgerHeaderXDR, &hist); err != nil {
-			return nil, fmt.Errorf("failed  to decode ledger header xdr: %w", err)
-		}
-		headerBin, err := hist.Header.MarshalBinary()
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal ledger header: %w", err)
-		}
-		out.LedgerHeaderXdr = headerBin
-		out.ProtocolVersion = uint32(hist.Header.LedgerVersion)
+	if ledger.LedgerHeaderXDR == "" {
+		return nil, fmt.Errorf("ledger header xdr is required for sequence %d", latestLedger)
 	}
+	var hist xdr.LedgerHeaderHistoryEntry
+	if err = xdr.SafeUnmarshalBase64(ledger.LedgerHeaderXDR, &hist); err != nil {
+		return nil, fmt.Errorf("failed  to decode ledger header xdr: %w", err)
+	}
+	headerBin, err := hist.Header.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ledger header: %w", err)
+	}
+	out.LedgerHeaderXdr = headerBin
+	out.ProtocolVersion = uint32(hist.Header.LedgerVersion)
 
-	if ledger.LedgerMetadataXDR != "" {
-		var meta xdr.LedgerCloseMeta
-		if err = xdr.SafeUnmarshalBase64(ledger.LedgerMetadataXDR, &meta); err != nil {
-			return nil, fmt.Errorf("failed to decode ledger metadata xdr: %w", err)
-		}
-		if v2, ok := meta.GetV2(); ok {
-			metaBin, err := v2.MarshalBinary()
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal ledger close meta v2: %w", err)
-			}
-			out.LedgerMetadataXdr = metaBin
-		}
+	if ledger.LedgerMetadataXDR == "" {
+		return nil, fmt.Errorf("ledger metadata xdr is required for sequence %d", latestLedger)
 	}
+	var meta xdr.LedgerCloseMeta
+	if err = xdr.SafeUnmarshalBase64(ledger.LedgerMetadataXDR, &meta); err != nil {
+		return nil, fmt.Errorf("failed to decode ledger metadata xdr: %w", err)
+	}
+	v2, ok := meta.GetV2()
+	if !ok {
+		return nil, fmt.Errorf("ledger metadata xdr version %d is unsupported, expected V2", meta.V)
+	}
+	metaBin, err := v2.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ledger close meta v2: %w", err)
+	}
+	out.LedgerMetadataXdr = metaBin
 
 	return out, nil
 }
