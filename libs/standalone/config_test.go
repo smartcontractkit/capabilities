@@ -7,23 +7,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPrometheusConfigPortFor(t *testing.T) {
-	cfg := PrometheusConfig{Port: 9090}
-	assert.Equal(t, 9090, cfg.portFor(0))
-	assert.Equal(t, 9092, cfg.portFor(2))
-	assert.False(t, cfg.disabled())
+func TestHTTPConfigPortFor(t *testing.T) {
+	cfg := HTTPConfig{Port: 9090}
+	assert.Equal(t, uint16(9090), cfg.portFor(0))
+	assert.Equal(t, uint16(9092), cfg.portFor(2))
+}
 
-	t.Run("an ephemeral port stays ephemeral for every instance", func(t *testing.T) {
-		// Offsetting 0 would turn "any free port" into port 3, which nobody asked for and which an
-		// unprivileged process may not even be able to bind.
-		ephemeral := PrometheusConfig{Port: 0}
-		assert.Equal(t, 0, ephemeral.portFor(3))
-		assert.False(t, ephemeral.disabled())
-	})
-
-	t.Run("the default leaves the server off, as an unset CL_PROMETHEUS_PORT did", func(t *testing.T) {
-		assert.True(t, defaultObservability().prometheus.disabled())
-	})
+func TestGRPCConfigPortFor(t *testing.T) {
+	cfg := GRPCConfig{Port: 50051}
+	assert.Equal(t, uint16(50051), cfg.portFor(0))
+	assert.Equal(t, uint16(50053), cfg.portFor(2))
 }
 
 func TestParsePairs(t *testing.T) {

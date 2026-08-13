@@ -27,7 +27,8 @@ const (
 	tracingNamespace     = "tracing"
 	chipIngressNamespace = "chip-ingress"
 	pyroscopeNamespace   = "pyroscope"
-	prometheusNamespace  = "prometheus"
+	httpNamespace        = "http"
+	grpcNamespace        = "grpc"
 
 	// Legacy env prefixes for the two map-valued telemetry settings. pkg/config/flags has no
 	// map support, so those are []string of key=value pairs here; a host sets one env var per
@@ -78,27 +79,32 @@ type PyroscopeConfig struct {
 	Environment   string              `usage:"environment tag attached to profiles"`
 }
 
-// PrometheusConfig is the web server serving /metrics, /debug/pprof and the health endpoints.
+// HTTPConfig is the shared HTTP server: /metrics, /debug/pprof, the health endpoints, and whatever
+// routes a service registers on StandaloneConfig.Mux during construction - it is not only
+// prometheus's, so it is named for the transport it serves rather than for one of its handlers.
 //
-// Every instance serves its own, so under `embed` instance i listens on Port+i and reports that
-// instance's health rather than an aggregate. The default keeps the previous behaviour of an
-// unset CL_PROMETHEUS_PORT: no server at all.
-type PrometheusConfig struct {
-	Port int `usage:"port serving /metrics, /debug/pprof, /healthz and /readyz; -1 disables the server, 0 asks the OS for an ephemeral port. Instance i of an embed run listens on this port plus i"`
+// Every instance serves its own, so under `embed` instance i listens on Port+i.
+type HTTPConfig struct {
+	Port uint16 `usage:"port serving /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers. Instance i of an embed run listens on this port plus i" validate:"required"`
 }
 
-// disabled reports whether no web server should be started.
-func (c PrometheusConfig) disabled() bool { return c.Port < 0 }
-
 // portFor is the port instance i serves on: the configured port plus i, so instances in one
-// process do not collide over it. An ephemeral port is left as it is - every instance asking the
-// OS for one already gets a distinct port, whereas adding to it would name specific low ports
-// nobody chose.
-func (c PrometheusConfig) portFor(index int) int {
-	if c.Port <= 0 {
-		return c.Port
-	}
-	return c.Port + index
+// process do not collide over it.
+func (c HTTPConfig) portFor(index int) uint16 {
+	return c.Port + uint16(index)
+}
+
+// GRPCConfig is the shared gRPC server: whatever services register on StandaloneConfig.GRPCServer
+// during construction, served on one address per instance instead of each opening its own.
+//
+// Every instance serves its own, so under `embed` instance i listens on Port+i.
+type GRPCConfig struct {
+	Port uint16 `usage:"port serving the shared gRPC server. Instance i of an embed run listens on this port plus i" validate:"required"`
+}
+
+// portFor is the port instance i serves on; see HTTPConfig.portFor.
+func (c GRPCConfig) portFor(index int) uint16 {
+	return c.Port + uint16(index)
 }
 
 // observability is every process-wide observability config, registered together by
@@ -108,16 +114,16 @@ type observability struct {
 	tracing     TracingConfig
 	chipIngress ChipIngressConfig
 	pyroscope   PyroscopeConfig
-	prometheus  PrometheusConfig
+	http        HTTPConfig
+	grpc        GRPCConfig
 }
 
 // defaultObservability is what the flags are bound to and decoded into, so an unset setting keeps
-// the value it is given here.
+// the value it is given here. HTTP and gRPC have no default: both are `validate:"required"`,
+// so leaving either unconfigured fails at startup rather than silently picking a port.
 func defaultObservability() observability {
 	return observability{
 		tracing: TracingConfig{SamplingRatio: 1},
-		// Off unless configured, as an unset CL_PROMETHEUS_PORT was before this was a flag.
-		prometheus: PrometheusConfig{Port: -1},
 	}
 }
 
@@ -135,7 +141,8 @@ func (o *observability) namespaced() []struct {
 		{tracingNamespace, &o.tracing},
 		{chipIngressNamespace, &o.chipIngress},
 		{pyroscopeNamespace, &o.pyroscope},
-		{prometheusNamespace, &o.prometheus},
+		{httpNamespace, &o.http},
+		{grpcNamespace, &o.grpc},
 	}
 }
 

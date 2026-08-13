@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"reflect"
@@ -51,7 +52,12 @@ type StandaloneConfig struct {
 	// be recorded.
 	MetricsRegisterer prometheus.Registerer
 
-	GRPCServer *grpc.Server
+	// GRPCServer and Mux are this instance's shared gRPC and HTTP servers. A service registers its
+	// RPCs/routes on them during construction (factory, i.e. before startInstance's factory call
+	// returns); the bootstrapper serves both, once everything else in the instance has started -
+	// see startGRPCServer and startWebServer.
+	GRPCServer grpc.ServiceRegistrar
+	Mux        *http.ServeMux
 }
 
 type Bootstrapper struct {
@@ -167,10 +173,10 @@ type instantiator func(index int, embed bool) instanceServices
 // Each subcommand runs instantiate once per instance, composing that instance's services into a
 // single supervising service via services.Engine sub-services, so their health is aggregated the
 // same way the rest of the stack does it (services.Config.NewSubServices + HealthReport). It
-// starts them along with a health checker (registered against the aggregated root service) and,
-// if a prometheus port is configured, that instance's web server serving /metrics,
-// /debug/pprof and /healthz + /readyz, then blocks until an interrupt and closes everything in
-// reverse.
+// starts them along with a health checker (registered against the aggregated root service), that
+// instance's shared HTTP server (serving /metrics, /debug/pprof, /healthz + /readyz, and whatever
+// routes a service registered) and its shared gRPC server, then blocks until an interrupt and
+// closes everything in reverse.
 func (b *Bootstrapper) run(instantiate instantiator, configured, embedded []contract.BootstrapCommand) error {
 	defer b.close()
 
@@ -197,7 +203,7 @@ Its settings are its own: a dependency that an embedded instance replaces rather
 Dependencies serve each instance rather than being configured per instance: the transports between
 instances are replaced by in-process ones, identities that would be read from a database are derived
 from the instance index instead, and what state instances do keep is partitioned per instance. Each
-instance reports its own health, on the configured prometheus port plus its index.
+instance reports its own health, on the configured HTTP port plus its index.
 
 So the settings here are not "run" settings plus a count: what an embedded instance derives or
 replaces, it cannot be told, and only what it still needs is accepted.`,
@@ -277,7 +283,7 @@ func (b *Bootstrapper) runInstances(ctx context.Context, stop context.CancelFunc
 // for shutdown. Everything it registers is closed in reverse order by close, which puts an
 // instance's services ahead of the dependencies they resolved during start.
 func (b *Bootstrapper) startInstance(ctx context.Context, index, count int, factory instanceServices) error {
-	cfg := b.instanceConfig(index, count)
+	cfg, grpcServer := b.instanceConfig(index, count)
 
 	svcs, err := factory(ctx, cfg)
 	if err != nil {
@@ -300,29 +306,43 @@ func (b *Bootstrapper) startInstance(ctx context.Context, index, count int, fact
 	}
 	b.registerCloser(checker)
 
-	if b.observability.prometheus.disabled() {
-		return nil
-	}
-	// Instance i takes the configured port plus i, so several instances can serve their own
-	// health without being configured a port each.
-	web, err := startWebServer(ctx, cfg.Logger, b.observability.prometheus.portFor(index), checker)
+	// Everything else has started, so every service has registered what it will on cfg.Mux and
+	// cfg.GRPCServer by now: only now do the shared servers start actually serving. Instance i takes
+	// its configured port plus i, so several instances can serve their own without being configured
+	// a port each.
+	web, err := startWebServer(ctx, cfg.Logger, b.observability.http.portFor(index), cfg.Mux, checker)
 	if err != nil {
 		return err
 	}
 	b.registerCloser(web)
+
+	grpcSrv, err := startGRPCServer(ctx, cfg.Logger, int(b.observability.grpc.portFor(index)), grpcServer)
+	if err != nil {
+		return err
+	}
+	b.registerCloser(grpcSrv)
+
 	return nil
 }
 
-// instanceConfig is the StandaloneConfig handed to one instance's factory: the process-wide values,
-// plus the logger and registerer that belong to that instance alone.
+// instanceConfig builds the StandaloneConfig handed to one instance's factory - the process-wide
+// values, the logger and registerer that belong to that instance alone, and a fresh shared HTTP
+// mux and gRPC server for services to register on - plus the concrete gRPC server, which
+// startInstance needs to serve after everything else has started but which a factory has no
+// business being able to Serve or GracefulStop directly (cfg only exposes the narrower
+// grpc.ServiceRegistrar).
 //
 // It deliberately does not say which instance this is. A service is written once and knows nothing
 // about embedding; everything that has to differ between instances is a dependency, replaced by its
 // embedded form before the service is handed it (see BootstrapDependency.ForEmbedding).
-func (b *Bootstrapper) instanceConfig(index, count int) *StandaloneConfig {
+func (b *Bootstrapper) instanceConfig(index, count int) (*StandaloneConfig, *grpc.Server) {
 	cfg := *b.config
+	cfg.Mux = http.NewServeMux()
+	grpcServer := grpc.NewServer()
+	cfg.GRPCServer = grpcServer
+
 	if count == 1 {
-		return &cfg
+		return &cfg, grpcServer
 	}
 
 	cfg.Logger = logger.Sugared(logger.Named(b.config.Logger, "instance."+strconv.Itoa(index)))
@@ -331,7 +351,7 @@ func (b *Bootstrapper) instanceConfig(index, count int) *StandaloneConfig {
 	// not see, and registering the same collector a second time is an error.
 	cfg.MetricsRegisterer = prometheus.WrapRegistererWith(
 		prometheus.Labels{"instance": strconv.Itoa(index)}, prometheus.DefaultRegisterer)
-	return &cfg
+	return &cfg, grpcServer
 }
 
 // instanceName names an instance's aggregated service. It carries the index when there is more

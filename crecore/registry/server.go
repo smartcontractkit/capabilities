@@ -30,8 +30,8 @@ var _ registrypb.CapabilitiesRegistryServer = (*Server)(nil)
 
 func NewServer(impl *Registry) *Server { return &Server{impl: impl} }
 
-// Register registers this server on a plain grpc.Server.
-func Register(s *grpc.Server, impl *Registry) {
+// Register registers this server on a gRPC server.
+func Register(s grpc.ServiceRegistrar, impl *Registry) {
 	registrypb.RegisterCapabilitiesRegistryServer(s, NewServer(impl))
 }
 
