@@ -7,15 +7,11 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/proto"
 
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/capabilities/crecore/registry"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
-	regserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -42,14 +38,13 @@ type registryService struct {
 	// syncInterval is how often the registry is re-read; see main.go.
 	syncInterval time.Duration
 
-	lggr   logger.Logger
-	reader registry.Reader
+	lggr logger.Logger
 	// peerID is this node's own, from the same identity the rage networking uses, so the node record
 	// this process resolves is the node it fronts.
 	peerID ragetypes.PeerID
 
 	syncer   *registry.Syncer
-	registry *regserver.Registry
+	registry *registry.Registry
 }
 
 var _ services.Service = (*registryService)(nil)
@@ -58,21 +53,26 @@ func newRegistryService(
 	syncInterval time.Duration,
 	lggr logger.Logger,
 	reader registry.Reader,
+	orm registry.ORM,
 	peerID ragetypes.PeerID,
 ) *registryService {
+	syncer := registry.NewSyncer(lggr, reader, orm,
+		peerID, syncInterval)
+
 	s := &registryService{
 		syncInterval: syncInterval,
 		lggr:         lggr,
-		reader:       reader,
 		peerID:       peerID,
-		// The Registry exists from construction so it can be attached to the
-		// proxy's gRPC server before either service starts. Its metadata source is
-		// installed later, in start.
+		syncer:       syncer,
+		// Both halves exist from construction so the service can be attached to the proxy's gRPC
+		// server before either starts, and so the registry has somewhere to read metadata from
+		// without being told about it a second time later.
 		//
 		// Capabilities registered here are served on loopback by the same-host LOOP
 		// process registering them, so insecure credentials are stated explicitly
 		// rather than defaulted in the client (mirrors creregistry.Select).
-		registry: regserver.New(lggr, grpc.WithTransportCredentials(insecure.NewCredentials())),
+		registry: registry.New(lggr, syncer.Current,
+			grpc.WithTransportCredentials(insecure.NewCredentials())),
 	}
 	s.Service, s.eng = services.Config{
 		Name:  "CapabilitiesRegistry",
@@ -83,16 +83,7 @@ func newRegistryService(
 }
 
 func (s *registryService) start(ctx context.Context) error {
-	getPeerID := func() (ragetypes.PeerID, error) { return s.peerID, nil }
-
-	syncer, err := registry.NewSyncer(s.lggr, s.reader, getPeerID, s.syncInterval)
-	if err != nil {
-		return fmt.Errorf("failed to create registry syncer: %w", err)
-	}
-	s.syncer = syncer
-	s.registry.SetMetadata(syncer.Metadata())
-
-	if err := syncer.Start(ctx); err != nil {
+	if err := s.syncer.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start registry syncer: %w", err)
 	}
 
@@ -102,86 +93,21 @@ func (s *registryService) start(ctx context.Context) error {
 }
 
 func (s *registryService) close() error {
-	if s.syncer != nil {
-		return s.syncer.Close()
-	}
-	return nil
+	return s.syncer.Close()
 }
 
 // Register attaches the CapabilitiesRegistry service to a gRPC server.
 //
-// Safe to call before start: the Registry is built in the constructor, and its
-// metadata RPCs return a "not ready" error until start installs the syncer and
-// the first sync lands. That decouples this service's startup from the proxy's,
-// which must register everything before it Serves.
+// Safe to call before start: everything it serves exists from construction, and its metadata RPCs
+// return a "not ready" error until the first snapshot lands. That decouples this service's startup
+// from the proxy's, which must register everything before it Serves.
 func (s *registryService) Register(srv *grpc.Server) {
-	regserver.Register(srv, s.registry)
+	registry.Register(srv, s.registry)
 }
 
-// CapabilitiesRegistry returns the core.CapabilitiesRegistry don2don.NewDispatcher takes: real
-// values (regserver.Registry.Local(), which Add resolves Handles into) plus this service's
-// metadata. Both halves are backed by the same registry a LOOP-registered and a dispatcher-reached
-// capability go through identically - one gRPC Add, one real entry, callable either way.
+// CapabilitiesRegistry returns the core.CapabilitiesRegistry don2don.NewDispatcher takes. Registry
+// implements it directly - the same registry a LOOP-registered and a dispatcher-reached capability
+// go through identically, one gRPC Add, one real entry, callable either way.
 func (s *registryService) CapabilitiesRegistry() core.CapabilitiesRegistry {
-	return registryAdapter{metadata: s.registry, base: s.registry.Local()}
-}
-
-type registryAdapter struct {
-	metadata *regserver.Registry
-	base     core.CapabilitiesRegistryBase
-}
-
-func (a registryAdapter) Add(ctx context.Context, c capabilities.BaseCapability) error {
-	return a.base.Add(ctx, c)
-}
-
-func (a registryAdapter) Remove(ctx context.Context, id string) error {
-	return a.base.Remove(ctx, id)
-}
-
-func (a registryAdapter) Get(ctx context.Context, id string) (capabilities.BaseCapability, error) {
-	return a.base.Get(ctx, id)
-}
-
-func (a registryAdapter) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
-	return a.base.GetTrigger(ctx, id)
-}
-
-func (a registryAdapter) GetExecutable(ctx context.Context, id string) (capabilities.ExecutableCapability, error) {
-	return a.base.GetExecutable(ctx, id)
-}
-
-func (a registryAdapter) List(ctx context.Context) ([]capabilities.BaseCapability, error) {
-	return a.base.List(ctx)
-}
-
-func (a registryAdapter) LocalNode(ctx context.Context) (capabilities.Node, error) {
-	return a.metadata.LocalNode(ctx)
-}
-
-func (a registryAdapter) NodeByPeerID(ctx context.Context, peerID ragetypes.PeerID) (capabilities.Node, error) {
-	return a.metadata.NodeByPeerID(ctx, peerID)
-}
-
-func (a registryAdapter) DONsForCapability(ctx context.Context, capabilityID string) ([]capabilities.DONWithNodes, error) {
-	return a.metadata.DONsForCapability(ctx, capabilityID)
-}
-
-func (a registryAdapter) DONByID(ctx context.Context, donID uint32) (capabilities.DON, error) {
-	return a.metadata.DONByID(ctx, donID)
-}
-
-// ConfigForCapability decodes the same wire-encoded config the gRPC service's own
-// ConfigForCapability RPC parses, since regserver.Registry only stores the raw bytes.
-func (a registryAdapter) ConfigForCapability(ctx context.Context, capabilityID string, donID uint32) (capabilities.CapabilityConfiguration, error) {
-	raw, err := a.metadata.RawConfigForCapability(ctx, capabilityID, donID)
-	if err != nil {
-		return capabilities.CapabilityConfiguration{}, err
-	}
-	cfg := &capabilitiespb.CapabilityConfig{}
-	if err := proto.Unmarshal(raw, cfg); err != nil {
-		return capabilities.CapabilityConfiguration{}, fmt.Errorf(
-			"capability %s on DON %d has an unparseable on-chain config: %w", capabilityID, donID, err)
-	}
-	return capabilitiespb.CapabilityConfigFromProto(cfg)
+	return s.registry
 }

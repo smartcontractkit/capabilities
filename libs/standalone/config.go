@@ -95,8 +95,8 @@ func (c PrometheusConfig) disabled() bool { return c.Port < 0 }
 // OS for one already gets a distinct port, whereas adding to it would name specific low ports
 // nobody chose.
 func (c PrometheusConfig) portFor(index int) int {
-	if c.Port == 0 {
-		return 0
+	if c.Port <= 0 {
+		return c.Port
 	}
 	return c.Port + index
 }

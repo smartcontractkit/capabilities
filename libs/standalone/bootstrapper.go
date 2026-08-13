@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	contract "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
@@ -49,6 +50,8 @@ type StandaloneConfig struct {
 	// same collector twice fails, so without the label only the first instance's metrics would
 	// be recorded.
 	MetricsRegisterer prometheus.Registerer
+
+	GRPCServer *grpc.Server
 }
 
 type Bootstrapper struct {
