@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"embed"
 	"log"
-	"net"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
@@ -13,7 +12,6 @@ import (
 	"github.com/smartcontractkit/capabilities/crecore/registry"
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
-	"github.com/smartcontractkit/capabilities/libs/standalone/listener"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 	"github.com/smartcontractkit/capabilities/libs/x/registrysyncer"
 
@@ -37,9 +35,6 @@ const ocrDiscovererTable = "proxy_ocr_discoverer_announcements"
 // lookups before its first on-chain read lands. Must match the CREATE TABLE in migrations/0002_*.sql.
 const registrySnapshotsTable = "proxy_registry_snapshots"
 
-// defaultListenAddress is where the proxy and registry are served when no address is configured.
-const defaultListenAddress = ":50051"
-
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -57,11 +52,11 @@ core can delegate its OCR networking (and, in future, DON-to-DON networking) to
 this process. The peer's identity is the node's own, loaded from the keystore in
 the database the two share.
 
-It also serves the CapabilitiesRegistry on that same gRPC address, read directly
-from chain with an EVM client (no relayer). Core uses that in place of its own
-registrysyncer whenever it is delegating rage networking to this process, which
-is why the registry address is required: this process running is what enables the
-registry, and core does not start without it.
+It also serves the CapabilitiesRegistry on that same gRPC address (--grpc.port),
+read directly from chain with an EVM client (no relayer). Core uses that in place
+of its own registrysyncer whenever it is delegating rage networking to this
+process, which is why --grpc.port must be configured: this process running is
+what enables the registry, and core does not start without it.
 
 Settings can come from flags, from CRE_/CL_ env vars, or from a --config file;
 run "docs" to write the full reference to docs/CONFIG.md.`,
@@ -85,17 +80,12 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	// chainlink-evm's business: this names the dependency and never sees an EVM type, and the
 	// client it needs is a dependency of its own rather than one this binary has to hold.
 	readerDep := evmregistry.Dependency(lggr.Named("CapabilitiesRegistry"), evm.Dependency(lggr.Named("EVM")))
-	// Where this process serves, as a dependency rather than a setting the proxy service reads:
-	// the address is the one thing two instances in one process cannot agree on, and resolving it
-	// per instance keeps that entirely out of the service.
-	listenerDep := listener.Dependency("proxy", defaultListenAddress)
 
-	return standalone.Run4(bootstrapper, func(
+	return standalone.Run3(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
 		factories *ocr.RageFactories,
 		reader registry.Reader,
-		lis net.Listener,
 		database *sql.DB,
 	) []services.Service {
 		// Where the last known registry is kept. Resolving the database again costs nothing - it is
@@ -104,14 +94,14 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		regORM := registrysyncer.NewORM(sqlx.NewDb(database, "pgx"),
 			scfg.Logger.Named("registry snapshots"), registrySnapshotsTable)
 
+		// Both attach to the bootstrapper's shared gRPC server (scfg.GRPCServer) rather than each
+		// opening a listener, so core reaches both over the single address the bootstrapper serves.
 		regSvc := newRegistryService(cfg.CapabilitiesRegistrySyncInterval.Duration(),
-			scfg.Logger.Named("capabilities registry"), reader, regORM, factories.PeerID)
-		// The registry attaches to the proxy's gRPC server, so core reaches both
-		// over the single address it already configures.
-		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), lis, &factories.OCRFactories, regSvc.Register)
+			scfg.Logger.Named("capabilities registry"), reader, regORM, factories.PeerID, scfg.GRPCServer)
+		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), scfg.GRPCServer, &factories.OCRFactories)
 		// The dispatcher runs the real DON-to-DON work over the same rage connection, rather than
 		// core running it and this process merely fronting it.
 		dispatcherSvc := newDispatcherService(cfg.Dispatcher, scfg.Logger.Named("dispatcher"), factories, regSvc.CapabilitiesRegistry())
 		return []services.Service{proxySvc, regSvc, dispatcherSvc}
-	}, ocrDep, readerDep, listenerDep, dbDep)
+	}, ocrDep, readerDep, dbDep)
 }

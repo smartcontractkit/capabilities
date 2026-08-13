@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 
 	"google.golang.org/grpc"
 
@@ -17,8 +16,8 @@ import (
 )
 
 // Config is the root command's configuration, populated by flags.RegisterCommandFlags (see
-// main.go). The libocr peer configuration lives on the ocr bootstrap dependency, and the address
-// this process serves on lives on the listener dependency.
+// main.go). The libocr peer configuration lives on the ocr bootstrap dependency; the address this
+// process serves on is the bootstrapper's shared gRPC server (--grpc.port).
 type Config struct {
 	// CapabilitiesRegistrySyncInterval is how often the on-chain registry is re-read.
 	CapabilitiesRegistrySyncInterval config.Duration `usage:"how often the on-chain registry is re-read"`
@@ -41,19 +40,12 @@ type proxyService struct {
 	eng *services.Engine
 
 	lggr logger.Logger
-	// listener is where this process serves. It arrives resolved rather than as an address to open,
-	// so a process running several instances gives each of them a socket of its own without this
-	// service knowing that more than one exists. Its lifetime is the bootstrapper's, as the
-	// factories' is: both outlive this service's own start and close.
-	listener  net.Listener
-	factories *ocr.OCRFactories
-
-	// registrars attach additional gRPC services to this server before it
-	// Serves. Used so co-located services (e.g. the CapabilitiesRegistry) share
-	// one address instead of each opening a listener.
-	registrars []func(*grpc.Server)
-
-	grpcServer *grpc.Server
+	// grpcServer is the bootstrapper's shared gRPC server for this instance: this service only
+	// registers its RPCs on it, and the bootstrapper serves it once every other service (e.g. the
+	// CapabilitiesRegistry) has registered too, so they share one address instead of each opening a
+	// listener of their own.
+	grpcServer grpc.ServiceRegistrar
+	factories  *ocr.OCRFactories
 }
 
 var _ services.Service = (*proxyService)(nil)
@@ -61,8 +53,8 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(lggr logger.Logger, listener net.Listener, factories *ocr.OCRFactories, registrars ...func(*grpc.Server)) *proxyService {
-	s := &proxyService{lggr: lggr, listener: listener, factories: factories, registrars: registrars}
+func newProxyService(lggr logger.Logger, grpcServer grpc.ServiceRegistrar, factories *ocr.OCRFactories) *proxyService {
+	s := &proxyService{lggr: lggr, grpcServer: grpcServer, factories: factories}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",
 		Start: s.start,
@@ -77,26 +69,7 @@ func (s *proxyService) start(context.Context) error {
 	}
 
 	// The factories back both surfaces over the same rage connection and discoverer.
-	s.grpcServer = grpc.NewServer()
 	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(s.factories.OCR2Endpoint, metrics))
 	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(s.factories.OCR3_1Endpoint, metrics))
-
-	for _, register := range s.registrars {
-		register(s.grpcServer)
-	}
-
-	// Gracefully stop the gRPC server when the engine cancels this context on
-	// Close; run the (blocking) Serve in a tracked goroutine so start returns
-	// promptly, per the services.Engine contract.
-	s.eng.Go(func(ctx context.Context) {
-		<-ctx.Done()
-		s.grpcServer.GracefulStop()
-	})
-	s.eng.Go(func(context.Context) {
-		s.lggr.Infow("p2p proxy serving", "address", s.listener.Addr().String())
-		if err := s.grpcServer.Serve(s.listener); err != nil {
-			s.eng.Errorw("proxy gRPC server stopped", "err", err)
-		}
-	})
 	return nil
 }

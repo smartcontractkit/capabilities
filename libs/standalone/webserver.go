@@ -16,7 +16,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
-// webServer serves one instance's /metrics, /debug/pprof and health endpoints.
+// webServer serves one instance's shared mux: /metrics, /debug/pprof, health endpoints, and
+// whatever routes a service registered on it during construction.
 //
 // Each instance gets its own mux and listener rather than sharing net/http's DefaultServeMux (as
 // loop.WebServerOpts does): the mux panics on a second registration of the same pattern, so a
@@ -29,11 +30,10 @@ type webServer struct {
 	listener net.Listener
 }
 
-// startWebServer listens on port and serves the endpoints reporting checker's view of one
-// instance. Port 0 asks the OS for an ephemeral port, which is logged once bound.
-func startWebServer(ctx context.Context, lggr logger.Logger, port int, checker *services.HealthChecker) (*webServer, error) {
-	mux := http.NewServeMux()
-
+// startWebServer registers /metrics, /debug/pprof and the health endpoints reporting checker's
+// view of one instance onto mux, then listens on port and serves it - along with anything already
+// registered on mux by a service built earlier in that instance's construction.
+func startWebServer(ctx context.Context, lggr logger.Logger, port uint16, mux *http.ServeMux, checker *services.HealthChecker) (*webServer, error) {
 	mux.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	}))

@@ -27,10 +27,10 @@ import (
 // There is no enable switch: this binary running is what enables the registry,
 // and core does not start without it.
 //
-// It attaches to the proxy's gRPC server rather than opening a listener of its
-// own: a node that delegates rage networking to this process already has a
-// connection to it, and a second address would be one more thing to configure and
-// keep in sync for no gain.
+// It attaches to the bootstrapper's shared gRPC server rather than opening a listener of its own: a
+// node that delegates rage networking to this process already has a connection to it (the proxy
+// service attaches to the same server), and a second address would be one more thing to configure
+// and keep in sync for no gain.
 type registryService struct {
 	services.Service
 	eng *services.Engine
@@ -55,6 +55,7 @@ func newRegistryService(
 	reader registry.Reader,
 	orm registry.ORM,
 	peerID ragetypes.PeerID,
+	grpcServer grpc.ServiceRegistrar,
 ) *registryService {
 	syncer := registry.NewSyncer(lggr, reader, orm,
 		peerID, syncInterval)
@@ -64,9 +65,9 @@ func newRegistryService(
 		lggr:         lggr,
 		peerID:       peerID,
 		syncer:       syncer,
-		// Both halves exist from construction so the service can be attached to the proxy's gRPC
-		// server before either starts, and so the registry has somewhere to read metadata from
-		// without being told about it a second time later.
+		// Both halves exist from construction so the registry can be registered on grpcServer before
+		// either starts, and so the registry has somewhere to read metadata from without being told
+		// about it a second time later.
 		//
 		// Capabilities registered here are served on loopback by the same-host LOOP
 		// process registering them, so insecure credentials are stated explicitly
@@ -74,6 +75,10 @@ func newRegistryService(
 		registry: registry.New(lggr, syncer.Current,
 			grpc.WithTransportCredentials(insecure.NewCredentials())),
 	}
+	// Safe to register before start: everything it serves exists from construction, and its
+	// metadata RPCs return a "not ready" error until the first snapshot lands.
+	registry.Register(grpcServer, s.registry)
+
 	s.Service, s.eng = services.Config{
 		Name:  "CapabilitiesRegistry",
 		Start: s.start,
@@ -94,15 +99,6 @@ func (s *registryService) start(ctx context.Context) error {
 
 func (s *registryService) close() error {
 	return s.syncer.Close()
-}
-
-// Register attaches the CapabilitiesRegistry service to a gRPC server.
-//
-// Safe to call before start: everything it serves exists from construction, and its metadata RPCs
-// return a "not ready" error until the first snapshot lands. That decouples this service's startup
-// from the proxy's, which must register everything before it Serves.
-func (s *registryService) Register(srv *grpc.Server) {
-	registry.Register(srv, s.registry)
 }
 
 // CapabilitiesRegistry returns the core.CapabilitiesRegistry don2don.NewDispatcher takes. Registry
