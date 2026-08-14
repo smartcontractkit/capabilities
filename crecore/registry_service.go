@@ -10,7 +10,7 @@ import (
 
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/capabilities/crecore/registry"
+	"github.com/smartcontractkit/capabilities/libs/x/registry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
