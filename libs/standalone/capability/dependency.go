@@ -10,8 +10,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/smartcontractkit/capabilities/libs/standalone"
+	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	registryclient "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/client"
 	common "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
@@ -49,6 +51,13 @@ type Dependencies struct {
 	settings *loop.AtomicSettings
 	// settingsPath is the file the reload endpoint re-reads.
 	settingsPath string
+	// proxy is the node's registry, which capabilities hosted here are announced
+	// to by address. nil when embedded: there is no node to announce to, and the
+	// capabilities are resolved in-process as values.
+	proxy core.AddressableRegistryBase
+	// servers opens one gRPC server per capability. nil when embedded, which
+	// serves nothing.
+	servers *standalonegrpc.Factory
 	// closers are the connections Get opened, torn down by Close.
 	closers []func() error
 }
@@ -83,14 +92,23 @@ type capabilityConfig struct {
 // key, and the registry is how a capability reaches the ones it does not host.
 // Resolving them separately would mean three dependencies agreeing on one
 // settings file and one proxy address.
-func Dependency(lggr logger.Logger) common.BootstrapDependency[Dependencies] {
+//
+// servers is the gRPC factory this binary serves its capabilities with: one
+// server per capability, since the registry addresses a capability by the address
+// serving it. Taken as a dependency rather than built here so its settings are
+// registered and documented like any other's.
+func Dependency(lggr logger.Logger, servers common.BootstrapDependency[*standalonegrpc.Factory]) common.BootstrapDependency[Dependencies] {
 	// Wrapped so the connections Get dials are made at most once however many
 	// services resolve this.
-	return common.OnceBootstrapper[Dependencies](&dependency{lggr: lggr})
+	return common.OnceBootstrapper[Dependencies](&dependency{
+		lggr:    lggr,
+		servers: servers,
+	})
 }
 
 type dependency struct {
-	lggr logger.Logger
+	lggr    logger.Logger
+	servers common.BootstrapDependency[*standalonegrpc.Factory]
 	capabilityConfig
 }
 
@@ -100,20 +118,24 @@ func (d *dependency) Namespace() string { return "capabilities" }
 
 func (d *dependency) Config() any { return &d.capabilityConfig }
 
-func (d *dependency) Dependencies() []common.BootstrapCommand { return nil }
+func (d *dependency) Dependencies() []common.BootstrapCommand {
+	return []common.BootstrapCommand{d.servers}
+}
 
 // ForEmbedding returns the form with no proxy behind it: an embedded instance
 // has no node to ask, so its registry holds only what this binary registers. See
 // embedded.
 //
-// The index is not used: what this dependency resolves belongs to the process
-// rather than to an instance, so every instance shares the one form (and, through
-// OnceBootstrapper, the one value it resolves to).
-func (d *dependency) ForEmbedding(int) common.BootstrapDependency[Dependencies] {
-	return &embedded{lggr: d.lggr, cfg: embeddedConfig{CapabilityDonID: defaultEmbeddedDonID}}
+// The gRPC factory is embedded rather than passed through, so what an embedded
+// capability serves on is whatever the factory says instance i gets. Whether that
+// is one factory for the process or one each is the factory's to decide, and
+// deciding it here would be this dependency asserting something about another's
+// internals.
+func (d *dependency) ForEmbedding(i int) common.BootstrapDependency[Dependencies] {
+	return &embedded{lggr: d.lggr, servers: d.servers.ForEmbedding(i), cfg: &embeddedConfig{CapabilityDonID: defaultEmbeddedDonID}}
 }
 
-func (d *dependency) Get(ctx context.Context, _ common.CommonConfig) (Dependencies, error) {
+func (d *dependency) Get(ctx context.Context, cc common.CommonConfig) (Dependencies, error) {
 	settings, err := newSettings(d.lggr)
 	if err != nil {
 		return Dependencies{}, err
@@ -130,6 +152,11 @@ func (d *dependency) Get(ctx context.Context, _ common.CommonConfig) (Dependenci
 	}
 	proxy := registryclient.New(d.lggr, conn)
 
+	servers, err := d.servers.Get(ctx, cc)
+	if err != nil {
+		return Dependencies{}, fmt.Errorf("failed to get gRPC server factory: %w", err)
+	}
+
 	return Dependencies{
 		LimitsFactory:      newLimitsFactory(d.lggr, settings),
 		CRESettings:        settings,
@@ -138,6 +165,8 @@ func (d *dependency) Get(ctx context.Context, _ common.CommonConfig) (Dependenci
 		lggr:               d.lggr,
 		settings:           settings,
 		settingsPath:       SettingsPath(),
+		proxy:              proxy,
+		servers:            servers,
 		closers:            []func() error{proxy.Close, conn.Close},
 	}, nil
 }
@@ -166,13 +195,20 @@ func newLimitsFactory(lggr logger.Logger, settings *loop.AtomicSettings) limits.
 	}
 }
 
-// Run builds the services for a binary hosting capabilities: it serves the
-// settings reload endpoint the node calls, and registers each capability once
-// the process starts.
+// Run builds the services for a binary hosting caps: it serves the settings
+// reload endpoint the node calls, and gives each capability a gRPC server and a
+// registration once the process starts.
+//
+// A capability gets a server of its own rather than sharing one, because the
+// registry addresses a capability by the address serving it and most of the RPCs
+// reached through that address carry nothing to tell two capabilities apart. That
+// is also how the LOOP transport does it - one grpc.Server per capability behind
+// its own broker connection - so a binary hosting several is not a thing this
+// gives up.
 //
 // The capabilities are returned alongside the registration service rather than
-// wrapped by it, so the bootstrapper supervises each of them in its own right
-// and their health is reported separately.
+// wrapped by it, so the bootstrapper supervises each of them in its own right and
+// their health is reported separately.
 func Run(dependencies Dependencies, sc standalone.StandaloneConfig, caps ...Capability) ([]services.Service, error) {
 	if dependencies.settings == nil {
 		return nil, errors.New("dependencies were not built by this package's Dependency")
@@ -208,18 +244,39 @@ func reloadHandler(lggr logger.Logger, settings *loop.AtomicSettings, path strin
 	}
 }
 
-// registrar initialises each capability and puts it in the registry, then takes
-// them back out on shutdown.
+// registrar initialises each capability, makes it reachable, and takes it back
+// out on shutdown.
 //
-// It is a service rather than something Run does inline because both halves need
-// a context: Initialise and Add take one, and Run has none to give - the
-// bootstrapper builds services first and starts them after.
+// Reachable means three things, in order: the local registry holds it, so
+// anything else in this process resolves it as a value; a gRPC server of its own
+// is serving it; and the node's registry knows that server's address. Announcing
+// last is deliberate - the announcement is what invites traffic, so nothing is
+// announced until it can be served.
+//
+// It owns the servers it opens rather than returning them as services, because
+// there is one per capability and how many there are is only known here: the
+// capabilities are initialised before their types can be read, and the types are
+// what decide which RPCs each server carries.
+//
+// It is a service rather than something Run does inline because all of it needs a
+// context, and Run has none to give: the bootstrapper builds services first and
+// starts them after.
 type registrar struct {
 	services.Service
 	eng *services.Engine
 
 	deps Dependencies
 	caps []Capability
+
+	// hosted is what start got as far as making reachable, so close undoes
+	// exactly that - a start that failed part-way leaves the rest alone.
+	hosted []hosted
+}
+
+// hosted is one capability that is being served, and the server serving it.
+type hosted struct {
+	id     string
+	server *standalonegrpc.Server // nil when embedded, which serves nothing
 }
 
 func newRegistrar(lggr logger.Logger, deps Dependencies, caps []Capability) *registrar {
@@ -244,25 +301,65 @@ func (r *registrar) start(ctx context.Context) error {
 		if err := r.deps.CapabilityRegistry.Add(ctx, c); err != nil {
 			return fmt.Errorf("failed to register capability %s: %w", info.ID, err)
 		}
+		r.hosted = append(r.hosted, hosted{id: info.ID})
+
+		if err := r.serve(ctx, c, info); err != nil {
+			return err
+		}
 		r.eng.Infow("Registered capability", "capabilityID", info.ID, "type", info.CapabilityType)
 	}
 	return nil
 }
 
-// close deregisters what start registered. Failures are logged rather than
-// returned: the process is going away, and a capability left in a registry that
-// is also going away is not worth failing shutdown over.
+// serve binds c to a gRPC server of its own and, when there is a node to tell,
+// announces that server's address to its registry.
+//
+// The server is opened either way. Serving is what makes the capability callable
+// from outside this process, and that is worth having under `embed` too - an
+// embedded instance's capabilities are reachable in-process as values, but the
+// address is what anything else has to go through. Only the announcement needs a
+// node, so only the announcement is conditional.
+func (r *registrar) serve(ctx context.Context, c Capability, info capabilities.CapabilityInfo) error {
+	server, err := r.deps.servers.New(ctx, logger.Named(r.eng, info.ID))
+	if err != nil {
+		return fmt.Errorf("failed to open a server for capability %s: %w", info.ID, err)
+	}
+	r.hosted[len(r.hosted)-1].server = server
+
+	if err := registryclient.RegisterCapability(r.eng, server.Registrar(), c, info.CapabilityType); err != nil {
+		return fmt.Errorf("failed to serve capability %s: %w", info.ID, err)
+	}
+	if err := server.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start the server for capability %s: %w", info.ID, err)
+	}
+
+	if r.deps.proxy == nil {
+		return nil
+	}
+	if err := r.deps.proxy.AddAt(ctx, info.ID, info.CapabilityType, server.Address()); err != nil {
+		return fmt.Errorf("failed to announce capability %s at %s: %w", info.ID, server.Address(), err)
+	}
+	return nil
+}
+
+// close undoes what start did, in reverse: stop inviting traffic (the registry
+// entry, local and announced, which overlayRegistry.Remove drops from both), then
+// stop answering it (the server).
+//
+// Failures are logged rather than returned. The process is going away, and a
+// stale entry in a registry that cannot reach it any more is not worth failing
+// shutdown over - the registry fails to dial it and drops it.
 func (r *registrar) close() error {
 	ctx, cancel := r.eng.NewCtx()
 	defer cancel()
-	for _, c := range r.caps {
-		info, err := c.Info(ctx)
-		if err != nil {
-			r.eng.Warnw("Failed to read capability info while deregistering", "err", err)
-			continue
+
+	for i := len(r.hosted) - 1; i >= 0; i-- {
+		h := r.hosted[i]
+		if err := r.deps.CapabilityRegistry.Remove(ctx, h.id); err != nil {
+			r.eng.Warnw("Failed to deregister capability", "capabilityID", h.id, "err", err)
 		}
-		if err := r.deps.CapabilityRegistry.Remove(ctx, info.ID); err != nil {
-			r.eng.Warnw("Failed to deregister capability", "capabilityID", info.ID, "err", err)
+		if h.server != nil {
+			r.eng.ErrorIfFn(h.server.Close, "Failed to stop the server for capability "+h.id)
 		}
 	}
 	return nil

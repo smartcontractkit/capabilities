@@ -11,6 +11,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
+	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 	"github.com/smartcontractkit/capabilities/libs/x/registry"
 	"github.com/smartcontractkit/capabilities/libs/x/registrysyncer"
@@ -70,23 +71,20 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	bootstrapper := standalone.NewBootstrapper(root, standalone.WithOtelViews(metricViews()))
 	lggr := bootstrapper.Logger()
 
-	// This binary is the process that hosts the peer, so it takes the ocr host dependency rather
-	// than the proxy one: it owns the libocr networking config (the peer's own settings, and the
-	// keystore password that unlocks its identity) and wraps the database dependency it needs for
-	// that identity and the OCR discoverer table.
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
 	ocrDep := ocr.Host(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
-	// The registry always runs, so its reader is always resolved. Reading it off a chain is
-	// chainlink-evm's business: this names the dependency and never sees an EVM type, and the
-	// client it needs is a dependency of its own rather than one this binary has to hold.
+
 	readerDep := evmregistry.Dependency(lggr.Named("CapabilitiesRegistry"), evm.Dependency(lggr.Named("EVM")))
 
-	return standalone.Run3(bootstrapper, func(
+	grpcDep := standalonegrpc.Dependency(lggr.Named("CoreAPI"))
+
+	return standalone.Run4(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
 		factories *ocr.RageFactories,
 		reader registry.Reader,
 		database *sql.DB,
+		grpcSrv *standalonegrpc.Server,
 	) []services.Service {
 		// Where the last known registry is kept. Resolving the database again costs nothing - it is
 		// the same dependency the OCR host already took, opened once - and taking it here is what
@@ -94,14 +92,16 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		regORM := registrysyncer.NewORM(sqlx.NewDb(database, "pgx"),
 			scfg.Logger.Named("registry snapshots"), registrySnapshotsTable)
 
-		// Both attach to the bootstrapper's shared gRPC server (scfg.GRPCServer) rather than each
-		// opening a listener, so core reaches both over the single address the bootstrapper serves.
+		// Both attach to this process's one gRPC server rather than each opening a listener, so
+		// core reaches both over the single address it is configured with.
 		regSvc := newRegistryService(cfg.CapabilitiesRegistrySyncInterval.Duration(),
-			scfg.Logger.Named("capabilities registry"), reader, regORM, factories.PeerID, scfg.GRPCServer)
-		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), scfg.GRPCServer, &factories.OCRFactories)
+			scfg.Logger.Named("capabilities registry"), reader, regORM, factories.PeerID, grpcSrv.Registrar())
+		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), grpcSrv.Registrar(), &factories.OCRFactories)
 		// The dispatcher runs the real DON-to-DON work over the same rage connection, rather than
 		// core running it and this process merely fronting it.
 		dispatcherSvc := newDispatcherService(cfg.Dispatcher, scfg.Logger.Named("dispatcher"), factories, regSvc.CapabilitiesRegistry())
-		return []services.Service{proxySvc, regSvc, dispatcherSvc}
-	}, ocrDep, readerDep, dbDep)
+		// The server goes last: it starts serving only once the services registering on it have
+		// started, and services.Engine starts sub-services in the order given.
+		return []services.Service{proxySvc, regSvc, dispatcherSvc, grpcSrv}
+	}, ocrDep, readerDep, dbDep, grpcDep)
 }
