@@ -9,10 +9,10 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/cobra"
 
-	"github.com/smartcontractkit/capabilities/crecore/registry"
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
 	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
+	"github.com/smartcontractkit/capabilities/libs/x/registry"
 	"github.com/smartcontractkit/capabilities/libs/x/registrysyncer"
 
 	"github.com/smartcontractkit/chainlink-evm/pkg/cre/evm"

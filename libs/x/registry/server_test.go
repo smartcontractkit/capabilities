@@ -6,9 +6,6 @@ package registry_test
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net"
-	"sync"
 	"testing"
 
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
@@ -18,17 +15,16 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/client"
-	registrypb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
-	"github.com/smartcontractkit/capabilities/crecore/registry"
+	"github.com/smartcontractkit/capabilities/libs/x/registry"
+	"github.com/smartcontractkit/capabilities/libs/x/registry/registrytest"
 	"github.com/smartcontractkit/capabilities/libs/x/registrysyncer"
 )
 
@@ -41,7 +37,7 @@ import (
 // pass it - book, when the test serves fakes through one; otherwise, just credentials, since
 // AddHandle's dial-out is a production requirement, not conditional on what the test's own client
 // does.
-func newRegistry(t *testing.T, book *AddrBook) *registry.Registry {
+func newRegistry(t *testing.T, book *registrytest.AddrBook) *registry.Registry {
 	t.Helper()
 	return newRegistryWith(t, book, notSynced)
 }
@@ -53,7 +49,7 @@ func notSynced() (*registry.LocalRegistry, error) {
 }
 
 // newRegistryWith is newRegistry against a given snapshot, for the metadata tests.
-func newRegistryWith(t *testing.T, book *AddrBook, snapshot func() (*registry.LocalRegistry, error)) *registry.Registry {
+func newRegistryWith(t *testing.T, book *registrytest.AddrBook, snapshot func() (*registry.LocalRegistry, error)) *registry.Registry {
 	t.Helper()
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	if book != nil {
@@ -81,18 +77,18 @@ func snapshot(t *testing.T, self ragetypes.PeerID, snap *registry.Snapshot) func
 
 // newClient serves reg and returns a client for it, with capability dials
 // resolved through book when one is given.
-func newClient(t *testing.T, reg *registry.Registry, book *AddrBook) *client.Client {
+func newClient(t *testing.T, reg *registry.Registry, book *registrytest.AddrBook) *client.Client {
 	t.Helper()
 
 	var opts []grpc.DialOption
 	if book != nil {
 		opts = append(opts, book.DialOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
-	return client.New(logger.Test(t), Serve(t, reg), opts...)
+	return client.New(logger.Test(t), registrytest.Serve(t, reg), opts...)
 }
 
 // serveCapabilityAt registers impl in book under name and returns its address.
-func serveCapabilityAt(t *testing.T, book *AddrBook, name string,
+func serveCapabilityAt(t *testing.T, book *registrytest.AddrBook, name string,
 	impl capabilities.BaseCapability, capType capabilities.CapabilityType) string {
 	t.Helper()
 
@@ -208,7 +204,7 @@ func TestAddAt_CarriesCapabilityTypeVerbatim(t *testing.T) {
 		capabilities.CapabilityTypeCombined,
 	} {
 		t.Run(string(capType), func(t *testing.T) {
-			book := NewAddrBook()
+			book := registrytest.NewAddrBook()
 			info := capabilities.MustNewCapabilityInfo("c@1.0.0", capType, "c")
 			impl := &fakeCombined{
 				fakeExecutable: &fakeExecutable{info: info},
@@ -253,7 +249,7 @@ func TestAddAt_RejectsEmptyAddress(t *testing.T) {
 func TestServer_Remove(t *testing.T) {
 	ctx := context.Background()
 
-	book := NewAddrBook()
+	book := registrytest.NewAddrBook()
 	impl := &fakeExecutable{
 		info: capabilities.MustNewCapabilityInfo("act@1.0.0", capabilities.CapabilityTypeAction, "act"),
 	}
@@ -280,7 +276,7 @@ func TestServer_GetExecutableDialsHandleAddress(t *testing.T) {
 	outputs, err := values.NewMap(map[string]any{"out": int64(3)})
 	require.NoError(t, err)
 
-	book := NewAddrBook()
+	book := registrytest.NewAddrBook()
 	impl := &fakeExecutable{
 		info:     capabilities.MustNewCapabilityInfo("act@1.0.0", capabilities.CapabilityTypeAction, "act"),
 		response: capabilities.CapabilityResponse{Value: outputs},
@@ -302,7 +298,7 @@ func TestServer_GetExecutableDialsHandleAddress(t *testing.T) {
 func TestServer_ReusesConnectionPerAddress(t *testing.T) {
 	ctx := context.Background()
 
-	book := NewAddrBook()
+	book := registrytest.NewAddrBook()
 	impl := &fakeExecutable{
 		info: capabilities.MustNewCapabilityInfo("act@1.0.0", capabilities.CapabilityTypeAction, "act"),
 	}
@@ -329,7 +325,7 @@ func TestServer_ReusesConnectionPerAddress(t *testing.T) {
 func TestServer_GetTriggerRejectsExecutableOnlyCapability(t *testing.T) {
 	ctx := context.Background()
 
-	book := NewAddrBook()
+	book := registrytest.NewAddrBook()
 	impl := &fakeExecutable{
 		info: capabilities.MustNewCapabilityInfo("act@1.0.0", capabilities.CapabilityTypeAction, "act"),
 	}
@@ -348,7 +344,7 @@ func TestServer_GetTriggerRejectsExecutableOnlyCapability(t *testing.T) {
 func TestServer_CombinedCapabilityServesBothSurfaces(t *testing.T) {
 	ctx := context.Background()
 
-	book := NewAddrBook()
+	book := registrytest.NewAddrBook()
 	info := capabilities.MustNewCapabilityInfo("both@1.0.0", capabilities.CapabilityTypeCombined, "both")
 	impl := &fakeCombined{
 		fakeExecutable: &fakeExecutable{info: info},
@@ -379,7 +375,7 @@ func TestServer_GetUnknownCapability(t *testing.T) {
 func TestServer_List(t *testing.T) {
 	ctx := context.Background()
 
-	book := NewAddrBook()
+	book := registrytest.NewAddrBook()
 	impl := &fakeExecutable{
 		info: capabilities.MustNewCapabilityInfo("good@1.0.0", capabilities.CapabilityTypeAction, "good"),
 	}
@@ -401,7 +397,7 @@ func TestServer_List(t *testing.T) {
 func TestServer_MissingCredentialsFailsRatherThanFallingBackToInsecure(t *testing.T) {
 	ctx := context.Background()
 
-	book := NewAddrBook()
+	book := registrytest.NewAddrBook()
 	impl := &fakeExecutable{
 		info: capabilities.MustNewCapabilityInfo("act@1.0.0", capabilities.CapabilityTypeAction, "act"),
 	}
@@ -585,123 +581,3 @@ type fakeCombined struct {
 func (f *fakeCombined) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
 	return f.fakeExecutable.Info(ctx)
 }
-
-func Serve(t testing.TB, reg *registry.Registry) *grpc.ClientConn {
-	t.Helper()
-
-	s := grpc.NewServer()
-	registrypb.RegisterCapabilitiesRegistryServer(s, registry.NewServer(reg))
-
-	lis := bufconn.Listen(1 << 20)
-	go func() { _ = s.Serve(lis) }()
-	t.Cleanup(s.Stop)
-
-	conn, err := grpc.NewClient("passthrough:///registry",
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return lis.DialContext(ctx)
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("failed to dial the test registry: %v", err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-
-	return conn
-}
-
-// AddrBook hands out in-memory capability addresses and dials them back, so a
-// client's dial-by-address path runs for real without needing ports.
-//
-// Addresses use the passthrough scheme: gRPC would otherwise parse a bare
-// "host:port" as a URI scheme and try to resolve it via DNS.
-type AddrBook struct {
-	mu        sync.Mutex
-	n         int
-	listeners map[string]*bufconn.Listener
-	dials     map[string]int
-}
-
-func NewAddrBook() *AddrBook {
-	return &AddrBook{
-		listeners: map[string]*bufconn.Listener{},
-		dials:     map[string]int{},
-	}
-}
-
-// Listen registers a new listener and returns it. Its Addr is unique per call,
-// so a caller that opens one listener per capability announces distinct
-// addresses, exactly as it would with port 0.
-func (b *AddrBook) Listen() net.Listener {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.n++
-	name := fmt.Sprintf("passthrough:///cap-%d", b.n)
-	lis := bufconn.Listen(1 << 20)
-	b.listeners[name] = lis
-	return &namedListener{Listener: lis, addr: memAddr(name)}
-}
-
-// Target returns the address for an explicitly named listener, registering it.
-func (b *AddrBook) Target(name string) string { return "passthrough:///" + name }
-
-// Serve registers srv under name and starts serving it, returning the address a
-// registry should hand out for it.
-func (b *AddrBook) Serve(t testing.TB, name string, srv *grpc.Server) string {
-	t.Helper()
-
-	lis := bufconn.Listen(1 << 20)
-	target := b.Target(name)
-
-	b.mu.Lock()
-	b.listeners[target] = lis
-	b.mu.Unlock()
-
-	go func() { _ = srv.Serve(lis) }()
-	t.Cleanup(srv.Stop)
-
-	return target
-}
-
-// DialOption resolves the addresses this book handed out. Unknown addresses
-// fail, so "the registry returned an address nobody serves" is observable rather
-// than a hang.
-func (b *AddrBook) DialOption() grpc.DialOption {
-	return grpc.WithContextDialer(func(ctx context.Context, target string) (net.Conn, error) {
-		b.mu.Lock()
-		// The passthrough resolver strips the scheme before dialing, so accept
-		// either form.
-		lis, ok := b.listeners[target]
-		if !ok {
-			lis, ok = b.listeners["passthrough:///"+target]
-		}
-		b.dials[target]++
-		b.mu.Unlock()
-
-		if !ok {
-			return nil, fmt.Errorf("nothing serving %s", target)
-		}
-		return lis.DialContext(ctx)
-	})
-}
-
-// DialCount reports how many transport dials were made to name, which is how a
-// test asserts that connections are reused rather than reopened per call.
-func (b *AddrBook) DialCount(name string) int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.dials[name] + b.dials["passthrough:///"+name]
-}
-
-type memAddr string
-
-func (a memAddr) Network() string { return "bufconn" }
-func (a memAddr) String() string  { return string(a) }
-
-// namedListener overrides bufconn's fixed Addr so each listener has its own.
-type namedListener struct {
-	net.Listener
-	addr memAddr
-}
-
-func (l *namedListener) Addr() net.Addr { return l.addr }
