@@ -28,7 +28,6 @@ const (
 	chipIngressNamespace = "chip-ingress"
 	pyroscopeNamespace   = "pyroscope"
 	httpNamespace        = "http"
-	grpcNamespace        = "grpc"
 
 	// Legacy env prefixes for the two map-valued telemetry settings. pkg/config/flags has no
 	// map support, so those are []string of key=value pairs here; a host sets one env var per
@@ -94,19 +93,6 @@ func (c HTTPConfig) portFor(index int) uint16 {
 	return c.Port + uint16(index)
 }
 
-// GRPCConfig is the shared gRPC server: whatever services register on StandaloneConfig.GRPCServer
-// during construction, served on one address per instance instead of each opening its own.
-//
-// Every instance serves its own, so under `embed` instance i listens on Port+i.
-type GRPCConfig struct {
-	Port uint16 `usage:"port serving the shared gRPC server. Instance i of an embed run listens on this port plus i" validate:"required"`
-}
-
-// portFor is the port instance i serves on; see HTTPConfig.portFor.
-func (c GRPCConfig) portFor(index int) uint16 {
-	return c.Port + uint16(index)
-}
-
 // observability is every process-wide observability config, registered together by
 // NewBootstrapper and consumed once the command runs and they have been decoded.
 type observability struct {
@@ -115,12 +101,11 @@ type observability struct {
 	chipIngress ChipIngressConfig
 	pyroscope   PyroscopeConfig
 	http        HTTPConfig
-	grpc        GRPCConfig
 }
 
 // defaultObservability is what the flags are bound to and decoded into, so an unset setting keeps
-// the value it is given here. HTTP and gRPC have no default: both are `validate:"required"`,
-// so leaving either unconfigured fails at startup rather than silently picking a port.
+// the value it is given here. The HTTP port has no default: it is `validate:"required"`, so
+// leaving it unconfigured fails at startup rather than silently picking one.
 func defaultObservability() observability {
 	return observability{
 		tracing: TracingConfig{SamplingRatio: 1},
@@ -142,7 +127,6 @@ func (o *observability) namespaced() []struct {
 		{chipIngressNamespace, &o.chipIngress},
 		{pyroscopeNamespace, &o.pyroscope},
 		{httpNamespace, &o.http},
-		{grpcNamespace, &o.grpc},
 	}
 }
 

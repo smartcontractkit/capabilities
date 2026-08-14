@@ -18,14 +18,14 @@ import (
 // configurations it would report do not exist.
 var errNoProxy = errors.New("no registry proxy: an embedded instance only knows the capabilities this binary registered")
 
-// overlayRegistry resolves capabilities this binary registered before asking the
-// node's registry proxy for anything else.
+// overlayRegistry resolves capabilities this binary hosts before asking the
+// node's registry for anything else.
 //
 // Local first is not an optimisation. A capability this process hosts is a value
-// it already holds, so resolving it locally hands back the implementation itself
-// rather than a gRPC client looping back into this same process - and it works
-// before this binary has announced anything, which is what lets one capability
-// here call another during startup.
+// it already holds, so resolving it locally hands back the implementation rather
+// than a gRPC client looping back into this same process - and it works before
+// this binary has announced anything, which is what lets one capability here call
+// another during startup.
 //
 // proxy is nil for an embedded instance, which has no node to ask: then this is
 // the base registry and nothing more, and the metadata calls fail rather than
@@ -44,18 +44,17 @@ func newOverlayRegistry(lggr logger.Logger, local core.CapabilitiesRegistryBase,
 
 // Add registers c in this binary's own registry, by value.
 //
-// It is not forwarded to the proxy: announcing a capability to the node means
-// telling it an address to dial, which is a different call (AddAt) made with the
-// address this process serves that capability at. Holding the value here is what
-// makes it resolvable in-process; announcing it is what makes it resolvable
-// elsewhere, and the two are not the same registration.
+// It is not forwarded to the node. Announcing a capability there means naming the
+// address serving it, which the registrar does with AddAt once it has opened that
+// capability's server - holding the value here is what makes it resolvable
+// in-process, and the two are not the same registration.
 func (r *overlayRegistry) Add(ctx context.Context, c capabilities.BaseCapability) error {
 	return r.local.Add(ctx, c)
 }
 
-// Remove drops a capability from the local registry, and from the node's registry
-// if it was announced there. A capability absent from the proxy is not an error:
-// this binary may never have announced it.
+// Remove drops a capability from the local registry, and from the node's if it
+// was announced there. A capability absent from the node's is not an error: this
+// binary may never have announced it.
 func (r *overlayRegistry) Remove(ctx context.Context, id string) error {
 	err := r.local.Remove(ctx, id)
 	if r.proxy == nil {
@@ -85,9 +84,9 @@ func (r *overlayRegistry) GetExecutable(ctx context.Context, id string) (capabil
 	}))
 }
 
-// List returns everything this binary registered plus everything the node knows
-// about, with local entries winning on ID so a capability hosted here is returned
-// as the value rather than as a client dialling back into this process.
+// List returns everything this binary hosts plus everything the node knows about,
+// with local entries winning on ID so a capability hosted here comes back as the
+// value rather than as a client dialling back into this process.
 func (r *overlayRegistry) List(ctx context.Context) ([]capabilities.BaseCapability, error) {
 	local, err := r.local.List(ctx)
 	if err != nil {
@@ -99,8 +98,8 @@ func (r *overlayRegistry) List(ctx context.Context) ([]capabilities.BaseCapabili
 
 	remote, err := r.proxy.List(ctx)
 	if err != nil {
-		// The local half is still usable and still correct; a proxy that cannot
-		// be reached should not blank the capabilities this process holds.
+		// The local half is still usable and still correct; a node that cannot be
+		// reached should not blank the capabilities this process holds.
 		r.lggr.Warnw("failed to list capabilities from the registry proxy", "err", err)
 		return local, nil
 	}
@@ -166,8 +165,8 @@ func (r *overlayRegistry) DONByID(ctx context.Context, donID uint32) (capabiliti
 // getFn is the shape the three resolving calls share on either registry.
 type getFn[T capabilities.BaseCapability] func(ctx context.Context, id string) (T, error)
 
-// proxyGet returns the proxy's resolving call, or nil when there is no proxy, so
-// overlayGet has one thing to check rather than two.
+// proxyGet returns the node registry's resolving call, or nil when there is none,
+// so overlayGet has one thing to check rather than two.
 func proxyGet[T capabilities.BaseCapability](r *overlayRegistry, pick func(core.AddressableCapabilitiesRegistry) getFn[T]) getFn[T] {
 	if r.proxy == nil {
 		return nil
@@ -175,9 +174,9 @@ func proxyGet[T capabilities.BaseCapability](r *overlayRegistry, pick func(core.
 	return pick(r.proxy)
 }
 
-// overlayGet tries local, then the proxy. A local miss is expected rather than
+// overlayGet tries local, then the node. A local miss is expected rather than
 // exceptional - most capabilities live elsewhere - so its error is only reported
-// if the proxy cannot resolve the ID either, where it is the more useful half of
+// if the node cannot resolve the ID either, where it is the more useful half of
 // the answer: it says what this binary does host.
 func overlayGet[T capabilities.BaseCapability](ctx context.Context, r *overlayRegistry, id string, local, remote getFn[T]) (T, error) {
 	var zero T

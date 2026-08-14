@@ -2,6 +2,9 @@ package capability
 
 import (
 	"context"
+	"fmt"
+
+	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	common "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
@@ -34,36 +37,56 @@ type embeddedConfig struct {
 // the reload endpoint, and an embedded run with no node simply finds no file and
 // resolves every limit to its compiled-in default.
 type embedded struct {
-	lggr logger.Logger
-	cfg  embeddedConfig
+	lggr    logger.Logger
+	servers common.BootstrapDependency[*standalonegrpc.Factory]
+
+	// cfg is shared with the configured form that produced this one, and with
+	// every other instance's form, so all of them read the settings the flags were
+	// bound to rather than a copy of the defaults.
+	cfg *embeddedConfig
 }
 
 var _ common.BootstrapDependency[Dependencies] = (*embedded)(nil)
 
 func (d *embedded) Namespace() string { return "capabilities" }
 
-func (d *embedded) Config() any { return &d.cfg }
+func (d *embedded) Config() any { return d.cfg }
 
-func (d *embedded) Dependencies() []common.BootstrapCommand { return nil }
+func (d *embedded) Dependencies() []common.BootstrapCommand {
+	return []common.BootstrapCommand{d.servers}
+}
 
-// ForEmbedding returns instance i's dependency, so an already-embedded dependency
-// embedded again is that instance's rather than a nesting of them.
+// ForEmbedding returns instance i's form, so an already-embedded dependency
+// embedded again is that instance's rather than a nesting of them. The settings
+// are carried over by pointer, so every instance still reads the ones the flags
+// were bound to.
 //
-// Every instance gets the same value here: instances share one process, and what
-// this resolves - a registry of the capabilities in that process, and the
-// settings file behind it - is the process's rather than any one instance's.
-func (d *embedded) ForEmbedding(int) common.BootstrapDependency[Dependencies] { return d }
+// The gRPC factory is embedded in turn rather than reused as-is: how it serves
+// instance i is its own business, and this only has to ask it the same question
+// the configured form did.
+func (d *embedded) ForEmbedding(i int) common.BootstrapDependency[Dependencies] {
+	return &embedded{lggr: d.lggr, servers: d.servers.ForEmbedding(i), cfg: d.cfg}
+}
 
-func (d *embedded) Get(context.Context, common.CommonConfig) (Dependencies, error) {
+func (d *embedded) Get(ctx context.Context, cc common.CommonConfig) (Dependencies, error) {
 	settings, err := newSettings(d.lggr)
 	if err != nil {
 		return Dependencies{}, err
 	}
 
+	// The one factory every instance resolves, so the capabilities of a whole
+	// embed run take consecutive ports rather than every instance starting over
+	// at the same one.
+	servers, err := d.servers.Get(ctx, cc)
+	if err != nil {
+		return Dependencies{}, fmt.Errorf("failed to get gRPC server factory: %w", err)
+	}
+
 	d.lggr.Infow("Using in-process capability registry", "donID", d.cfg.CapabilityDonID)
 
-	// nil proxy: only what this binary registers is resolvable, and the registry
-	// metadata calls report that rather than inventing a DON.
+	// No proxy: only what this binary registers is resolvable, and the registry
+	// metadata calls say so rather than inventing a DON. The capabilities are
+	// still served - see registrar.serve.
 	return Dependencies{
 		LimitsFactory:      newLimitsFactory(d.lggr, settings),
 		CRESettings:        settings,
@@ -72,5 +95,6 @@ func (d *embedded) Get(context.Context, common.CommonConfig) (Dependencies, erro
 		lggr:               d.lggr,
 		settings:           settings,
 		settingsPath:       SettingsPath(),
+		servers:            servers,
 	}, nil
 }

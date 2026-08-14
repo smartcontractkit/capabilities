@@ -13,12 +13,6 @@ func TestHTTPConfigPortFor(t *testing.T) {
 	assert.Equal(t, uint16(9092), cfg.portFor(2))
 }
 
-func TestGRPCConfigPortFor(t *testing.T) {
-	cfg := GRPCConfig{Port: 50051}
-	assert.Equal(t, uint16(50051), cfg.portFor(0))
-	assert.Equal(t, uint16(50053), cfg.portFor(2))
-}
-
 func TestParsePairs(t *testing.T) {
 	pairs, err := parsePairs("telemetry.attributes", []string{"env=staging", "region=eu-west-1"})
 	require.NoError(t, err)
