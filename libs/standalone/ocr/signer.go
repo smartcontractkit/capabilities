@@ -2,6 +2,7 @@ package ocr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/curve25519"
@@ -58,9 +59,18 @@ func newRemoteKeyring(ctx context.Context, conn grpc.ClientConnInterface) (*remo
 		return nil, fmt.Errorf("failed to read the signer's public keys: %w", err)
 	}
 
+	// Encoded here rather than on each call: the signer serves the bundle's own
+	// public key, and what an oracle has to answer with is the form the config
+	// carries. Failing here reports a key that cannot be encoded where it is read,
+	// rather than as an oracle no one recognises.
+	onchainPublicKey, err := marshalEVMOnchainPublicKey(keys.GetOnchainPublicKey())
+	if err != nil {
+		return nil, err
+	}
+
 	k := &remoteKeyring{
 		client:           client,
-		onchainPublicKey: keys.GetOnchainPublicKey(),
+		onchainPublicKey: onchainPublicKey,
 		maxSignatureLen:  int(keys.GetMaxSignatureLength()),
 	}
 
@@ -145,6 +155,9 @@ func (k *remoteKeyring) MaxSignatureLength() int { return k.maxSignatureLen }
 // signed blob is the report bound to the round it belongs to, and the signature
 // is secp256k1 over it.
 //
+// publicKey is a peer's key as the config carries it, so the EVM entry is taken
+// out of it first - see multichain.go.
+//
 // Only EVM, deliberately. A signature has to be verified against the scheme the
 // signer used, and guessing wrong would accept nothing rather than accept the
 // wrong thing - but it would do so silently, so the process holding the key
@@ -157,51 +170,27 @@ func verifyReport(
 	report ocrtypes.Report,
 	signature []byte,
 ) bool {
-	return ocr2key.EvmVerifyBlob(publicKey, ocr2key.ReportToSigData3(digest, seqNr, report), signature)
+	key, err := ocr2key.OnchainPublicKeyFor(evmFamily, publicKey)
+	if err != nil {
+		return false
+	}
+	return ocr2key.EvmVerifyBlob(key, ocr2key.ReportToSigData(ocr2key.OCR3ReportContext(digest, seqNr), report), signature)
 }
 
-// localKeyring is a node key bundle used in the process that holds it.
-//
-// The bundle is an OCR2 keyring - it signs a report without knowing what a
-// sequence number is - so this is the same adaptation the node makes when it
-// runs an OCR3 capability itself: bind the report to its round, then sign that.
-type localKeyring struct {
-	bundle ocr2key.KeyBundle
+// An OCR3 capability's members are registered with a multi-chain onchain public
+// key: one length-prefixed entry per signing family rather than the bare key of
+// whichever chain it happens to sign for. The codec is ocr2key's, shared with the
+// node that writes those configs; what is here is the EVM-shaped view of it that a
+// process delegating its signing needs.
+
+// evmFamily is the name the EVM entry is keyed by, and the name core's jobs give
+// the EVM bundle in onchainSigningStrategy.config.
+const evmFamily = "evm"
+
+// marshalEVMOnchainPublicKey encodes a bare EVM key as the single-family form.
+func marshalEVMOnchainPublicKey(key ocrtypes.OnchainPublicKey) (ocrtypes.OnchainPublicKey, error) {
+	if len(key) == 0 {
+		return nil, errors.New("no evm onchain public key to encode")
+	}
+	return ocr2key.MarshalMultichainPublicKey(map[string]ocrtypes.OnchainPublicKey{evmFamily: key})
 }
-
-var (
-	_ ocrtypes.OffchainKeyring         = localKeyring{}
-	_ ocr3types.OnchainKeyring[[]byte] = localKeyring{}
-)
-
-func (k localKeyring) OffchainSign(msg []byte) ([]byte, error) { return k.bundle.OffchainSign(msg) }
-
-func (k localKeyring) ConfigDiffieHellman(point [curve25519.PointSize]byte) ([curve25519.PointSize]byte, error) {
-	return k.bundle.ConfigDiffieHellman(point)
-}
-
-func (k localKeyring) OffchainPublicKey() ocrtypes.OffchainPublicKey {
-	return k.bundle.OffchainPublicKey()
-}
-
-func (k localKeyring) ConfigEncryptionPublicKey() ocrtypes.ConfigEncryptionPublicKey {
-	return k.bundle.ConfigEncryptionPublicKey()
-}
-
-func (k localKeyring) PublicKey() ocrtypes.OnchainPublicKey { return k.bundle.PublicKey() }
-
-func (k localKeyring) Sign(digest ocrtypes.ConfigDigest, seqNr uint64, report ocr3types.ReportWithInfo[[]byte]) ([]byte, error) {
-	return k.bundle.Sign3(digest, seqNr, report.Report)
-}
-
-func (k localKeyring) Verify(
-	publicKey ocrtypes.OnchainPublicKey,
-	digest ocrtypes.ConfigDigest,
-	seqNr uint64,
-	report ocr3types.ReportWithInfo[[]byte],
-	signature []byte,
-) bool {
-	return k.bundle.Verify3(publicKey, digest, seqNr, report.Report, signature)
-}
-
-func (k localKeyring) MaxSignatureLength() int { return k.bundle.MaxSignatureLength() }

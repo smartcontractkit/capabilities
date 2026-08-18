@@ -294,6 +294,10 @@ require (
 
 replace github.com/smartcontractkit/chainlink-common => ../../chainlink-common
 
+// Matches the chainlink-common replace above: keystore is its own module, so a local
+// chainlink-common is only half-applied without this.
+replace github.com/smartcontractkit/chainlink-common/keystore => ../../chainlink-common/keystore
+
 replace github.com/smartcontractkit/chainlink-evm => ../../chainlink-evm
 
 replace github.com/smartcontractkit/capabilities/libs => ../libs

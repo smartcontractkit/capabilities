@@ -259,6 +259,10 @@ require (
 
 replace github.com/smartcontractkit/chainlink-common => ../../chainlink-common
 
+// Matches the chainlink-common replace above: keystore is its own module, so a local
+// chainlink-common is only half-applied without this.
+replace github.com/smartcontractkit/chainlink-common/keystore => ../../chainlink-common/keystore
+
 // Local override: cre/impl/proxy dropped peer-group proxying, only used for the capabilities
 // registry move that already has its own proto.
 replace github.com/smartcontractkit/chainlink-protos/cre/impl => ../../chainlink-protos/cre/impl
