@@ -113,6 +113,18 @@ func (s *Server) NodeByPeerID(ctx context.Context, req *registrypb.NodeRequest) 
 	return nodeToProto(n), nil
 }
 
+// OCRConfig serves the OCR3 configuration of one capability, with the digest
+// this process computed for it. Both are passed on as the contract stores them,
+// so that whoever decodes the configuration and whoever computed the digest
+// were looking at the same bytes.
+func (s *Server) OCRConfig(ctx context.Context, req *registrypb.OCRConfigRequest) (*registrypb.OCRConfigReply, error) {
+	cfg, digest, err := s.impl.ocrConfig(ctx, req.GetCapabilityId(), req.GetDonId(), req.GetKey())
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &registrypb.OCRConfigReply{Config: cfg, ConfigDigest: digest[:]}, nil
+}
+
 func (s *Server) ConfigForCapability(ctx context.Context, req *registrypb.ConfigForCapabilityRequest) (*registrypb.ConfigForCapabilityReply, error) {
 	raw, err := s.impl.RawConfigForCapability(ctx, req.GetCapabilityId(), req.GetDonId())
 	if err != nil {

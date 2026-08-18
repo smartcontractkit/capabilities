@@ -96,7 +96,7 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		// core reaches both over the single address it is configured with.
 		regSvc := newRegistryService(cfg.CapabilitiesRegistrySyncInterval.Duration(),
 			scfg.Logger.Named("capabilities registry"), reader, regORM, factories.PeerID, grpcSrv.Registrar())
-		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), grpcSrv.Registrar(), &factories.OCRFactories)
+		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), grpcSrv.Registrar(), factories)
 		// The dispatcher runs the real DON-to-DON work over the same rage connection, rather than
 		// core running it and this process merely fronting it.
 		dispatcherSvc := newDispatcherService(cfg.Dispatcher, scfg.Logger.Named("dispatcher"), factories, regSvc.CapabilitiesRegistry())

@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package capabilities.internal.consensus.v1alpha;
+
+import "sdk/v1alpha/sdk.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+import "values/v1/values.proto";
+
+service Consensus {
+  option (tools.generator.v1alpha.capability) = {
+    mode: MODE_DON
+    capability_id: "consensus@1.0.0-alpha"
+  };
+  rpc Simple(sdk.v1alpha.SimpleConsensusInputs) returns (values.v1.Value);
+  rpc Report(sdk.v1alpha.ReportRequest) returns (sdk.v1alpha.ReportResponse);
+}
