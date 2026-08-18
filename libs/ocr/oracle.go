@@ -13,6 +13,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -46,6 +47,21 @@ type OracleArgs struct {
 	Plugin      ocr3types.ReportingPluginFactory[[]byte]
 	Transmitter ocr3types.ContractTransmitter[[]byte]
 
+	// TransmitAccount is the account this oracle is registered to transmit from.
+	// It is part of the identity the configuration lists, alongside the peer ID
+	// and the public keys, and libocr checks all of them: an oracle whose account
+	// does not match its entry is not recognised as a member at all.
+	//
+	// It belongs here rather than to the capability because it is the node's, not
+	// the capability's - the same reason the keyrings and the peer are resolved
+	// from whoever holds the node's identity. A capability's own transmitter
+	// answers for where a report goes, which for a capability is usually back to
+	// whoever asked; who it is transmitting as is not its to know.
+	//
+	// Empty leaves the transmitter's own answer in place, which is what an
+	// embedded run wants: it joins no configuration written by anyone else.
+	TransmitAccount ocrtypes.Account
+
 	LocalConfig ocrtypes.LocalConfig
 	Logger      logger.Logger
 	Metrics     prometheus.Registerer
@@ -69,12 +85,17 @@ func NewOracle(args OracleArgs) (libocr.Oracle, error) {
 		metrics = prometheus.NewRegistry()
 	}
 
+	transmitter := args.Transmitter
+	if args.TransmitAccount != "" {
+		transmitter = ocrcommon.TransmitterWithAccount(args.TransmitAccount, transmitter)
+	}
+
 	return libocr.NewOracle(libocr.OCR3OracleArgs2[[]byte]{
 		BinaryNetworkEndpointFactory: args.Endpoints,
 		V2Bootstrappers:              args.Bootstrappers,
 		ContractConfigTracker:        tracker,
 		OffchainConfigDigester:       digester{},
-		ContractTransmitter:          args.Transmitter,
+		ContractTransmitter:          transmitter,
 		ReportingPluginFactory:       args.Plugin,
 		Database:                     NewDatabase(args.CapabilityID, args.Logger),
 		LocalConfig:                  args.LocalConfig,

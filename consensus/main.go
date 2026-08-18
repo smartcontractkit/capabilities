@@ -81,14 +81,15 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		capabilityImpl, err := action.NewConsensusCapability(lggr, clockwork.NewRealClock(), responseCacheExpiry,
 			cfg.ConsensusCapabilityConfig,
 			action.Dependencies{
-				DonID:         deps.CapabilityDonID,
-				Registry:      deps.OCRConfigRegistry(),
-				Endpoints:     factories.OCR2Endpoint,
-				Offchain:      factories.Offchain,
-				Onchain:       factories.Onchain,
-				Bootstrappers: cfg.Bootstrappers.ToBootstrapperLocators(),
-				LimitsFactory: deps.LimitsFactory,
-				Metrics:       scfg.MetricsRegisterer,
+				DonID:           deps.CapabilityDonID,
+				Registry:        deps.OCRConfigRegistry(),
+				Endpoints:       factories.OCR2Endpoint,
+				Offchain:        factories.Offchain,
+				Onchain:         factories.Onchain,
+				TransmitAccount: factories.TransmitAccount,
+				Bootstrappers:   cfg.Bootstrappers.ToBootstrapperLocators(),
+				LimitsFactory:   deps.LimitsFactory,
+				Metrics:         scfg.MetricsRegisterer,
 			})
 		if err != nil {
 			lggr.Fatalw("Failed to create ConsensusCapability", "error", err)
@@ -108,10 +109,6 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 type Config struct {
 	action.ConsensusCapabilityConfig `toml:",inline"`
 
-	// Bootstrappers are peerID@host:port entries to dial before this oracle has
-	// heard of anyone. The registry says who the DON's members are; it does not
-	// say where to find them, and an oracle that has met nobody cannot be told
-	// by the DON where the DON is.
 	Bootstrappers config.BootstrapperLocators `usage:"peerID@host:port of the DON's bootstrap peers" example:"['12D3KooWFirst@127.0.0.1:6690']"`
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/libocr/networking/rageping"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
@@ -115,7 +116,12 @@ func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*
 	factories.OCR2 = bundle
 	// Held here, so an oracle in this process signs with the same bundle this serves to oracles
 	// elsewhere rather than going out over gRPC to reach a key it already has.
-	factories.Keyrings = Keyrings{Offchain: localKeyring{bundle}, Onchain: localKeyring{bundle}}
+	onchain, err := ocr2key.NewOCR3Keyring(evmFamily, bundle)
+	if err != nil {
+		return nil, err
+	}
+	// The bundle is already an offchain keyring, so only the onchain half is adapted.
+	factories.Keyrings = Keyrings{Offchain: bundle, Onchain: onchain}
 	return factories, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"google.golang.org/grpc"
@@ -39,6 +40,12 @@ type ProxyConfig struct {
 	// unmarshals text itself - so it is validated as a peer ID when the configuration is decoded
 	// rather than wherever it is first used.
 	PeerID ragetypes.PeerID `usage:"this node's rage p2p peer ID, hosted on its behalf by the proxy; required outside embed" example:"'12D3KooWKh28EhBVfiiFh39w3zqtBxzYJhmGfBZNmoL4tRjMWSor'"`
+
+	// TransmitAccount is configured directly for the same reason the peer ID is: it is the node's
+	// name in the OCR configuration this process joins, it is a public value, and the process
+	// holding the keys it belongs to is the one that could look it up. An oracle whose account does
+	// not match its entry in the configuration is not a member of it.
+	TransmitAccount string `usage:"account this node is registered to transmit from; required outside embed" example:"'0x5994a5155e9b81ab7794b79bfbf076ef5ef7c437'"`
 }
 
 // Proxy returns a standalone.BootstrapDependency that resolves the libocr Factories from proxy
@@ -87,6 +94,9 @@ func (d *proxyDependency) Get(ctx context.Context, _ standalone.CommonConfig) (*
 	if d.cfg.PeerID == (ragetypes.PeerID{}) {
 		return nil, errors.New("--ocr.peer-id is required to delegate rage networking")
 	}
+	if d.cfg.TransmitAccount == "" {
+		return nil, errors.New("--ocr.transmit-account is required to delegate rage networking")
+	}
 	peerID := d.cfg.PeerID
 
 	// The raw peer ID is passed to the endpoint factories, as libocr compares it against the peer
@@ -121,10 +131,11 @@ func (d *proxyDependency) Get(ctx context.Context, _ standalone.CommonConfig) (*
 	d.lggr.Infow("Delegating rage networking to proxy", "proxyAddress", d.cfg.ProxyAddress, "peerID", peerID.String())
 
 	return &OCRFactories{
-		OCR2Endpoint:   endpointFactory,
-		OCR3_1Endpoint: endpoint2Factory,
-		PeerID:         peerID,
-		Keyrings:       Keyrings{Offchain: keyring, Onchain: keyring},
-		closer:         multiCloser{endpointFactory, endpoint2Factory, conn},
+		OCR2Endpoint:    endpointFactory,
+		OCR3_1Endpoint:  endpoint2Factory,
+		PeerID:          peerID,
+		TransmitAccount: ocr2types.Account(d.cfg.TransmitAccount),
+		Keyrings:        Keyrings{Offchain: keyring, Onchain: keyring},
+		closer:          multiCloser{endpointFactory, endpoint2Factory, conn},
 	}, nil
 }

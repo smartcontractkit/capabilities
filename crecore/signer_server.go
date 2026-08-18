@@ -87,7 +87,10 @@ func (s *signerServer) SignReport(_ context.Context, req *creproxy.SignReportReq
 	}
 	copy(digest[:], req.GetConfigDigest())
 
-	signature, err := s.bundle.Sign3(digest, req.GetSeqNr(), req.GetReport())
+	// Signed through the shared helper rather than the bundle directly: the oracle
+	// asking for this signature verifies its peers' with the same code, so what a
+	// round's bytes are is decided in one place.
+	signature, err := ocr2key.SignOCR3Report(s.bundle, digest, req.GetSeqNr(), req.GetReport())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

@@ -52,6 +52,14 @@ type OCRFactories struct {
 	// registry metadata must know which node it is.
 	PeerID ragetypes.PeerID
 
+	// TransmitAccount is the account the node is registered to transmit from, the third part of the
+	// identity an OCR configuration lists after the peer ID and the public keys. Resolved with them
+	// because it is the same identity seen from a third side, and an oracle that has two of the
+	// three is one libocr does not recognise.
+	//
+	// Empty for an embedded run, which joins no configuration written by anyone else.
+	TransmitAccount ocr2types.Account
+
 	// Keyrings sign this oracle's protocol messages and its reports. Resolved with the networking
 	// because they come from the same place: whoever holds the node's identity holds both.
 	Keyrings

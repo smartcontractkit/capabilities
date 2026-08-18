@@ -116,6 +116,10 @@ type Dependencies struct {
 	Offchain  ocrtypes.OffchainKeyring
 	Onchain   ocr3types.OnchainKeyring[[]byte]
 
+	// TransmitAccount comes from there too: it is the node's name in the
+	// configuration, not something this capability transmits to.
+	TransmitAccount ocrtypes.Account
+
 	// Bootstrappers are the peers to dial before this oracle has heard of
 	// anyone; the registry says who the oracle set is, not where it is.
 	Bootstrappers []commontypes.BootstrapperLocator
@@ -188,18 +192,19 @@ func NewConsensusCapability(
 	}
 
 	c.oracle, err = newOracle(libsocr.OracleArgs{
-		CapabilityID:  protos.ConsensusID,
-		DonID:         deps.DonID,
-		Registry:      deps.Registry,
-		Endpoints:     deps.Endpoints,
-		Offchain:      deps.Offchain,
-		Onchain:       deps.Onchain,
-		Bootstrappers: deps.Bootstrappers,
-		Plugin:        reportingPlugin,
-		Transmitter:   transmitter.NewContractTransmitter(lggr, c.SendResponse),
-		LocalConfig:   localOCRConfig,
-		Logger:        lggr,
-		Metrics:       deps.Metrics,
+		CapabilityID:    protos.ConsensusID,
+		DonID:           deps.DonID,
+		Registry:        deps.Registry,
+		Endpoints:       deps.Endpoints,
+		Offchain:        deps.Offchain,
+		Onchain:         deps.Onchain,
+		TransmitAccount: deps.TransmitAccount,
+		Bootstrappers:   deps.Bootstrappers,
+		Plugin:          reportingPlugin,
+		Transmitter:     transmitter.NewContractTransmitter(lggr, c.SendResponse),
+		LocalConfig:     localOCRConfig,
+		Logger:          lggr,
+		Metrics:         deps.Metrics,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error when creating oracle: %w", err)
