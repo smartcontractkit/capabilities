@@ -7,7 +7,11 @@ import (
 
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
+
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
@@ -76,7 +80,7 @@ func (d *proxyDependency) ForEmbedding(i int) standalone.BootstrapDependency[*OC
 	return embeddedOCR{&embedded{lggr: d.lggr, index: i}}
 }
 
-func (d *proxyDependency) Get(context.Context, standalone.CommonConfig) (*OCRFactories, error) {
+func (d *proxyDependency) Get(ctx context.Context, _ standalone.CommonConfig) (*OCRFactories, error) {
 	if d.cfg.ProxyAddress == "" {
 		return nil, errors.New("--ocr.proxy-address is required to delegate rage networking")
 	}
@@ -97,12 +101,30 @@ func (d *proxyDependency) Get(context.Context, standalone.CommonConfig) (*OCRFac
 		return nil, fmt.Errorf("failed to create proxy OCR3.1 endpoint factory: %w", err)
 	}
 
+	// Signing is delegated to the same process, over a connection of its own: the keys are the
+	// node's, and the process hosting its peer is the one holding them.
+	conn, err := grpc.NewClient(d.cfg.ProxyAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		_ = endpointFactory.Close()
+		_ = endpoint2Factory.Close()
+		return nil, fmt.Errorf("failed to create signer client for %s: %w", d.cfg.ProxyAddress, err)
+	}
+
+	keyring, err := newRemoteKeyring(ctx, conn)
+	if err != nil {
+		_ = endpointFactory.Close()
+		_ = endpoint2Factory.Close()
+		_ = conn.Close()
+		return nil, err
+	}
+
 	d.lggr.Infow("Delegating rage networking to proxy", "proxyAddress", d.cfg.ProxyAddress, "peerID", peerID.String())
 
 	return &OCRFactories{
 		OCR2Endpoint:   endpointFactory,
 		OCR3_1Endpoint: endpoint2Factory,
 		PeerID:         peerID,
-		closer:         multiCloser{endpointFactory, endpoint2Factory},
+		Keyrings:       Keyrings{Offchain: keyring, Onchain: keyring},
+		closer:         multiCloser{endpointFactory, endpoint2Factory, conn},
 	}, nil
 }

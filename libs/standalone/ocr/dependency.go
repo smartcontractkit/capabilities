@@ -31,6 +31,7 @@ import (
 	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 )
@@ -50,6 +51,10 @@ type OCRFactories struct {
 	// it: the on-chain CapabilitiesRegistry keys node records by peer ID, so anything reading
 	// registry metadata must know which node it is.
 	PeerID ragetypes.PeerID
+
+	// Keyrings sign this oracle's protocol messages and its reports. Resolved with the networking
+	// because they come from the same place: whoever holds the node's identity holds both.
+	Keyrings
 
 	closer io.Closer
 }
@@ -73,6 +78,11 @@ type RageFactories struct {
 	// Keyring signs with the same P2P key the peer above uses, for don2don.Dispatcher's
 	// message-level signatures.
 	Keyring ragetypes.PeerKeyring
+
+	// OCR2 is the node's OCR key bundle, which this process signs with on behalf of oracles that
+	// hold no keys of their own. Nil for an embedded run, which has no node keystore to take one
+	// from.
+	OCR2 ocr2key.KeyBundle
 }
 
 // defaultPeerConfig is the peer settings the flags are bound to and decoded into, so an unset

@@ -45,7 +45,7 @@ type proxyService struct {
 	// CapabilitiesRegistry) has registered too, so they share one address instead of each opening a
 	// listener of their own.
 	grpcServer grpc.ServiceRegistrar
-	factories  *ocr.OCRFactories
+	factories  *ocr.RageFactories
 }
 
 var _ services.Service = (*proxyService)(nil)
@@ -53,7 +53,7 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(lggr logger.Logger, grpcServer grpc.ServiceRegistrar, factories *ocr.OCRFactories) *proxyService {
+func newProxyService(lggr logger.Logger, grpcServer grpc.ServiceRegistrar, factories *ocr.RageFactories) *proxyService {
 	s := &proxyService{lggr: lggr, grpcServer: grpcServer, factories: factories}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",
@@ -71,5 +71,15 @@ func (s *proxyService) start(context.Context) error {
 	// The factories back both surfaces over the same rage connection and discoverer.
 	creproxy.RegisterBinaryNetworkEndpointProxyServer(s.grpcServer, NewServer(s.factories.OCR2Endpoint, metrics))
 	creproxy.RegisterEndpoint2ProxyServer(s.grpcServer, NewEndpoint2Server(s.factories.OCR3_1Endpoint, metrics))
+
+	// Signing goes on the same surface, and for the same reason: this process
+	// holds the node's keys, so an oracle hosted elsewhere asks it to sign
+	// rather than being given one.
+	signer, err := newSignerServer(s.factories.OCR2)
+	if err != nil {
+		return fmt.Errorf("failed to serve signing on behalf of capabilities: %w", err)
+	}
+	creproxy.RegisterSignerServer(s.grpcServer, signer)
+
 	return nil
 }

@@ -42,6 +42,7 @@ type (
 	NodeInfo                = commonregistry.NodeInfo
 	Capability              = commonregistry.Capability
 	Snapshot                = commonregistry.Snapshot
+	Contract                = commonregistry.Contract
 	Reader                  = commonregistry.Reader
 )
 
@@ -60,6 +61,11 @@ type LocalRegistry struct {
 	IDsToDONs         map[DonID]DON
 	IDsToNodes        map[ragetypes.PeerID]NodeInfo
 	IDsToCapabilities map[string]Capability
+
+	// Contract is the registry these records were read from. Zero when whatever
+	// supplied them reads no contract, which is why anything needing it says so
+	// rather than assuming.
+	Contract Contract
 
 	cacheMu             sync.RWMutex
 	cachedLocalNodePeer ragetypes.PeerID
@@ -91,7 +97,11 @@ func FromSnapshot(
 	getPeerID func() (ragetypes.PeerID, error),
 	snap *Snapshot,
 ) *LocalRegistry {
-	return NewLocalRegistry(lggr, getPeerID, snap.DONs, snap.Nodes, snap.Capabilities)
+	lr := NewLocalRegistry(lggr, getPeerID, snap.DONs, snap.Nodes, snap.Capabilities)
+	// Set here rather than taken by NewLocalRegistry, whose signature is shared
+	// with core.
+	lr.Contract = snap.Contract
+	return lr
 }
 
 // LocalNode resolves this process's own node record. The result is cached: the

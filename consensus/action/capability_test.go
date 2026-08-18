@@ -1,9 +1,9 @@
 package action
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,20 +24,16 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
+
+	libsocr "github.com/smartcontractkit/capabilities/libs/ocr"
 )
 
 func Test_SimpleConsensus(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -70,14 +66,8 @@ func Test_SimpleConsensus_Error(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -110,14 +100,8 @@ func Test_Report(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -141,14 +125,8 @@ func Test_ReportSupportsAptosSigningAndHashing(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -171,14 +149,8 @@ func Test_ReportSupportsStellarSigningAndHashing(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -202,14 +174,8 @@ func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -232,14 +198,8 @@ func Test_ReportRequiresValidHashingAlgo(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -262,14 +222,8 @@ func Test_ReportRequiresValidEncoderName(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -292,22 +246,10 @@ func Test_SimpleInputsSizeValidation_UserErrorSentToConsensus(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	capConfig := &ConsensusCapabilityConfig{
-		MaxRequestSizeBytes: 2,
-	}
-
-	capConfigJSON, err := json.Marshal(capConfig)
-	require.NoError(t, err)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		Config:        string(capConfigJSON),
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{
+			MaxRequestSizeBytes: 2,
+		}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -342,23 +284,10 @@ func Test_SimpleRequestSizeValidation(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
-	require.NoError(t, err)
-
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
-
-	// Set MaxRequestSizeBytes to 2MB
-	capConfig := &ConsensusCapabilityConfig{
-		MaxRequestSizeBytes: 2000000, // 2MB
-	}
-
-	capConfigJSON, err := json.Marshal(capConfig)
-	require.NoError(t, err)
-
-	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		Config:        string(capConfigJSON),
-		OracleFactory: oracleFactory,
-	})
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute,
+		ConsensusCapabilityConfig{
+			MaxRequestSizeBytes: 2000000, // 2MB
+		}, testDependencies(t, lggr))
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -490,3 +419,32 @@ func generateRandomHexString(byteLength int) string {
 	}
 	return hex.EncodeToString(randomBytes)
 }
+
+// testDependencies drive the reporting plugin directly instead of joining a DON:
+// these tests are about what the capability computes, and an oracle that really
+// ran the protocol would need a DON to run it with.
+func testDependencies(t *testing.T, lggr logger.Logger) Dependencies {
+	return Dependencies{
+		LimitsFactory: limits.Factory{Logger: lggr},
+		NewOracle: func(args libsocr.OracleArgs) (Oracle, error) {
+			oracle, err := testutils.NewOracleFactory(t, lggr).NewOracle(t.Context(), core.OracleArgs{
+				ReportingPluginFactoryService: args.Plugin,
+				ContractTransmitter:           args.Transmitter,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return contextlessOracle{t: t, oracle: oracle}, nil
+		},
+	}
+}
+
+// contextlessOracle adapts the test oracle, which takes a context as the node's
+// oracle factory does, to the libocr shape this capability drives.
+type contextlessOracle struct {
+	t      *testing.T
+	oracle core.Oracle
+}
+
+func (o contextlessOracle) Start() error { return o.oracle.Start(o.t.Context()) }
+func (o contextlessOracle) Close() error { return o.oracle.Close(context.Background()) }

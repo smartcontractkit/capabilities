@@ -62,6 +62,21 @@ type Dependencies struct {
 	closers []func() error
 }
 
+// OCRConfigRegistry is where an OCR-based capability reads the configuration it
+// runs under: the node's registry, which computes the config digest from the
+// contract it read - something a capability is deliberately not told.
+//
+// Nil when this process has no node behind it, as an embedded run does not: an
+// oracle then has no configuration to join, which is a clearer failure than one
+// invented locally that no other member of the DON agrees with.
+func (d Dependencies) OCRConfigRegistry() core.OCRConfigRegistry {
+	registry, ok := d.proxy.(core.OCRConfigRegistry)
+	if !ok {
+		return nil
+	}
+	return registry
+}
+
 // Close releases whatever Get dialled. The bootstrapper closes resolved
 // dependency values on shutdown, after the services built from them.
 func (d Dependencies) Close() error {
@@ -244,8 +259,7 @@ func reloadHandler(lggr logger.Logger, settings *loop.AtomicSettings, path strin
 	}
 }
 
-// registrar initialises each capability, makes it reachable, and takes it back
-// out on shutdown.
+// registrar makes each capability reachable, and takes it back out on shutdown.
 //
 // Reachable means three things, in order: the local registry holds it, so
 // anything else in this process resolves it as a value; a gRPC server of its own
@@ -291,9 +305,6 @@ func newRegistrar(lggr logger.Logger, deps Dependencies, caps []Capability) *reg
 
 func (r *registrar) start(ctx context.Context) error {
 	for i, c := range r.caps {
-		if err := c.Initialise(ctx, &r.deps); err != nil {
-			return fmt.Errorf("failed to initialise capability %d: %w", i, err)
-		}
 		info, err := c.Info(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read capability %d info: %w", i, err)

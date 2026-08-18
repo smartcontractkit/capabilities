@@ -40,6 +40,10 @@ type Config struct {
 	// KeystorePassword unlocks the keystore holding the P2P identity the peer announces under.
 	// Typed as a SecretString so it redacts itself in logs, docs and generated example configs.
 	KeystorePassword config.SecretString `usage:"password for the node keystore holding the shared P2P identity; required unless the identity is derived, as it is under embed"`
+
+	// KeyBundleID names the OCR2 key bundle to sign with on behalf of the capabilities this
+	// process signs for. Only needed when the node holds more than one.
+	KeyBundleID string `usage:"OCR2 key bundle in the node keystore to sign with; only needed when the node holds more than one"`
 }
 
 // Host returns a standalone.BootstrapDependency that resolves the libocr Factories from a peer
@@ -95,7 +99,24 @@ func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*
 	if err != nil {
 		return nil, err
 	}
-	return d.localFactories(ds, keyring, peerID)
+
+	// From the same key ring, unlocked once: this process is the only one given the password, so
+	// it is the only one that can sign as this node - with its P2P key on the wire, and with its
+	// OCR keys for whoever it signs on behalf of.
+	bundle, err := loadOCR2Bundle(ctx, ds, string(d.cfg.KeystorePassword), d.cfg.KeyBundleID)
+	if err != nil {
+		return nil, err
+	}
+
+	factories, err := d.localFactories(ds, keyring, peerID)
+	if err != nil {
+		return nil, err
+	}
+	factories.OCR2 = bundle
+	// Held here, so an oracle in this process signs with the same bundle this serves to oracles
+	// elsewhere rather than going out over gRPC to reach a key it already has.
+	factories.Keyrings = Keyrings{Offchain: localKeyring{bundle}, Onchain: localKeyring{bundle}}
+	return factories, nil
 }
 
 // keystoreIdentity loads the node's P2P identity from the keystore in the database this process

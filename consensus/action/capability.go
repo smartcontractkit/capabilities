@@ -3,7 +3,6 @@ package action
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -24,11 +23,12 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/transmitter"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	"github.com/smartcontractkit/capabilities/consensus/protos"
+	libsocr "github.com/smartcontractkit/capabilities/libs/ocr"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/consensus/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
@@ -39,8 +39,11 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 )
 
 const (
@@ -63,11 +66,11 @@ type ConsensusCapabilityConfig struct {
 	MaxRequestOutcomeSize        int
 }
 
-var _ server.ConsensusCapability = &consensusCapability{}
+var _ protos.ConsensusCapability = &consensusCapability{}
 
 type consensusCapability struct {
 	lggr          logger.Logger
-	oracle        core.Oracle
+	oracle        Oracle
 	reqStore      *requests.Store[*oracle.ConsensusRequest]
 	reqHandler    *requests.Handler[*oracle.ConsensusRequest, oracle.ConsensusResponse]
 	limitsFactory limits.Factory
@@ -92,12 +95,62 @@ func (s *storeStatsCollector) SetRequestCount(requestCount int) {
 	s.requestStoreRequests.Record(context.Background(), int64(requestCount))
 }
 
+// Dependencies are what a consensus capability needs from wherever it is hosted:
+// where to read its OCR configuration, the networking and identity to run that
+// configuration under, and who else is in the DON.
+//
+// They are taken here rather than through an Initialise the host calls, because
+// a capability that is not yet usable is only a way to be used too early: with
+// these, what New returns is ready, and Start runs it.
+type Dependencies struct {
+	// DonID is the capability DON this process was spawned for, which together
+	// with the capability ID selects this oracle's configuration.
+	DonID uint32
+
+	// Registry supplies that configuration, digest included.
+	Registry core.OCRConfigRegistry
+
+	// Endpoints, Offchain and Onchain come from whoever holds the node's peer:
+	// the transport, and the keys this oracle signs with.
+	Endpoints ocrtypes.BinaryNetworkEndpointFactory
+	Offchain  ocrtypes.OffchainKeyring
+	Onchain   ocr3types.OnchainKeyring[[]byte]
+
+	// Bootstrappers are the peers to dial before this oracle has heard of
+	// anyone; the registry says who the oracle set is, not where it is.
+	Bootstrappers []commontypes.BootstrapperLocator
+
+	LimitsFactory limits.Factory
+	Metrics       prometheus.Registerer
+
+	// NewOracle builds the oracle this capability runs, defaulting to a real one
+	// over the configuration and networking above. A test replaces it to drive
+	// the reporting plugin directly, which is the part of an oracle a test of
+	// this capability is about.
+	NewOracle func(libsocr.OracleArgs) (Oracle, error)
+}
+
+// Oracle is what this capability does with a libocr oracle: run it, and stop it.
+type Oracle interface {
+	Start() error
+	Close() error
+}
+
 // NewConsensusCapability creates a new ConsensusCapability with the given logger, clock, and response cache expiry time.  The
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
-func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration,
-	limitsFactory limits.Factory,
-) (*consensusCapability, error) {
+//
+// The oracle is built here and started by Start: building it needs the
+// configuration, which is a question for the registry, and starting it means
+// joining a protocol, which is a thing to do when the process is ready to serve
+// rather than while it is still being assembled.
+func NewConsensusCapability(
+	lggr logger.Logger,
+	clock clockwork.Clock,
+	responseCacheExpiry time.Duration,
+	cfg ConsensusCapabilityConfig,
+	deps Dependencies,
+) (protos.ConsensusCapability, error) {
 	metrics, err := metrics.NewMetrics()
 	if err != nil {
 		return nil, fmt.Errorf("error creating metrics: %w", err)
@@ -108,87 +161,76 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 			requestStoreRequests: metrics.PendingConsensusRequests,
 		})
 
-	return &consensusCapability{
+	c := &consensusCapability{
 		lggr:                     lggr,
 		reqStore:                 reqStore,
 		reqHandler:               requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
 		metrics:                  metrics,
-		limitsFactory:            limitsFactory,
+		limitsFactory:            deps.LimitsFactory,
 		observationQuorumTracker: oracle.NewObservationQuorumTracker(),
-	}, nil
+	}
+
+	if err = c.setConfiguration(cfg); err != nil {
+		return nil, fmt.Errorf("error setting consensus capability configuration: %w", err)
+	}
+
+	reportingPlugin, err := plugin.NewReportingPluginFactory(lggr, c.metrics, c.reqStore,
+		c.observationQuorumTracker,
+		c.SetRequestTimeout,
+		defaultKeyBundleIDForValueConsensus, c.maxRequestOutcomeSize)
+	if err != nil {
+		return nil, fmt.Errorf("error when creating reporting plugin factory: %w", err)
+	}
+
+	newOracle := deps.NewOracle
+	if newOracle == nil {
+		newOracle = func(args libsocr.OracleArgs) (Oracle, error) { return libsocr.NewOracle(args) }
+	}
+
+	c.oracle, err = newOracle(libsocr.OracleArgs{
+		CapabilityID:  protos.ConsensusID,
+		DonID:         deps.DonID,
+		Registry:      deps.Registry,
+		Endpoints:     deps.Endpoints,
+		Offchain:      deps.Offchain,
+		Onchain:       deps.Onchain,
+		Bootstrappers: deps.Bootstrappers,
+		Plugin:        reportingPlugin,
+		Transmitter:   transmitter.NewContractTransmitter(lggr, c.SendResponse),
+		LocalConfig:   localOCRConfig,
+		Logger:        lggr,
+		Metrics:       deps.Metrics,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error when creating oracle: %w", err)
+	}
+
+	return c, nil
+}
+
+// localOCRConfig is set to the maximum permitted throughout: response time for a
+// config update is not critical for a capability, whose configuration comes from
+// a registry snapshot rather than from a chain read that has to be waited on.
+var localOCRConfig = ocrtypes.LocalConfig{
+	BlockchainTimeout:                  time.Second * 20,
+	ContractConfigTrackerPollInterval:  time.Second * 60,
+	ContractConfigConfirmations:        1,
+	ContractTransmitterTransmitTimeout: time.Second * 60,
+	DatabaseTimeout:                    time.Second * 10,
+	ContractConfigLoadTimeout:          time.Second * 60,
+	DefaultMaxDurationInitialization:   time.Second * 60,
 }
 
 // SetRequestTimeout is used by the reporting plugin to set the request timeout for consensus requests.  The plugin
-// receives the timeout after the Initialise method on the capability is called, thus it uses this method to set it on the capability.
+// receives the timeout after the capability is built, thus it uses this method to set it on the capability.
 func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 	c.requestTimeoutLock.Lock()
 	defer c.requestTimeoutLock.Unlock()
 	c.requestTimeout = timeout
 }
 
-func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	c.lggr.Debug("Initialising Consensus Capability")
-
-	if err := c.setConfiguration(dependencies.Config); err != nil {
-		return fmt.Errorf("error setting consensus capability configuration: %w", err)
-	}
-
-	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore,
-		c.observationQuorumTracker,
-		c.SetRequestTimeout,
-		defaultKeyBundleIDForValueConsensus, c.maxRequestOutcomeSize)
-	if err != nil {
-		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
-	}
-
-	contractTransmitter := transmitter.NewContractTransmitter(c.lggr, c.SendResponse)
-
-	// These values set to the maximum permitted, response time for config update is not critical
-	localOcrConfig := ocrtypes.LocalConfig{
-		BlockchainTimeout:                  time.Second * 20,
-		ContractConfigTrackerPollInterval:  time.Second * 60,
-		ContractConfigConfirmations:        1,
-		ContractTransmitterTransmitTimeout: time.Second * 60,
-		DatabaseTimeout:                    time.Second * 10,
-		ContractConfigLoadTimeout:          time.Second * 60,
-		DefaultMaxDurationInitialization:   time.Second * 60,
-	}
-
-	oracle, err := dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
-		LocalConfig:                   localOcrConfig,
-		ReportingPluginFactoryService: reportingPlugin,
-		ContractTransmitter:           contractTransmitter,
-	})
-	if err != nil {
-		return fmt.Errorf("error when creating oracle: %w", err)
-	}
-
-	c.oracle = oracle
-	err = c.reqHandler.Start(context.Background())
-	if err != nil {
-		return fmt.Errorf("error when starting request handler: %w", err)
-	}
-
-	err = c.oracle.Start(context.Background())
-	if err != nil {
-		return fmt.Errorf("error when starting oracle: %w", err)
-	}
-
-	c.lggr.Debug("Initialised Consensus Capability")
-
-	return nil
-}
-
-func (c *consensusCapability) setConfiguration(cfg string) error {
+func (c *consensusCapability) setConfiguration(capabilityConfig ConsensusCapabilityConfig) error {
 	c.valueConsensusKeyBundleID = defaultKeyBundleIDForValueConsensus
-
-	var capabilityConfig ConsensusCapabilityConfig
-	if len(cfg) > 0 {
-		err := json.Unmarshal([]byte(cfg), &capabilityConfig)
-		if err != nil {
-			return fmt.Errorf("failed to deserialize config into ConsensusCapabilityConfig: %w", err)
-		}
-	}
 
 	if capabilityConfig.MaxRequestOutcomeSize > 0 {
 		c.maxRequestOutcomeSize = capabilityConfig.MaxRequestOutcomeSize
@@ -497,8 +539,18 @@ func (c *consensusCapability) SendResponse(ctx context.Context, response oracle.
 	c.reqHandler.SendResponse(ctx, response)
 }
 
-// Start is not called when running as remote standard capability, instead Initialise is called  (note Close is called)
+// Start joins the protocol: the request handler first, so a response has
+// somewhere to go before the oracle can produce one.
 func (c *consensusCapability) Start(ctx context.Context) error {
+	if err := c.reqHandler.Start(ctx); err != nil {
+		return fmt.Errorf("error when starting request handler: %w", err)
+	}
+
+	if err := c.oracle.Start(); err != nil {
+		return fmt.Errorf("error when starting oracle: %w", err)
+	}
+
+	c.lggr.Debug("Started Consensus Capability")
 	return nil
 }
 
@@ -509,7 +561,7 @@ func (c *consensusCapability) Close() error {
 	}
 
 	if c.oracle != nil {
-		if err := c.oracle.Close(context.Background()); err != nil {
+		if err := c.oracle.Close(); err != nil {
 			return fmt.Errorf("error when closing oracle: %w", err)
 		}
 		c.oracle = nil
