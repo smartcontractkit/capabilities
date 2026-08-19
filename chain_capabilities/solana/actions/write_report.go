@@ -224,11 +224,11 @@ func (wr *WriteReport) executeWriteReport(
 	}
 
 	var meteringMetadata capabilities.ResponseMetadata
-	transactionFee, err := wr.getFee(ctx, last.Signature)
+	transactionFee, feeInLamports, err := wr.getFee(ctx, last.Signature)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, last.Signature, err.Error()))
 	} else {
-		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee,
+		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee, feeInLamports,
 			wr.chainSelector)
 	}
 
@@ -451,22 +451,23 @@ func (wr *WriteReport) pollTransmissionInfo(
 	}
 }
 
-func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.Float, error) {
+func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.Float, uint64, error) {
 	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get transaction: %w", err)
+		return nil, 0, fmt.Errorf("failed to get transaction: %w", err)
 	}
 	if tx == nil {
-		return nil, errors.New("failed to get transaction fee: empty transaction response")
+		return nil, 0, errors.New("failed to get transaction fee: empty transaction response")
 	}
 	if tx.Meta == nil {
-		return nil, errors.New("failed to get transaction fee: empty transaction meta")
+		return nil, 0, errors.New("failed to get transaction fee: empty transaction meta")
 	}
 
-	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(tx.Meta.Fee), big.NewFloat(1e9))
+	feeInLamports := tx.Meta.Fee
+	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(feeInLamports), big.NewFloat(1e9))
 
-	wr.lggr.Debugw("WriteReport fee", "feeInSol", feeInSol.String(), "feeInLamports", tx.Meta.Fee)
-	return feeInSol, nil
+	wr.lggr.Debugw("WriteReport fee", "feeInSol", feeInSol.String(), "feeInLamports", feeInLamports)
+	return feeInSol, feeInLamports, nil
 }
 
 func (wr *WriteReport) successWriteReportReply(sig *solana.Signature) *solcap.WriteReportReply {

@@ -39,14 +39,16 @@ func GetResponseMetadata(action SpendValueCredits) capabilities.ResponseMetadata
 	}
 }
 
-// GetMeteringNodeDetail returns a MeteringNodeDetail for a given SpendValueCredits.
-func GetResponseMetadataWriteReport(fee *big.Float, chainSelector uint64) capabilities.ResponseMetadata {
+// GetResponseMetadataWriteReport returns billing ResponseMetadata for a completed write-report
+// submission.
+func GetResponseMetadataWriteReport(feeInEth *big.Float, feeInWei *big.Int, chainSelector uint64) capabilities.ResponseMetadata {
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{
 				//Peer2PeerID will be assigned by the engine, leaving it empty here.
-				SpendValue: fee.Text('f', -1), // have to be stored in eth
-				SpendUnit:  fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
+				SpendValue:           feeInEth.Text('f', -1),
+				SpendValueInGasUnits: feeInWei.String(),
+				SpendUnit:            fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
 			},
 		},
 	}

@@ -231,13 +231,13 @@ func (wr *writeReport) execute(
 	ownLedgerVersion, ownFeeInOctas, ownVMStatus, ownBlockTimestamp, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
-		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), 0, wr.chainSelector)
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
 			wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, txReply.TxHash, feeErr.Error()))
 	} else {
 		pinnedLedgerVersion = &ownLedgerVersion
 		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
-		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, ownFeeInOctas, wr.chainSelector)
 		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctas, "ledgerVersion", ownLedgerVersion)
 	}
 
@@ -285,7 +285,7 @@ func (wr *writeReport) execute(
 			}
 			feeInOctas := successResult.GasUsed * successResult.GasUnitPrice
 			feeInAPT := aptosOctasToAPT(feeInOctas)
-			meteringMetadata := metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+			meteringMetadata := metering.GetResponseMetadataWriteReport(feeInAPT, feeInOctas, wr.chainSelector)
 			wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
 
 			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction, report already on-chain",
@@ -294,7 +294,7 @@ func (wr *writeReport) execute(
 
 			if txReply.TxStatus == aptostypes.TxFatal {
 				wr.lggr.Errorw("Transaction failed to get processed, but report was already submitted, this is unexpected and should be investigated", "txHash", txReply.TxHash)
-				meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+				meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), 0, wr.chainSelector)
 			}
 
 			return &aptoscap.WriteReportReply{
@@ -363,7 +363,7 @@ func (wr *writeReport) execute(
 			var replyMeta capabilities.ResponseMetadata
 			if recvStatus != nil && *recvStatus == aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED {
 				feeInAPT := aptosOctasToAPT(feeOctas)
-				replyMeta = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+				replyMeta = metering.GetResponseMetadataWriteReport(feeInAPT, feeOctas, wr.chainSelector)
 			}
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
