@@ -2,7 +2,6 @@ package trigger
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -19,17 +18,16 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"github.com/smartcontractkit/capabilities/cron/protos"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
-	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 )
@@ -78,7 +76,7 @@ func registerTriggerToCronTriggerService(
 	}
 
 	if useTypedAPI {
-		payload, err := anypb.New(&crontypedapi.Config{Schedule: schedule})
+		payload, err := anypb.New(&protos.Config{Schedule: schedule})
 		require.NoError(t, err)
 
 		request := capabilities.TriggerRegistrationRequest{
@@ -111,11 +109,11 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	useTypedAPI bool) Response {
 	response := Response{}
 	response.TriggerType = event.TriggerType
-	assert.Equal(t, server.CronID, response.TriggerType)
+	assert.Equal(t, protos.CronID, response.TriggerType)
 	response.ID = event.ID
 
 	if useTypedAPI {
-		payload := &crontypedapi.LegacyPayload{} //nolint:staticcheck
+		payload := &protos.LegacyPayload{} //nolint:staticcheck
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
 		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
@@ -252,17 +250,11 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 				}
 			}
 
-			config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+			ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 			require.NoError(t, err)
+			require.NoError(t, ts.Start(t.Context()))
 
-			ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
-			require.NoError(t, err)
-			err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-				Config: string(config),
-			})
-			require.NoError(t, err)
-
-			triggerAPI := server.NewCronServer(ts)
+			triggerAPI := protos.NewCronServer(ts)
 
 			// Register trigger
 			callback, registerUnregisterRequest, err := registerTriggerToCronTriggerService(
@@ -333,17 +325,11 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	fakeClock := clockwork.NewRealClock()
 
-	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
+	require.NoError(t, ts.Start(t.Context()))
 
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
-	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(config),
-	})
-	require.NoError(t, err)
-
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := protos.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -481,16 +467,11 @@ func TestCronTrigger_RegisterTriggerBeforeStart_UntypedAPI(t *testing.T) {
 
 func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
 	fakeClock := clockwork.NewRealClock()
-	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
-	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(config),
-	})
-	require.NoError(t, err)
+	require.NoError(t, ts.Start(t.Context()))
 
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := protos.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -554,15 +535,10 @@ func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 	fakeClock.Advance(time.Duration(49-minimum) * time.Minute)
 	fakeClock.Advance(time.Duration(8-hour) * time.Hour)
 
-	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
-	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(config),
-	})
-	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts)
+	require.NoError(t, ts.Start(t.Context()))
+	triggerAPI := protos.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -630,15 +606,10 @@ func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	if fakeClock.Now().Second()%2 == 1 {
 		fakeClock.Advance(time.Second)
 	}
-	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
-	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(config),
-	})
-	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts)
+	require.NoError(t, ts.Start(t.Context()))
+	triggerAPI := protos.NewCronServer(ts)
 	ctx := t.Context()
 
 	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
@@ -753,15 +724,10 @@ func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 	fakeClock.Advance(time.Duration(49-minimum) * time.Minute)
 	fakeClock.Advance(time.Duration(23-hour) * time.Hour)
 
-	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
-	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(config),
-	})
-	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts)
+	require.NoError(t, ts.Start(t.Context()))
+	triggerAPI := protos.NewCronServer(ts)
 	ctx := t.Context()
 
 	// Register trigger
@@ -868,11 +834,10 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClock := clockwork.NewRealClock()
-			ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
+			ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{}, Dependencies{LimitsFactory: limits.Factory{}})
 			require.NoError(t, err)
-			err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{})
-			require.NoError(t, err)
-			triggerAPI := server.NewCronServer(ts)
+			require.NoError(t, ts.Start(t.Context()))
+			triggerAPI := protos.NewCronServer(ts)
 			ctx := t.Context()
 			_, _, err = registerTriggerToCronTriggerService(
 				ctx,
@@ -904,16 +869,11 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 }
 
 func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
-	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
-	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(triggerConfig),
-	})
-	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts)
+	require.NoError(t, ts.Start(t.Context()))
+	triggerAPI := protos.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -939,16 +899,11 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 }
 
 func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
-	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
-	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(triggerConfig),
-	})
-	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts)
+	require.NoError(t, ts.Start(t.Context()))
+	triggerAPI := protos.NewCronServer(ts)
 
 	t.Run("OK if trigger not found", func(t *testing.T) {
 		ctx := t.Context()
@@ -1021,14 +976,11 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	})
 
 	t.Run("NOK fails to unregister if closed", func(t *testing.T) {
-		ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
+		ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 		require.NoError(t, err)
-		err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-			Config: string(triggerConfig),
-		})
-		require.NoError(t, err)
+		require.NoError(t, ts.Start(t.Context()))
 
-		triggerAPI := server.NewCronServer(ts)
+		triggerAPI := protos.NewCronServer(ts)
 		ctx := t.Context()
 
 		config, err := values.NewMap(map[string]any{
@@ -1059,7 +1011,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 
 func TestCronTrigger_CloseStartErrors(t *testing.T) {
 	fakeClock := clockwork.NewRealClock()
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, Config{}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
 	ctx := t.Context()
 
@@ -1082,17 +1034,12 @@ func (c *panicOnNowClock) Now() time.Time {
 func TestGocronNewTaskPanic(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
 
-	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
-	require.NoError(t, err)
 	logger, observedLogs := logger.TestObserved(t, zap.ErrorLevel)
-	ts, err := NewTriggerService(logger, fakeClock, limits.Factory{})
+	ts, err := NewTriggerService(logger, fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
-		Config: string(config),
-	})
-	require.NoError(t, err)
+	require.NoError(t, ts.Start(t.Context()))
 
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := protos.NewCronServer(ts)
 
 	_, _, err = registerTriggerToCronTriggerService(
 		t.Context(),
@@ -1181,13 +1128,9 @@ func TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths(t *testing.T) {
 		fakeClock := clockwork.NewFakeClockAt(startTime)
 		lggr, observedLogs := logger.TestObserved(t, zap.DebugLevel)
 
-		triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+		ts, err := NewTriggerService(lggr, fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
 		require.NoError(t, err)
-
-		ts, err := NewTriggerService(lggr, fakeClock, limits.Factory{})
-		require.NoError(t, err)
-		err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{Config: string(triggerConfig)})
-		require.NoError(t, err)
+		require.NoError(t, ts.Start(t.Context()))
 
 		if flagActive {
 			// [0, MaxInt64] always contains the fake clock's time (2024-01-01...).
@@ -1207,7 +1150,7 @@ func TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths(t *testing.T) {
 			WorkflowID:  testWorkflowID,
 			ReferenceID: testReferenceID,
 		}
-		ch, capErr := ts.RegisterTrigger(t.Context(), testTriggerID, metadata, &crontypedapi.Config{Schedule: everySecond})
+		ch, capErr := ts.RegisterTrigger(t.Context(), testTriggerID, metadata, &protos.Config{Schedule: everySecond})
 		require.Nil(t, capErr)
 
 		fakeClock.Advance(time.Second + time.Millisecond)
@@ -1246,7 +1189,7 @@ func TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths(t *testing.T) {
 		require.Equal(t, expectedExecID, execIDFromLog, "execution ID should match expected hash function")
 		require.Equal(t, !flagActive, isLegacyFromLog, "isLegacyExecutionID should reflect which path was taken")
 
-		require.Nil(t, ts.UnregisterTrigger(t.Context(), testTriggerID, metadata, &crontypedapi.Config{Schedule: everySecond}))
+		require.Nil(t, ts.UnregisterTrigger(t.Context(), testTriggerID, metadata, &protos.Config{Schedule: everySecond}))
 		require.NoError(t, ts.Close())
 	}
 
