@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
+	"github.com/smartcontractkit/capabilities/libs/standalone/rage"
 	"github.com/smartcontractkit/capabilities/libs/x/registry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -45,7 +45,7 @@ type proxyService struct {
 	// CapabilitiesRegistry) has registered too, so they share one address instead of each opening a
 	// listener of their own.
 	grpcServer grpc.ServiceRegistrar
-	factories  *ocr.RageFactories
+	factories  *rage.Factories
 }
 
 var _ services.Service = (*proxyService)(nil)
@@ -53,7 +53,7 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(lggr logger.Logger, grpcServer grpc.ServiceRegistrar, factories *ocr.RageFactories) *proxyService {
+func newProxyService(lggr logger.Logger, grpcServer grpc.ServiceRegistrar, factories *rage.Factories) *proxyService {
 	s := &proxyService{lggr: lggr, grpcServer: grpcServer, factories: factories}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",

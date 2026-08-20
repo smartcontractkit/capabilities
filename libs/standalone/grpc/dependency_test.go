@@ -12,7 +12,7 @@ import (
 )
 
 func TestDependency_BindsConfiguredPort(t *testing.T) {
-	d := &dependency{lggr: logger.Test(t), cfg: Config{Host: defaultHost, Port: freePort(t)}}
+	d := &dependency{lggr: logger.Test(t), cfg: &Config{Host: defaultHost, Port: freePort(t)}}
 
 	srv, err := d.Get(t.Context(), standalone.CommonConfig{})
 	require.NoError(t, err)
@@ -26,13 +26,34 @@ func TestDependency_BindsConfiguredPort(t *testing.T) {
 // instances sharing a process do not collide.
 func TestDependency_ForEmbeddingOffsetsPort(t *testing.T) {
 	base := freePort(t)
-	d := &dependency{lggr: logger.Test(t), cfg: Config{Host: defaultHost, Port: base}}
+	d := &dependency{lggr: logger.Test(t), cfg: &Config{Host: defaultHost, Port: base}}
 
-	srv, err := d.ForEmbedding(2).Get(t.Context(), standalone.CommonConfig{})
+	srv, err := d.ForEmbedding(2, 3).Get(t.Context(), standalone.CommonConfig{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, srv.Close()) })
 
 	assert.Equal(t, base+2, uint16Port(t, srv))
+}
+
+// The settings an embed run is given are decoded into the form that was asked for them, which is
+// the one ForEmbedding built first - so the forms that go on to resolve the instances have to be
+// reading that same struct. A copy each, and every instance binds the default port instead.
+func TestDependency_EmbeddedInstancesReadTheConfiguredSettings(t *testing.T) {
+	base := freePort(t)
+	// Built the way Dependency builds it, before anything has been decoded.
+	dep := standalone.OnceBootstrapper[*Server](&dependency{lggr: logger.Test(t), cfg: &Config{Host: defaultHost}})
+
+	// What the embed command binds its flags to, asked for before any instance exists.
+	bound, ok := dep.ForEmbedding(0, 2).Config().(*Config)
+	require.True(t, ok)
+	bound.Port = base
+
+	// Decoded by then, so this is the port instance 1 has to bind.
+	srv, err := dep.ForEmbedding(1, 2).Get(t.Context(), standalone.CommonConfig{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, srv.Close()) })
+
+	assert.Equal(t, base+1, uint16Port(t, srv))
 }
 
 func TestFactory_BindsEphemeralPortAndReportsIt(t *testing.T) {
@@ -80,9 +101,9 @@ func TestFactory_SharedAcrossEmbeddedInstances(t *testing.T) {
 		cfg:  FactoryConfig{AdvertiseHost: defaultHost, StartPort: start},
 	})
 
-	first, err := dep.ForEmbedding(0).Get(t.Context(), standalone.CommonConfig{})
+	first, err := dep.ForEmbedding(0, 2).Get(t.Context(), standalone.CommonConfig{})
 	require.NoError(t, err)
-	second, err := dep.ForEmbedding(1).Get(t.Context(), standalone.CommonConfig{})
+	second, err := dep.ForEmbedding(1, 2).Get(t.Context(), standalone.CommonConfig{})
 	require.NoError(t, err)
 	assert.Same(t, first, second, "every instance should draw from the one factory")
 

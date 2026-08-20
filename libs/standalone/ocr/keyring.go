@@ -1,101 +1,19 @@
 package ocr
 
 import (
-	"context"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
-	"errors"
 	"fmt"
-	"sort"
 	"strconv"
-	"strings"
-
-	"github.com/jmoiron/sqlx"
+	"sync"
 
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/models"
+	"github.com/smartcontractkit/chainlink-common/keystore/corekeys"
 	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
 )
-
-// loadPeerKeyring loads the P2P key from the node's keystore so this process
-// uses the SAME peer identity as the node it fronts (other DON members expect
-// this node's peer ID at this address). It reads the node's existing encrypted
-// key ring (the legacy `encrypted_key_rings` table, in chainlink-common's
-// corekeys/models format) and decrypts it with the keystore password. This is a
-// deliberately small copy of core's keyManager.Unlock using only
-// chainlink-common packages, so this binary needn't import chainlink core.
-//
-// password is the node's keystore password: this process shares the node's
-// database and therefore its keystore password.
-//
-// TODO: drop this once the keystore is migrated to chainlink-common's
-// keystore.Keystore + pgstore (as chainlink-ccv already uses), after which we
-// can LoadKeystore from the shared table directly.
-func loadPeerKeyring(ctx context.Context, ds *sqlx.DB, password string) (*peerKeyring, error) {
-	var encrypted []byte
-	if err := ds.GetContext(ctx, &encrypted, "SELECT encrypted_keys FROM encrypted_key_rings LIMIT 1"); err != nil {
-		return nil, fmt.Errorf("failed to read node key ring: %w", err)
-	}
-	kr, err := models.EncryptedKeyRing{EncryptedKeys: encrypted}.Decrypt(password)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt node key ring: %w", err)
-	}
-	for _, k := range kr.P2P {
-		pub, perr := ragetypes.PeerPublicKeyFromGenericPublicKey(k.Public())
-		if perr != nil {
-			return nil, fmt.Errorf("failed to derive peer public key: %w", perr)
-		}
-		return &peerKeyring{signer: k, publicKey: pub}, nil
-	}
-	return nil, errors.New("no P2P key found in node key ring")
-}
-
-// loadOCR2Bundle loads the node's OCR2 key bundle from the same key ring the P2P
-// key came from, so the oracle signing done on a capability's behalf is done
-// with the node's own OCR identity - the one the registry lists as a signer.
-//
-// bundleID names which bundle when the node has several. A node running one
-// capability DON usually has one, and naming it then would be one more thing to
-// keep in step with the keystore, so an empty bundleID takes the only one there
-// is and refuses to guess between several.
-func loadOCR2Bundle(ctx context.Context, ds *sqlx.DB, password, bundleID string) (ocr2key.KeyBundle, error) {
-	var encrypted []byte
-	if err := ds.GetContext(ctx, &encrypted, "SELECT encrypted_keys FROM encrypted_key_rings LIMIT 1"); err != nil {
-		return nil, fmt.Errorf("failed to read node key ring: %w", err)
-	}
-	kr, err := models.EncryptedKeyRing{EncryptedKeys: encrypted}.Decrypt(password)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt node key ring: %w", err)
-	}
-
-	if bundleID != "" {
-		bundle, ok := kr.OCR2[bundleID]
-		if !ok {
-			return nil, fmt.Errorf("no OCR2 key bundle %q in the node key ring", bundleID)
-		}
-		return bundle, nil
-	}
-
-	switch len(kr.OCR2) {
-	case 0:
-		return nil, errors.New("no OCR2 key bundle found in the node key ring")
-	case 1:
-		for _, bundle := range kr.OCR2 {
-			return bundle, nil
-		}
-	}
-
-	ids := make([]string, 0, len(kr.OCR2))
-	for id := range kr.OCR2 {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return nil, fmt.Errorf("the node key ring holds %d OCR2 key bundles (%s), so --ocr.key-bundle-id must say which one to sign with",
-		len(ids), strings.Join(ids, ", "))
-}
 
 // deterministicSeedPrefix domain-separates the derived instance keys, so the seeds are specific
 // to this framework's embed mode and cannot collide with another scheme deriving keys from an
@@ -116,12 +34,21 @@ const deterministicSeedPrefix = "cre/standalone/instance/"
 // matters may be protected by one: embed mode is for local runs and tests.
 func DeterministicKeyring(i int) (ragetypes.PeerKeyring, error) {
 	seed := sha256.Sum256([]byte(deterministicSeedPrefix + strconv.Itoa(i)))
-	key := ed25519.NewKeyFromSeed(seed[:])
-	pub, err := ragetypes.PeerPublicKeyFromGenericPublicKey(key.Public())
+	return NewPeerKeyring(ed25519.NewKeyFromSeed(seed[:]))
+}
+
+// NewPeerKeyring returns signer as a rage peer keyring, deriving the public half it announces
+// under.
+//
+// Exported because a P2P key reaches this framework two ways - derived from an instance index here,
+// or unlocked from a node keystore (see libs/standalone/rage) - and both end up needing the same
+// wrapper. Used in place of the deprecated PeerConfig.PrivKey field.
+func NewPeerKeyring(signer crypto.Signer) (ragetypes.PeerKeyring, error) {
+	pub, err := ragetypes.PeerPublicKeyFromGenericPublicKey(signer.Public())
 	if err != nil {
-		return nil, fmt.Errorf("failed to derive peer public key for instance %d: %w", i, err)
+		return nil, fmt.Errorf("failed to derive the peer public key: %w", err)
 	}
-	return &peerKeyring{signer: key, publicKey: pub}, nil
+	return &peerKeyring{signer: signer, publicKey: pub}, nil
 }
 
 // DeterministicPeerID returns the peer ID DeterministicKeyring gives instance i, so a caller
@@ -133,6 +60,57 @@ func DeterministicPeerID(i int) (ragetypes.PeerID, error) {
 	}
 	return ragetypes.PeerIDFromKeyring(keyring), nil
 }
+
+// embedBundles is the OCR key bundle of each instance in this process, kept in one place so that
+// every instance sees every other instance's.
+//
+// It is package-level for the reason embedNetwork is (see inproc.go): there is exactly one process,
+// so there is exactly one set of instances inside it, and an OCR configuration naming them all has
+// to be built from the same keys the instances sign with. That is also why these are generated
+// rather than derived from the index the way the P2P identity is - a key derived from an index would
+// be reproducible outside the process too, which nothing here needs, and secp256k1 key generation
+// ignores the material it is offered anyway (crypto/ecdsa generates from the system CSPRNG, so a
+// seeded reader buys nothing).
+//
+// EVM, because a capability DON's members are registered with an EVM signing key: an embedded run
+// should exercise the signing and verification path a real one takes.
+var embedBundles = &bundleSet{bundles: map[int]ocr2key.KeyBundle{}}
+
+// bundleSet hands out one OCR key bundle per instance index, making it the first time it is asked
+// for. Which instance asks first does not matter: an instance asks for its own to sign with, and the
+// configuration asks for all of them to name the DON, and either order ends up with the same set.
+type bundleSet struct {
+	mu      sync.Mutex
+	bundles map[int]ocr2key.KeyBundle
+}
+
+func (s *bundleSet) get(i int) (ocr2key.KeyBundle, error) {
+	if i < 0 {
+		return nil, fmt.Errorf("cannot resolve the OCR key bundle of instance %d: an instance index is not negative", i)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if bundle, ok := s.bundles[i]; ok {
+		return bundle, nil
+	}
+	bundle, err := ocr2key.New(corekeys.EVM)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create an OCR key bundle for instance %d: %w", i, err)
+	}
+	s.bundles[i] = bundle
+	return bundle, nil
+}
+
+// EmbeddedOCR2Bundle returns the OCR2 key bundle instance i signs with: its protocol messages with
+// the offchain half, and its reports with the onchain one.
+//
+// An embedded instance has no node keystore to take one from, so the process keeps one for each of
+// them - see embedBundles, and EmbeddedOCRConfig for the configuration that lists their public
+// halves as the DON. Exported for the hosting form, which serves this bundle where a real one would
+// serve the node's (see libs/standalone/rage).
+func EmbeddedOCR2Bundle(i int) (ocr2key.KeyBundle, error) { return embedBundles.get(i) }
 
 // peerKeyring is a ragetypes.PeerKeyring backed by a P2P key (a crypto.Signer): the node's own,
 // loaded from its keystore, or one derived from an instance index. Used in place of the deprecated

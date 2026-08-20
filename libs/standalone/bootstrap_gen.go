@@ -28,9 +28,9 @@ func Run1[T0 any](
 	fn func(ctx context.Context, cfg *StandaloneConfig, dep0 T0) []services.Service,
 	bootDep0 common.BootstrapDependency[T0],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -43,9 +43,9 @@ func Run1[T0 any](
 	},
 		[]common.BootstrapCommand{bootDep0},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1)},
 	)
 }
 
@@ -68,11 +68,11 @@ func Run2[T0 any, T1 any](
 	bootDep0 common.BootstrapDependency[T0],
 	bootDep1 common.BootstrapDependency[T1],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -90,9 +90,9 @@ func Run2[T0 any, T1 any](
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1)},
 	)
 }
 
@@ -116,13 +116,13 @@ func Run3[T0 any, T1 any, T2 any](
 	bootDep1 common.BootstrapDependency[T1],
 	bootDep2 common.BootstrapDependency[T2],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -145,9 +145,9 @@ func Run3[T0 any, T1 any, T2 any](
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1)},
 	)
 }
 
@@ -172,15 +172,15 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 	bootDep2 common.BootstrapDependency[T2],
 	bootDep3 common.BootstrapDependency[T3],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
-		dep3 := instanceOf(bs, bootDep3, index, embed)
+		dep3 := instanceOf(bs, bootDep3, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -208,9 +208,9 @@ func Run4[T0 any, T1 any, T2 any, T3 any](
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1), bootDep3.ForEmbedding(0, 1)},
 	)
 }
 
@@ -236,17 +236,17 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	bootDep3 common.BootstrapDependency[T3],
 	bootDep4 common.BootstrapDependency[T4],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
-		dep3 := instanceOf(bs, bootDep3, index, embed)
+		dep3 := instanceOf(bs, bootDep3, index, count, embed)
 
-		dep4 := instanceOf(bs, bootDep4, index, embed)
+		dep4 := instanceOf(bs, bootDep4, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -279,9 +279,9 @@ func Run5[T0 any, T1 any, T2 any, T3 any, T4 any](
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1), bootDep3.ForEmbedding(0, 1), bootDep4.ForEmbedding(0, 1)},
 	)
 }
 
@@ -308,19 +308,19 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	bootDep4 common.BootstrapDependency[T4],
 	bootDep5 common.BootstrapDependency[T5],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
-		dep3 := instanceOf(bs, bootDep3, index, embed)
+		dep3 := instanceOf(bs, bootDep3, index, count, embed)
 
-		dep4 := instanceOf(bs, bootDep4, index, embed)
+		dep4 := instanceOf(bs, bootDep4, index, count, embed)
 
-		dep5 := instanceOf(bs, bootDep5, index, embed)
+		dep5 := instanceOf(bs, bootDep5, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -358,9 +358,9 @@ func Run6[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any](
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1), bootDep3.ForEmbedding(0, 1), bootDep4.ForEmbedding(0, 1), bootDep5.ForEmbedding(0, 1)},
 	)
 }
 
@@ -388,21 +388,21 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	bootDep5 common.BootstrapDependency[T5],
 	bootDep6 common.BootstrapDependency[T6],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
-		dep3 := instanceOf(bs, bootDep3, index, embed)
+		dep3 := instanceOf(bs, bootDep3, index, count, embed)
 
-		dep4 := instanceOf(bs, bootDep4, index, embed)
+		dep4 := instanceOf(bs, bootDep4, index, count, embed)
 
-		dep5 := instanceOf(bs, bootDep5, index, embed)
+		dep5 := instanceOf(bs, bootDep5, index, count, embed)
 
-		dep6 := instanceOf(bs, bootDep6, index, embed)
+		dep6 := instanceOf(bs, bootDep6, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -445,9 +445,9 @@ func Run7[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any](
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1), bootDep3.ForEmbedding(0, 1), bootDep4.ForEmbedding(0, 1), bootDep5.ForEmbedding(0, 1), bootDep6.ForEmbedding(0, 1)},
 	)
 }
 
@@ -476,23 +476,23 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	bootDep6 common.BootstrapDependency[T6],
 	bootDep7 common.BootstrapDependency[T7],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
-		dep3 := instanceOf(bs, bootDep3, index, embed)
+		dep3 := instanceOf(bs, bootDep3, index, count, embed)
 
-		dep4 := instanceOf(bs, bootDep4, index, embed)
+		dep4 := instanceOf(bs, bootDep4, index, count, embed)
 
-		dep5 := instanceOf(bs, bootDep5, index, embed)
+		dep5 := instanceOf(bs, bootDep5, index, count, embed)
 
-		dep6 := instanceOf(bs, bootDep6, index, embed)
+		dep6 := instanceOf(bs, bootDep6, index, count, embed)
 
-		dep7 := instanceOf(bs, bootDep7, index, embed)
+		dep7 := instanceOf(bs, bootDep7, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -540,9 +540,9 @@ func Run8[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any](
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1), bootDep3.ForEmbedding(0, 1), bootDep4.ForEmbedding(0, 1), bootDep5.ForEmbedding(0, 1), bootDep6.ForEmbedding(0, 1), bootDep7.ForEmbedding(0, 1)},
 	)
 }
 
@@ -572,25 +572,25 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 	bootDep7 common.BootstrapDependency[T7],
 	bootDep8 common.BootstrapDependency[T8],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
-		dep3 := instanceOf(bs, bootDep3, index, embed)
+		dep3 := instanceOf(bs, bootDep3, index, count, embed)
 
-		dep4 := instanceOf(bs, bootDep4, index, embed)
+		dep4 := instanceOf(bs, bootDep4, index, count, embed)
 
-		dep5 := instanceOf(bs, bootDep5, index, embed)
+		dep5 := instanceOf(bs, bootDep5, index, count, embed)
 
-		dep6 := instanceOf(bs, bootDep6, index, embed)
+		dep6 := instanceOf(bs, bootDep6, index, count, embed)
 
-		dep7 := instanceOf(bs, bootDep7, index, embed)
+		dep7 := instanceOf(bs, bootDep7, index, count, embed)
 
-		dep8 := instanceOf(bs, bootDep8, index, embed)
+		dep8 := instanceOf(bs, bootDep8, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -643,9 +643,9 @@ func Run9[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 any
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1), bootDep3.ForEmbedding(0, 1), bootDep4.ForEmbedding(0, 1), bootDep5.ForEmbedding(0, 1), bootDep6.ForEmbedding(0, 1), bootDep7.ForEmbedding(0, 1), bootDep8.ForEmbedding(0, 1)},
 	)
 }
 
@@ -676,27 +676,27 @@ func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 an
 	bootDep8 common.BootstrapDependency[T8],
 	bootDep9 common.BootstrapDependency[T9],
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 
-		dep0 := instanceOf(bs, bootDep0, index, embed)
+		dep0 := instanceOf(bs, bootDep0, index, count, embed)
 
-		dep1 := instanceOf(bs, bootDep1, index, embed)
+		dep1 := instanceOf(bs, bootDep1, index, count, embed)
 
-		dep2 := instanceOf(bs, bootDep2, index, embed)
+		dep2 := instanceOf(bs, bootDep2, index, count, embed)
 
-		dep3 := instanceOf(bs, bootDep3, index, embed)
+		dep3 := instanceOf(bs, bootDep3, index, count, embed)
 
-		dep4 := instanceOf(bs, bootDep4, index, embed)
+		dep4 := instanceOf(bs, bootDep4, index, count, embed)
 
-		dep5 := instanceOf(bs, bootDep5, index, embed)
+		dep5 := instanceOf(bs, bootDep5, index, count, embed)
 
-		dep6 := instanceOf(bs, bootDep6, index, embed)
+		dep6 := instanceOf(bs, bootDep6, index, count, embed)
 
-		dep7 := instanceOf(bs, bootDep7, index, embed)
+		dep7 := instanceOf(bs, bootDep7, index, count, embed)
 
-		dep8 := instanceOf(bs, bootDep8, index, embed)
+		dep8 := instanceOf(bs, bootDep8, index, count, embed)
 
-		dep9 := instanceOf(bs, bootDep9, index, embed)
+		dep9 := instanceOf(bs, bootDep9, index, count, embed)
 
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			value0, err := dep0.Get(ctx)
@@ -754,8 +754,8 @@ func Run10[T0 any, T1 any, T2 any, T3 any, T4 any, T5 any, T6 any, T7 any, T8 an
 	},
 		[]common.BootstrapCommand{bootDep0, bootDep1, bootDep2, bootDep3, bootDep4, bootDep5, bootDep6, bootDep7, bootDep8, bootDep9},
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{bootDep0.ForEmbedding(0), bootDep1.ForEmbedding(0), bootDep2.ForEmbedding(0), bootDep3.ForEmbedding(0), bootDep4.ForEmbedding(0), bootDep5.ForEmbedding(0), bootDep6.ForEmbedding(0), bootDep7.ForEmbedding(0), bootDep8.ForEmbedding(0), bootDep9.ForEmbedding(0)},
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{bootDep0.ForEmbedding(0, 1), bootDep1.ForEmbedding(0, 1), bootDep2.ForEmbedding(0, 1), bootDep3.ForEmbedding(0, 1), bootDep4.ForEmbedding(0, 1), bootDep5.ForEmbedding(0, 1), bootDep6.ForEmbedding(0, 1), bootDep7.ForEmbedding(0, 1), bootDep8.ForEmbedding(0, 1), bootDep9.ForEmbedding(0, 1)},
 	)
 }

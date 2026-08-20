@@ -15,7 +15,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
-	registryclient "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/client"
 	common "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
@@ -29,6 +28,14 @@ type Dependencies struct {
 	LimitsFactory      limits.Factory
 	CRESettings        core.SettingsBroadcaster
 	CapabilityRegistry core.CapabilitiesRegistry
+
+	// OCRConfigRegistry is where an OCR-based capability reads the configuration it runs under.
+	//
+	// It is a field of its own rather than CapabilityRegistry seen from another side because a
+	// capability that runs no oracle should not have to know the question exists. Where it comes from
+	// is the registry either way: the node's for a configured run, and for an embedded one a
+	// configuration computed over the run's own instances - see RegisterEmbeddedOCRConfig.
+	OCRConfigRegistry core.OCRConfigRegistry
 
 	// CapabilityDonID is the on-chain DON ID of the capability DON this plugin
 	// process was spawned for, resolved authoritatively by the host before
@@ -51,30 +58,15 @@ type Dependencies struct {
 	settings *loop.AtomicSettings
 	// settingsPath is the file the reload endpoint re-reads.
 	settingsPath string
-	// proxy is the node's registry, which capabilities hosted here are announced
-	// to by address. nil when embedded: there is no node to announce to, and the
-	// capabilities are resolved in-process as values.
-	proxy core.AddressableRegistryBase
+	// addresses is where the capabilities this binary hosts are served, by capability ID. The
+	// registry announces a capability at the address it finds here, so the registrar fills an entry
+	// in as it opens each server - see registrar.serve. Empty when embedded, which announces nothing.
+	addresses map[string]string
 	// servers opens one gRPC server per capability. nil when embedded, which
 	// serves nothing.
 	servers *standalonegrpc.Factory
 	// closers are the connections Get opened, torn down by Close.
 	closers []func() error
-}
-
-// OCRConfigRegistry is where an OCR-based capability reads the configuration it
-// runs under: the node's registry, which computes the config digest from the
-// contract it read - something a capability is deliberately not told.
-//
-// Nil when this process has no node behind it, as an embedded run does not: an
-// oracle then has no configuration to join, which is a clearer failure than one
-// invented locally that no other member of the DON agrees with.
-func (d Dependencies) OCRConfigRegistry() core.OCRConfigRegistry {
-	registry, ok := d.proxy.(core.OCRConfigRegistry)
-	if !ok {
-		return nil
-	}
-	return registry
 }
 
 // Close releases whatever Get dialled. The bootstrapper closes resolved
@@ -116,8 +108,9 @@ func Dependency(lggr logger.Logger, servers common.BootstrapDependency[*standalo
 	// Wrapped so the connections Get dials are made at most once however many
 	// services resolve this.
 	return common.OnceBootstrapper[Dependencies](&dependency{
-		lggr:    lggr,
-		servers: servers,
+		lggr:           lggr,
+		servers:        servers,
+		embeddedConfig: &embeddedConfig{CapabilityDonID: defaultEmbeddedDonID},
 	})
 }
 
@@ -125,6 +118,15 @@ type dependency struct {
 	lggr    logger.Logger
 	servers common.BootstrapDependency[*standalonegrpc.Factory]
 	capabilityConfig
+
+	// embeddedConfig is the settings of every embedded form this produces, allocated here so that
+	// all of them share it.
+	//
+	// Sharing is what makes those settings arrive at all: the form whose settings are registered on
+	// the embed command is the one built to be asked for them, and the forms that go on to resolve
+	// each instance are built later (see ForEmbedding). A config per form would leave the decoded
+	// values in the first one and every instance reading the defaults.
+	embeddedConfig *embeddedConfig
 }
 
 var _ common.BootstrapDependency[Dependencies] = (*dependency)(nil)
@@ -141,13 +143,21 @@ func (d *dependency) Dependencies() []common.BootstrapCommand {
 // has no node to ask, so its registry holds only what this binary registers. See
 // embedded.
 //
+// Every instance's form reads the one embeddedConfig this dependency holds, so all of them see the
+// values the flags were bound to rather than a copy of the defaults.
+//
 // The gRPC factory is embedded rather than passed through, so what an embedded
 // capability serves on is whatever the factory says instance i gets. Whether that
 // is one factory for the process or one each is the factory's to decide, and
 // deciding it here would be this dependency asserting something about another's
 // internals.
-func (d *dependency) ForEmbedding(i int) common.BootstrapDependency[Dependencies] {
-	return &embedded{lggr: d.lggr, servers: d.servers.ForEmbedding(i), cfg: &embeddedConfig{CapabilityDonID: defaultEmbeddedDonID}}
+func (d *dependency) ForEmbedding(i, instances int) common.BootstrapDependency[Dependencies] {
+	return &embedded{
+		lggr:      d.lggr,
+		servers:   d.servers.ForEmbedding(i, instances),
+		instances: instances,
+		cfg:       d.embeddedConfig,
+	}
 }
 
 func (d *dependency) Get(ctx context.Context, cc common.CommonConfig) (Dependencies, error) {
@@ -165,7 +175,11 @@ func (d *dependency) Get(ctx context.Context, cc common.CommonConfig) (Dependenc
 	if err != nil {
 		return Dependencies{}, fmt.Errorf("failed to create registry proxy client for %s: %w", d.ProxyURL, err)
 	}
-	proxy := registryclient.New(d.lggr, conn)
+
+	// One registry, two questions: what capabilities there are, and what configuration an OCR one
+	// runs under. Both are answered by whoever read the registry, over the one connection to it.
+	addresses := map[string]string{}
+	proxy := registry.Local(d.lggr).WithRemote(conn, addresses)
 
 	servers, err := d.servers.Get(ctx, cc)
 	if err != nil {
@@ -175,12 +189,13 @@ func (d *dependency) Get(ctx context.Context, cc common.CommonConfig) (Dependenc
 	return Dependencies{
 		LimitsFactory:      newLimitsFactory(d.lggr, settings),
 		CRESettings:        settings,
-		CapabilityRegistry: newOverlayRegistry(d.lggr, registry.NewBaseRegistry(d.lggr), proxy),
+		CapabilityRegistry: proxy,
+		OCRConfigRegistry:  proxy,
 		CapabilityDonID:    d.CapabilityDonID,
 		lggr:               d.lggr,
 		settings:           settings,
 		settingsPath:       SettingsPath(),
-		proxy:              proxy,
+		addresses:          addresses,
 		servers:            servers,
 		closers:            []func() error{proxy.Close, conn.Close},
 	}, nil
@@ -309,53 +324,51 @@ func (r *registrar) start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to read capability %d info: %w", i, err)
 		}
-		if err := r.deps.CapabilityRegistry.Add(ctx, c); err != nil {
-			return fmt.Errorf("failed to register capability %s: %w", info.ID, err)
-		}
-		r.hosted = append(r.hosted, hosted{id: info.ID})
-
+		// Served first, registered second. Registering is what invites traffic - it holds the value
+		// here and, when there is a registry behind this one, announces the address it is served at -
+		// so nothing is registered until something can answer.
 		if err := r.serve(ctx, c, info); err != nil {
 			return err
+		}
+		if err := r.deps.CapabilityRegistry.Add(ctx, c); err != nil {
+			return fmt.Errorf("failed to register capability %s: %w", info.ID, err)
 		}
 		r.eng.Infow("Registered capability", "capabilityID", info.ID, "type", info.CapabilityType)
 	}
 	return nil
 }
 
-// serve binds c to a gRPC server of its own and, when there is a node to tell,
-// announces that server's address to its registry.
+// serve binds c to a gRPC server of its own and records where that server is, so that registering it
+// announces the right address.
 //
-// The server is opened either way. Serving is what makes the capability callable
-// from outside this process, and that is worth having under `embed` too - an
-// embedded instance's capabilities are reachable in-process as values, but the
-// address is what anything else has to go through. Only the announcement needs a
-// node, so only the announcement is conditional.
+// The server is opened either way. Serving is what makes the capability callable from outside this
+// process, and that is worth having under `embed` too - an embedded instance's capabilities are
+// reachable in-process as values, but the address is what anything else has to go through. Whether
+// the address is announced anywhere is the registry's business: an embedded run has nothing to
+// announce to, and its map goes unread.
 func (r *registrar) serve(ctx context.Context, c Capability, info capabilities.CapabilityInfo) error {
 	server, err := r.deps.servers.New(ctx, logger.Named(r.eng, info.ID))
 	if err != nil {
 		return fmt.Errorf("failed to open a server for capability %s: %w", info.ID, err)
 	}
-	r.hosted[len(r.hosted)-1].server = server
+	r.hosted = append(r.hosted, hosted{id: info.ID, server: server})
 
-	if err := registryclient.RegisterCapability(r.eng, server.Registrar(), c, info.CapabilityType); err != nil {
+	if err := registry.RegisterCapability(r.eng, server.Registrar(), c, info.CapabilityType); err != nil {
 		return fmt.Errorf("failed to serve capability %s: %w", info.ID, err)
 	}
 	if err := server.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start the server for capability %s: %w", info.ID, err)
 	}
 
-	if r.deps.proxy == nil {
-		return nil
-	}
-	if err := r.deps.proxy.AddAt(ctx, info.ID, info.CapabilityType, server.Address()); err != nil {
-		return fmt.Errorf("failed to announce capability %s at %s: %w", info.ID, server.Address(), err)
+	if r.deps.addresses != nil {
+		r.deps.addresses[info.ID] = server.Address()
 	}
 	return nil
 }
 
 // close undoes what start did, in reverse: stop inviting traffic (the registry
-// entry, local and announced, which overlayRegistry.Remove drops from both), then
-// stop answering it (the server).
+// entry, local and announced, which Remove drops from both), then stop answering
+// it (the server).
 //
 // Failures are logged rather than returned. The process is going away, and a
 // stale entry in a registry that cannot reach it any more is not worth failing

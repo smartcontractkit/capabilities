@@ -1,4 +1,4 @@
-package ocr
+package rage
 
 import (
 	"testing"
@@ -6,9 +6,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
+
+	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 )
 
 func TestHostForEmbedding(t *testing.T) {
@@ -16,8 +20,8 @@ func TestHostForEmbedding(t *testing.T) {
 	// under test - an embedded instance neither unlocks a keystore nor stores announcements.
 	template := Host(logger.Test(t), nil, "announcements")
 
-	first := template.ForEmbedding(0)
-	second := template.ForEmbedding(1)
+	first := template.ForEmbedding(0, 2)
+	second := template.ForEmbedding(1, 2)
 
 	t.Run("each instance derives its own identity", func(t *testing.T) {
 		ctx := t.Context()
@@ -42,4 +46,13 @@ func TestHostForEmbedding(t *testing.T) {
 		// needs no address at all.
 		require.ErrorContains(t, err, "--ocr.listen-addresses is required")
 	})
+}
+
+// mustPeerID is the peer ID instance i derives, for asserting an embedded form resolved the right
+// identity.
+func mustPeerID(t *testing.T, i int) ragetypes.PeerID {
+	t.Helper()
+	peerID, err := ocr.DeterministicPeerID(i)
+	require.NoError(t, err)
+	return peerID
 }

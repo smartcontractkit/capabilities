@@ -164,10 +164,11 @@ func (b *Bootstrapper) Logger() logger.SugaredLogger { return b.config.Logger }
 // has nowhere to report that.
 type instanceServices func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error)
 
-// instantiator returns the factory building instance index's services. The generated Run helpers
-// supply it, since only they know the dependencies' types; embed says whether to replace each
-// dependency with its embedded form (BootstrapDependency.ForEmbedding) first.
-type instantiator func(index int, embed bool) instanceServices
+// instantiator returns the factory building instance index's services, out of count instances. The
+// generated Run helpers supply it, since only they know the dependencies' types; embed says whether
+// to replace each dependency with its embedded form (BootstrapDependency.ForEmbedding) first, which
+// is also the only case where count means anything.
+type instantiator func(index, count int, embed bool) instanceServices
 
 // run wires up the subcommands that start the binary and executes the root command.
 //
@@ -252,7 +253,7 @@ func (b *Bootstrapper) runInstances(ctx context.Context, stop context.CancelFunc
 	}
 
 	for i := range count {
-		if err := b.startInstance(ctx, i, count, instantiate(i, embed)); err != nil {
+		if err := b.startInstance(ctx, i, count, instantiate(i, count, embed)); err != nil {
 			stop()
 			return fmt.Errorf("failed to start instance %d: %w", i, err)
 		}
@@ -529,15 +530,15 @@ func (d *dependency[T]) Get(ctx context.Context) (T, error) {
 	return v, err
 }
 
-// instanceOf resolves which dependency instance index uses, and wraps it for that instance's
-// factory. Called by the generated Run helpers, once per dependency per instance.
+// instanceOf resolves which dependency instance index of count uses, and wraps it for that
+// instance's factory. Called by the generated Run helpers, once per dependency per instance.
 //
 // A single instance keeps the dependency as it was built rather than embedding it at index 0:
 // `run` is what the configuration describes literally, and a dependency that partitions itself per
 // instance should not quietly move a single run's state somewhere else.
-func instanceOf[T any](bs *Bootstrapper, bd contract.BootstrapDependency[T], index int, embed bool) *dependency[T] {
+func instanceOf[T any](bs *Bootstrapper, bd contract.BootstrapDependency[T], index, count int, embed bool) *dependency[T] {
 	if embed {
-		bd = bd.ForEmbedding(index)
+		bd = bd.ForEmbedding(index, count)
 	}
 	return &dependency[T]{bs: bs, bd: bd}
 }

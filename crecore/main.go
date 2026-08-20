@@ -12,7 +12,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
 	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
-	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
+	"github.com/smartcontractkit/capabilities/libs/standalone/rage"
 	"github.com/smartcontractkit/capabilities/libs/x/registry"
 	"github.com/smartcontractkit/capabilities/libs/x/registrysyncer"
 
@@ -72,7 +72,7 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	lggr := bootstrapper.Logger()
 
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
-	ocrDep := ocr.Host(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
+	ocrDep := rage.Host(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
 
 	readerDep := evmregistry.Dependency(lggr.Named("CapabilitiesRegistry"), evm.Dependency(lggr.Named("EVM")))
 
@@ -81,7 +81,7 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	return standalone.Run4(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
-		factories *ocr.RageFactories,
+		factories *rage.Factories,
 		reader registry.Reader,
 		database *sql.DB,
 		grpcSrv *standalonegrpc.Server,

@@ -57,7 +57,7 @@ func TestProxy(t *testing.T) {
 		require.Error(t, decoded.UnmarshalText([]byte("not-a-peer-id")))
 	})
 
-	t.Run("delegating needs the proxy address, the peer ID and the transmit account", func(t *testing.T) {
+	t.Run("delegating needs the proxy address and the peer ID", func(t *testing.T) {
 		_, err := (&proxyDependency{lggr: logger.Test(t)}).Get(t.Context(), standalone.CommonConfig{})
 		require.ErrorContains(t, err, "--ocr.proxy-address is required")
 
@@ -65,25 +65,21 @@ func TestProxy(t *testing.T) {
 			Get(t.Context(), standalone.CommonConfig{})
 		require.ErrorContains(t, err, "--ocr.peer-id is required")
 
-		// Reported here rather than left to libocr: an oracle with no account is one the
-		// configuration does not list, which surfaces as a member no one recognises rather than as
-		// something missing.
-		_, err = (&proxyDependency{lggr: logger.Test(t), cfg: ProxyConfig{
-			ProxyAddress: "127.0.0.1:50051",
-			PeerID:       mustPeerID(t, 7),
-		}}).Get(t.Context(), standalone.CommonConfig{})
-		require.ErrorContains(t, err, "--ocr.transmit-account is required")
+		// The transmit account is not among them: a process passing messages over the endpoints runs
+		// no oracle and has no account, and an oracle given none is rejected by libocr as a
+		// non-member - which is where a wrong one shows up too.
 	})
 
 	t.Run("an embedded instance needs neither, deriving its identity instead", func(t *testing.T) {
-		// Nothing is configured here: embedding a delegating dependency yields one with no settings
-		// at all, the same form a hosted peer yields.
-		dep := Proxy(logger.Test(t)).ForEmbedding(2)
+		// Nothing about where to reach anyone is configured: the identity is derived from the index,
+		// and the only settings left are the protocol the oracles run.
+		dep := Proxy(logger.Test(t)).ForEmbedding(2, 4)
 
 		factories, err := dep.Get(t.Context(), standalone.CommonConfig{})
 		require.NoError(t, err)
 
 		assert.Equal(t, mustPeerID(t, 2), factories.PeerID)
+		assert.Equal(t, &DefaultEmbeddedOCRConfig, dep.Config(), "the protocol is still configurable")
 	})
 }
 

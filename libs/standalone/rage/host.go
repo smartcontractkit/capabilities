@@ -1,4 +1,4 @@
-package ocr
+package rage
 
 import (
 	"context"
@@ -13,12 +13,13 @@ import (
 	"github.com/smartcontractkit/libocr/networking/rageping"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
+
+	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 )
 
 // Config is the configuration of a locally hosted libocr peer: the peer's own settings
@@ -53,10 +54,10 @@ type Config struct {
 // table holding p2p announcements.
 //
 // An embedded instance resolves neither: see ForEmbedding.
-func Host(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql.DB], discovererTable string) standalone.BootstrapDependency[*RageFactories] {
+func Host(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql.DB], discovererTable string) standalone.BootstrapDependency[*Factories] {
 	// Wrap in OnceBootstrapper so Get (which creates the peer) runs at most once even if several
 	// services resolve this dependency.
-	return standalone.OnceBootstrapper[*RageFactories](&hostDependency{
+	return standalone.OnceBootstrapper[*Factories](&hostDependency{
 		lggr:            lggr,
 		db:              db,
 		discovererTable: discovererTable,
@@ -72,10 +73,12 @@ type hostDependency struct {
 	cfg Config
 }
 
-var _ standalone.BootstrapDependency[*RageFactories] = (*hostDependency)(nil)
+var _ standalone.BootstrapDependency[*Factories] = (*hostDependency)(nil)
 
 // Namespace groups the libocr networking settings under ocr.* (--ocr.listen-addresses,
-// CRE_OCR_LISTEN_ADDRESSES).
+// CRE_OCR_LISTEN_ADDRESSES) - the same namespace the delegating form uses. A binary hosts a peer or
+// delegates to one, never both, so the names never meet, and an operator moving a deployment from
+// one to the other keeps the settings it still has a use for.
 func (d *hostDependency) Namespace() string { return "ocr" }
 
 func (d *hostDependency) Config() any { return &d.cfg }
@@ -87,11 +90,11 @@ func (d *hostDependency) Dependencies() []standalone.BootstrapCommand {
 // ForEmbedding returns the in-process form, which hosts no peer at all: an embedded instance's peers
 // are goroutines beside it, so there is nothing for a rage peer to listen on, announce to or
 // discover. None of this dependency's settings survive into it - see embedded.
-func (d *hostDependency) ForEmbedding(i int) standalone.BootstrapDependency[*RageFactories] {
+func (d *hostDependency) ForEmbedding(i, _ int) standalone.BootstrapDependency[*Factories] {
 	return &embedded{lggr: d.lggr, index: i}
 }
 
-func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*RageFactories, error) {
+func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*Factories, error) {
 	if len(d.cfg.ListenAddresses) == 0 {
 		return nil, errors.New("--ocr.listen-addresses is required to host a peer")
 	}
@@ -113,15 +116,10 @@ func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*
 	if err != nil {
 		return nil, err
 	}
+	// The bundle itself rather than keyrings over it: this process signs on behalf of oracles
+	// elsewhere (see the Signer service), and an oracle here would build its own keyrings from the
+	// same bundle - see ocr2key.NewOCR3Keyring, which is what the delegating side ends up with.
 	factories.OCR2 = bundle
-	// Held here, so an oracle in this process signs with the same bundle this serves to oracles
-	// elsewhere rather than going out over gRPC to reach a key it already has.
-	onchain, err := ocr2key.NewOCR3Keyring(evmFamily, bundle)
-	if err != nil {
-		return nil, err
-	}
-	// The bundle is already an offchain keyring, so only the onchain half is adapted.
-	factories.Keyrings = Keyrings{Offchain: bundle, Onchain: onchain}
 	return factories, nil
 }
 
@@ -150,7 +148,7 @@ func (d *hostDependency) keystoreIdentity(ctx context.Context, cc standalone.Com
 }
 
 // localFactories builds a real libocr peer and exposes its factories.
-func (d *hostDependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, peerID ragetypes.PeerID) (*RageFactories, error) {
+func (d *hostDependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyring, peerID ragetypes.PeerID) (*Factories, error) {
 	discovererDB := ocrcommon.NewDiscovererDatabase(ds, peerID.String(), d.discovererTable)
 
 	d.lggr.Infow("Creating local p2p peer",
@@ -178,13 +176,13 @@ func (d *hostDependency) localFactories(ds *sqlx.DB, keyring ragetypes.PeerKeyri
 		return nil, fmt.Errorf("failed to create rage peer: %w", err)
 	}
 
-	return &RageFactories{
-		OCRFactories: OCRFactories{
-			OCR2Endpoint:   peer.OCR2BinaryNetworkEndpointFactory(),
-			OCR3_1Endpoint: peer.OCR3_1BinaryNetworkEndpointFactory(),
-			PeerID:         peerID,
-			closer:         peer,
-		},
+	return &Factories{
+		Factories: ocr.NewFactories(
+			peer.OCR2BinaryNetworkEndpointFactory(),
+			peer.OCR3_1BinaryNetworkEndpointFactory(),
+			peerID,
+			peer,
+		),
 		PeerGroup: peer.PeerGroupFactory(),
 		Keyring:   keyring,
 	}, nil

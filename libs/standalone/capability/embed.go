@@ -40,6 +40,10 @@ type embedded struct {
 	lggr    logger.Logger
 	servers common.BootstrapDependency[*standalonegrpc.Factory]
 
+	// instances is how many the run has, which is the DON an OCR-based capability here runs in.
+	// Nothing else about embedding needs it, and no instance could work it out for itself.
+	instances int
+
 	// cfg is shared with the configured form that produced this one, and with
 	// every other instance's form, so all of them read the settings the flags were
 	// bound to rather than a copy of the defaults.
@@ -64,11 +68,16 @@ func (d *embedded) Dependencies() []common.BootstrapCommand {
 // The gRPC factory is embedded in turn rather than reused as-is: how it serves
 // instance i is its own business, and this only has to ask it the same question
 // the configured form did.
-func (d *embedded) ForEmbedding(i int) common.BootstrapDependency[Dependencies] {
-	return &embedded{lggr: d.lggr, servers: d.servers.ForEmbedding(i), cfg: d.cfg}
+func (d *embedded) ForEmbedding(i, instances int) common.BootstrapDependency[Dependencies] {
+	return &embedded{lggr: d.lggr, servers: d.servers.ForEmbedding(i, instances), instances: instances, cfg: d.cfg}
 }
 
 func (d *embedded) Get(ctx context.Context, cc common.CommonConfig) (Dependencies, error) {
+	// Read once into a copy: the settings are shared with every other instance's form, and what an
+	// instance resolves itself from should not change halfway through - nor be something it could
+	// write back to its siblings.
+	cfg := *d.cfg
+
 	settings, err := newSettings(d.lggr)
 	if err != nil {
 		return Dependencies{}, err
@@ -82,7 +91,7 @@ func (d *embedded) Get(ctx context.Context, cc common.CommonConfig) (Dependencie
 		return Dependencies{}, fmt.Errorf("failed to get gRPC server factory: %w", err)
 	}
 
-	d.lggr.Infow("Using in-process capability registry", "donID", d.cfg.CapabilityDonID)
+	d.lggr.Infow("Using in-process capability registry", "donID", cfg.CapabilityDonID, "instances", d.instances)
 
 	// No proxy: only what this binary registers is resolvable, and the registry
 	// metadata calls say so rather than inventing a DON. The capabilities are
@@ -90,11 +99,14 @@ func (d *embedded) Get(ctx context.Context, cc common.CommonConfig) (Dependencie
 	return Dependencies{
 		LimitsFactory:      newLimitsFactory(d.lggr, settings),
 		CRESettings:        settings,
-		CapabilityRegistry: newOverlayRegistry(d.lggr, registry.NewBaseRegistry(d.lggr), nil),
-		CapabilityDonID:    d.cfg.CapabilityDonID,
-		lggr:               d.lggr,
-		settings:           settings,
-		settingsPath:       SettingsPath(),
-		servers:            servers,
+		CapabilityRegistry: registry.Local(d.lggr),
+		// Computed from the run rather than read from a node, and arriving on the same field it would
+		// have arrived on either way - see RegisterEmbeddedOCRConfig.
+		OCRConfigRegistry: embeddedOCRConfigRegistry(d.instances),
+		CapabilityDonID:   cfg.CapabilityDonID,
+		lggr:              d.lggr,
+		settings:          settings,
+		settingsPath:      SettingsPath(),
+		servers:           servers,
 	}, nil
 }

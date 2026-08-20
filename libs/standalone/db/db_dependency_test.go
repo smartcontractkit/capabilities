@@ -46,8 +46,8 @@ func TestForEmbedding(t *testing.T) {
 	// Instance 0 is partitioned like every other instance, so a run of N instances has N schemas and
 	// none of them is the odd one out. A single instance never calls this, and keeps the database as
 	// configured.
-	assert.Equal(t, "node_0", template.ForEmbedding(0).(*embedded).schema)
-	assert.Equal(t, "node_1", template.ForEmbedding(1).(*embedded).schema)
+	assert.Equal(t, "node_0", template.ForEmbedding(0, 2).(*embedded).schema)
+	assert.Equal(t, "node_1", template.ForEmbedding(1, 2).(*embedded).schema)
 }
 
 func mustParse(t *testing.T, rawURL string) *url.URL {

@@ -30,9 +30,9 @@ func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 	bootDep{{.}} common.BootstrapDependency[T{{.}}],
 	{{- end}}
 ) error {
-	return bs.run(func(index int, embed bool) instanceServices {
+	return bs.run(func(index, count int, embed bool) instanceServices {
 		{{range RangeNum .}}
-		dep{{.}} := instanceOf(bs, bootDep{{.}}, index, embed)
+		dep{{.}} := instanceOf(bs, bootDep{{.}}, index, count, embed)
 		{{end}}
 		return func(ctx context.Context, cfg *StandaloneConfig) ([]services.Service, error) {
 			{{- range RangeNum .}}
@@ -46,9 +46,9 @@ func Run{{.}}[{{range RangeNum .}}T{{.}} any, {{end}}](
 	},
 		[]common.BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}, {{end}} },
 		// The embedded form of each dependency, so its settings are registered on the command that
-		// resolves it. Instance 0's, since a form is asked for its settings and not for its index;
-		// each instance builds its own when it starts.
-		[]common.BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}.ForEmbedding(0), {{end}} },
+		// resolves it. Instance 0 of a run of one, since a form is asked for its settings and not for
+		// its place in the run; each instance builds its own, knowing both, when it starts.
+		[]common.BootstrapCommand{ {{range RangeNum .}}bootDep{{.}}.ForEmbedding(0, 1), {{end}} },
 	)
 }
 {{- end }}

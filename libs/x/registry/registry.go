@@ -13,7 +13,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	baseregistry "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/client"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
@@ -37,7 +36,7 @@ type Handle struct {
 //
 //   - Handles, registered at runtime over AddHandle by the processes that host the capabilities.
 //     AddHandle dials the handle's address itself and wraps it into a real capabilities.BaseCapability
-//     (the same conversion registry/client does for its own callers), then adds that to local,
+//     (the same conversion the remote registry does for its own callers), then adds that to local,
 //     chainlink's ordinary in-process base registry. AddHandle is a drop-in replacement for the
 //     in-process Add(BaseCapability) core uses without a proxy: a capability registered this way is
 //     just as real and callable as one added directly, whether the caller asking for it is in this
@@ -132,7 +131,7 @@ func (r *Registry) AddHandle(ctx context.Context, h Handle) error {
 	if err != nil {
 		return fmt.Errorf("failed to dial capability %s at %s: %w", h.ID, h.URL, err)
 	}
-	wrapped, err := client.Wrap(r.lggr, conn, h.Type)
+	wrapped, err := baseregistry.Wrap(r.lggr, conn, h.Type)
 	if err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("failed to wrap capability %s at %s: %w", h.ID, h.URL, err)
