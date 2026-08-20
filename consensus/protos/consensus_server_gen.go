@@ -10,6 +10,8 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 )
@@ -77,6 +79,15 @@ func (c *consensusCapability) Info(ctx context.Context) (capabilities.Capability
 var _ capabilities.ExecutableAndTriggerCapability = (*consensusCapability)(nil)
 
 const ConsensusID = "consensus@1.0.0-alpha"
+
+// Service is the proto service this server was generated from.
+//
+// Taken from the file descriptor rather than rebuilt, so it is the same
+// descriptor the messages were generated against: whatever reads it sees the
+// methods, and their input and output types, exactly as the proto declares them.
+func (c *consensusCapability) Service() protoreflect.ServiceDescriptor {
+	return File_capabilities_internal_consensus_v1alpha_consensus_proto.Services().ByName("Consensus")
+}
 
 func (c *consensusCapability) RegisterTrigger(ctx context.Context, request capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
 	return nil, fmt.Errorf("trigger %s not found", request.Method)

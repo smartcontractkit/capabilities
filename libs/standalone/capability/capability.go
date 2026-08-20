@@ -1,6 +1,8 @@
 package capability
 
 import (
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
@@ -17,4 +19,16 @@ import (
 type Capability interface {
 	services.Service
 	capabilities.ExecutableAndTriggerCapability
+
+	// Service is the proto service this capability's server was generated from.
+	//
+	// The untyped capability API says nothing about the methods behind it: a
+	// request carries a method name and an opaque payload, and what shapes that
+	// payload is the proto the server was generated from. Handing the descriptor
+	// back is what lets something outside the capability - the debug UI, say -
+	// know which methods exist and what each one takes, without the capability
+	// having to describe itself twice.
+	//
+	// The generated server implements this, so a capability gets it for free.
+	Service() protoreflect.ServiceDescriptor
 }

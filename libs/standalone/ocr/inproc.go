@@ -25,7 +25,8 @@ import (
 // send side is a channel, and enforcing a byte budget on it would only slow down a test), the
 // bootstrapper locators (there are no addresses to dial), and delivery to peers that have not
 // created their endpoint yet or whose mailbox is full (dropped, as ragep2p drops when a peer's
-// buffer is full). Payloads are copied on send, so a caller reusing its buffer cannot corrupt a
+// buffer is full). A message to the sender itself is not among them: libocr's own endpoints deliver
+// those, and the protocol needs them. Payloads are copied on send, so a caller reusing its buffer cannot corrupt a
 // message in flight the way it could not over a real socket.
 
 // network is the in-process transport shared by every instance in the process: a registry of
@@ -143,11 +144,16 @@ func (e *ocr2Endpoint) SendTo(payload []byte, to commontypes.OracleID) {
 	e.deliver(payload, e.peerIDs[to])
 }
 
+// Broadcast delivers to every oracle of this configuration, this one included.
+//
+// Including itself is not a detail: a libocr endpoint loops a broadcast back to its own receive
+// channel (see ocrEndpointV2.SendTo's sendToSelf), and the protocol relies on it - a leader learns
+// what round it started by receiving its own round-start like anyone else. An endpoint that skipped
+// itself would leave a leader broadcasting rounds it never enters, dropping every observation those
+// rounds produced as having the wrong sequence number, until the progress timer moved the epoch on
+// and it happened again.
 func (e *ocr2Endpoint) Broadcast(payload []byte) {
 	for _, peerID := range e.peerIDs {
-		if peerID == e.key.peerID {
-			continue
-		}
 		e.deliver(payload, peerID)
 	}
 }
@@ -256,11 +262,10 @@ func (e *binaryNetworkEndpoint2) SendTo(msg ocr2types.OutboundBinaryMessage, to 
 	e.deliver(msg, e.peerIDs[to])
 }
 
+// Broadcast delivers to every oracle of this configuration, this one included - see
+// ocr2Endpoint.Broadcast for why the sender is not skipped.
 func (e *binaryNetworkEndpoint2) Broadcast(msg ocr2types.OutboundBinaryMessage) {
 	for _, peerID := range e.peerIDs {
-		if peerID == e.key.peerID {
-			continue
-		}
 		e.deliver(msg, peerID)
 	}
 }

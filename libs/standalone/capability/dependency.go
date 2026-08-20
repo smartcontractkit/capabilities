@@ -11,6 +11,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
+	"github.com/smartcontractkit/capabilities/libs/standalone/protohelpers/ui"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -67,6 +68,17 @@ type Dependencies struct {
 	servers *standalonegrpc.Factory
 	// closers are the connections Get opened, torn down by Close.
 	closers []func() error
+
+	// httpDebug says whether Run mounts the debug UI.
+	httpDebug bool
+	// index is this instance's number, 0 for a configured run and i for instance i
+	// of an embed run. It names the instance on the fan-out page.
+	index int
+	// fleet is every instance's debug page, shared by pointer between the
+	// configured dependency and each embedded form - the same way the embedded
+	// config is - so the fan-out page can reach a sibling by calling into its
+	// handler rather than over a socket. nil when the UI is off.
+	fleet *ui.Fleet
 }
 
 // Close releases whatever Get dialled. The bootstrapper closes resolved
@@ -88,6 +100,15 @@ type capabilityConfig struct {
 	// a different target - and none of them can be expressed as a port.
 	ProxyURL        string `validate:"required" usage:"gRPC target of the node's capability registry proxy (e.g. localhost:9000, or dns:///registry.internal:9000), used to resolve capabilities this binary does not host"`
 	CapabilityDonID uint32 `validate:"required" usage:"on-chain DON ID of the capability DON this process was spawned for"`
+
+	// HTTPDebug serves the debug UI on the shared HTTP server. Off by default: it
+	// invokes capabilities, so it is something a run opts into rather than
+	// something a configured process exposes because it can.
+	//
+	// An embed run has it on regardless - see embedded.Get. Embedding is the local
+	// shape of this binary, run to be poked at, and a flag to turn on the thing you
+	// started it for is a flag nobody wants to remember.
+	HTTPDebug bool `usage:"serve the capability debug UI on the shared HTTP server, under /debug/capabilities. Always on for an embed run"`
 }
 
 // Dependency returns the standalone.BootstrapDependency a capability binary
@@ -111,6 +132,7 @@ func Dependency(lggr logger.Logger, servers common.BootstrapDependency[*standalo
 		lggr:           lggr,
 		servers:        servers,
 		embeddedConfig: &embeddedConfig{CapabilityDonID: defaultEmbeddedDonID},
+		fleet:          &ui.Fleet{},
 	})
 }
 
@@ -127,6 +149,11 @@ type dependency struct {
 	// each instance are built later (see ForEmbedding). A config per form would leave the decoded
 	// values in the first one and every instance reading the defaults.
 	embeddedConfig *embeddedConfig
+
+	// fleet is created once and shared with every embedded form, for the same reason
+	// the config is: all of an embed run's instances register their debug page in
+	// one list, so the fan-out page on any of them can reach the rest.
+	fleet *ui.Fleet
 }
 
 var _ common.BootstrapDependency[Dependencies] = (*dependency)(nil)
@@ -157,6 +184,8 @@ func (d *dependency) ForEmbedding(i, instances int) common.BootstrapDependency[D
 		servers:   d.servers.ForEmbedding(i, instances),
 		instances: instances,
 		cfg:       d.embeddedConfig,
+		fleet:     d.fleet,
+		index:     i,
 	}
 }
 
@@ -198,6 +227,8 @@ func (d *dependency) Get(ctx context.Context, cc common.CommonConfig) (Dependenc
 		addresses:          addresses,
 		servers:            servers,
 		closers:            []func() error{proxy.Close, conn.Close},
+		httpDebug:          d.HTTPDebug,
+		fleet:              d.fleet,
 	}, nil
 }
 
@@ -251,12 +282,52 @@ func Run(dependencies Dependencies, sc standalone.StandaloneConfig, caps ...Capa
 	// routes: it starts serving the mux only once every service has started.
 	sc.Mux.HandleFunc(ReloadPath(), reloadHandler(sc.Logger, dependencies.settings, dependencies.settingsPath))
 
+	if dependencies.httpDebug {
+		if err := mountDebugUI(sc, dependencies, caps); err != nil {
+			return nil, err
+		}
+	}
+
 	svcs := make([]services.Service, 0, len(caps)+1)
 	for _, c := range caps {
 		svcs = append(svcs, c)
 	}
 	svcs = append(svcs, newRegistrar(sc.Logger, dependencies, caps))
 	return svcs, nil
+}
+
+// mountDebugUI serves the debug page for the capabilities this instance hosts.
+//
+// The page calls capabilities through the registry, as any caller would, so what
+// it exercises is the path a workflow takes rather than a way around it. Every
+// instance mounts its own, and each adds itself to the shared fleet, which is what
+// lets the fan-out page on any of them reach the rest.
+//
+// A context is needed to read each capability's ID, and Run has none to give: the
+// bootstrapper builds services before starting them. context.Background is right
+// here because this only reads what the capability already knows - it does not
+// start anything, and there is nothing for a cancelled boot to abandon.
+func mountDebugUI(sc standalone.StandaloneConfig, dependencies Dependencies, caps []Capability) error {
+	// Widened to what the UI asks for, which is less than a Capability: it only
+	// reads what a capability is registered as and the service behind it.
+	debuggable := make([]ui.Capability, 0, len(caps))
+	for _, c := range caps {
+		debuggable = append(debuggable, c)
+	}
+
+	server, err := ui.New(context.Background(), dependencies.CapabilityRegistry, debuggable...)
+	if err != nil {
+		return fmt.Errorf("failed to build the capability debug UI: %w", err)
+	}
+
+	title := fmt.Sprintf("Capability debug (instance %d)", dependencies.index+1)
+	if err := ui.Mount(sc.Mux, ui.DefaultPrefix, server, dependencies.fleet, dependencies.index, title); err != nil {
+		return fmt.Errorf("failed to mount the capability debug UI: %w", err)
+	}
+
+	sc.Logger.Infow("Serving the capability debug UI",
+		"path", ui.DefaultPrefix+"/ui/", "fanout", ui.DefaultPrefix+"/request")
+	return nil
 }
 
 // reloadHandler re-reads the settings file and swaps it in. 200 means every limit

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
+	"github.com/smartcontractkit/capabilities/libs/standalone/protohelpers/ui"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	common "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
@@ -48,6 +49,13 @@ type embedded struct {
 	// every other instance's form, so all of them read the settings the flags were
 	// bound to rather than a copy of the defaults.
 	cfg *embeddedConfig
+
+	// fleet is shared the same way, and for the same reason: every instance's debug
+	// page goes into one list, so the fan-out page can reach a sibling by calling
+	// into its handler.
+	fleet *ui.Fleet
+	// index is this instance's number, which names it on the fan-out page.
+	index int
 }
 
 var _ common.BootstrapDependency[Dependencies] = (*embedded)(nil)
@@ -69,7 +77,14 @@ func (d *embedded) Dependencies() []common.BootstrapCommand {
 // instance i is its own business, and this only has to ask it the same question
 // the configured form did.
 func (d *embedded) ForEmbedding(i, instances int) common.BootstrapDependency[Dependencies] {
-	return &embedded{lggr: d.lggr, servers: d.servers.ForEmbedding(i, instances), instances: instances, cfg: d.cfg}
+	return &embedded{
+		lggr:      d.lggr,
+		servers:   d.servers.ForEmbedding(i, instances),
+		instances: instances,
+		cfg:       d.cfg,
+		fleet:     d.fleet,
+		index:     i,
+	}
 }
 
 func (d *embedded) Get(ctx context.Context, cc common.CommonConfig) (Dependencies, error) {
@@ -104,9 +119,15 @@ func (d *embedded) Get(ctx context.Context, cc common.CommonConfig) (Dependencie
 		// have arrived on either way - see RegisterEmbeddedOCRConfig.
 		OCRConfigRegistry: embeddedOCRConfigRegistry(d.instances),
 		CapabilityDonID:   cfg.CapabilityDonID,
-		lggr:              d.lggr,
-		settings:          settings,
-		settingsPath:      SettingsPath(),
-		servers:           servers,
+		// Always on when embedded: an embed run is this binary run to be poked at,
+		// so a flag to enable the thing you started it for would only ever be
+		// forgotten.
+		httpDebug:    true,
+		fleet:        d.fleet,
+		index:        d.index,
+		lggr:         d.lggr,
+		settings:     settings,
+		settingsPath: SettingsPath(),
+		servers:      servers,
 	}, nil
 }
