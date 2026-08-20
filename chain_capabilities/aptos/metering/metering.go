@@ -10,7 +10,11 @@ import (
 
 var WriteReportSpendUnitFormat = "GAS.%d" // %d will be replaced with the chain selector
 
-func GetResponseMetadataWriteReport(feeInAPT *big.Float, feeInOctas uint64, chainSelector uint64) capabilities.ResponseMetadata {
+// GetResponseMetadataWriteReport returns billing ResponseMetadata for a completed write-report
+// submission. feeInOctas is the transaction fee in octas (native fixed-point integer).
+// The legacy SpendValue (in APT) is derived from feeInOctas for backwards compatibility.
+func GetResponseMetadataWriteReport(feeInOctas uint64, chainSelector uint64) capabilities.ResponseMetadata {
+	feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeInOctas), big.NewFloat(1e8))
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{

@@ -12,7 +12,6 @@ import (
 func TestGetResponseMetadataWriteReport(t *testing.T) {
 	tests := []struct {
 		name              string
-		fee               *big.Float
 		feeInLamports     uint64
 		chainSelector     uint64
 		expectedSpendUnit string
@@ -20,7 +19,6 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 	}{
 		{
 			name:              "Standard Solana fee (5000 lamports)",
-			fee:               new(big.Float).Quo(new(big.Float).SetUint64(5000), big.NewFloat(1e9)),
 			feeInLamports:     5000,
 			chainSelector:     1,
 			expectedSpendUnit: "GAS.1",
@@ -28,7 +26,6 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 		},
 		{
 			name:              "Large fee (1 SOL)",
-			fee:               new(big.Float).SetFloat64(1.0),
 			feeInLamports:     1_000_000_000,
 			chainSelector:     42,
 			expectedSpendUnit: "GAS.42",
@@ -36,7 +33,6 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 		},
 		{
 			name:              "Zero fee",
-			fee:               new(big.Float).SetFloat64(0),
 			feeInLamports:     0,
 			chainSelector:     100,
 			expectedSpendUnit: "GAS.100",
@@ -44,7 +40,6 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 		},
 		{
 			name:              "Sub-lamport precision fee",
-			fee:               new(big.Float).Quo(new(big.Float).SetUint64(1), big.NewFloat(1e9)),
 			feeInLamports:     1,
 			chainSelector:     1,
 			expectedSpendUnit: "GAS.1",
@@ -54,7 +49,7 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := GetResponseMetadataWriteReport(test.fee, test.feeInLamports, test.chainSelector)
+			result := GetResponseMetadataWriteReport(test.feeInLamports, test.chainSelector)
 			require.Len(t, result.Metering, 1)
 			assert.Equal(t, test.expectedSpendUnit, result.Metering[0].SpendUnit)
 			assert.Equal(t, test.expectedValue, result.Metering[0].SpendValue)
@@ -62,4 +57,9 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 			assert.Empty(t, result.Metering[0].Peer2PeerID, "Peer2PeerID should be empty")
 		})
 	}
+}
+
+func TestSolanaLamportsToSol(t *testing.T) {
+	assert.Equal(t, "0.000005", new(big.Float).Quo(new(big.Float).SetUint64(5000), big.NewFloat(1e9)).Text('f', -1))
+	assert.Equal(t, "1", new(big.Float).Quo(new(big.Float).SetUint64(1_000_000_000), big.NewFloat(1e9)).Text('f', -1))
 }

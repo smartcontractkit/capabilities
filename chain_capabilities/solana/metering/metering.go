@@ -18,8 +18,10 @@ const (
 var WriteReportSpendUnitFormat = "GAS.%d" // %d will be replaced with the chain selector
 
 // GetResponseMetadataWriteReport returns billing ResponseMetadata for a completed write-report
-// submission.
-func GetResponseMetadataWriteReport(feeInSol *big.Float, feeInLamports uint64, chainSelector uint64) capabilities.ResponseMetadata {
+// submission. feeInLamports is the transaction fee in lamports (native fixed-point integer).
+// The legacy SpendValue (in SOL) is derived from feeInLamports for backwards compatibility.
+func GetResponseMetadataWriteReport(feeInLamports uint64, chainSelector uint64) capabilities.ResponseMetadata {
+	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(feeInLamports), big.NewFloat(1e9))
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{

@@ -103,18 +103,18 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
 }
 
-func (e *WriteReport) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, *big.Int, error) {
+func (e *WriteReport) getFee(ctx context.Context, txIdempotencyKey string) (*big.Int, error) {
 	if txIdempotencyKey == "" {
-		return nil, nil, fmt.Errorf("txIdempotencyKey is empty, cannot retrieve transaction fee")
+		return nil, fmt.Errorf("txIdempotencyKey is empty, cannot retrieve transaction fee")
 	}
 
 	feeInWei, errTxFee := e.GetTransactionFee(ctx, txIdempotencyKey)
 	if errTxFee != nil {
-		return nil, nil, fmt.Errorf("failed to get transaction fee: %w", errTxFee)
+		return nil, fmt.Errorf("failed to get transaction fee: %w", errTxFee)
 	}
 	feeInEth := new(big.Float).Quo(new(big.Float).SetInt(feeInWei.TransactionFee), big.NewFloat(1e18))
 	e.lggr.Debugw("WriteReport fee", "feeInEth", feeInEth.String(), "feeInWei", feeInWei.TransactionFee.String())
-	return feeInEth, feeInWei.TransactionFee, nil
+	return feeInWei.TransactionFee, nil
 }
 
 func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
@@ -243,11 +243,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	e.lggr.Infow("Got final transmission status", newTransmissionInfo.LogAttrs()...)
 
 	var meteringMetadata capabilities.ResponseMetadata
-	transactionFee, feeInWei, err := e.getFee(ctx, transactionResult.TxIdempotencyKey)
+	feeInWei, err := e.getFee(ctx, transactionResult.TxIdempotencyKey)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, transactionResult.TxIdempotencyKey, err.Error()))
 	} else {
-		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee, feeInWei, e.chainSelector)
+		meteringMetadata = metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
 	}
 
 	switch newTransmissionInfo.State {

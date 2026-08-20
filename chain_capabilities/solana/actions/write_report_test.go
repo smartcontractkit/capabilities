@@ -787,9 +787,8 @@ func TestGetFee(t *testing.T) {
 			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
 		}, nil)
 
-		fee, feeInLamports, err := wr.getFee(t.Context(), sig)
+		feeInLamports, err := wr.getFee(t.Context(), sig)
 		require.NoError(t, err)
-		require.Equal(t, "0.000005", fee.Text('f', -1))
 		require.Equal(t, txFeeInLamports, feeInLamports)
 	})
 
@@ -808,9 +807,8 @@ func TestGetFee(t *testing.T) {
 			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
 		}, nil)
 
-		fee, feeInLamports, err := wr.getFee(t.Context(), sig)
+		feeInLamports, err := wr.getFee(t.Context(), sig)
 		require.NoError(t, err)
-		require.Equal(t, "1", fee.Text('f', -1))
 		require.Equal(t, txFeeInLamports, feeInLamports)
 	})
 
@@ -827,7 +825,7 @@ func TestGetFee(t *testing.T) {
 		mockSolanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(
 			(*soltypes.GetTransactionReply)(nil), errors.New("rpc error"))
 
-		_, _, err := wr.getFee(t.Context(), sig)
+		_, err := wr.getFee(t.Context(), sig)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transaction")
 	})
@@ -845,7 +843,7 @@ func TestGetFee(t *testing.T) {
 		mockSolanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(
 			(*soltypes.GetTransactionReply)(nil), nil)
 
-		_, _, err := wr.getFee(t.Context(), sig)
+		_, err := wr.getFee(t.Context(), sig)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty transaction response")
 	})
@@ -863,7 +861,7 @@ func TestGetFee(t *testing.T) {
 		mockSolanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(
 			&soltypes.GetTransactionReply{Meta: nil}, nil)
 
-		_, _, err := wr.getFee(t.Context(), sig)
+		_, err := wr.getFee(t.Context(), sig)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty transaction meta")
 	})

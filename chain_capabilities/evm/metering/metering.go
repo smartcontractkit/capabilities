@@ -40,8 +40,10 @@ func GetResponseMetadata(action SpendValueCredits) capabilities.ResponseMetadata
 }
 
 // GetResponseMetadataWriteReport returns billing ResponseMetadata for a completed write-report
-// submission.
-func GetResponseMetadataWriteReport(feeInEth *big.Float, feeInWei *big.Int, chainSelector uint64) capabilities.ResponseMetadata {
+// submission. feeInWei is the transaction fee in wei (native fixed-point integer).
+// The legacy SpendValue (in ETH) is derived from feeInWei for backwards compatibility.
+func GetResponseMetadataWriteReport(feeInWei *big.Int, chainSelector uint64) capabilities.ResponseMetadata {
+	feeInEth := new(big.Float).Quo(new(big.Float).SetInt(feeInWei), big.NewFloat(1e18))
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{
