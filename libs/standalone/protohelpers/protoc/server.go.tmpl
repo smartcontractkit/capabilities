@@ -18,6 +18,8 @@ import (
     {{.}}
     {{- end }}
 
+    "google.golang.org/protobuf/reflect/protoreflect"
+
     "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
     caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 )
@@ -25,6 +27,7 @@ import (
 // Avoid unused imports if there is configuration type
 var _ = emptypb.Empty{}
 
+{{- $file := . }}
 {{- range .Services}}
 {{ $hasTriggers := false }}
 {{ $hasActions := false }}
@@ -106,6 +109,15 @@ func (c *{{.GoName|LowerFirst}}Capability) Info(ctx context.Context) (capabiliti
 var _ capabilities.ExecutableAndTriggerCapability = (*{{.GoName|LowerFirst}}Capability)(nil)
 
 const {{.GoName}}ID = "{{CapabilityId $service}}"
+
+// Service is the proto service this server was generated from.
+//
+// Taken from the file descriptor rather than rebuilt, so it is the same
+// descriptor the messages were generated against: whatever reads it sees the
+// methods, and their input and output types, exactly as the proto declares them.
+func (c *{{.GoName|LowerFirst}}Capability) Service() protoreflect.ServiceDescriptor {
+    return {{$file.GoDescriptorIdent.GoName}}.Services().ByName("{{$service.Desc.Name}}")
+}
 
 func (c *{{.GoName|LowerFirst}}Capability) RegisterTrigger(ctx context.Context, request capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
 {{- if $hasTriggers }}

@@ -60,24 +60,33 @@ const (
 // defaults to the largest value the instance count allows (see EmbeddedOCRConfig).
 //
 // The values are brisk rather than production-safe: an embed run is watched by whoever started it,
-// and a round every couple of seconds is what makes it worth watching.
+// and a round a second is what makes it worth watching. They are still consistent with each other,
+// which matters more than any one of them: DeltaProgress has to exceed what a round can take - a
+// round, plus the four MaxDurations a plugin may spend in it - or the progress timer can fire on a
+// leader that was doing nothing wrong and move the epoch on under it.
 //
 // Package-level because every instance runs the same protocol - they are one DON - and because what
 // changes it is a flag rather than a caller.
 var DefaultEmbeddedOCRConfig = ocr3confighelper.PublicConfig{
-	DeltaProgress:               2 * time.Second,
+	DeltaProgress:               5 * time.Second,
 	DeltaResend:                 2 * time.Second,
 	DeltaInitial:                500 * time.Millisecond,
 	DeltaRound:                  time.Second,
 	DeltaGrace:                  500 * time.Millisecond,
 	DeltaCertifiedCommitRequest: 500 * time.Millisecond,
 	DeltaStage:                  5 * time.Second,
-	RMax:                        5,
+	// Rounds per epoch, after which the leader rotates. Rotation is normal - libocr says so with
+	// "epoch has been going on for too long" - so this is only how much of it a reader of the log
+	// sees: low enough that rotation happens while someone is watching, high enough that most of
+	// what they see is rounds.
+	RMax: 20,
 
-	MaxDurationQuery:                        time.Second,
-	MaxDurationObservation:                  time.Second,
-	MaxDurationShouldAcceptAttestedReport:   time.Second,
-	MaxDurationShouldTransmitAcceptedReport: time.Second,
+	// What a plugin may spend in one round. Generous for a capability whose observation is a batch of
+	// pending requests held in memory, and together well inside DeltaProgress.
+	MaxDurationQuery:                        300 * time.Millisecond,
+	MaxDurationObservation:                  300 * time.Millisecond,
+	MaxDurationShouldAcceptAttestedReport:   300 * time.Millisecond,
+	MaxDurationShouldTransmitAcceptedReport: 300 * time.Millisecond,
 }
 
 // init hands the builder below to the capability dependency, which is where an OCR-based capability

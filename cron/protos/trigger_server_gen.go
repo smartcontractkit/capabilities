@@ -8,6 +8,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 )
@@ -78,6 +80,15 @@ func (c *cronCapability) Info(ctx context.Context) (capabilities.CapabilityInfo,
 var _ capabilities.ExecutableAndTriggerCapability = (*cronCapability)(nil)
 
 const CronID = "cron-trigger@1.0.0"
+
+// Service is the proto service this server was generated from.
+//
+// Taken from the file descriptor rather than rebuilt, so it is the same
+// descriptor the messages were generated against: whatever reads it sees the
+// methods, and their input and output types, exactly as the proto declares them.
+func (c *cronCapability) Service() protoreflect.ServiceDescriptor {
+	return File_capabilities_scheduler_cron_v1_trigger_proto.Services().ByName("Cron")
+}
 
 func (c *cronCapability) RegisterTrigger(ctx context.Context, request capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
 	ctx = request.Metadata.ContextWithCRE(ctx)

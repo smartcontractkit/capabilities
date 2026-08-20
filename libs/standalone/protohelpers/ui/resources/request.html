@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Capability debug: fan-out request</title>
+    <link rel="icon" type="image/png" href="{{.UIPath}}/favicon.png">
+
+    <!-- Reuse the assets grpcui already serves for the per-instance page. -->
+    <script src="{{.UIPath}}/jquery-3.4.1.min.js"></script>
+    <link rel="stylesheet" href="{{.UIPath}}/jquery-ui-1.12.1.min.css">
+    <script src="{{.UIPath}}/jquery-ui-1.12.1.min.js"></script>
+    <link rel="stylesheet" href="{{.UIPath}}/grpc-web-form.css">
+    <link rel="stylesheet" href="{{.Prefix}}/request/s/{{.CSSFile}}">
+
+    <script>
+      window.__CRE_REQUEST__ = {{.Config}};
+    </script>
+    <script src="{{.Prefix}}/request/s/{{.JSFile}}"></script>
+  </head>
+  <body>
+    <!-- Deliberately NOT #grpc-container: grpcui styles that as a flex row, which
+         would lay these sections out as columns. -->
+    <div id="grpc-form">
+      <h2>Capability debug: fan-out request</h2>
+
+      <table class="grpc-desc">
+        <tr>
+          <td>
+            <table id="grpc-desc-selects">
+              <tr>
+                <td><div class="grpc-form-label">Service name:</div></td>
+                <td><select id="grpc-service"></select></td>
+              </tr>
+              <tr>
+                <td><div class="grpc-form-label">Method name:</div></td>
+                <td><select id="grpc-method"></select></td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <div id="cre-container">
+        <h3>Requests</h3>
+        <div id="cre-requests"></div>
+
+        <details id="cre-advanced-section">
+          <summary>Advanced</summary>
+          <div id="cre-advanced-body">
+            <div class="cre-advanced-row">
+              <span class="cre-advanced-label">Send to:</span>
+              <span id="cre-instance-select"></span>
+            </div>
+            <div class="cre-advanced-row">
+              <label>
+                <input type="checkbox" id="cre-mirror" checked>
+                Mirror the same request to every selected instance
+              </label>
+            </div>
+            <div class="cre-metadata-note">
+              Request metadata, sent identically to every instance. Anything left
+              blank is filled in with a valid value before sending, so all
+              instances still receive the same request.
+            </div>
+            <div class="cre-metadata" id="cre-metadata"></div>
+          </div>
+        </details>
+
+        <div id="cre-pending" class="cre-pending"></div>
+        <button id="cre-invoke" class="grpc-invoke">Invoke</button>
+
+        <div id="grpc-request-response">
+          <ul>
+            <li><a href="#cre-response-tab">Response</a></li>
+            <li><a href="#cre-history-tab">History</a></li>
+          </ul>
+
+          <div class="grpc-tabcontent" id="cre-response-tab">
+            <div id="cre-response"></div>
+          </div>
+
+          <div class="grpc-tabcontent" id="cre-history-tab">
+            <button class="grpc-history-clear" id="cre-history-clear">Clear History</button>
+            <button class="grpc-history-save" id="cre-history-save">Save History</button>
+            <!-- grpcui's own id, so its history styling applies here too. -->
+            <div class="grpc-history-list" id="grpc-history-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

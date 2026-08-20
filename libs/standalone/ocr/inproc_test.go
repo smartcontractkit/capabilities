@@ -55,15 +55,16 @@ func TestInprocOCR2Endpoints(t *testing.T) {
 		assertNothingReceived(t, endpoints[1].Receive())
 	})
 
-	t.Run("Broadcast reaches every other oracle but not the sender", func(t *testing.T) {
+	// The sender included: libocr's own endpoints loop a broadcast back to the sender, and the
+	// protocol needs it - a leader enters the round it started by receiving its own round-start.
+	t.Run("Broadcast reaches every oracle, the sender included", func(t *testing.T) {
 		endpoints[0].Broadcast([]byte("to everyone"))
 
-		for _, i := range []int{1, 2} {
+		for _, i := range []int{0, 1, 2} {
 			msg := receive(t, endpoints[i].Receive())
-			assert.Equal(t, []byte("to everyone"), msg.Msg)
-			assert.Equal(t, commontypes.OracleID(0), msg.Sender)
+			assert.Equal(t, []byte("to everyone"), msg.Msg, "oracle %d", i)
+			assert.Equal(t, commontypes.OracleID(0), msg.Sender, "oracle %d", i)
 		}
-		assertNothingReceived(t, endpoints[0].Receive())
 	})
 
 	t.Run("payloads are copied, so a reused buffer cannot rewrite a sent message", func(t *testing.T) {
