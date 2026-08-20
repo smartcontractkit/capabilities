@@ -40,12 +40,22 @@ type Config struct {
 // does: a binary running one server calls it what that server is for.
 func Dependency(lggr logger.Logger) standalone.BootstrapDependency[*Server] {
 	// Wrapped so the port is bound once however many services resolve this.
-	return standalone.OnceBootstrapper[*Server](&dependency{lggr: lggr, cfg: Config{Host: defaultHost}})
+	return standalone.OnceBootstrapper[*Server](&dependency{lggr: lggr, cfg: &Config{Host: defaultHost}})
 }
 
 type dependency struct {
-	lggr  logger.Logger
-	cfg   Config
+	lggr logger.Logger
+
+	// cfg is the settings every form of this dependency reads, held by pointer so that the form the
+	// flags are bound to and the forms that resolve each instance are the same settings.
+	//
+	// A copy per form would not do: a form is asked for its settings before the command runs and
+	// before any instance exists, and the forms that go on to serve the instances are built after
+	// the values have been decoded - into whichever form was asked. Every instance would then read
+	// the defaults. See ForEmbedding.
+	cfg *Config
+
+	// index is which instance this serves, and the only thing that differs between the forms above.
 	index int
 }
 
@@ -53,21 +63,25 @@ var _ standalone.BootstrapDependency[*Server] = (*dependency)(nil)
 
 func (d *dependency) Namespace() string { return namespace }
 
-func (d *dependency) Config() any { return &d.cfg }
+func (d *dependency) Config() any { return d.cfg }
 
 func (d *dependency) Dependencies() []standalone.BootstrapCommand { return nil }
 
 // ForEmbedding gives instance i the configured port plus i, so instances sharing
 // a process do not collide over it - the same rule the metrics/health server
 // follows. The settings are otherwise the configured ones: an address is an
-// address whether or not there are siblings.
-func (d *dependency) ForEmbedding(i int) standalone.BootstrapDependency[*Server] {
+// address whether or not there are siblings, which is why they are the same
+// settings rather than a copy of them.
+func (d *dependency) ForEmbedding(i, _ int) standalone.BootstrapDependency[*Server] {
 	return standalone.OnceBootstrapper[*Server](&dependency{lggr: d.lggr, cfg: d.cfg, index: i})
 }
 
 func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (*Server, error) {
-	port := d.cfg.Port + uint16(d.index)
-	return newServer(ctx, d.lggr, net.JoinHostPort(d.cfg.Host, strconv.Itoa(int(port))))
+	// Read once into a copy, so what this server is opened on cannot change under it while it is
+	// being opened - and so nothing here can write back to settings its siblings are reading.
+	cfg := *d.cfg
+	port := cfg.Port + uint16(d.index)
+	return newServer(ctx, d.lggr, net.JoinHostPort(cfg.Host, strconv.Itoa(int(port))))
 }
 
 // FactoryConfig configures the servers the factory makes: where they are
@@ -152,7 +166,9 @@ func (d *factoryDependency) Dependencies() []standalone.BootstrapCommand { retur
 // Partitioning them per instance the way the configured server does would need a
 // stride - how many servers an instance opens - that only the instance knows, and
 // a shared counter needs no such guess.
-func (d *factoryDependency) ForEmbedding(_ int) standalone.BootstrapDependency[*Factory] { return d }
+func (d *factoryDependency) ForEmbedding(_, _ int) standalone.BootstrapDependency[*Factory] {
+	return d
+}
 
 func (d *factoryDependency) Get(_ context.Context, _ standalone.CommonConfig) (*Factory, error) {
 	return &Factory{host: d.cfg.AdvertiseHost, startPort: d.cfg.StartPort}, nil

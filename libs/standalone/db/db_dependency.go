@@ -56,7 +56,7 @@ func (d *dependency) Dependencies() []standalone.BootstrapCommand {
 // schema: a run of N instances is N nodes, and having one of them live somewhere else would make its
 // state the odd one out in exactly the situation the schemas exist to keep tidy. A plain `run` never
 // calls this, so it is untouched by any of it.
-func (d *dependency) ForEmbedding(i int) standalone.BootstrapDependency[*sql.DB] {
+func (d *dependency) ForEmbedding(i, _ int) standalone.BootstrapDependency[*sql.DB] {
 	return &embedded{dependency: d, schema: fmt.Sprintf("node_%d", i)}
 }
 

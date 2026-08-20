@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	creproxy "github.com/smartcontractkit/chainlink-protos/cre/impl/proxy"
@@ -45,7 +46,20 @@ type ProxyConfig struct {
 	// name in the OCR configuration this process joins, it is a public value, and the process
 	// holding the keys it belongs to is the one that could look it up. An oracle whose account does
 	// not match its entry in the configuration is not a member of it.
-	TransmitAccount string `usage:"account this node is registered to transmit from; required outside embed" example:"'0x5994a5155e9b81ab7794b79bfbf076ef5ef7c437'"`
+	//
+	// Not required: a process driving no oracle - one that only passes messages over the endpoints -
+	// has no account, and demanding one would be demanding a name for something that is never named.
+	// An oracle given the wrong account is rejected by libocr as a non-member, which is where a
+	// missing one shows up too.
+	TransmitAccount string `usage:"account this node is registered to transmit from, for a process running an oracle" example:"'0x5994a5155e9b81ab7794b79bfbf076ef5ef7c437'"`
+
+	// Bootstrappers are where the DON's peers can first be reached, which is a property of the
+	// network this process delegates to rather than of the capability running over it - so it is
+	// configured here, beside the address of the proxy that will do the dialling.
+	//
+	// The peers behind these addresses find each other from here on: a configuration names the
+	// members, and this is how the first of them is reached to learn the rest.
+	Bootstrappers config.BootstrapperLocators `usage:"peerID@host:port of the DON's bootstrap peers, dialled to reach the rest of it" example:"['12D3KooWFirst@127.0.0.1:6690']"`
 }
 
 // Proxy returns a standalone.BootstrapDependency that resolves the libocr Factories from proxy
@@ -83,8 +97,8 @@ func (d *proxyDependency) Dependencies() []standalone.BootstrapCommand {
 // hop between instances of one process, since the peer this would delegate to is a goroutine beside
 // it and delegating would mean serialising a message so a gRPC connection to this process could hand
 // it back. None of this dependency's settings survive into it - see embedded.
-func (d *proxyDependency) ForEmbedding(i int) standalone.BootstrapDependency[*OCRFactories] {
-	return embeddedOCR{&embedded{lggr: d.lggr, index: i}}
+func (d *proxyDependency) ForEmbedding(i, instances int) standalone.BootstrapDependency[*OCRFactories] {
+	return &embedded{lggr: d.lggr, index: i, instances: instances}
 }
 
 func (d *proxyDependency) Get(ctx context.Context, _ standalone.CommonConfig) (*OCRFactories, error) {
@@ -93,9 +107,6 @@ func (d *proxyDependency) Get(ctx context.Context, _ standalone.CommonConfig) (*
 	}
 	if d.cfg.PeerID == (ragetypes.PeerID{}) {
 		return nil, errors.New("--ocr.peer-id is required to delegate rage networking")
-	}
-	if d.cfg.TransmitAccount == "" {
-		return nil, errors.New("--ocr.transmit-account is required to delegate rage networking")
 	}
 	peerID := d.cfg.PeerID
 
@@ -131,11 +142,14 @@ func (d *proxyDependency) Get(ctx context.Context, _ standalone.CommonConfig) (*
 	d.lggr.Infow("Delegating rage networking to proxy", "proxyAddress", d.cfg.ProxyAddress, "peerID", peerID.String())
 
 	return &OCRFactories{
-		OCR2Endpoint:    endpointFactory,
-		OCR3_1Endpoint:  endpoint2Factory,
-		PeerID:          peerID,
+		Factories: Factories{
+			OCR2Endpoint:   endpointFactory,
+			OCR3_1Endpoint: endpoint2Factory,
+			PeerID:         peerID,
+			closer:         multiCloser{endpointFactory, endpoint2Factory, conn},
+		},
 		TransmitAccount: ocr2types.Account(d.cfg.TransmitAccount),
 		Keyrings:        Keyrings{Offchain: keyring, Onchain: keyring},
-		closer:          multiCloser{endpointFactory, endpoint2Factory, conn},
+		Bootstrappers:   d.cfg.Bootstrappers.ToBootstrapperLocators(),
 	}, nil
 }

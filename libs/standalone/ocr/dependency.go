@@ -25,22 +25,24 @@ package ocr
 
 import (
 	"io"
-	"time"
 
-	"github.com/smartcontractkit/libocr/networking"
+	"github.com/smartcontractkit/libocr/commontypes"
 	ocr2types "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
-
-	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
-	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 )
 
-// OCRFactories bundles the libocr OCR networking factories the caller serves or drives. Any of the
-// forms above produces it; the caller does not need to know which. Close tears down the underlying
-// peer (a hosted one) or the proxy client connections (a delegating one), and nothing at all for an
-// embedded instance, which holds neither.
-type OCRFactories struct {
+// Factories is what every form of this dependency resolves, and the only part of it both kinds of
+// caller need: the transports, and the identity behind them.
+//
+// It is a type of its own so that the two kinds do not have to share the rest. A process hosting a
+// peer serves rage networking to others and signs on their behalf; a process delegating to one
+// drives an oracle over that networking. Neither has any use for the other's half, and folding both
+// into one struct meant every caller was handed fields that were nil for the form it had - which is
+// not a shape a caller can read.
+//
+// Close tears down the underlying peer (a hosted one) or the proxy client connections (a delegating
+// one), and nothing at all for an embedded instance, which holds neither.
+type Factories struct {
 	// OCR2Endpoint creates OCR2 BinaryNetworkEndpoints.
 	OCR2Endpoint ocr2types.BinaryNetworkEndpointFactory
 	// OCR3_1Endpoint creates OCR3.1 BinaryNetworkEndpoint2s.
@@ -52,57 +54,64 @@ type OCRFactories struct {
 	// registry metadata must know which node it is.
 	PeerID ragetypes.PeerID
 
-	// TransmitAccount is the account the node is registered to transmit from, the third part of the
-	// identity an OCR configuration lists after the peer ID and the public keys. Resolved with them
-	// because it is the same identity seen from a third side, and an oracle that has two of the
-	// three is one libocr does not recognise.
-	//
-	// Empty for an embedded run, which joins no configuration written by anyone else.
-	TransmitAccount ocr2types.Account
-
-	// Keyrings sign this oracle's protocol messages and its reports. Resolved with the networking
-	// because they come from the same place: whoever holds the node's identity holds both.
-	Keyrings
-
 	closer io.Closer
 }
 
+// NewFactories returns the transport a peer or a proxy provides, with closer as what Close releases -
+// the peer itself, or the connections to the process hosting it.
+//
+// Exported for the hosting form, which lives in libs/standalone/rage: it builds a real peer and has
+// to hand back this same shape, and what Close releases is not something a caller should be able to
+// forget to set.
+func NewFactories(
+	ocr2 ocr2types.BinaryNetworkEndpointFactory,
+	ocr31 ocr2types.BinaryNetworkEndpoint2Factory,
+	peerID ragetypes.PeerID,
+	closer io.Closer,
+) Factories {
+	return Factories{OCR2Endpoint: ocr2, OCR3_1Endpoint: ocr31, PeerID: peerID, closer: closer}
+}
+
 // Close releases the underlying peer or proxy clients.
-func (f *OCRFactories) Close() error {
+func (f *Factories) Close() error {
 	if f == nil || f.closer == nil {
 		return nil
 	}
 	return f.closer.Close()
 }
 
-// RageFactories is OCRFactories plus what only a real, locally hosted peer can give: a factory for
-// DON-to-DON peer groups over that same rage connection, and the keyring to sign with the same key
-// it uses. don2don.Dispatcher takes both.
-type RageFactories struct {
-	OCRFactories
+// OCRFactories is Factories plus everything else running an oracle takes: the identity a
+// configuration lists it under, the keys it signs with, the peers to dial before it has heard of
+// anyone, and the configuration itself.
+//
+// All of it is the node's rather than the capability's, which is why it is resolved here: a
+// capability is told what it runs as. What it runs *under* - the OCR configuration - is a registry
+// question and comes from there instead (see libs/standalone/capability), because whoever read the
+// registry is the only one that can say.
+type OCRFactories struct {
+	Factories
 
-	// PeerGroup creates DON-to-DON peer groups.
-	PeerGroup networking.PeerGroupFactory
-	// Keyring signs with the same P2P key the peer above uses, for don2don.Dispatcher's
-	// message-level signatures.
-	Keyring ragetypes.PeerKeyring
+	// TransmitAccount is the account the node is registered to transmit from, the third part of the
+	// identity an OCR configuration lists after the peer ID and the public keys. Resolved with them
+	// because it is the same identity seen from a third side, and an oracle that has two of the
+	// three is one libocr does not recognise.
+	//
+	// Empty for a process that runs no oracle and so has no account to report.
+	TransmitAccount ocr2types.Account
 
-	// OCR2 is the node's OCR key bundle, which this process signs with on behalf of oracles that
-	// hold no keys of their own. Nil for an embedded run, which has no node keystore to take one
-	// from.
-	OCR2 ocr2key.KeyBundle
-}
+	// Keyrings sign this oracle's protocol messages and its reports. Resolved with the networking
+	// because they come from the same place: whoever holds the node's identity holds both - or, for
+	// an embedded instance, derives both from its index.
+	Keyrings
 
-// defaultPeerConfig is the peer settings the flags are bound to and decoded into, so an unset
-// setting keeps the value it is given here. Freshly allocated per call rather than shared, so two
-// dependencies (or two instances of one) can never decode into the same peer settings.
-func defaultPeerConfig() *ocrcommon.Config {
-	return &ocrcommon.Config{
-		DeltaReconcile:     *config.MustNewDuration(time.Minute),
-		DeltaDial:          *config.MustNewDuration(5 * time.Second),
-		IncomingBufferSize: 100,
-		OutgoingBufferSize: 100,
-	}
+	// Bootstrappers are the peers to dial before this oracle has heard of anyone. A configuration
+	// says who the DON is, not where to find it, so this is configured alongside the networking it
+	// is dialled over - and not by the capability, which would be answering a question about a
+	// network it is deliberately kept away from.
+	//
+	// Empty for an embedded run: its peers are goroutines in this process, so there is nothing to
+	// dial and nothing to be told.
+	Bootstrappers []commontypes.BootstrapperLocator
 }
 
 // multiCloser closes several io.Closers, returning the first error.

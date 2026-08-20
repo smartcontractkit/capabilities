@@ -14,7 +14,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/spf13/cobra"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
@@ -48,9 +47,9 @@ func run() error {
 observations a workflow's nodes make and returns the agreed result.
 
 It holds no keys and no peer: --ocr.proxy-address is the crecore process hosting
-this node's rage identity, which also signs on this capability's behalf, and
---capabilities.proxy-url is the registry that says which DON this is and what
-OCR configuration it runs under.
+this node's rage identity, which signs on this capability's behalf and serves the
+registry saying what OCR configuration this oracle runs under.
+--capabilities.proxy-url is where the capabilities this binary hosts are announced.
 
 Settings can come from flags, from CRE_/CL_ env vars, or from a --config file;
 run "docs" to write the full reference to docs/CONFIG.md.`,
@@ -81,13 +80,16 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		capabilityImpl, err := action.NewConsensusCapability(lggr, clockwork.NewRealClock(), responseCacheExpiry,
 			cfg.ConsensusCapabilityConfig,
 			action.Dependencies{
-				DonID:           deps.CapabilityDonID,
-				Registry:        deps.OCRConfigRegistry(),
+				DonID: deps.CapabilityDonID,
+				// The configuration comes from the registry, whichever form resolved it: the node's
+				// for a configured run, and one computed over the run's own instances for an embedded
+				// one. Either way this reads it off the same field and cannot tell them apart.
+				Registry:        deps.OCRConfigRegistry,
 				Endpoints:       factories.OCR2Endpoint,
 				Offchain:        factories.Offchain,
 				Onchain:         factories.Onchain,
 				TransmitAccount: factories.TransmitAccount,
-				Bootstrappers:   cfg.Bootstrappers.ToBootstrapperLocators(),
+				Bootstrappers:   factories.Bootstrappers,
 				LimitsFactory:   deps.LimitsFactory,
 				Metrics:         scfg.MetricsRegisterer,
 			})
@@ -106,10 +108,11 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 }
 
 // Config is what this binary needs that its host cannot tell it.
+//
+// The DON's bootstrap peers are not here: where a peer can be reached is a property of the network
+// this process delegates to, so it is configured with that network - see ocr.ProxyConfig.
 type Config struct {
 	action.ConsensusCapabilityConfig `toml:",inline"`
-
-	Bootstrappers config.BootstrapperLocators `usage:"peerID@host:port of the DON's bootstrap peers" example:"['12D3KooWFirst@127.0.0.1:6690']"`
 }
 
 var defaultConfig = Config{}

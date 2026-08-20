@@ -11,9 +11,9 @@ import (
 	commonsrv "github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
-	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
+	"github.com/smartcontractkit/capabilities/libs/standalone/rage"
 	don2don "github.com/smartcontractkit/capabilities/libs/x/don2don"
-	rage "github.com/smartcontractkit/capabilities/libs/x/rage"
+	xrage "github.com/smartcontractkit/capabilities/libs/x/rage"
 )
 
 // DispatcherConfig is the subset of don2don.DispatcherConfig a binary fills in from flags. Field
@@ -60,14 +60,14 @@ type dispatcherService struct {
 	eng *commonsrv.Engine
 
 	cfg       DispatcherConfig
-	factories *ocr.RageFactories
+	factories *rage.Factories
 	registry  core.CapabilitiesRegistry
 	lggr      logger.Logger
 }
 
 // newDispatcherService builds the service using the standard services.Config/Engine pattern, so
 // its lifecycle and health integrate with the bootstrapper's aggregated health report.
-func newDispatcherService(cfg DispatcherConfig, lggr logger.Logger, factories *ocr.RageFactories, registry core.CapabilitiesRegistry) *dispatcherService {
+func newDispatcherService(cfg DispatcherConfig, lggr logger.Logger, factories *rage.Factories, registry core.CapabilitiesRegistry) *dispatcherService {
 	s := &dispatcherService{cfg: cfg, factories: factories, registry: registry, lggr: lggr}
 	s.Service, s.eng = commonsrv.Config{
 		Name:  "Dispatcher",
@@ -81,7 +81,7 @@ func (s *dispatcherService) start(ctx context.Context) error {
 		return errors.New("no PeerGroup factory: the ocr dependency did not host a real peer")
 	}
 
-	sharedPeer := rage.NewDon2DonSharedPeer(peerSource{s.factories}, nil, s.lggr)
+	sharedPeer := xrage.NewDon2DonSharedPeer(peerSource{s.factories}, nil, s.lggr)
 	if err := sharedPeer.Start(ctx); err != nil {
 		return err
 	}
@@ -104,9 +104,9 @@ func (s *dispatcherService) start(ctx context.Context) error {
 	return nil
 }
 
-// peerSource adapts ocr.RageFactories's peer group factory and identity into rage.PeerSource.
+// peerSource adapts rage.Factories's peer group factory and identity into xrage.PeerSource.
 type peerSource struct {
-	factories *ocr.RageFactories
+	factories *rage.Factories
 }
 
 func (p peerSource) PeerGroupFactory() networking.PeerGroupFactory { return p.factories.PeerGroup }

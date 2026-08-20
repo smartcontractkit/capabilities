@@ -19,7 +19,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/client"
+	baseregistry "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
@@ -75,16 +75,20 @@ func snapshot(t *testing.T, self ragetypes.PeerID, snap *registry.Snapshot) func
 		func() (ragetypes.PeerID, error) { return self, nil }, snap))
 }
 
-// newClient serves reg and returns a client for it, with capability dials
-// resolved through book when one is given.
-func newClient(t *testing.T, reg *registry.Registry, book *registrytest.AddrBook) *client.Client {
+// newClient serves reg and returns a registry client for it, with capability dials resolved through
+// book when one is given.
+//
+// A client is a local registry with this one behind it, which is the only shape there is: announcing
+// an address and holding a value are two halves of one registration. Nothing is added locally here,
+// so what these tests exercise is the remote half.
+func newClient(t *testing.T, reg *registry.Registry, book *registrytest.AddrBook) baseregistry.Registry {
 	t.Helper()
 
 	var opts []grpc.DialOption
 	if book != nil {
 		opts = append(opts, book.DialOption(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
-	return client.New(logger.Test(t), registrytest.Serve(t, reg), opts...)
+	return baseregistry.Local(logger.Test(t)).WithRemote(registrytest.Serve(t, reg), nil, opts...)
 }
 
 // serveCapabilityAt registers impl in book under name and returns its address.
@@ -93,7 +97,7 @@ func serveCapabilityAt(t *testing.T, book *registrytest.AddrBook, name string,
 	t.Helper()
 
 	srv := grpc.NewServer()
-	require.NoError(t, client.RegisterCapability(logger.Test(t), srv, impl, capType))
+	require.NoError(t, baseregistry.RegisterCapability(logger.Test(t), srv, impl, capType))
 	return book.Serve(t, name, srv)
 }
 
