@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/integration_tests
 
-go 1.26.4
+go 1.26.6
 
 replace github.com/smartcontractkit/capabilities/http_action => ../http_action
 
