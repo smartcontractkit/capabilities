@@ -470,11 +470,7 @@ func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []any) bool {
 
 	reportHex, _ := arguments[1].(string)
 	expectedReportHex := hex.EncodeToString(slices.Concat(thr.report.ReportContext, thr.report.RawReport))
-	if strings.TrimPrefix(reportHex, "0x") != expectedReportHex {
-		return false
-	}
-
-	return true
+	return strings.TrimPrefix(reportHex, "0x") == expectedReportHex
 }
 
 // receiverAddressesEqual compares a hex-encoded receiver from chain tx arguments

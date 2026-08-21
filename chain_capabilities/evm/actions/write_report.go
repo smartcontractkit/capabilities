@@ -256,11 +256,14 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		if transactionResult.TxStatus == evmtypes.TxReverted {
+		switch transactionResult.TxStatus {
+		case evmtypes.TxReverted:
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission succeeded, but it reverted due to being a duplicate", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((txHash)[:])))
-		} else if transactionResult.TxStatus == evmtypes.TxFatal {
+		case evmtypes.TxFatal:
 			e.lggr.Debugw("Made a new transmission attempt - transmission succeeded, but can't find the tx locally")
+		case evmtypes.TxSuccess:
+			// Expected happy path — nothing extra to log.
 		}
 		e.lggr.Infow("Made a new transmission attempt - transmission succeeded", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((txHash)[:]))
 		reply, err := e.buildSuccessReply(ctx, *txHash)

@@ -19,7 +19,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
@@ -140,7 +139,7 @@ func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
 		mockEVMService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(100)}}, nil).Maybe()
 		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, contracts.DefaultLookbackBlocks, testLogger)
-		mockLogs := []*evm.Log{{
+		mockLogs := []*evmtypes.Log{{
 			TxHash: expectedHash,
 		}}
 		mockEVMService.EXPECT().FilterLogs(ctx, mock.Anything).Return(&evmtypes.FilterLogsReply{Logs: mockLogs}, nil)
@@ -270,7 +269,7 @@ func TestNewCREForwarderClient_LookbackConfig(t *testing.T) {
 				// FromBlock 50 == 150 - 100 (default value) = 90
 				return big.NewInt(50).Cmp(req.FilterQuery.FromBlock) == 0
 			})).
-			Return(&evmtypes.FilterLogsReply{Logs: []*evm.Log{}}, nil)
+			Return(&evmtypes.FilterLogsReply{Logs: []*evmtypes.Log{}}, nil)
 
 		_, err = forwarderClient.GetReportProcessedEvents(ctx, common.BytesToAddress(test.RandomBytes(20)), [32]byte(test.RandomBytes(32)), [2]byte(test.RandomBytes(2)))
 		require.NoError(t, err)
@@ -292,7 +291,7 @@ func TestNewCREForwarderClient_LookbackConfig(t *testing.T) {
 				// FromBlock 90 == 100 - 10 = 90
 				return big.NewInt(90).Cmp(req.FilterQuery.FromBlock) == 0
 			})).
-			Return(&evmtypes.FilterLogsReply{Logs: []*evm.Log{}}, nil)
+			Return(&evmtypes.FilterLogsReply{Logs: []*evmtypes.Log{}}, nil)
 
 		_, err = forwarderClient.GetReportProcessedEvents(ctx, common.BytesToAddress(test.RandomBytes(20)), [32]byte(test.RandomBytes(32)), [2]byte(test.RandomBytes(2)))
 		require.NoError(t, err)

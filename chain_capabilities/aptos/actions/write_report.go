@@ -373,32 +373,6 @@ func (wr *writeReport) execute(
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
 
-// buildPreSubmissionFatalReply evaluates node 0's failed tx and returns a fatal reply
-// if we should NOT submit, or (nil, empty) if we should proceed to submit.
-func (wr *writeReport) buildPreSubmissionFatalReply(failedResult TransmissionTxInfo, ourMaxGasAmount uint64) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata) {
-	if isOutOfGas(failedResult.VMStatus) && ourMaxGasAmount > failedResult.MaxGasAmount {
-		// We have more gas headroom than node 0 — proceed to submit.
-		return nil, capabilities.ResponseMetadata{}
-	}
-
-	// Either not OOG (user error, unrecoverable) or our gas isn't higher — return fatal.
-	// No metering: we never submitted, so we incurred no gas cost.
-	feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
-	return &aptoscap.WriteReportReply{
-		TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
-		TxHash:                          &failedResult.TxHash,
-		TransactionFee:                  &feeOctas,
-		ErrorMessage:                    ptrIfNonEmpty(failedResult.VMStatus),
-		ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VMStatus, wr.forwarderAddress),
-	}, capabilities.ResponseMetadata{}
-}
-
-// isOutOfGas returns true if the VM status string indicates the transaction
-// exhausted its total gas budget. The Aptos VM returns exactly "Out of gas".
-func isOutOfGas(vmStatus string) bool {
-	return vmStatus == "Out of gas"
-}
-
 // getTxnInfoFromChain returns the committed ledger version, fee in octas (gasUsed * gasUnitPrice),
 // and VM status for a submitted tx, looked up via AptosService.TransactionByHash.
 func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, uint64, string, uint64, error) {

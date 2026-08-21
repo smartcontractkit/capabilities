@@ -28,7 +28,6 @@ func NewProcessor(lggr logger.Logger, metrics Metrics) (beholder.ProtoProcessor,
 
 // Process dispatches telemetry messages to metrics and logs for all EVM operations
 func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any) error {
-
 	// Process metrics for known message types
 	switch msg := m.(type) {
 	// -- Initiated messages --

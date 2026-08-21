@@ -145,11 +145,11 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 }
 
 func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err error) {
-	lts.filterAddressLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterAddressLimit)
+	lts.filterAddressLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterAddressLimit)
 	if err != nil {
 		return
 	}
-	lts.filterTopicsPerSlotLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterTopicsPerSlotLimit)
+	lts.filterTopicsPerSlotLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterTopicsPerSlotLimit)
 	if err != nil {
 		return
 	}
@@ -157,7 +157,7 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 	if err != nil {
 		return
 	}
-	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
+	lts.eventPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
 	if err != nil {
 		return
 	}
@@ -319,6 +319,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	lts.srvcEng.Go(func(ctx context.Context) {
 		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		lts.triggers.Write(triggerID, logTriggerState{
 			cancelFunc:              cancel,
 			lastBlock:               fromBlock,

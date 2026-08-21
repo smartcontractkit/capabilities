@@ -73,18 +73,17 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		return TransmissionInfo{}, fmt.Errorf("failed to derive execution state PDA: %w", err)
 	}
 
-	reply, err := p.SolanaService.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
+	reply, err := p.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
 		Account: soltypes.PublicKey(execStateAddr),
 		Opts: &soltypes.GetAccountInfoOpts{
 			Commitment: soltypes.CommitmentProcessed,
 		},
 	})
 	if err != nil {
-		if isExecutionStateAccountMissing(err) {
-			reply = &soltypes.GetAccountInfoReply{}
-		} else {
+		if !isExecutionStateAccountMissing(err) {
 			return TransmissionInfo{}, fmt.Errorf("failed to get execution state account: %w", err)
 		}
+		reply = &soltypes.GetAccountInfoReply{}
 	}
 
 	sig, sigErr := signatureFromInProgressLogs(inProgressLogs)
@@ -215,16 +214,6 @@ func deriveExecutionStatePDA(forwarderState solana.PublicKey, transmissionID [32
 	}
 	ret, _, err := solana.FindProgramAddress(seeds, programID)
 	return ret, err
-}
-
-func accountDataBytes(acc *soltypes.Account) ([]byte, bool) {
-	if acc == nil || acc.Data == nil {
-		return nil, false
-	}
-	if len(acc.Data.AsDecodedBinary) > 0 {
-		return acc.Data.AsDecodedBinary, true
-	}
-	return nil, false
 }
 
 func isExecutionStateAccountMissing(err error) bool {

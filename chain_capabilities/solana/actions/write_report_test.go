@@ -684,10 +684,10 @@ func TestValidateRemainingAccountHash(t *testing.T) {
 
 		// Borsh-encode ForwarderReport: fixed [u8;32] hash + Vec<u8> payload (4-byte LE length prefix)
 		payloadLen := make([]byte, 4)
-		payloadLen[0] = byte(len(payload))
-		payloadLen[1] = byte(len(payload) >> 8)
-		payloadLen[2] = byte(len(payload) >> 16)
-		payloadLen[3] = byte(len(payload) >> 24)
+		payloadLen[0] = byte(len(payload))       //nolint:gosec // G115: test payload length is always small
+		payloadLen[1] = byte(len(payload) >> 8)  //nolint:gosec // G115: test payload length is always small
+		payloadLen[2] = byte(len(payload) >> 16) //nolint:gosec // G115: test payload length is always small
+		payloadLen[3] = byte(len(payload) >> 24) //nolint:gosec // G115: test payload length is always small
 
 		raw := make([]byte, 0, len(header)+32+4+len(payload))
 		raw = append(raw, header...)
@@ -880,7 +880,7 @@ func TestToPayload(t *testing.T) {
 		require.NoError(t, err)
 		expectedLen := 1 + len(report.Sigs)*signatureLen + len(report.RawReport) + reportContextLen
 		require.Len(t, payload, expectedLen)
-		require.Equal(t, byte(len(report.Sigs)), payload[0])
+		require.Equal(t, byte(len(report.Sigs)), payload[0]) //nolint:gosec // G115: test, sig count is small
 	})
 
 	t.Run("Too many signatures", func(t *testing.T) {
