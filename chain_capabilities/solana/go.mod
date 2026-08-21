@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/chain_capabilities/solana
 
-go 1.26.4
+go 1.26.6
 
 require (
 	github.com/gagliardetto/solana-go v1.14.0
@@ -9,13 +9,13 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260729165045-b00a39493e13
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
 	github.com/smartcontractkit/chain-selectors v1.0.104
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260819122115-078a7ae707aa
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260821143015-dd4fa25f7fee
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260804191526-b7a850ae7648
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138
 	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260803170030-90043607d911
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260803170030-90043607d911
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.0
 	go.opentelemetry.io/otel v1.43.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -140,7 +140,7 @@ require (
 	github.com/smartcontractkit/freeport v0.1.3-0.20250828155247-add56fa28aad // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/streamingfast/logging v0.0.0-20230608130331-f22c91403091 // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect

@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/chain_capabilities/evm
 
-go 1.26.4
+go 1.26.6
 
 require (
 	github.com/ethereum/go-ethereum v1.17.4
@@ -8,12 +8,12 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260729165045-b00a39493e13
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
 	github.com/smartcontractkit/chain-selectors v1.0.106
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260819122115-078a7ae707aa
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260821143015-dd4fa25f7fee
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260410162948-2dca02f24e98
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251022073203-7d8ae8cf67c1
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260410144512-ca02ad6ed16a
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260804191526-b7a850ae7648
-	github.com/stretchr/testify v1.11.1
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138
+	github.com/stretchr/testify v1.12.0
 	go.opentelemetry.io/otel v1.43.0
 	go.uber.org/zap v1.27.1
 	google.golang.org/protobuf v1.36.11
@@ -97,7 +97,7 @@ require (
 	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260709145319-7782fb89eb16 // indirect
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260528173149-f5b8336b19d9 // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
