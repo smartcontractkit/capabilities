@@ -336,6 +336,103 @@ func Test_Outcome_IdenticalConsensus_failureCodes(t *testing.T) {
 	})
 }
 
+func makeTestObs(
+	t *testing.T,
+	reqID string,
+	md oracle.ConsensusRequestMetadata,
+	observerID uint8,
+	input *sdk.SimpleConsensusInputs,
+) libocrtypes.AttributedObservation {
+	t.Helper()
+
+	ro := &oracletypes.RequestObservation{
+		Metadata:   plugin.ToRequestMetaData(md),
+		Input:      input,
+		ReceivedAt: timestamppb.New(time.Now()),
+	}
+
+	obsProto := &oracletypes.Observation{
+		Observations: map[string]*oracletypes.RequestObservation{reqID: ro},
+	}
+	b, err := proto.Marshal(obsProto)
+	require.NoError(t, err)
+
+	return libocrtypes.AttributedObservation{
+		Observation: b,
+		Observer:    commontypes.OracleID(observerID),
+	}
+}
+
+func Test_Outcome_NilInputs(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	// 2f+1 = 5 observations: one malformed (nil Input) + four valid values with MEDIAN
+	// aggregation. The four valid values [10,20,30,40] have median 25, so consensus
+	// should succeed.
+	attributed := []libocrtypes.AttributedObservation{
+		makeTestObs(t, reqID, md, 0, nil),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false, true, true),
+	}
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+	require.NoError(t, err)
+
+	// Consensus should succeed with the 4 valid identical observations.
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Len(t, outcome.Outcomes, 1)
+	require.NotNil(t, outcome.Outcomes[0].GetSuccess(), "expected a successful consensus outcome")
+}
+
+func Test_Outcome_AllNilInputs(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	// 2f+1 = 5 observations, all with nil Input.
+	attributed := []libocrtypes.AttributedObservation{
+		makeTestObs(t, reqID, md, 0, nil),
+		makeTestObs(t, reqID, md, 1, nil),
+		makeTestObs(t, reqID, md, 2, nil),
+		makeTestObs(t, reqID, md, 3, nil),
+		makeTestObs(t, reqID, md, 4, nil),
+	}
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+	require.NoError(t, err)
+
+	// All observations are skipped, so consensus should fail.
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Len(t, outcome.Outcomes, 1)
+	require.NotNil(t, outcome.Outcomes[0].GetFailure(), "expected a failed consensus outcome when all inputs are nil")
+}
+
 func Test_Outcome_RecordsObservationQuorumForTimeoutClassification(t *testing.T) {
 	t.Parallel()
 

@@ -28,6 +28,30 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
+func (r *reportingPlugin) ValidateObservation(ctx context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
+	lggr := logger.With(r.lggr, "seqNr", outctx.SeqNr, "observer", ao.Observer)
+
+	obs := &oracletypes.Observation{}
+	if err := proto.Unmarshal(ao.Observation, obs); err != nil {
+		lggr.Warnw("could not unmarshal observation", "error", err)
+		return fmt.Errorf("could not unmarshal observation from observer %d: %w", ao.Observer, err)
+	}
+
+	for requestID, reqObs := range obs.Observations {
+		if reqObs.Metadata == nil {
+			lggr.Warnw("observation missing metadata", "requestID", requestID)
+			return fmt.Errorf("observation from observer %d is missing metadata for request %s", ao.Observer, requestID)
+		}
+
+		if reqObs.Input == nil {
+			lggr.Warnw("observation missing input", "requestID", requestID)
+			return fmt.Errorf("observation from observer %d is missing input for request %s", ao.Observer, requestID)
+		}
+	}
+
+	return nil
+}
+
 func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeContext, query types.Query, attributedObservations []types.AttributedObservation) (ocr3types.Outcome, error) {
 	lggr := logger.With(r.lggr, "seqNr", outctx.SeqNr)
 
@@ -94,6 +118,12 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 
 		if !obs.UpdateErrorHandlingFlag {
 			updateErrorHandlingFlag = false
+		}
+
+		// Does the observation have a valid input?
+		if obs.Input == nil {
+			lggr.Warnw("observation missing input", "requestID", requestID, "observerMetadata", obs.Metadata)
+			continue
 		}
 
 		// Does the observation have a timestamp?
@@ -275,6 +305,10 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(lggr lo
 	updateErrorHandlingFlag bool) (*oracletypes.RequestObservation, error) {
 	var allObservationsMDDBytes []*valuespb.Value
 	for _, obs := range observations {
+		if obs.Input == nil {
+			lggr.Errorw("observation missing input, skipping MDD calculation", "observerMetadata", obs.Metadata)
+			continue
+		}
 		mddBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.RequestObservation{
 			Metadata: obs.Metadata,
 			Input: &sdk.SimpleConsensusInputs{
