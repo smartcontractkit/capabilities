@@ -67,7 +67,9 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 		MinResponsesToAggregate: int(offchainCfg.MinResponsesToAggregate),
 	}
 
-	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics), ocr3types.ReportingPluginInfo{
+	pluginLogger := rpf.logger.Named("ChainReadReportingPlugin")
+
+	return newReportingPlugin(cfg, pluginLogger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics), ocr3types.ReportingPluginInfo{
 		Name: rpf.logger.Name() + ".chain-reads-oracle",
 		Limits: ocr3types.ReportingPluginLimits{
 			MaxQueryLength:       int(offchainCfg.MaxQueryLengthBytes),
