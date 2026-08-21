@@ -49,15 +49,15 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.IsLocal = cfg.IsLocal
 	c.Network = cfg.Network
 	c.DeltaStage = cfg.DeltaStage
-	c.CREForwarderAddress, err = solana.PublicKeyFromBase58(string(cfg.CREForwarderAddress))
+	c.CREForwarderAddress, err = solana.PublicKeyFromBase58(cfg.CREForwarderAddress)
 	if err != nil {
 		return fmt.Errorf("invalid forwarder address: %w", err)
 	}
-	c.CREForwarderState, err = solana.PublicKeyFromBase58(string(cfg.CREForwarderState))
+	c.CREForwarderState, err = solana.PublicKeyFromBase58(cfg.CREForwarderState)
 	if err != nil {
 		return fmt.Errorf("invalid forwarder state address: %w", err)
 	}
-	c.Transmitter, err = solana.PublicKeyFromBase58(string(cfg.Transmitter))
+	c.Transmitter, err = solana.PublicKeyFromBase58(cfg.Transmitter)
 	if err != nil {
 		return fmt.Errorf("invalid transmitter address: %w", err)
 	}

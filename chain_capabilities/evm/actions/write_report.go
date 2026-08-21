@@ -103,7 +103,7 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
 }
 
-func (e *WriteReport) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, error) {
+func (e *WriteReport) getFee(ctx context.Context, txIdempotencyKey string) (*big.Int, error) {
 	if txIdempotencyKey == "" {
 		return nil, fmt.Errorf("txIdempotencyKey is empty, cannot retrieve transaction fee")
 	}
@@ -114,7 +114,7 @@ func (e *WriteReport) getFee(ctx context.Context, txIdempotencyKey string) (*big
 	}
 	feeInEth := new(big.Float).Quo(new(big.Float).SetInt(feeInWei.TransactionFee), big.NewFloat(1e18))
 	e.lggr.Debugw("WriteReport fee", "feeInEth", feeInEth.String(), "feeInWei", feeInWei.TransactionFee.String())
-	return feeInEth, nil
+	return feeInWei.TransactionFee, nil
 }
 
 func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
@@ -243,11 +243,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	e.lggr.Infow("Got final transmission status", newTransmissionInfo.LogAttrs()...)
 
 	var meteringMetadata capabilities.ResponseMetadata
-	transactionFee, err := e.getFee(ctx, transactionResult.TxIdempotencyKey)
+	feeInWei, err := e.getFee(ctx, transactionResult.TxIdempotencyKey)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, transactionResult.TxIdempotencyKey, err.Error()))
 	} else {
-		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee, e.chainSelector)
+		meteringMetadata = metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
 	}
 
 	switch newTransmissionInfo.State {
@@ -256,11 +256,14 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		if transactionResult.TxStatus == evmtypes.TxReverted {
+		switch transactionResult.TxStatus {
+		case evmtypes.TxReverted:
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission succeeded, but it reverted due to being a duplicate", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((txHash)[:])))
-		} else if transactionResult.TxStatus == evmtypes.TxFatal {
+		case evmtypes.TxFatal:
 			e.lggr.Debugw("Made a new transmission attempt - transmission succeeded, but can't find the tx locally")
+		case evmtypes.TxSuccess:
+			// Expected happy path — nothing extra to log.
 		}
 		e.lggr.Infow("Made a new transmission attempt - transmission succeeded", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((txHash)[:]))
 		reply, err := e.buildSuccessReply(ctx, *txHash)

@@ -6,13 +6,12 @@ import (
 	solgo "github.com/gagliardetto/solana-go"
 	"go.opentelemetry.io/otel/attribute"
 
-	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	"github.com/mr-tron/base58"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -49,7 +48,7 @@ func (m *MessageBuilder) CapabilityMetricsAttributes() []attribute.KeyValue {
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *solcap.WriteReportRequest, signature solgo.Signature, cause string) ErrorMessage {
+func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *solanacappb.WriteReportRequest, signature solgo.Signature, cause string) ErrorMessage {
 	summary := "Failed to calculate transaction fee"
 	if !signature.IsZero() {
 		summary = fmt.Sprintf("Failed to calculate transaction fee for tx: %s", signature)

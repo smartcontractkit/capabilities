@@ -297,6 +297,7 @@ func validateWRMetering(t *testing.T, meta capabilities.ResponseMetadata, chainS
 	m := meta.Metering[0]
 	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), m.SpendUnit)
 	require.Equal(t, fmt.Sprintf("%d", expectedStroops), m.SpendValue)
+	require.Equal(t, fmt.Sprintf("%d", expectedStroops), m.SpendValueInGasUnits)
 	require.Empty(t, m.Peer2PeerID)
 }
 

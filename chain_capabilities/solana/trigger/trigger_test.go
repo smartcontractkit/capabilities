@@ -1006,9 +1006,7 @@ func TestStartPolling(t *testing.T) {
 		<-ctx.Done()
 		mockSolana.AssertExpectations(t)
 	})
-
 }
-
 func TestErrorHandling(t *testing.T) {
 	t.Run("build query expressions error handling", func(t *testing.T) {
 		request := &solanacappb.FilterLogTriggerRequest{

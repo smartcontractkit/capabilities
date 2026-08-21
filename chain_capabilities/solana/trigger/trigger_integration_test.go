@@ -841,12 +841,12 @@ func downloadLogReadTestProgram(t *testing.T) string {
 	cacheDir := filepath.Join(os.TempDir(), "chainlink-solana-artifacts-"+sha)
 	programPath := filepath.Join(cacheDir, "log_read_test.so")
 
-	if _, err := os.Stat(programPath); err == nil {
+	if _, err := os.Stat(programPath); err == nil { //nolint:gosec // G703: test code, path is constructed from known values
 		t.Logf("Using cached log_read_test.so at %s", programPath)
 		return programPath
 	}
 
-	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755)) //nolint:gosec // G703: test code, path is constructed from known values
 
 	err := downloadChainlinkSolanaProgramArtifacts(t.Context(), cacheDir, sha)
 	require.NoError(t, err, "failed to download chainlink-solana program artifacts")
@@ -870,12 +870,12 @@ func downloadChainlinkSolanaProgramArtifacts(ctx context.Context, targetDir stri
 }
 
 func downloadProgramArtifacts(ctx context.Context, url string, targetDir string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil) //nolint:gosec // G704: test code, URL is controlled by test
 	if err != nil {
 		return err
 	}
 
-	res, err := (&http.Client{}).Do(req)
+	res, err := (&http.Client{}).Do(req) //nolint:gosec // G704: test code, URL is controlled by test
 	if err != nil {
 		return err
 	}
@@ -926,11 +926,11 @@ func downloadProgramArtifacts(ctx context.Context, url string, targetDir string)
 		}
 
 		outPath := filepath.Join(targetDir, filepath.Base(header.Name))
-		if err := os.MkdirAll(filepath.Dir(outPath), os.ModePerm); err != nil {
+		if err := os.MkdirAll(filepath.Dir(outPath), os.ModePerm); err != nil { //nolint:gosec // G703: test code, path is constructed from known values
 			return err
 		}
 
-		outFile, err := os.Create(outPath)
+		outFile, err := os.Create(outPath) //nolint:gosec // G703: test code, path is constructed from known values
 		if err != nil {
 			return err
 		}

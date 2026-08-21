@@ -264,11 +264,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	return nil
 }
 
-func (s *capabilityGRPCService) setSelector(cfg *config.Config) error {
+func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	// When we run against a local validator (e.g. local CRE) we can't resolve chain selector
 	// since ChainID is always different
 	if cfg.IsLocal {
-		s.chainSelector = chain_selectors.TEST_22222222222222222222222222222222222222222222.Selector
+		c.chainSelector = chain_selectors.TEST_22222222222222222222222222222222222222222222.Selector
 		return nil
 	}
 
@@ -277,7 +277,7 @@ func (s *capabilityGRPCService) setSelector(cfg *config.Config) error {
 		return fmt.Errorf("chain selector not found for chainID: %s", cfg.ChainID)
 	}
 
-	s.chainSelector = cs
+	c.chainSelector = cs
 
 	return nil
 }
@@ -329,13 +329,13 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	return &cfg, nil
 }
 
-func (s *capabilityGRPCService) RegisterLogTrigger(
+func (c *capabilityGRPCService) RegisterLogTrigger(
 	ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*solana.Log], caperrors.Error) {
-	return s.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
+	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
-func (s *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) caperrors.Error {
-	return s.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
+func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) caperrors.Error {
+	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
 type closeFunc func() error

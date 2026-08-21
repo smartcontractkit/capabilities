@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -37,11 +36,6 @@ import (
 // Measured at ~2,093 gas units on Aptos testnet (31 oracles, f=10, 5 KB payload).
 // Set to 2x with margin for gas schedule changes.
 const ForwarderGasOverhead uint64 = 4000
-
-// aptosOctasToAPT converts a fee in octas (10^-8 APT) to a *big.Float in APT.
-func aptosOctasToAPT(octas uint64) *big.Float {
-	return new(big.Float).Quo(new(big.Float).SetUint64(octas), big.NewFloat(1e8))
-}
 
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
 func (s *Aptos) WriteReport(
@@ -231,14 +225,13 @@ func (wr *writeReport) execute(
 	ownLedgerVersion, ownFeeInOctas, ownVMStatus, ownBlockTimestamp, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
-		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
 			wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, txReply.TxHash, feeErr.Error()))
 	} else {
 		pinnedLedgerVersion = &ownLedgerVersion
-		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
-		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
-		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctas, "ledgerVersion", ownLedgerVersion)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(ownFeeInOctas, wr.chainSelector)
+		wr.lggr.Debugw("WriteReport fee", "feeInOctas", ownFeeInOctas, "ledgerVersion", ownLedgerVersion)
 	}
 
 	// Measured to the transaction's on-chain block timestamp rather than to when the submit call
@@ -284,9 +277,8 @@ func (wr *writeReport) execute(
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
 			feeInOctas := successResult.GasUsed * successResult.GasUnitPrice
-			feeInAPT := aptosOctasToAPT(feeInOctas)
-			meteringMetadata := metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
-			wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
+			meteringMetadata := metering.GetResponseMetadataWriteReport(feeInOctas, wr.chainSelector)
+			wr.lggr.Debugw("WriteReport fee", "feeInOctas", feeInOctas)
 
 			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction, report already on-chain",
 				wr.lggr, wr.beholderProcessor,
@@ -294,7 +286,7 @@ func (wr *writeReport) execute(
 
 			if txReply.TxStatus == aptostypes.TxFatal {
 				wr.lggr.Errorw("Transaction failed to get processed, but report was already submitted, this is unexpected and should be investigated", "txHash", txReply.TxHash)
-				meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+				meteringMetadata = metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
 			}
 
 			return &aptoscap.WriteReportReply{
@@ -362,8 +354,7 @@ func (wr *writeReport) execute(
 			// charge the user for the failed txs if it was reverted on user contract
 			var replyMeta capabilities.ResponseMetadata
 			if recvStatus != nil && *recvStatus == aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED {
-				feeInAPT := aptosOctasToAPT(feeOctas)
-				replyMeta = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+				replyMeta = metering.GetResponseMetadataWriteReport(feeOctas, wr.chainSelector)
 			}
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
@@ -380,32 +371,6 @@ func (wr *writeReport) execute(
 		return ownReply, ownMeteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
-}
-
-// buildPreSubmissionFatalReply evaluates node 0's failed tx and returns a fatal reply
-// if we should NOT submit, or (nil, empty) if we should proceed to submit.
-func (wr *writeReport) buildPreSubmissionFatalReply(failedResult TransmissionTxInfo, ourMaxGasAmount uint64) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata) {
-	if isOutOfGas(failedResult.VMStatus) && ourMaxGasAmount > failedResult.MaxGasAmount {
-		// We have more gas headroom than node 0 — proceed to submit.
-		return nil, capabilities.ResponseMetadata{}
-	}
-
-	// Either not OOG (user error, unrecoverable) or our gas isn't higher — return fatal.
-	// No metering: we never submitted, so we incurred no gas cost.
-	feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
-	return &aptoscap.WriteReportReply{
-		TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
-		TxHash:                          &failedResult.TxHash,
-		TransactionFee:                  &feeOctas,
-		ErrorMessage:                    ptrIfNonEmpty(failedResult.VMStatus),
-		ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VMStatus, wr.forwarderAddress),
-	}, capabilities.ResponseMetadata{}
-}
-
-// isOutOfGas returns true if the VM status string indicates the transaction
-// exhausted its total gas budget. The Aptos VM returns exactly "Out of gas".
-func isOutOfGas(vmStatus string) bool {
-	return vmStatus == "Out of gas"
 }
 
 // getTxnInfoFromChain returns the committed ledger version, fee in octas (gasUsed * gasUnitPrice),

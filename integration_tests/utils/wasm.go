@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"os"
 	"os/exec"
@@ -28,7 +29,7 @@ func GetCompressedWorkflowWasm(t *testing.T, workflowWasmPath string) ([]byte, s
 }
 
 func CreateWasmBinary(t *testing.T, goFile string, wasmFile string) {
-	cmd := exec.Command("go", "build", "-o", wasmFile, goFile) // #nosec
+	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", wasmFile, goFile) //nolint:noctx,gosec // test code
 	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 
 	output, err := cmd.CombinedOutput()

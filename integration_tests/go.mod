@@ -1,14 +1,10 @@
 module github.com/smartcontractkit/capabilities/integration_tests
 
-go 1.26.4
+go 1.26.6
 
 replace github.com/smartcontractkit/capabilities/http_action => ../http_action
 
 replace github.com/smartcontractkit/capabilities/http_trigger => ../http_trigger
-
-replace github.com/smartcontractkit/capabilities/chain_capabilities/evm => ../chain_capabilities/evm
-
-replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../chain_capabilities/common
 
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20251014124537-af6b1684fe15
 
@@ -20,7 +16,7 @@ require (
 	github.com/ethereum/go-ethereum v1.17.4
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
-	github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-00010101000000-000000000000
+	github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-20260821094917-664a97612240
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.106

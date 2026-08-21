@@ -189,7 +189,10 @@ func toPayload(report *sdk.ReportResponse) ([]byte, error) {
 	ret := make([]byte, 0, 1+len(report.Sigs)*signatureLen+len(report.RawReport)+reportContextLen)
 
 	// 1. data_size ret[0]
-	ret = append(ret, byte(len(report.Sigs)))
+	if len(report.Sigs) > 255 {
+		return nil, fmt.Errorf("too many signatures: %d, max 255", len(report.Sigs))
+	}
+	ret = append(ret, byte(len(report.Sigs))) //nolint:gosec // G115: bounds-checked above
 
 	// 2. add N signatures
 	for _, sig := range report.Sigs {

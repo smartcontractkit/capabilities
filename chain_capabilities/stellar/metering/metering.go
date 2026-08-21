@@ -20,6 +20,7 @@ const (
 	GetLatestLedger SpendValueCredits = "1"
 
 	// WriteReportSpendUnitFormat is the spend unit for write operations, parameterised by chain selector.
+	// TODO: Switch to "GAS.%d" after the workflow DON accepts SpendValueInGasUnits
 	WriteReportSpendUnitFormat = "STROOP.%d"
 )
 
@@ -43,8 +44,9 @@ func GetResponseMetadataWriteReport(feeStroops uint64, chainSelector uint64) cap
 		Metering: []capabilities.MeteringNodeDetail{
 			{
 				// Peer2PeerID is assigned by the engine, leaving it empty here.
-				SpendValue: strconv.FormatUint(feeStroops, 10),
-				SpendUnit:  fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
+				SpendValue:           strconv.FormatUint(feeStroops, 10),
+				SpendValueInGasUnits: strconv.FormatUint(feeStroops, 10),
+				SpendUnit:            fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
 			},
 		},
 	}

@@ -164,18 +164,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	var scheduler ts.TransmissionScheduler
-	if cfg.DeltaStage > 0 {
-		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, dependencies.CapabilityDonID, c.lggr, cfg.IsLocal)
-		if err != nil {
-			return fmt.Errorf("failed to init DON: %w", err)
-		}
-		c.DON = &myDON
-		scheduler, err = ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, cfg.IsLocal)
-		if err != nil {
-			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
-		}
-	} else {
+	if cfg.DeltaStage <= 0 {
 		return fmt.Errorf("delta stage has to be set")
+	}
+	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, dependencies.CapabilityDonID, c.lggr, cfg.IsLocal)
+	if err != nil {
+		return fmt.Errorf("failed to init DON: %w", err)
+	}
+	c.DON = &myDON
+	scheduler, err = ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, cfg.IsLocal)
+	if err != nil {
+		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
 
 	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)

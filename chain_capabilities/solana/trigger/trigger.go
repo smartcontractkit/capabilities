@@ -3,6 +3,7 @@ package trigger
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -175,6 +176,9 @@ func (lts *SolanaLogTriggerService) getFinalizedBlockNumber(ctx context.Context,
 		return 0, fmt.Errorf("failed to get latest finalized block: '%w' for triggerID: %s", err, triggerID)
 	}
 	lts.lggr.Debugf("Latest finalized block number: %d, triggerID: %s", block.Height, triggerID)
+	if block.Height > math.MaxInt64 {
+		return 0, fmt.Errorf("block height %d exceeds int64 max", block.Height)
+	}
 	return int64(block.Height), nil
 }
 
@@ -293,7 +297,7 @@ func (lts *SolanaLogTriggerService) initLimiters(limitsFactory limits.Factory) e
 	if err != nil {
 		return fmt.Errorf("failed to create event rate limiter: %w", err)
 	}
-	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory,
+	lts.eventPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory,
 		cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
 	if err != nil {
 		return fmt.Errorf("failed to create event payload size limiter: %w", err)
