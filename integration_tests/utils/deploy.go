@@ -21,7 +21,7 @@ func DeployCapability(t *testing.T, capabilityName string) (string, error) {
 	absoluteBinaryPath, err := filepath.Abs(outputBinary)
 	require.NoError(t, err)
 
-	cmd := exec.CommandContext(context.Background(), "go", "build", "-gcflags", "all=-N -l", "-o", absoluteBinaryPath) //nolint:noctx // test code
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-gcflags", "all=-N -l", "-o", absoluteBinaryPath) //nolint:noctx // test code
 	cmd.Dir = projectPath
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
