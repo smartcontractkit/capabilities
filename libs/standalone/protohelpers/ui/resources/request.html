@@ -15,8 +15,22 @@
       window.__CRE_REQUEST__ = {{.Config}};
     </script>
     <script src="{{.Prefix}}/request/s/{{.JSFile}}"></script>
+    <script src="{{.Prefix}}/request/s/{{.SubscriptionsFile}}"></script>
   </head>
   <body>
+    <!-- Subscriptions are not responses, so they do not belong in the Response
+         tab: a trigger keeps delivering long after the call that registered it
+         returned. The sidebar lists what is running, the table below shows the one
+         selected, and closing the window closes them. -->
+    <div id="cre-subscriptions" class="cre-sidebar">
+      <div class="cre-sidebar-head">
+        <button id="cre-sidebar-toggle" class="cre-sidebar-toggle" title="Minimise">&raquo;</button>
+        <span class="cre-sidebar-title">Subscriptions</span>
+        <span id="cre-sidebar-count" class="cre-sidebar-count"></span>
+      </div>
+      <div id="cre-subscription-list" class="cre-sidebar-body"></div>
+    </div>
+
     <!-- Deliberately NOT #grpc-container: grpcui styles that as a flex row, which
          would lay these sections out as columns. -->
     <div id="grpc-form">
@@ -56,6 +70,14 @@
                 Mirror the same request to every selected instance
               </label>
             </div>
+            <!-- Only shown for a subscription. Filled in the same way the metadata
+                 is: named here it is used, left blank one is minted - once, so
+                 every instance registers under the same subscription. -->
+            <div class="cre-advanced-row" id="cre-trigger-row">
+              <span class="cre-advanced-label">Trigger ID:</span>
+              <input type="text" id="cre-trigger-id" class="cre-trigger-id"
+                     placeholder="one is minted if left blank; reuse one to join a running subscription">
+            </div>
             <div class="cre-metadata-note">
               Request metadata, sent identically to every instance. Anything left
               blank is filled in with a valid value before sending, so all
@@ -85,6 +107,10 @@
             <div class="grpc-history-list" id="grpc-history-list"></div>
           </div>
         </div>
+
+        <!-- The selected subscription's table: one row per event, one column per
+             instance that delivered it. -->
+        <div id="cre-subscription-view" class="cre-subscription-view"></div>
       </div>
     </div>
   </body>

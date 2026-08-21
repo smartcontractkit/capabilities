@@ -10,7 +10,16 @@
 // infers a type from the shape of the data.
 
 document.addEventListener("DOMContentLoaded", function () {
-    var CONFIG = window.__CRE_DEBUG__ || { metadata: [], headerPrefix: "" };
+    var CONFIG = window.__CRE_DEBUG__ || {
+        metadata: [], headerPrefix: "", subscriptions: [], triggerIdHeader: "", prefix: ""
+    };
+
+    // A method on one of these services registers a trigger rather than calling
+    // something, so it takes a trigger ID and its events turn up on the fan-out
+    // page rather than in the Response tab.
+    function isSubscribing() {
+        return (CONFIG.subscriptions || []).indexOf($("#grpc-service").val()) !== -1;
+    }
 
     // ---- request metadata ----------------------------------------------------
     //
@@ -54,10 +63,50 @@ document.addEventListener("DOMContentLoaded", function () {
         });
         $details.append($grid);
 
+        // The trigger ID, for a method that registers one. Filled in the same way
+        // as the metadata - blank means the server mints one - and carried the same
+        // way, since syncMetadataRows mirrors anything with a header attribute.
+        //
+        // Only useful for a subscription, so it is only shown for one: see
+        // renderSubscribeFields.
+        var $trigger = $("<div>", { id: "cre-trigger-field", "class": "cre-metadata-field" });
+        $trigger.append($("<label>", { text: "Trigger ID:", "for": "cre-trigger-id" }));
+        $trigger.append($("<input>", {
+            type: "text",
+            id: "cre-trigger-id",
+            "class": "cre-trigger-id",
+            placeholder: "one is minted if left blank; reuse one to join a running subscription",
+            "data-cre-header": CONFIG.triggerIdHeader
+        }));
+        $trigger.append($("<div>", { "class": "cre-metadata-note" })
+            .append(document.createTextNode("A trigger delivers for as long as it is registered, so its events are shown on the "))
+            .append($("<a>", { href: (CONFIG.prefix || "") + "/request", target: "_blank", text: "fan-out page" }))
+            .append(document.createTextNode(" rather than here.")));
+        $details.append($trigger);
+
         // Bottom of the request tab, just above the Invoke button.
         $invoke.before($details);
 
-        $grid.on("input change", "input", syncMetadataRows);
+        $details.on("input change", "input", syncMetadataRows);
+    }
+
+    // renderSubscribeFields shows the trigger ID only where it means something.
+    //
+    // Polled with everything else rather than bound to the picker: grpcui rebuilds
+    // the form on a method change, and the loop below is already what keeps up with
+    // that.
+    function renderSubscribeFields() {
+        var $field = $("#cre-trigger-field");
+        if (!$field.length) {
+            return;
+        }
+        var subscribing = isSubscribing();
+        $field.toggle(subscribing);
+        if (!subscribing) {
+            // Or a trigger ID typed for one method would be sent with the next,
+            // which ignores it - silently.
+            $("#cre-trigger-id").val("");
+        }
     }
 
     function label(field) {
@@ -420,6 +469,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         ensureAdvancedSection();
+        renderSubscribeFields();
         syncMetadataRows();
         decorateFieldCopies();
     }, 100);
