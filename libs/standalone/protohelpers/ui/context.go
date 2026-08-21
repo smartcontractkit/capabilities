@@ -32,6 +32,15 @@ func MetadataFromRequest(r *http.Request) (capabilities.RequestMetadata, error) 
 	})
 }
 
+// triggerIDFromContext is the trigger ID a registration named, or a fresh one.
+func triggerIDFromContext(ctx context.Context) string {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	}
+	return TriggerIDFromHeaders(md.Get)
+}
+
 // HeaderNames is every header the metadata travels in, which is what the form
 // generator has to be told to forward.
 func HeaderNames() []string {
@@ -41,4 +50,13 @@ func HeaderNames() []string {
 		names = append(names, f.Header)
 	}
 	return names
+}
+
+// PreservedHeaders is every header a request may carry that has to reach Invoke:
+// the metadata, and the trigger ID a subscription is identified by.
+//
+// The form generator drops anything it was not told to keep, so a header missing
+// from here is one the page can offer a box for and never send.
+func PreservedHeaders() []string {
+	return append(HeaderNames(), TriggerIDHeader)
 }

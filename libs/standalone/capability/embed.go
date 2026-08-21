@@ -54,6 +54,10 @@ type embedded struct {
 	// page goes into one list, so the fan-out page can reach a sibling by calling
 	// into its handler.
 	fleet *ui.Fleet
+	// hub is shared for the same reason: a trigger registered across several
+	// instances delivers into one subscription, so the table shows a column per
+	// instance rather than a table per instance.
+	hub *ui.Hub
 	// index is this instance's number, which names it on the fan-out page.
 	index int
 }
@@ -83,6 +87,7 @@ func (d *embedded) ForEmbedding(i, instances int) common.BootstrapDependency[Dep
 		instances: instances,
 		cfg:       d.cfg,
 		fleet:     d.fleet,
+		hub:       d.hub,
 		index:     i,
 	}
 }
@@ -124,6 +129,7 @@ func (d *embedded) Get(ctx context.Context, cc common.CommonConfig) (Dependencie
 		// forgotten.
 		httpDebug:    true,
 		fleet:        d.fleet,
+		hub:          d.hub,
 		index:        d.index,
 		lggr:         d.lggr,
 		settings:     settings,

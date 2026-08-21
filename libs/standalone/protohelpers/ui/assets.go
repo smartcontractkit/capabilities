@@ -21,6 +21,12 @@ var (
 	//go:embed resources/request.js
 	requestJS string
 
+	// The subscription sidebar and its tables. Its own file rather than more of
+	// request.js: it is driven by what arrives on a stream rather than by the form,
+	// so the only thing the two share is the page they are on.
+	//go:embed resources/subscriptions.js
+	subscriptionsJS string
+
 	//go:embed resources/request.html
 	requestHTML string
 )
@@ -39,6 +45,9 @@ func hashedName(base, content, ext string) string {
 func cssFileName() string             { return hashedName("cre-debug", pageCSS, "css") }
 func jsFileName(served string) string { return hashedName("cre-debug", served, "js") }
 func requestJSFileName() string       { return hashedName("cre-debug-request", requestJS, "js") }
+func subscriptionsJSFileName() string {
+	return hashedName("cre-debug-subscriptions", subscriptionsJS, "js")
+}
 
 // customJS is form.js with the page's configuration prepended, so the browser has
 // it without a second request.
@@ -50,9 +59,20 @@ func customJS(s *Server) (string, error) {
 	cfg := struct {
 		Metadata []Field `json:"metadata"`
 		Prefix   string  `json:"headerPrefix"`
+		// Subscriptions are the services whose methods register a trigger, and
+		// TriggerIDHeader is what the trigger ID travels in. Both come from the
+		// descriptors rather than the page working out which is which from a name.
+		Subscriptions   []string `json:"subscriptions"`
+		TriggerIDHeader string   `json:"triggerIdHeader"`
+		// Path is where the pages are mounted, so the form can link to the fan-out
+		// page - which is where a subscription's events are shown.
+		Path string `json:"prefix"`
 	}{
-		Metadata: Fields(),
-		Prefix:   HeaderPrefix,
+		Metadata:        Fields(),
+		Prefix:          HeaderPrefix,
+		Subscriptions:   s.subscriptionServices(),
+		TriggerIDHeader: TriggerIDHeader,
+		Path:            s.prefix,
 	}
 	encoded, err := json.Marshal(cfg)
 	if err != nil {

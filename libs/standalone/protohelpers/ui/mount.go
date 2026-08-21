@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 
@@ -31,21 +32,65 @@ const (
 // DefaultPrefix is where the debug pages are mounted.
 const DefaultPrefix = "/debug/capabilities"
 
-// Mount serves this instance's debug page on mux, and adds it to fleet so the
+// Options is what mounting one instance's debug page needs.
+type Options struct {
+	// Mux is what the pages are served on: the instance's own HTTP server, so a
+	// browser on any instance's port can drive the whole process.
+	Mux *http.ServeMux
+	// Prefix roots both pages. Empty means DefaultPrefix.
+	Prefix string
+	// Server is this instance's capabilities.
+	Server *Server
+	// Fleet is every instance's page, so the fan-out can reach a sibling.
+	Fleet *Fleet
+	// Hub holds the subscriptions. Shared with every other instance, so a trigger
+	// registered across several of them is one subscription with a column each.
+	Hub *Hub
+	// Index is this instance's number, which names it on the fan-out page and on
+	// every event it delivers.
+	Index int
+	// Title is what the per-instance page calls itself.
+	Title string
+}
+
+// Mount serves this instance's debug page, and adds it to the fleet so the
 // fan-out page can reach it.
 //
 // prefix roots both pages: prefix+"/ui/" is the form for this instance's own
 // capabilities, and prefix+"/request" is the fan-out over every instance. Both are
 // mounted on every instance, so whichever port a browser lands on can drive the
 // whole process.
-func Mount(mux *http.ServeMux, prefix string, s *Server, fleet *Fleet, index int, title string) error {
-	if mux == nil {
+func Mount(o Options) error {
+	if o.Mux == nil {
 		return fmt.Errorf("a mux is required")
 	}
+	if o.Server == nil {
+		return fmt.Errorf("a server is required")
+	}
+	if o.Fleet == nil {
+		return fmt.Errorf("a fleet is required")
+	}
+	if o.Hub == nil {
+		return fmt.Errorf("a subscription hub is required")
+	}
+
+	prefix := o.Prefix
 	if prefix == "" {
 		prefix = DefaultPrefix
 	}
 	prefix = "/" + strings.Trim(prefix, "/")
+
+	mux, s := o.Mux, o.Server
+	label := fmt.Sprintf("instance %d", o.Index+1)
+
+	// Which instance this is, and where its subscriptions go. Set here rather than
+	// passed to New because this is where an instance's identity is known: New is
+	// given capabilities, and a capability does not know which instance is hosting
+	// it.
+	s.hub = o.Hub
+	s.index = o.Index
+	s.label = label
+	s.prefix = prefix
 
 	served, err := customJS(s)
 	if err != nil {
@@ -54,7 +99,7 @@ func Mount(mux *http.ServeMux, prefix string, s *Server, fleet *Fleet, index int
 
 	page := standalone.Handler(
 		s,
-		title,
+		o.Title,
 		s.Methods(),
 		s.Files(),
 		standalone.AddCSSFile(cssFileName(), func() (io.ReadCloser, error) {
@@ -63,25 +108,34 @@ func Mount(mux *http.ServeMux, prefix string, s *Server, fleet *Fleet, index int
 		standalone.AddJSFile(jsFileName(served), func() (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(served)), nil
 		}),
-		// The metadata a capability is called with comes from the browser, so
-		// every header a RequestMetadata field travels in has to reach Invoke.
-		standalone.PreserveHeaders(HeaderNames()),
+		// The metadata a capability is called with comes from the browser, and so
+		// does the trigger ID a subscription is identified by, so every header
+		// either travels in has to reach Invoke.
+		standalone.PreserveHeaders(PreservedHeaders()),
 	)
 
 	uiPath := prefix + "/ui"
 	mux.Handle(uiPath+"/", http.StripPrefix(uiPath, page))
 
-	fleet.Add(&Instance{
-		Index:   index,
-		Label:   fmt.Sprintf("instance %d", index+1),
+	o.Fleet.Add(&Instance{
+		Index:   o.Index,
+		Label:   label,
 		handler: page,
 	})
 
-	f := &fanout{fleet: fleet, prefix: prefix, uiPath: uiPath, server: s}
+	f := &fanout{fleet: o.Fleet, hub: o.Hub, prefix: prefix, uiPath: uiPath, server: s}
 	mux.HandleFunc(prefix+"/request", f.page)
 	mux.HandleFunc(prefix+"/request/", f.page)
 	mux.HandleFunc(prefix+"/request/fanout", f.invoke)
 	mux.HandleFunc(prefix+"/request/s/", f.asset)
+
+	// The subscriptions: what is running, what they have delivered, and the two
+	// things a reader does about it.
+	mux.HandleFunc(prefix+"/request/subscriptions", f.subscriptions)
+	mux.HandleFunc(prefix+"/request/subscriptions/stream", f.stream)
+	mux.HandleFunc(prefix+"/request/subscriptions/ack", f.ack)
+	mux.HandleFunc(prefix+"/request/subscriptions/close", f.unsubscribe)
+	mux.HandleFunc(prefix+"/request/trigger-id", f.triggerID)
 
 	// A bare prefix is otherwise a 404, which reads as the page not being there.
 	mux.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +147,7 @@ func Mount(mux *http.ServeMux, prefix string, s *Server, fleet *Fleet, index int
 // fanout serves the page that sends one or more requests across every instance.
 type fanout struct {
 	fleet  *Fleet
+	hub    *Hub
 	prefix string
 	uiPath string
 	server *Server
@@ -111,6 +166,14 @@ type pageConfig struct {
 	// Metadata is every RequestMetadata field, which is what the page's Advanced
 	// section is built from rather than a hand-written list of inputs.
 	Metadata []Field `json:"metadata"`
+
+	// Subscriptions are the services whose methods register a trigger rather than
+	// calling it. Invoking one opens a subscription instead of returning a
+	// response, so the page has to know which it is looking at.
+	Subscriptions []string `json:"subscriptions"`
+	// TriggerIDHeader is what the trigger ID travels in, so the page does not
+	// repeat the name.
+	TriggerIDHeader string `json:"triggerIdHeader"`
 }
 
 func (f *fanout) config() pageConfig {
@@ -122,12 +185,18 @@ func (f *fanout) config() pageConfig {
 		}
 		services[service] = append(services[service], method)
 	}
+	for _, methods := range services {
+		sort.Strings(methods)
+	}
+
 	return pageConfig{
-		Instances: f.fleet.List(),
-		Services:  services,
-		UIPath:    f.uiPath,
-		Prefix:    f.prefix,
-		Metadata:  Fields(),
+		Instances:       f.fleet.List(),
+		Services:        services,
+		UIPath:          f.uiPath,
+		Prefix:          f.prefix,
+		Metadata:        Fields(),
+		Subscriptions:   f.server.subscriptionServices(),
+		TriggerIDHeader: TriggerIDHeader,
 	}
 }
 
@@ -153,17 +222,19 @@ func (f *fanout) page(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 
 	data := struct {
-		CSSFile string
-		JSFile  string
-		UIPath  string
-		Prefix  string
-		Config  template.JS
+		CSSFile           string
+		JSFile            string
+		SubscriptionsFile string
+		UIPath            string
+		Prefix            string
+		Config            template.JS
 	}{
-		CSSFile: cssFileName(),
-		JSFile:  requestJSFileName(),
-		UIPath:  f.uiPath,
-		Prefix:  f.prefix,
-		Config:  template.JS(encoded),
+		CSSFile:           cssFileName(),
+		JSFile:            requestJSFileName(),
+		SubscriptionsFile: subscriptionsJSFileName(),
+		UIPath:            f.uiPath,
+		Prefix:            f.prefix,
+		Config:            template.JS(encoded),
 	}
 	if err := f.template.Execute(w, data); err != nil {
 		return
@@ -178,6 +249,9 @@ func (f *fanout) asset(w http.ResponseWriter, r *http.Request) {
 	case requestJSFileName():
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		_, _ = io.WriteString(w, requestJS)
+	case subscriptionsJSFileName():
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = io.WriteString(w, subscriptionsJS)
 	case cssFileName():
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		_, _ = io.WriteString(w, pageCSS)
@@ -202,20 +276,38 @@ type fanoutRequest struct {
 	Metadata map[string][]string `json:"metadata"`
 }
 
-// instanceResult is one row of the fan-out. Status is "ok" when the instance
+// instanceResult is one instance's answer. Status is "ok" when the instance
 // answered, "error" when the call failed, and "na" when it was not addressed.
 type instanceResult struct {
-	Instance int             `json:"instance"`
-	Label    string          `json:"label"`
-	Status   string          `json:"status"`
-	Group    int             `json:"group"`
-	Response json.RawMessage `json:"response,omitempty"`
-	Error    string          `json:"error,omitempty"`
+	Instance int    `json:"instance"`
+	Label    string `json:"label"`
+	Status   string `json:"status"`
+	Group    int    `json:"group"`
+	// ResponseID is the hash of what this instance answered, and ResponseIndex is
+	// which of the fan-out's distinct responses that is.
+	//
+	// The response itself is on the fan-out rather than here, for the same reason a
+	// trigger event's payload is on its row: instances answering identically is the
+	// normal case, and holding it per instance would repeat the same JSON once per
+	// instance to say they matched.
+	ResponseID    string `json:"responseId,omitempty"`
+	ResponseIndex int    `json:"responseIndex"`
+	Error         string `json:"error,omitempty"`
 }
 
 type fanoutResponse struct {
 	Method  string           `json:"method"`
 	Results []instanceResult `json:"results"`
+	// TriggerID is the subscription every group was registered under, for a
+	// fan-out that subscribed rather than called. Reported back because the page
+	// needs it to open the stream, and because a caller that named none still has
+	// to be told which one it got.
+	TriggerID string `json:"triggerId,omitempty"`
+
+	// The distinct responses, and whether the instances disagreed. Same shape as a
+	// trigger event's row, because it is the same question: what did each instance
+	// say, and did they all say it.
+	payloadSet
 }
 
 func (f *fanout) invoke(w http.ResponseWriter, r *http.Request) {
@@ -247,15 +339,27 @@ func (f *fanout) invoke(w http.ResponseWriter, r *http.Request) {
 	// asked for as a single request would arrive as several. Doing it here also
 	// means a value that will not parse is one 400 rather than the same complaint
 	// from every instance.
-	metadata, err := MetadataFromHeaders(func(name string) []string { return req.Metadata[name] })
+	get := func(name string) []string { return req.Metadata[name] }
+
+	metadata, err := MetadataFromHeaders(get)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	header := HeadersFromMetadata(metadata)
 
+	// Settled here for the same reason, and it matters more: the trigger ID is
+	// what identifies a subscription, so instances left to mint their own would
+	// each start a subscription of their own and the one table the user asked for
+	// would be four.
+	triggerID := TriggerIDFromHeaders(get)
+	header.Set(TriggerIDHeader, triggerID)
+
+	response := f.run(req, header)
+	response.TriggerID = triggerID
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(f.run(req, header)); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		return
 	}
 }
@@ -298,7 +402,12 @@ func (f *fanout) run(req fanoutRequest, header http.Header) fanoutResponse {
 		}
 	}
 
-	rows := make(map[int]instanceResult, len(jobs))
+	type answer struct {
+		result   instanceResult
+		response json.RawMessage
+	}
+
+	answers := make(map[int]answer, len(jobs))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, j := range jobs {
@@ -316,24 +425,41 @@ func (f *fanout) run(req fanoutRequest, header http.Header) fanoutResponse {
 			if err != nil {
 				row.Status = "error"
 				row.Error = err.Error()
-			} else {
-				row.Response = response
+				response = nil
 			}
 
 			mu.Lock()
 			defer mu.Unlock()
-			rows[j.instance.Index] = row
+			answers[j.instance.Index] = answer{result: row, response: response}
 		}(j)
 	}
 	wg.Wait()
 
+	// Collected in instance order rather than as they arrived, so the responses are
+	// numbered the same way twice in a row for the same fan-out. Concurrency makes
+	// arrival order arbitrary, and a debug page that renumbers its columns between
+	// two identical runs is a page that looks like it found something.
 	out := fanoutResponse{Method: req.Method, Results: make([]instanceResult, 0, len(all))}
 	for _, in := range all {
-		if row, ok := rows[in.Index]; ok {
-			out.Results = append(out.Results, row)
+		got, ok := answers[in.Index]
+		if !ok {
+			out.Results = append(out.Results, instanceResult{
+				Instance:      in.Index,
+				Label:         in.Label,
+				Status:        "na",
+				ResponseIndex: -1,
+			})
 			continue
 		}
-		out.Results = append(out.Results, instanceResult{Instance: in.Index, Label: in.Label, Status: "na"})
+
+		// The hash is of the bytes the instance's page produced, which is what the
+		// form generator rendered and what is about to be shown.
+		row := got.result
+		if len(got.response) > 0 {
+			row.ResponseID = shortHash(got.response)
+		}
+		row.ResponseIndex = out.add(row.ResponseID, got.response)
+		out.Results = append(out.Results, row)
 	}
 	return out
 }

@@ -45,6 +45,8 @@ func testKey(method string) string {
 type fakeCapability struct {
 	response *anypb.Any
 	err      error
+	// service overrides what this reports being generated from. Empty is Executable.
+	service protoreflect.ServiceDescriptor
 
 	// Guarded: the fan-out calls every instance at once, so Execute is reached
 	// concurrently. That is the property under test, not an accident to design
@@ -66,7 +68,13 @@ func (f *fakeCapability) Info(context.Context) (capabilities.CapabilityInfo, err
 	return capabilities.NewCapabilityInfo(testCapabilityID, capabilities.CapabilityTypeCombined, "a capability for tests")
 }
 
+// Service is Executable unless a test overrides it, which one does: comparing
+// what instances answered needs a method whose response has a field to differ in,
+// and every unary method of Executable returns Empty.
 func (f *fakeCapability) Service() protoreflect.ServiceDescriptor {
+	if f.service != nil {
+		return f.service
+	}
 	return testService()
 }
 
@@ -90,10 +98,14 @@ func (f *fakeCapability) UnregisterFromWorkflow(context.Context, capabilities.Un
 	return nil
 }
 
-// fakeRegistry is the whole of what the page asks a registry for, which is the
-// point of Registry being one method: resolving an executable by ID.
+// fakeRegistry is the whole of what the page asks a registry for: resolving a
+// capability by ID, to call or to subscribe to.
 type fakeRegistry struct {
 	capability capabilities.ExecutableCapability
+	// trigger is what a subscription resolves. Held separately because a test
+	// exercises one or the other, and a missing one should be an error rather
+	// than a nil capability reaching the hub.
+	trigger capabilities.TriggerCapability
 }
 
 func (f fakeRegistry) GetExecutable(_ context.Context, id string) (capabilities.ExecutableCapability, error) {
@@ -101,6 +113,33 @@ func (f fakeRegistry) GetExecutable(_ context.Context, id string) (capabilities.
 		return nil, fmt.Errorf("unknown capability %s", id)
 	}
 	return f.capability, nil
+}
+
+func (f fakeRegistry) GetTrigger(_ context.Context, id string) (capabilities.TriggerCapability, error) {
+	if id != testCapabilityID {
+		return nil, fmt.Errorf("unknown capability %s", id)
+	}
+	if f.trigger == nil {
+		return nil, fmt.Errorf("%s is not a trigger capability", id)
+	}
+	return f.trigger, nil
+}
+
+// mount is Mount with the prefix every test uses, and a hub of its own when the
+// test does not care which - which is every test that is not about subscriptions.
+func mount(mux *http.ServeMux, s *Server, fleet *Fleet, hub *Hub, index int, title string) error {
+	if hub == nil {
+		hub = NewHub()
+	}
+	return Mount(Options{
+		Mux:    mux,
+		Prefix: DefaultPrefix,
+		Server: s,
+		Fleet:  fleet,
+		Hub:    hub,
+		Index:  index,
+		Title:  title,
+	})
 }
 
 // settle resolves the metadata the way the fan-out handler does: once, so every
@@ -131,8 +170,10 @@ func newTestServer(t *testing.T) (*Server, *fakeCapability) {
 	return server, capability
 }
 
-// Every non-streaming method is registered, and every streaming one - a trigger -
-// is left out, since a trigger is registered rather than called.
+// Every non-streaming method is callable under its own service, and no streaming
+// one is: a trigger cannot be called, so it is not offered as its own method. It
+// is offered as a subscription on a service of its own instead - see
+// TestNewOffersATriggerAsASubscription.
 func TestNewRegistersOnlyCallableMethods(t *testing.T) {
 	server, _ := newTestServer(t)
 
@@ -216,7 +257,8 @@ func TestNewStreamIsRefused(t *testing.T) {
 	server, _ := newTestServer(t)
 	_, err := server.NewStream(t.Context(), nil, "/"+testKey("Execute"))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "triggers are registered rather than called")
+	// It says where the trigger is instead, since it is offered - just not here.
+	assert.Contains(t, err.Error(), SubscriptionsSuffix)
 }
 
 // Both pages are mounted on the instance's own mux, and the instance is added to
@@ -226,7 +268,7 @@ func TestMountServesBothPages(t *testing.T) {
 
 	fleet := &Fleet{}
 	mux := http.NewServeMux()
-	require.NoError(t, Mount(mux, DefaultPrefix, server, fleet, 0, "test"))
+	require.NoError(t, mount(mux, server, fleet, nil, 0, "test"))
 
 	require.Len(t, fleet.List(), 1)
 	assert.Equal(t, 0, fleet.List()[0].Index)
@@ -251,9 +293,9 @@ func TestFanoutInvokesEveryInstanceInProcess(t *testing.T) {
 
 	fleet := &Fleet{}
 	mux := http.NewServeMux()
-	require.NoError(t, Mount(mux, DefaultPrefix, first, fleet, 0, "one"))
+	require.NoError(t, mount(mux, first, fleet, nil, 0, "one"))
 	// A second mux, as a second instance has, sharing the fleet.
-	require.NoError(t, Mount(http.NewServeMux(), DefaultPrefix, second, fleet, 1, "two"))
+	require.NoError(t, mount(http.NewServeMux(), second, fleet, nil, 1, "two"))
 	require.Len(t, fleet.List(), 2)
 
 	f := &fanout{fleet: fleet, prefix: DefaultPrefix, uiPath: DefaultPrefix + "/ui", server: first}
@@ -283,8 +325,8 @@ func TestFanoutReportsUnaddressedInstances(t *testing.T) {
 	second, secondCap := newTestServer(t)
 
 	fleet := &Fleet{}
-	require.NoError(t, Mount(http.NewServeMux(), DefaultPrefix, first, fleet, 0, "one"))
-	require.NoError(t, Mount(http.NewServeMux(), DefaultPrefix, second, fleet, 1, "two"))
+	require.NoError(t, mount(http.NewServeMux(), first, fleet, nil, 0, "one"))
+	require.NoError(t, mount(http.NewServeMux(), second, fleet, nil, 1, "two"))
 
 	f := &fanout{fleet: fleet, prefix: DefaultPrefix, uiPath: DefaultPrefix + "/ui", server: first}
 	response := f.run(fanoutRequest{
@@ -351,7 +393,7 @@ func TestFanoutCallsEveryInstanceConcurrently(t *testing.T) {
 	for i := range instances {
 		server, err := New(t.Context(), fakeRegistry{capability: shared}, shared)
 		require.NoError(t, err)
-		require.NoError(t, Mount(http.NewServeMux(), DefaultPrefix, server, fleet, i, fmt.Sprintf("instance %d", i+1)))
+		require.NoError(t, mount(http.NewServeMux(), server, fleet, nil, i, fmt.Sprintf("instance %d", i+1)))
 	}
 	require.Len(t, fleet.List(), instances)
 
@@ -394,8 +436,8 @@ func TestFanoutSendsOneMetadataToEveryInstance(t *testing.T) {
 	second, secondCap := newTestServer(t)
 
 	fleet := &Fleet{}
-	require.NoError(t, Mount(http.NewServeMux(), DefaultPrefix, first, fleet, 0, "one"))
-	require.NoError(t, Mount(http.NewServeMux(), DefaultPrefix, second, fleet, 1, "two"))
+	require.NoError(t, mount(http.NewServeMux(), first, fleet, nil, 0, "one"))
+	require.NoError(t, mount(http.NewServeMux(), second, fleet, nil, 1, "two"))
 
 	f := &fanout{fleet: fleet, prefix: DefaultPrefix, uiPath: DefaultPrefix + "/ui", server: first}
 	request := func() fanoutRequest {
@@ -429,7 +471,7 @@ func TestFanoutEndpointSeparatesUserErrorsFromSystemErrors(t *testing.T) {
 	server, _ := newTestServer(t)
 	fleet := &Fleet{}
 	mux := http.NewServeMux()
-	require.NoError(t, Mount(mux, DefaultPrefix, server, fleet, 0, "one"))
+	require.NoError(t, mount(mux, server, fleet, nil, 0, "one"))
 
 	post := func(t *testing.T, body string) *httptest.ResponseRecorder {
 		t.Helper()

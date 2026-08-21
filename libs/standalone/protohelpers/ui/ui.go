@@ -6,12 +6,20 @@
 // host would have sent - so what the page exercises is the same path a workflow
 // takes, with the request metadata a workflow would have carried made visible and
 // editable instead of implied.
+//
+// A trigger is offered too, but not as a call: it is registered, and then it
+// delivers. So it is offered as a synthetic unary method that registers it (see
+// shim.go), and what it delivers is collected per trigger ID into a table with a
+// column per instance (see hub.go) and streamed to the browser (see stream.go).
+// Instances are meant to agree on an event's payload, so what the table shows is
+// whether they did.
 package ui
 
 import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/jhump/protoreflect/desc"
@@ -33,21 +41,37 @@ import (
 // instance to hold on to, only the types the descriptor names, and each request
 // needs its own anyway.
 type call struct {
+	// subscribe says this method registers a trigger rather than calling
+	// something. What it returns then arrives on a subscription instead of in the
+	// response - see shim.go for why a trigger is offered as a unary method at
+	// all, and hub.go for where its events go.
+	subscribe bool
+
 	// capabilityID and method are what a CapabilityRequest is addressed with.
 	// They are held here rather than worked out per request because the
 	// descriptor a capability handed over is what named them.
 	capabilityID string
 	method       string
 
+	// service is the real service this method belongs to. For a subscription that
+	// is not the service the request named: the page offers a synthetic one, and
+	// what is being subscribed to is the capability's own.
+	service string
+
 	input  reflect.Type
 	output reflect.Type
+
+	// event is the trigger's streamed message, for a subscription. It is how a
+	// delivered event is read out of the Any it arrives in.
+	event reflect.Type
 }
 
-// Registry is the part of a capability registry this package needs: resolving an
-// executable by ID. Anything a host holds satisfies it, and asking for only this
-// keeps the page from being able to do more than call.
+// Registry is the part of a capability registry this package needs: resolving a
+// capability by ID. Anything a host holds satisfies it, and asking for only this
+// keeps the page from being able to do more than call and subscribe.
 type Registry interface {
 	GetExecutable(ctx context.Context, id string) (capabilities.ExecutableCapability, error)
+	GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error)
 }
 
 // Capability is the part of a hosted capability this package needs: what it is
@@ -74,15 +98,54 @@ type Server struct {
 	// descriptors the capabilities were generated against.
 	files   []*desc.FileDescriptor
 	methods []*desc.MethodDescriptor
+
+	// hub holds the subscriptions this instance has registered. Shared with every
+	// other instance, so a subscription registered across several of them is one
+	// thing. Set by Mount, which is where an instance's identity is known; nil
+	// means triggers cannot be subscribed to, which is what a Server built without
+	// being mounted is.
+	hub *Hub
+	// index and label are which instance this is, carried onto every event so a
+	// row can say which node delivered it.
+	index int
+	label string
+	// prefix is where the pages are mounted, so the form can link to the fan-out
+	// page - which is where a subscription's events are shown.
+	prefix string
+}
+
+// subscriptionServices are the services whose methods register a trigger rather
+// than calling one, sorted.
+//
+// The page needs the list because invoking one does something different: it opens
+// a subscription instead of returning a response. Taken from the calls rather than
+// from a name, so nothing depends on what the synthetic services are called.
+func (s *Server) subscriptionServices() []string {
+	seen := map[string]bool{}
+	for key, c := range s.calls {
+		if !c.subscribe {
+			continue
+		}
+		if service, _, found := strings.Cut(key, "/"); found {
+			seen[service] = true
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for service := range seen {
+		out = append(out, service)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // New builds a Server over the capabilities given.
 //
-// Every non-streaming method of every capability's service is inserted, so no
-// handler is registered per method and nothing closes over a capability: a
-// request is served by looking its types up and asking the registry for the
-// capability that owns it. Streaming methods are triggers, which are registered
-// and delivered rather than called, so they are left out.
+// Every method of every capability's service is inserted, so no handler is
+// registered per method and nothing closes over a capability: a request is served
+// by looking its types up and asking the registry for the capability that owns
+// it. A streaming method is a trigger, which cannot be called - it is offered as
+// a synthetic method that registers it instead, see shim.go.
 func New(ctx context.Context, registry Registry, caps ...Capability) (*Server, error) {
 	if registry == nil {
 		return nil, fmt.Errorf("a capability registry is required")
@@ -108,22 +171,18 @@ func New(ctx context.Context, registry Registry, caps ...Capability) (*Server, e
 	return s, nil
 }
 
-// addService inserts every callable method of one service.
+// addService inserts every method of one service: the callable ones as they are,
+// and the streaming ones as the subscriptions that register them.
 func (s *Server) addService(capabilityID string, service protoreflect.ServiceDescriptor, seenFiles map[string]bool) error {
-	file := service.ParentFile()
-	if !seenFiles[file.Path()] {
-		seenFiles[file.Path()] = true
-		wrapped, err := desc.WrapFile(file)
-		if err != nil {
-			return fmt.Errorf("failed to wrap %s: %w", file.Path(), err)
-		}
-		s.files = append(s.files, wrapped)
+	if err := s.addFile(service.ParentFile(), seenFiles); err != nil {
+		return err
 	}
 
 	methods := service.Methods()
 	for i := range methods.Len() {
 		md := methods.Get(i)
 		// A streaming response is a trigger: registered and delivered, not called.
+		// It is offered below instead.
 		if md.IsStreamingServer() || md.IsStreamingClient() {
 			continue
 		}
@@ -137,23 +196,106 @@ func (s *Server) addService(capabilityID string, service protoreflect.ServiceDes
 			return fmt.Errorf("%s: %w", md.FullName(), err)
 		}
 
-		key := methodKey(string(service.FullName()), string(md.Name()))
-		if existing, taken := s.calls[key]; taken {
-			return fmt.Errorf("%s is served by both %s and %s", key, existing.capabilityID, capabilityID)
-		}
-		s.calls[key] = call{
+		if err = s.addCall(md, call{
 			capabilityID: capabilityID,
+			service:      string(service.FullName()),
 			method:       string(md.Name()),
 			input:        input,
 			output:       output,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return s.addSubscriptions(capabilityID, service, seenFiles)
+}
+
+// addSubscriptions inserts the synthetic method that registers each of a
+// service's triggers.
+//
+// The method the page invokes is the synthetic one, so it is that descriptor's
+// name a request arrives under - but what is registered is the trigger, so the
+// call it resolves to names the capability's own service and method.
+func (s *Server) addSubscriptions(capabilityID string, service protoreflect.ServiceDescriptor, seenFiles map[string]bool) error {
+	synthetic, err := subscriptionService(service)
+	if err != nil {
+		return err
+	}
+	if synthetic == nil {
+		return nil
+	}
+
+	if err = s.addFile(synthetic.ParentFile(), seenFiles); err != nil {
+		return err
+	}
+
+	methods := synthetic.Methods()
+	for i := range methods.Len() {
+		md := methods.Get(i)
+
+		trigger := service.Methods().ByName(md.Name())
+		if trigger == nil {
+			return fmt.Errorf("%s offers a subscription to %s, which it does not have", service.FullName(), md.Name())
 		}
 
-		wrapped, err := desc.WrapMethod(md)
+		input, err := goType(md.Input())
 		if err != nil {
-			return fmt.Errorf("failed to wrap %s: %w", md.FullName(), err)
+			return fmt.Errorf("%s: %w", md.FullName(), err)
 		}
-		s.methods = append(s.methods, wrapped)
+		output, err := goType(md.Output())
+		if err != nil {
+			return fmt.Errorf("%s: %w", md.FullName(), err)
+		}
+		// The message the trigger streams, which is what an event carries.
+		event, err := goType(trigger.Output())
+		if err != nil {
+			return fmt.Errorf("%s: %w", trigger.FullName(), err)
+		}
+
+		if err = s.addCall(md, call{
+			subscribe:    true,
+			capabilityID: capabilityID,
+			service:      string(service.FullName()),
+			method:       string(md.Name()),
+			input:        input,
+			output:       output,
+			event:        event,
+		}); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+// addFile wraps a file for the form generator, once.
+func (s *Server) addFile(file protoreflect.FileDescriptor, seenFiles map[string]bool) error {
+	if seenFiles[file.Path()] {
+		return nil
+	}
+	seenFiles[file.Path()] = true
+
+	wrapped, err := desc.WrapFile(file)
+	if err != nil {
+		return fmt.Errorf("failed to wrap %s: %w", file.Path(), err)
+	}
+	s.files = append(s.files, wrapped)
+	return nil
+}
+
+// addCall registers one method under the name a request will arrive as, which is
+// the descriptor's own - not the capability method it resolves to.
+func (s *Server) addCall(md protoreflect.MethodDescriptor, c call) error {
+	key := methodKey(string(md.Parent().FullName()), string(md.Name()))
+	if existing, taken := s.calls[key]; taken {
+		return fmt.Errorf("%s is served by both %s and %s", key, existing.capabilityID, c.capabilityID)
+	}
+	s.calls[key] = c
+
+	wrapped, err := desc.WrapMethod(md)
+	if err != nil {
+		return fmt.Errorf("failed to wrap %s: %w", md.FullName(), err)
+	}
+	s.methods = append(s.methods, wrapped)
 	return nil
 }
 
@@ -199,6 +341,9 @@ func (s *Server) Invoke(ctx context.Context, method string, args, reply any, _ .
 	c, ok := s.calls[strings.TrimPrefix(method, "/")]
 	if !ok {
 		return userErrorf("no capability method registered for %q", method)
+	}
+	if c.subscribe {
+		return s.subscribe(ctx, c, args, reply, method)
 	}
 
 	input, err := s.decode(args, c)
@@ -263,6 +408,58 @@ func (s *Server) decode(args any, c call) (proto.Message, error) {
 	}
 }
 
+// subscribe registers a trigger rather than calling a method.
+//
+// The request is built the same way a call's is - the same form, the same
+// metadata, the same registry - and the difference is only what comes back:
+// registering answers nothing, and what the trigger delivers arrives on the
+// subscription this joins. The trigger ID is what identifies that subscription,
+// so registering the same trigger ID on another instance joins this one.
+func (s *Server) subscribe(ctx context.Context, c call, args, reply any, method string) error {
+	if s.hub == nil {
+		return systemErrorf("%s cannot be subscribed to: this page was built without a subscription hub", method)
+	}
+
+	input, err := s.decode(args, c)
+	if err != nil {
+		return err
+	}
+
+	payload, err := anypb.New(input)
+	if err != nil {
+		return systemErrorf("failed to wrap the registration for %s: %w", method, err)
+	}
+
+	metadata, err := metadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	trigger, err := s.registry.GetTrigger(ctx, c.capabilityID)
+	if err != nil {
+		return systemErrorf("failed to resolve trigger capability %s: %w", c.capabilityID, err)
+	}
+
+	if _, err = s.hub.subscribe(registration{
+		triggerID:    triggerIDFromContext(ctx),
+		capabilityID: c.capabilityID,
+		service:      c.service,
+		method:       c.method,
+		instance:     s.index,
+		label:        s.label,
+		trigger:      trigger,
+		metadata:     metadata,
+		payload:      payload,
+		eventType:    c.event,
+	}); err != nil {
+		return err
+	}
+
+	// Registering is all this call did, and the method says so: its response type
+	// is empty. What was registered is now delivering to the subscription.
+	return s.fill(reply, &emptypb.Empty{}, c, method)
+}
+
 // encode unwraps the capability's response into the reply the form generator
 // gave us to fill in.
 func (s *Server) encode(response capabilities.CapabilityResponse, reply any, c call, method string) error {
@@ -277,7 +474,11 @@ func (s *Server) encode(response capabilities.CapabilityResponse, reply any, c c
 	if err := response.Payload.UnmarshalTo(output); err != nil {
 		return systemErrorf("failed to read the response of %s as %T: %w", method, output, err)
 	}
+	return s.fill(reply, output, c, method)
+}
 
+// fill puts a message into the reply the form generator gave us.
+func (s *Server) fill(reply any, output proto.Message, c call, method string) error {
 	switch r := reply.(type) {
 	case *dynamic.Message:
 		if err := r.ConvertFrom(protoadapt.MessageV1Of(output)); err != nil {
@@ -294,10 +495,11 @@ func (s *Server) encode(response capabilities.CapabilityResponse, reply any, c c
 	}
 }
 
-// NewStream is here to satisfy grpc.ClientConnInterface. Streaming methods are
-// triggers, which this page does not offer, so there is nothing to open.
+// NewStream is here to satisfy grpc.ClientConnInterface. Nothing is opened
+// through it: a streaming method is a trigger, and a trigger is registered by the
+// synthetic method beside it rather than streamed from here.
 func (s *Server) NewStream(context.Context, *grpc.StreamDesc, string, ...grpc.CallOption) (grpc.ClientStream, error) {
-	return nil, userErrorf("streaming is not supported: triggers are registered rather than called")
+	return nil, userErrorf("streaming is not supported: a trigger is registered through its %s service, and its events arrive on a subscription", SubscriptionsSuffix)
 }
 
 var _ grpc.ClientConnInterface = (*Server)(nil)

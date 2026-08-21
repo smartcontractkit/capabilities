@@ -79,6 +79,10 @@ type Dependencies struct {
 	// config is - so the fan-out page can reach a sibling by calling into its
 	// handler rather than over a socket. nil when the UI is off.
 	fleet *ui.Fleet
+	// hub holds the trigger subscriptions the debug page has registered, shared
+	// the same way and for the same reason: a trigger registered across several
+	// instances is one subscription with a column per instance, not one each.
+	hub *ui.Hub
 }
 
 // Close releases whatever Get dialled. The bootstrapper closes resolved
@@ -133,6 +137,7 @@ func Dependency(lggr logger.Logger, servers common.BootstrapDependency[*standalo
 		servers:        servers,
 		embeddedConfig: &embeddedConfig{CapabilityDonID: defaultEmbeddedDonID},
 		fleet:          &ui.Fleet{},
+		hub:            ui.NewHub(),
 	})
 }
 
@@ -154,6 +159,10 @@ type dependency struct {
 	// the config is: all of an embed run's instances register their debug page in
 	// one list, so the fan-out page on any of them can reach the rest.
 	fleet *ui.Fleet
+	// hub is shared for the same reason, one level further on: a subscription is
+	// registered on several instances and watched as one table, so the instances
+	// have to be delivering into one place.
+	hub *ui.Hub
 }
 
 var _ common.BootstrapDependency[Dependencies] = (*dependency)(nil)
@@ -185,6 +194,7 @@ func (d *dependency) ForEmbedding(i, instances int) common.BootstrapDependency[D
 		instances: instances,
 		cfg:       d.embeddedConfig,
 		fleet:     d.fleet,
+		hub:       d.hub,
 		index:     i,
 	}
 }
@@ -229,6 +239,7 @@ func (d *dependency) Get(ctx context.Context, cc common.CommonConfig) (Dependenc
 		closers:            []func() error{proxy.Close, conn.Close},
 		httpDebug:          d.HTTPDebug,
 		fleet:              d.fleet,
+		hub:                d.hub,
 	}, nil
 }
 
@@ -320,8 +331,15 @@ func mountDebugUI(sc standalone.StandaloneConfig, dependencies Dependencies, cap
 		return fmt.Errorf("failed to build the capability debug UI: %w", err)
 	}
 
-	title := fmt.Sprintf("Capability debug (instance %d)", dependencies.index+1)
-	if err := ui.Mount(sc.Mux, ui.DefaultPrefix, server, dependencies.fleet, dependencies.index, title); err != nil {
+	if err := ui.Mount(ui.Options{
+		Mux:    sc.Mux,
+		Prefix: ui.DefaultPrefix,
+		Server: server,
+		Fleet:  dependencies.fleet,
+		Hub:    dependencies.hub,
+		Index:  dependencies.index,
+		Title:  fmt.Sprintf("Capability debug (instance %d)", dependencies.index+1),
+	}); err != nil {
 		return fmt.Errorf("failed to mount the capability debug UI: %w", err)
 	}
 

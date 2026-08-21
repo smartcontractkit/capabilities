@@ -13,7 +13,8 @@
 
 $(function () {
     var CONFIG = window.__CRE_REQUEST__ || {
-        instances: [], services: {}, uiPath: "", prefix: "", metadata: []
+        instances: [], services: {}, uiPath: "", prefix: "", metadata: [],
+        subscriptions: [], triggerIdHeader: ""
     };
     var COOKIE = "_cre_debug_csrf_token";
     var HEADER = "x-cre-debug-csrf-token";
@@ -134,6 +135,21 @@ $(function () {
     function iframeSrc() {
         return CONFIG.uiPath + "/?embed=1&serviceName=" + encodeURIComponent($("#grpc-service").val()) +
             "&methodName=" + encodeURIComponent($("#grpc-method").val());
+    }
+
+    // A subscription is filled in and sent like anything else - the form is the
+    // trigger's own input, which is its configuration - but what comes back is a
+    // registration rather than a response. So the page has to know which of the two
+    // it is looking at: what to call the button, and what to do with the answer.
+    function isSubscribing() {
+        return (CONFIG.subscriptions || []).indexOf($("#grpc-service").val()) !== -1;
+    }
+
+    // renderMode switches the page between the two.
+    function renderMode() {
+        var subscribing = isSubscribing();
+        $("#cre-trigger-row").toggle(subscribing);
+        $("#cre-invoke").text(subscribing ? "Subscribe" : "Invoke");
     }
 
     // ---- request cards -------------------------------------------------------
@@ -411,6 +427,16 @@ $(function () {
                 out[header] = (out[header] || []).concat([value]);
             });
         });
+
+        // The trigger ID travels the same way, and is settled the same way: named
+        // here it is used, left blank the server mints one - once, for the whole
+        // fan-out, so every instance registers under the same subscription.
+        if (isSubscribing()) {
+            var triggerId = String($("#cre-trigger-id").val() || "").trim();
+            if (triggerId !== "") {
+                out[CONFIG.triggerIdHeader] = [triggerId];
+            }
+        }
         return out;
     }
 
@@ -454,6 +480,7 @@ $(function () {
         }
 
         var metadata = collectMetadata();
+        var subscribing = isSubscribing();
         var $button = $("#cre-invoke");
         $button.prop("disabled", true);
         var started = Date.now();
@@ -474,8 +501,20 @@ $(function () {
                 method: method,
                 groups: groups,
                 metadata: metadata,
+                subscribe: subscribing,
+                triggerId: data.triggerId || "",
                 data: data
             });
+
+            if (subscribing && data.triggerId) {
+                // Shown, because a caller that named none still has to know which
+                // subscription this was - it is how the events are found again, and
+                // how another instance joins this one later.
+                $("#cre-trigger-id").val(data.triggerId);
+                if (window.__creSubscriptions) {
+                    window.__creSubscriptions.watch(data.triggerId);
+                }
+            }
         }).fail(function (xhr) {
             renderError("Fan-out failed: " + xhr.status + " " + (xhr.responseText || ""));
         }).always(function () {
@@ -485,38 +524,109 @@ $(function () {
 
     // ---- results -------------------------------------------------------------
 
-    function resultCard(row) {
-        var $card = $("<div>", { "class": "cre-result cre-result-" + row.status });
-        var title = row.label;
-        if (row.status === "ok" || row.status === "error") {
-            title += "  ← request " + row.group;
-        }
-        $card.append($("<div>", { "class": "cre-result-head", text: title }));
+    // The responses are shown the way a trigger's events are: the distinct answers
+    // once each, and a column per instance saying which of them it gave.
+    //
+    // A card per instance repeated the same JSON once per instance, which for four
+    // instances agreeing is three copies of the answer and no way to see at a
+    // glance that they agreed. Here one hash means they did.
+    function resultGrid(data) {
+        var results = data.results || [];
+        var hashes = data.payloadIds || [];
+        var payloads = data.payloads || [];
+        var widest = Math.max(hashes.length, 1);
 
-        if (row.status === "na") {
-            $card.append($("<div>", { "class": "cre-na", text: "N/A" }));
-            return $card;
+        // Only one group means every instance was asked the same thing, so
+        // different answers are the capability disagreeing with itself. With several
+        // groups they were asked different things, and differing is the point.
+        var groups = {};
+        results.forEach(function (r) {
+            if (r.status !== "na") { groups[r.group] = true; }
+        });
+        var comparable = Object.keys(groups).length <= 1;
+        var diverged = !!data.diverged && comparable;
+
+        var $table = $("<table>", { "class": "cre-event-table" });
+
+        var $header = $("<tr>", { "class": diverged ? "cre-event-diverged" : "" });
+        $header.append($("<th>", { text: "Hash", rowspan: widest > 1 ? 2 : 1 }));
+        $header.append($("<th>", { text: "Response", colspan: widest }));
+        results.forEach(function (r) {
+            $header.append($("<th>", { text: r.label, rowspan: widest > 1 ? 2 : 1 }));
+        });
+        $table.append($header);
+
+        if (widest > 1) {
+            var $sub = $("<tr>", { "class": diverged ? "cre-event-diverged" : "" });
+            for (var i = 0; i < widest; i++) {
+                $sub.append($("<th>", { "class": "cre-payload-subhead", text: "index " + i }));
+            }
+            $table.append($sub);
         }
-        if (row.status === "error") {
-            $card.append($("<pre>", { "class": "cre-error", text: row.error }));
-            return $card;
+
+        var $row = $("<tr>", { "class": diverged ? "cre-event-diverged" : "" });
+
+        var $hashes = $("<td>", { "class": "cre-event-hashes" });
+        hashes.forEach(function (hash, index) {
+            $hashes.append($("<div>", { "class": "cre-hash-line" })
+                .append(widest > 1 ? $("<span>", { "class": "cre-hash-index", text: index + ": " }) : null)
+                .append($("<code>", {
+                    "class": "cre-payload-id-tag" + (diverged ? " cre-payload-id-diverged" : ""),
+                    text: hash
+                })));
+        });
+        if (diverged) {
+            $hashes.append($("<div>", { "class": "cre-diverged-note", text: "instances disagree" }));
         }
-        $card.append($("<pre>", { text: JSON.stringify(row.response, null, 2) }));
-        return $card;
+        if (hashes.length === 0) {
+            $hashes.append($("<span>", { "class": "cre-event-missing", text: "—" }));
+        }
+        $row.append($hashes);
+
+        for (var p = 0; p < widest; p++) {
+            var payload = payloads[p];
+            $row.append($("<td>", { "class": "cre-event-payload" })
+                .append(payload === undefined
+                    ? $("<span>", { "class": "cre-event-missing", text: "—" })
+                    : $("<pre>", { "class": "cre-payload", text: JSON.stringify(payload, null, 2) })));
+        }
+
+        results.forEach(function (r) {
+            $row.append(resultCell(r, widest > 1));
+        });
+        $table.append($row);
+
+        return $table;
     }
 
-    function resultGrid(results) {
-        var $grid = $("<div>", { "class": "cre-result-grid" });
-        results.forEach(function (row) {
-            $grid.append(resultCard(row));
-        });
-        return $grid;
+    // One instance's answer: which response it gave, which request it was sent, and
+    // the failure instead if it did not answer.
+    function resultCell(result, split) {
+        var $cell = $("<td>", { "class": "cre-event-node cre-result-" + result.status });
+
+        if (result.status === "na") {
+            return $cell.addClass("cre-event-missing").append($("<span>", { text: "N/A" }));
+        }
+        if (result.status === "error") {
+            return $cell.append($("<pre>", { "class": "cre-error", text: result.error }));
+        }
+
+        if (split) {
+            $cell.append($("<div>", {
+                "class": "cre-event-index",
+                text: "index: " + (result.responseIndex >= 0 ? result.responseIndex : "—")
+            }));
+        } else {
+            $cell.append($("<div>", { "class": "cre-event-index", text: "answered" }));
+        }
+        $cell.append($("<div>", { "class": "cre-result-group", text: "request " + result.group }));
+        return $cell;
     }
 
     function renderResults(data) {
         var $out = $("#cre-response").empty();
         $out.append($("<div>", { "class": "cre-method", text: data.method }));
-        $out.append(resultGrid(data.results));
+        $out.append(resultGrid(data));
         selectTab(0);
     }
 
@@ -609,7 +719,7 @@ $(function () {
                 $panel.append($("<pre>", { "class": "request-json", text: JSON.stringify(item.metadata, null, 2) }));
             }
             $panel.append($("<div>", { "class": "history-detail-heading", text: "Responses" }));
-            $panel.append(resultGrid(item.data.results));
+            $panel.append(resultGrid(item.data));
             $accordion.append($panel);
         });
 
@@ -643,11 +753,13 @@ $(function () {
         $("#grpc-service").val(service);
         populateMethods();
         $("#grpc-method").val(method);
+        renderMode();
 
         $("#cre-metadata input[data-cre-header]").each(function () {
             var values = (item.metadata || {})[$(this).attr("data-cre-header")];
             $(this).val(values ? values.join("\n") : "");
         });
+        $("#cre-trigger-id").val(item.triggerId || "");
 
         var selected = [];
         state.requests = item.groups.map(function (g) {
@@ -675,6 +787,30 @@ $(function () {
             writeWhenReady(request, item.groups[i].body, 60);
         });
         selectTab(0);
+
+        if (item.subscribe) {
+            replaySubscription(item);
+        }
+    }
+
+    // A replayed subscription rejoins the one it recorded if it is still running,
+    // and subscribes again if it is not.
+    //
+    // Rejoining rather than re-registering matters: registering an instance that is
+    // already registered under that trigger ID is refused, so replaying a live
+    // subscription would be an error rather than the "show me that again" it was
+    // meant to be.
+    function replaySubscription(item) {
+        if (!item.triggerId || !window.__creSubscriptions) {
+            return;
+        }
+        if (window.__creSubscriptions.isLive(item.triggerId)) {
+            window.__creSubscriptions.watch(item.triggerId);
+            return;
+        }
+        // Not running any more, so it has to be registered again - once the forms
+        // have the bodies that were just written into them.
+        setTimeout(invoke, 400);
     }
 
     // The iframe has to finish loading before it can accept a body.
@@ -779,9 +915,13 @@ $(function () {
 
         $service.on("change", function () {
             populateMethods();
+            renderMode();
             reloadFrames();
         });
-        $("#grpc-method").on("change", reloadFrames);
+        $("#grpc-method").on("change", function () {
+            renderMode();
+            reloadFrames();
+        });
 
         $("#grpc-request-response").tabs();
         $("#cre-mirror").on("change", function () {
@@ -804,6 +944,7 @@ $(function () {
         $("#cre-history-save").on("click", saveHistory);
 
         renderMetadata();
+        renderMode();
         render();
         loadHistory();
         renderHistory();
