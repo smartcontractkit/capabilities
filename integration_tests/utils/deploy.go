@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
