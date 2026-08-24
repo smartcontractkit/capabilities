@@ -5,11 +5,13 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 
-	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+
+	evmcap "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 

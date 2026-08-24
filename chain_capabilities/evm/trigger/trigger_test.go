@@ -28,7 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -36,6 +35,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
+
+	evmcappb "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 )
 
 // testLogTriggerCapabilityID matches the shape of chain_capabilities/evm main.go (evm:ChainSelector:<selector>@1.0.0 (<chainID>).

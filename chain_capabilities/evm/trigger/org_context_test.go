@@ -9,12 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+
+	evmcappb "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )

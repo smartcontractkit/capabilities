@@ -47,7 +47,7 @@ func (d *embedded) ForEmbedding(i, _ int) standalone.BootstrapDependency[*Factor
 	return &embedded{lggr: d.lggr, index: i}
 }
 
-// Get resolves the transport and this instance's bundle.
+// Get resolves the transport.
 //
 // PeerGroup and Keyring are left unset: there is no in-process peer group simulation, so an embedded
 // instance cannot host don2don.Dispatcher.
@@ -57,12 +57,5 @@ func (d *embedded) Get(context.Context, standalone.CommonConfig) (*Factories, er
 		return nil, err
 	}
 
-	// The bundle a hosted peer would have taken from the node's keystore. Serving it is all this form
-	// can still do with it - an oracle in this process holds its own, derived the same way.
-	bundle, err := ocr.EmbeddedOCR2Bundle(d.index)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Factories{Factories: factories, OCR2: bundle}, nil
+	return &Factories{Factories: factories}, nil
 }

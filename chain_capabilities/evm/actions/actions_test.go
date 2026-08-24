@@ -33,9 +33,10 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+
+	evmcappb "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 )
 
 func TestCapability_CallContract(t *testing.T) {

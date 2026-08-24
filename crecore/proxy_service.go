@@ -7,6 +7,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/smartcontractkit/capabilities/libs/standalone/rage"
+
+	"github.com/smartcontractkit/capabilities/crecore/nodekeys"
 	"github.com/smartcontractkit/capabilities/libs/x/registry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -46,6 +48,8 @@ type proxyService struct {
 	// listener of their own.
 	grpcServer grpc.ServiceRegistrar
 	factories  *rage.Factories
+	// keys are what this process signs with on behalf of oracles and capabilities that hold none.
+	keys nodekeys.Keys
 }
 
 var _ services.Service = (*proxyService)(nil)
@@ -53,8 +57,8 @@ var _ services.Service = (*proxyService)(nil)
 // newProxyService builds the proxy service using the standard
 // services.Config/Engine pattern, so its lifecycle and health integrate with
 // the bootstrapper's aggregated health report.
-func newProxyService(lggr logger.Logger, grpcServer grpc.ServiceRegistrar, factories *rage.Factories) *proxyService {
-	s := &proxyService{lggr: lggr, grpcServer: grpcServer, factories: factories}
+func newProxyService(lggr logger.Logger, grpcServer grpc.ServiceRegistrar, factories *rage.Factories, keys nodekeys.Keys) *proxyService {
+	s := &proxyService{lggr: lggr, grpcServer: grpcServer, factories: factories, keys: keys}
 	s.Service, s.eng = services.Config{
 		Name:  "P2PProxy",
 		Start: s.start,
@@ -75,11 +79,23 @@ func (s *proxyService) start(context.Context) error {
 	// Signing goes on the same surface, and for the same reason: this process
 	// holds the node's keys, so an oracle hosted elsewhere asks it to sign
 	// rather than being given one.
-	signer, err := newSignerServer(s.factories.OCR2)
-	if err != nil {
-		return fmt.Errorf("failed to serve signing on behalf of capabilities: %w", err)
+	//
+	// Registered without reading a key. Which keys are there is what a caller asking
+	// for one finds out, so a node with no OCR key still proxies its peer and lends
+	// its chain accounts.
+	creproxy.RegisterSignerServer(s.grpcServer, newSignerServer(s.keys))
+
+	// Chain keys go on the same surface for the same reason, when the node has any:
+	// a chain capability transmits as this node, and this is the process that can
+	// sign as it. A node holding no EVM keys serves nothing here, so a capability
+	// pointed at it fails when it dials rather than when it first transmits.
+	// Nil only for an embedded run, which has no node keystore behind it: its
+	// instances derive what they sign with, so there is nothing to lend them.
+	if chain := s.keys.Chain(); chain != nil {
+		creproxy.RegisterKeystoreServer(s.grpcServer, newKeystoreServer(chain))
+	} else {
+		s.eng.Infow("No node keystore behind this process, so no chain signing is served")
 	}
-	creproxy.RegisterSignerServer(s.grpcServer, signer)
 
 	return nil
 }

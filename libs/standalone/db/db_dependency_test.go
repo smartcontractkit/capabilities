@@ -41,13 +41,18 @@ func TestWithSearchPath(t *testing.T) {
 
 func TestForEmbedding(t *testing.T) {
 	const dsn = "postgresql://localhost:5432/chainlink"
-	template := &dependency{cfg: &sqlutil.Config{URL: dsn}, migrationTable: "migrations"}
+	template := &dependency{cfg: &Config{Config: &sqlutil.Config{URL: dsn}}, migrationTable: "migrations"}
 
 	// Instance 0 is partitioned like every other instance, so a run of N instances has N schemas and
 	// none of them is the odd one out. A single instance never calls this, and keeps the database as
 	// configured.
 	assert.Equal(t, "node_0", template.ForEmbedding(0, 2).(*embedded).schema)
 	assert.Equal(t, "node_1", template.ForEmbedding(1, 2).(*embedded).schema)
+
+	// A configured schema does not survive embedding: it names one place for the binary's tables,
+	// and the instances of one run each need their own.
+	configured := &dependency{cfg: &Config{Config: &sqlutil.Config{URL: dsn}, Schema: "crecore"}, migrationTable: "migrations"}
+	assert.Equal(t, "node_1", configured.ForEmbedding(1, 2).(*embedded).schema)
 }
 
 func mustParse(t *testing.T, rawURL string) *url.URL {

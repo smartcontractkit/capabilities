@@ -16,9 +16,9 @@ import (
 )
 
 func TestHostForEmbedding(t *testing.T) {
-	// A nil database dependency: the adapted instances resolve without one, which is the property
-	// under test - an embedded instance neither unlocks a keystore nor stores announcements.
-	template := Host(logger.Test(t), nil, "announcements")
+	// Nil dependencies: the adapted instances resolve without either, which is the property under
+	// test - an embedded instance is handed no keyring and stores no announcements.
+	template := Host(logger.Test(t), nil, "announcements", nil)
 
 	first := template.ForEmbedding(0, 2)
 	second := template.ForEmbedding(1, 2)
@@ -41,7 +41,7 @@ func TestHostForEmbedding(t *testing.T) {
 	t.Run("hosting a peer needs an address to listen on", func(t *testing.T) {
 		// The dependency as a single instance resolves it, and a fresh one since the embedded forms
 		// above have already resolved and cached their factories.
-		_, err := Host(logger.Test(t), nil, "announcements").Get(t.Context(), standalone.CommonConfig{})
+		_, err := Host(logger.Test(t), nil, "announcements", nil).Get(t.Context(), standalone.CommonConfig{})
 		// Cannot be a `validate` tag: an embedded instance resolves a different dependency, which
 		// needs no address at all.
 		require.ErrorContains(t, err, "--ocr.listen-addresses is required")

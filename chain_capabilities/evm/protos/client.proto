@@ -1,0 +1,443 @@
+syntax = "proto3";
+
+package capabilities.blockchain.evm.v1alpha;
+
+import "sdk/v1alpha/sdk.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+import "values/v1/values.proto";
+
+enum ConfidenceLevel {
+  CONFIDENCE_LEVEL_SAFE = 0;
+  CONFIDENCE_LEVEL_LATEST = 1;
+  CONFIDENCE_LEVEL_FINALIZED = 2;
+}
+
+message TopicValues {
+  repeated bytes values = 1; // list of possible values for any topic, in [32]byte fix-sized array format
+}
+
+message FilterLogTriggerRequest {
+  repeated bytes addresses = 1; // list of addresses to include in evm address [20]byte fix-sized array format, at least one address is required
+  /*
+     TopicValues is a fixed 4 length array of possible values for any topic where:
+       a) the first element is an array of the event signatures (keccak256 of the event name and indexed args types), it has to have at least one value
+       b) the second element is an array of possible values for the first indexed argument, can be empty
+       c) the third element is an array of possible values for the second indexed argument, can be empty
+       d) the fourth element is an array of possible values for the third indexed argument, can be empty
+  */
+  repeated TopicValues topics = 2;
+  ConfidenceLevel confidence = 3; // optional, defaults to "SAFE"
+}
+
+// CallContractRequest has arguments for reading a contract as specified in the call message at a block height defined by blockNumber where:
+// blockNumber :
+//	nil (default) or (-2) → use the latest mined block (“latest”)
+//	FinalizedBlockNumber(-3) → last finalized block (“finalized”)
+//
+// Any positive value is treated as an explicit block height.
+message CallContractRequest {
+  CallMsg call = 1;
+  values.v1.BigInt block_number = 2;
+}
+
+message CallContractReply {
+  bytes data = 1; // solidity-spec abi encoded bytes
+}
+
+message FilterLogsRequest {
+  FilterQuery filter_query = 1;
+}
+
+message FilterLogsReply {
+  repeated Log logs = 1;
+}
+
+// represents evm-style log
+message Log {
+  bytes address = 1; // address of the contract emitted the log in evm address [20]byte fix-sized array format
+  repeated bytes topics = 2; // indexed log fields, in [32]byte fix-sized array format
+  bytes tx_hash = 3; // hash of the transaction containing the log, in [32]byte fix-sized array format
+  bytes block_hash = 4; // hash of the block containing the log, in [32]byte fix-sized array format
+  bytes data = 5; // solidity-spec abi encoded log Data
+  bytes event_sig = 6; // keccak256 of event signature, in [32]byte fix-sized array format
+  values.v1.BigInt block_number = 7; // block number containing the log
+  uint32 tx_index = 8; // index of transaction emmited the log
+  uint32 index = 9; // index of the Log within the intire block
+  bool removed = 10; // flag if the log was removed during reorg
+}
+
+// represents simplified evm-style CallMsg
+message CallMsg {
+  bytes from = 1; // sender address in evm address [20]byte fix-sized array format
+  bytes to = 2; // contract address in evm address [20]byte fix-sized array format
+  bytes data = 3; // solidity-spec abi encoded bytes
+}
+
+// represents evm-style filter query
+message FilterQuery {
+  bytes block_hash = 1; // exact block (cant use from/to), in [32]byte fix-sized array format
+  values.v1.BigInt from_block = 2; // start block range
+  values.v1.BigInt to_block = 3; // end block range
+  repeated bytes addresses = 4; // contract(s) to filter logs from in evm address [20]byte fix-sized array format
+  repeated Topics topics = 5; // filter log by event signature and indexed args
+}
+
+message Topics {
+  repeated bytes topic = 1; // in [32]byte fix-sized array format
+}
+
+message BalanceAtRequest {
+  bytes account = 1; // in evm address [20]byte fix-sized array format
+  values.v1.BigInt block_number = 2;
+}
+
+message BalanceAtReply {
+  values.v1.BigInt balance = 1; // Balance of the account in wei (10^-18 eth)
+}
+
+message EstimateGasRequest {
+  CallMsg msg = 1; // simulates tx execution returns approximate amount of gas units needed
+}
+
+message EstimateGasReply {
+  uint64 gas = 1; // estimated amount of gas in gas units, needed for tx execution
+}
+
+message GetTransactionByHashRequest {
+  bytes hash = 1; // in [32]byte fix-sized array format
+}
+
+message GetTransactionByHashReply {
+  Transaction transaction = 1;
+}
+
+// represents evm-style transaction
+message Transaction {
+  uint64 nonce = 1; // number of txs sent from sender
+  uint64 gas = 2; // max gas allowed per execution (in gas units)
+  bytes to = 3; // recipient address in evm address [20]byte fix-sized array format
+  bytes data = 4; // solidity-spec abi encoded input data for function call payload
+  bytes hash = 5; // transaction hash, in [32]byte fix-sized array format
+  values.v1.BigInt value = 6; // amount of eth sent in wei
+  values.v1.BigInt gas_price = 7; // price for a single gas unit in wei
+}
+
+message GetTransactionReceiptRequest {
+  bytes hash = 1; // in [32]byte fix-sized array format
+}
+
+message GetTransactionReceiptReply {
+  Receipt receipt = 1;
+}
+
+// represents evm-style receipt
+message Receipt {
+  uint64 status = 1; // 1 for success 0 for failure
+  uint64 gas_used = 2; // gas used by this transaction (in gas units)
+  uint64 tx_index = 3; // index of the transaction inside of the block
+  bytes block_hash = 4; // block hash containing the transaction
+  repeated Log logs = 6; // logs emitted by this transaction
+  bytes tx_hash = 7; // hash of the transaction this receipt is for, in [32]byte fix-sized array format
+  values.v1.BigInt effective_gas_price = 8; // actual gas price paid in wei (include after EIP-1559)
+  values.v1.BigInt block_number = 9; // block number containing the transaction
+  bytes contract_address = 10; // address of the contract if this transaction created one in evm address [20]byte fix-sized array format
+}
+
+// ----- Request/Reply Wrappers -----
+message HeaderByNumberRequest {
+  values.v1.BigInt block_number = 1;
+}
+message HeaderByNumberReply {
+  Header header = 1;
+}
+
+message Header {
+  uint64 timestamp = 1; // unix timestamp
+  values.v1.BigInt block_number = 2;
+  bytes hash = 3; // in [32]byte fix-sized array format
+  bytes parent_hash = 4; // in [32]byte fix-sized array format
+}
+
+service Client {
+  option (tools.generator.v1alpha.capability) = {
+    mode: MODE_DON
+    capability_id: "evm@1.0.0"
+    labels: {
+      // from https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml
+      // as a subset of the selectors supported on the CRE
+      key: "ChainSelector"
+      value: {
+        uint64_label: {
+          defaults: [
+            {
+              key: "adi-mainnet"
+              value: 4059281736450291836
+            },
+            {
+              key: "adi-testnet"
+              value: 9418205736192840573
+            },
+            {
+              key: "apechain-testnet-curtis"
+              value: 9900119385908781505
+            },
+            {
+              key: "arc-testnet"
+              value: 3034092155422581607
+            },
+            {
+              key: "avalanche-mainnet"
+              value: 6433500567565415381
+            },
+            {
+              key: "avalanche-testnet-fuji"
+              value: 14767482510784806043
+            },
+            {
+              key: "binance_smart_chain-mainnet"
+              value: 11344663589394136015
+            },
+            {
+              key: "binance_smart_chain-testnet"
+              value: 13264668187771770619
+            },
+            {
+              key: "celo-mainnet"
+              value: 1346049177634351622
+            },
+            {
+              key: "celo-sepolia"
+              value: 3761762704474186180
+            },
+            {
+              key: "cronos-testnet"
+              value: 2995292832068775165
+            },
+            {
+              key: "dtcc-mainnet-appchain"
+              value: 13879014182901017172
+            },
+            {
+              key: "dtcc-testnet-andesite"
+              value: 15513093881969820114
+            },
+            {
+              key: "ethereum-mainnet"
+              value: 5009297550715157269
+            },
+            {
+              key: "ethereum-mainnet-arbitrum-1"
+              value: 4949039107694359620
+            },
+            {
+              key: "ethereum-mainnet-base-1"
+              value: 15971525489660198786
+            },
+            {
+              key: "ethereum-mainnet-ink-1"
+              value: 3461204551265785888
+            },
+            {
+              key: "ethereum-mainnet-linea-1"
+              value: 4627098889531055414
+            },
+            {
+              key: "ethereum-mainnet-mantle-1"
+              value: 1556008542357238666
+            },
+            {
+              key: "ethereum-mainnet-optimism-1"
+              value: 3734403246176062136
+            },
+            {
+              key: "ethereum-mainnet-scroll-1"
+              value: 13204309965629103672
+            },
+            {
+              key: "ethereum-mainnet-worldchain-1"
+              value: 2049429975587534727
+            },
+            {
+              key: "ethereum-mainnet-xlayer-1"
+              value: 3016212468291539606
+            },
+            {
+              key: "ethereum-mainnet-zksync-1"
+              value: 1562403441176082196
+            },
+            {
+              key: "ethereum-testnet-sepolia"
+              value: 16015286601757825753
+            },
+            {
+              key: "ethereum-testnet-sepolia-arbitrum-1"
+              value: 3478487238524512106
+            },
+            {
+              key: "ethereum-testnet-sepolia-base-1"
+              value: 10344971235874465080
+            },
+            {
+              key: "ethereum-testnet-sepolia-linea-1"
+              value: 5719461335882077547
+            },
+            {
+              key: "ethereum-testnet-sepolia-mantle-1"
+              value: 8236463271206331221
+            },
+            {
+              key: "ethereum-testnet-sepolia-optimism-1"
+              value: 5224473277236331295
+            },
+            {
+              key: "ethereum-testnet-sepolia-scroll-1"
+              value: 2279865765895943307
+            },
+            {
+              key: "ethereum-testnet-sepolia-unichain-1"
+              value: 14135854469784514356
+            },
+            {
+              key: "ethereum-testnet-sepolia-worldchain-1"
+              value: 5299555114858065850
+            },
+            {
+              key: "ethereum-testnet-sepolia-zksync-1"
+              value: 6898391096552792247
+            },
+            {
+              key: "gnosis_chain-mainnet"
+              value: 465200170687744372
+            },
+            {
+              key: "gnosis_chain-testnet-chiado"
+              value: 8871595565390010547
+            },
+            {
+              key: "hyperliquid-mainnet"
+              value: 2442541497099098535
+            },
+            {
+              key: "hyperliquid-testnet"
+              value: 4286062357653186312
+            },
+            {
+              key: "ink-testnet-sepolia"
+              value: 9763904284804119144
+            },
+            {
+              key: "jovay-mainnet"
+              value: 1523760397290643893
+            },
+            {
+              key: "jovay-testnet"
+              value: 945045181441419236
+            },
+            {
+              key: "megaeth-mainnet"
+              value: 6093540873831549674
+            },
+            {
+              key: "megaeth-testnet-2"
+              value: 18241817625092392675
+            },
+            {
+              key: "pharos-atlantic-testnet"
+              value: 16098325658947243212
+            },
+            {
+              key: "pharos-mainnet"
+              value: 7801139999541420232
+            },
+            {
+              key: "plasma-mainnet"
+              value: 9335212494177455608
+            },
+            {
+              key: "plasma-testnet"
+              value: 3967220077692964309
+            },
+            {
+              key: "polygon-mainnet"
+              value: 4051577828743386545
+            },
+            {
+              key: "polygon-testnet-amoy"
+              value: 16281711391670634445
+            },
+            {
+              key: "private-testnet-andesite"
+              value: 6915682381028791124
+            },
+            {
+              key: "private-testnet-pumice"
+              value: 1564738277398880633
+            },
+            {
+              key: "private-testnet-quartzite"
+              value: 4175996748267305081
+            },
+            {
+              key: "private-testnet-rhyolite"
+              value: 604447335222770945
+            },
+            {
+              key: "sonic-mainnet"
+              value: 1673871237479749969
+            },
+            {
+              key: "sonic-testnet"
+              value: 1763698235108410440
+            },
+            {
+              key: "tac-testnet"
+              value: 9488606126177218005
+            },
+            {
+              key: "xlayer-testnet"
+              value: 10212741611335999305
+            }
+          ]
+        }
+      }
+    }
+  };
+  rpc CallContract(CallContractRequest) returns (CallContractReply);
+  rpc FilterLogs(FilterLogsRequest) returns (FilterLogsReply);
+  rpc BalanceAt(BalanceAtRequest) returns (BalanceAtReply);
+  rpc EstimateGas(EstimateGasRequest) returns (EstimateGasReply);
+  rpc GetTransactionByHash(GetTransactionByHashRequest) returns (GetTransactionByHashReply);
+  rpc GetTransactionReceipt(GetTransactionReceiptRequest) returns (GetTransactionReceiptReply);
+  rpc HeaderByNumber(HeaderByNumberRequest) returns (HeaderByNumberReply);
+  rpc LogTrigger(FilterLogTriggerRequest) returns (stream Log);
+  rpc WriteReport(WriteReportRequest) returns (WriteReportReply);
+}
+
+enum ReceiverContractExecutionStatus {
+  RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS = 0;
+  RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED = 1;
+}
+
+message WriteReportRequest {
+  bytes receiver = 1;
+  sdk.v1alpha.ReportResponse report = 2;
+  optional GasConfig gas_config = 3;
+}
+
+message GasConfig {
+  uint64 gas_limit = 1;
+}
+
+enum TxStatus {
+  TX_STATUS_FATAL = 0;
+  TX_STATUS_REVERTED = 1;
+  TX_STATUS_SUCCESS = 2;
+}
+
+message WriteReportReply {
+  TxStatus tx_status = 1;
+  optional ReceiverContractExecutionStatus receiver_contract_execution_status = 2;
+  optional bytes tx_hash = 3;
+  optional values.v1.BigInt transaction_fee = 4;
+  optional string error_message = 5;
+}

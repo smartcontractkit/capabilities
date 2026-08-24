@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"google.golang.org/grpc"
@@ -79,26 +78,22 @@ func newRegistryService(
 	// metadata RPCs return a "not ready" error until the first snapshot lands.
 	registry.Register(grpcServer, s.registry)
 
+	// The syncer is a sub-service rather than something this starts by hand, because
+	// that is what puts its health in this service's report: it is unhealthy until a
+	// snapshot lands, and a process whose registry never read is one whose every
+	// lookup fails. Reporting that as healthy would be a lie a node acts on.
 	s.Service, s.eng = services.Config{
-		Name:  "CapabilitiesRegistry",
-		Start: s.start,
-		Close: s.close,
+		Name:           "CapabilitiesRegistry",
+		NewSubServices: func(logger.Logger) []services.Service { return []services.Service{syncer} },
+		Start:          s.start,
 	}.NewServiceEngine(lggr)
 	return s
 }
 
-func (s *registryService) start(ctx context.Context) error {
-	if err := s.syncer.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start registry syncer: %w", err)
-	}
-
+func (s *registryService) start(context.Context) error {
 	s.lggr.Infow("CapabilitiesRegistry started",
 		"syncInterval", s.syncInterval, "peerID", s.peerID.String())
 	return nil
-}
-
-func (s *registryService) close() error {
-	return s.syncer.Close()
 }
 
 // CapabilitiesRegistry returns the core.CapabilitiesRegistry don2don.NewDispatcher takes. Registry

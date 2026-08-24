@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -29,6 +28,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+
+	evm "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"

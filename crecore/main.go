@@ -13,6 +13,8 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
 	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
 	"github.com/smartcontractkit/capabilities/libs/standalone/rage"
+
+	"github.com/smartcontractkit/capabilities/crecore/nodekeys"
 	"github.com/smartcontractkit/capabilities/libs/x/registry"
 	"github.com/smartcontractkit/capabilities/libs/x/registrysyncer"
 
@@ -72,16 +74,21 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	lggr := bootstrapper.Logger()
 
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
-	ocrDep := rage.Host(lggr.Named("OCR"), dbDep, ocrDiscovererTable)
+	// This process's keys: the node's, or derived ones under embed. The peer is handed to the rage
+	// host as the identity to announce under; the rest is what this process signs with on behalf of
+	// capabilities.
+	keysDep := nodekeys.Dependency(lggr.Named("Keystore"), dbDep)
+	ocrDep := rage.Host(lggr.Named("OCR"), dbDep, ocrDiscovererTable, nodekeys.PeerKeyring(keysDep))
 
 	readerDep := evmregistry.Dependency(lggr.Named("CapabilitiesRegistry"), evm.Dependency(lggr.Named("EVM")))
 
 	grpcDep := standalonegrpc.Dependency(lggr.Named("CoreAPI"))
 
-	return standalone.Run4(bootstrapper, func(
+	return standalone.Run5(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
 		factories *rage.Factories,
+		keys nodekeys.Keys,
 		reader registry.Reader,
 		database *sql.DB,
 		grpcSrv *standalonegrpc.Server,
@@ -96,12 +103,22 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		// core reaches both over the single address it is configured with.
 		regSvc := newRegistryService(cfg.CapabilitiesRegistrySyncInterval.Duration(),
 			scfg.Logger.Named("capabilities registry"), reader, regORM, factories.PeerID, grpcSrv.Registrar())
-		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), grpcSrv.Registrar(), factories)
+		proxySvc := newProxyService(scfg.Logger.Named("proxy service"), grpcSrv.Registrar(), factories, keys)
+
+		svcs := []services.Service{proxySvc, regSvc}
+
 		// The dispatcher runs the real DON-to-DON work over the same rage connection, rather than
-		// core running it and this process merely fronting it.
-		dispatcherSvc := newDispatcherService(cfg.Dispatcher, scfg.Logger.Named("dispatcher"), factories, regSvc.CapabilitiesRegistry())
+		// core running it and this process merely fronting it. It needs a peer group, which only a
+		// real hosted peer has: an embedded run's peers are goroutines reached over channels, with
+		// no group to join, so there it is left out rather than started to fail.
+		if factories.PeerGroup != nil {
+			svcs = append(svcs, newDispatcherService(cfg.Dispatcher, scfg.Logger.Named("dispatcher"), factories, regSvc.CapabilitiesRegistry()))
+		} else {
+			scfg.Logger.Infow("No peer group behind this process, so DON-to-DON messaging is not served")
+		}
+
 		// The server goes last: it starts serving only once the services registering on it have
 		// started, and services.Engine starts sub-services in the order given.
-		return []services.Service{proxySvc, regSvc, dispatcherSvc, grpcSrv}
-	}, ocrDep, readerDep, dbDep, grpcDep)
+		return append(svcs, grpcSrv)
+	}, ocrDep, keysDep, readerDep, dbDep, grpcDep)
 }
