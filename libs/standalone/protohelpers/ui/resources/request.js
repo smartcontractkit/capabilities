@@ -14,10 +14,90 @@
 $(function () {
     var CONFIG = window.__CRE_REQUEST__ || {
         instances: [], services: {}, uiPath: "", prefix: "", metadata: [],
-        subscriptions: [], triggerIdHeader: ""
+        subscriptions: [], triggerIdHeader: "",
+        special: { bigInt: "", decimal: "", methods: {}, requests: {} }
     };
     var COOKIE = "_cre_debug_csrf_token";
     var HEADER = "x-cre-debug-csrf-token";
+
+    // ---- special value types -------------------------------------------------
+    //
+    // A values.v1.BigInt is a sign and base64 bytes, a values.v1.Decimal is that
+    // plus an exponent, and neither reads as the number it stands for. So what is
+    // shown is a copy with those replaced.
+    //
+    // A copy, deliberately. History keeps the raw response, and Save History writes
+    // what history holds, so a saved file is still the messages a replay needs -
+    // paste it into Postman and it is the request and response as they went over
+    // the wire, not this page's rendering of them.
+
+    var SPECIAL = CONFIG.special || { bigInt: "", decimal: "", methods: {} };
+    var VALUES = window.__CRE_VALUES__;
+
+    // The response paths for a method, as the server named it. The page names a
+    // method "service.method"; the paths are keyed "/service/method".
+    function specialPathsFor(method) {
+        if (!method || !VALUES) {
+            return [];
+        }
+        var dot = method.lastIndexOf(".");
+        if (dot === -1) {
+            return [];
+        }
+        return SPECIAL.methods["/" + method.slice(0, dot) + "/" + method.slice(dot + 1)] || [];
+    }
+
+    function specialRequestPathsFor(method) {
+        if (!method || !VALUES) {
+            return [];
+        }
+        var dot = method.lastIndexOf(".");
+        if (dot === -1) {
+            return [];
+        }
+        return (SPECIAL.requests || {})["/" + method.slice(0, dot) + "/" + method.slice(dot + 1)] || [];
+    }
+
+    // requestAsNumbers is a request body with its special messages replaced.
+    //
+    // Keyed lowerCamelCase, because a request body here is grpcui's own model
+    // rather than something off the wire.
+    function requestAsNumbers(body, method) {
+        var paths = specialRequestPathsFor(method);
+        if (!paths.length || !VALUES) {
+            return body;
+        }
+        return VALUES.parsed(body, paths, SPECIAL, true);
+    }
+
+    // asNumbers is one instance's response with its special messages replaced.
+    //
+    // The payload is grpcui's envelope, so the configured paths are followed from
+    // each message inside it rather than from the top.
+    function asNumbers(payload, method) {
+        var paths = specialPathsFor(method);
+        if (!paths.length || !payload || typeof payload !== "object") {
+            return payload;
+        }
+
+        var copy;
+        try {
+            copy = JSON.parse(JSON.stringify(payload));
+        } catch (e) {
+            return payload;
+        }
+        if (!(copy.responses instanceof Array)) {
+            return copy;
+        }
+        copy.responses = copy.responses.map(function (entry) {
+            if (!entry || typeof entry !== "object" || entry.message === undefined) {
+                return entry;
+            }
+            entry.message = VALUES.parsed(entry.message, paths, SPECIAL);
+            return entry;
+        });
+        return copy;
+    }
 
     // ---- state ---------------------------------------------------------------
     //
@@ -588,7 +668,7 @@ $(function () {
             $row.append($("<td>", { "class": "cre-event-payload" })
                 .append(payload === undefined
                     ? $("<span>", { "class": "cre-event-missing", text: "—" })
-                    : $("<pre>", { "class": "cre-payload", text: JSON.stringify(payload, null, 2) })));
+                    : $("<pre>", { "class": "cre-payload", text: JSON.stringify(asNumbers(payload, data.method), null, 2) })));
         }
 
         results.forEach(function (r) {
@@ -712,7 +792,10 @@ $(function () {
                     "class": "history-detail-heading",
                     text: "Request " + (gi + 1) + "  →  instances [" + g.instances.join(", ") + "]"
                 }));
-                $panel.append($("<pre>", { "class": "request-json", text: JSON.stringify(g.body.data, null, 2) }));
+                $panel.append($("<pre>", {
+                    "class": "request-json",
+                    text: JSON.stringify(requestAsNumbers(g.body.data, item.method), null, 2)
+                }));
             });
             if (item.metadata && Object.keys(item.metadata).length > 0) {
                 $panel.append($("<div>", { "class": "history-detail-heading", text: "Metadata" }));
@@ -831,6 +914,12 @@ $(function () {
         setTimeout(function () { writeWhenReady(request, body, triesLeft - 1); }, 200);
     }
 
+    // Saved raw, deliberately.
+    //
+    // What the page shows is a rendering - special messages replaced by the number
+    // they stand for - and a rendering is not something anything else can send. The
+    // file holds what went over the wire, so it can be replayed from Postman or
+    // anything else that speaks the real messages.
     function saveHistory() {
         var blob = new Blob([JSON.stringify(history, null, 2)], { type: "application/json" });
         var a = document.createElement("a");

@@ -174,6 +174,10 @@ type pageConfig struct {
 	// TriggerIDHeader is what the trigger ID travels in, so the page does not
 	// repeat the name.
 	TriggerIDHeader string `json:"triggerIdHeader"`
+	// Special are the messages shown as the number they stand for rather than as
+	// the fields they are made of, and where each method's response holds them.
+	// See special.go.
+	Special SpecialConfig `json:"special"`
 }
 
 func (f *fanout) config() pageConfig {
@@ -197,6 +201,7 @@ func (f *fanout) config() pageConfig {
 		Metadata:        Fields(),
 		Subscriptions:   f.server.subscriptionServices(),
 		TriggerIDHeader: TriggerIDHeader,
+		Special:         f.server.specialConfig(),
 	}
 }
 
@@ -248,7 +253,8 @@ func (f *fanout) asset(w http.ResponseWriter, r *http.Request) {
 	switch path.Base(r.URL.Path) {
 	case requestJSFileName():
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		_, _ = io.WriteString(w, requestJS)
+		// The shared arithmetic first, so the page's own script can rely on it.
+		_, _ = io.WriteString(w, valuesJS+"\n"+requestJS)
 	case subscriptionsJSFileName():
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		_, _ = io.WriteString(w, subscriptionsJS)
