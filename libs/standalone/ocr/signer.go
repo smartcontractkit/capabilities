@@ -59,13 +59,19 @@ func newRemoteKeyring(ctx context.Context, conn grpc.ClientConnInterface) (*remo
 		return nil, fmt.Errorf("failed to read the signer's public keys: %w", err)
 	}
 
-	// Encoded here rather than on each call: the signer serves the bundle's own
-	// public key, and what an oracle has to answer with is the form the config
-	// carries. Failing here reports a key that cannot be encoded where it is read,
-	// rather than as an oracle no one recognises.
-	onchainPublicKey, err := marshalEVMOnchainPublicKey(keys.GetOnchainPublicKey())
-	if err != nil {
-		return nil, err
+	// Taken as it is served, not re-encoded: an onchain keyring's public key is
+	// already the multichain form a configuration lists it as (see
+	// ocr2key.NewOCR3Keyring), and the signer holds the keyring. Encoding it again
+	// here would announce a key wrapped twice, which no configuration carries, and
+	// which is what an oracle whose offchain key matches but whose onchain key does
+	// not looks like.
+	//
+	// Checked rather than trusted, because the difference is invisible until a DON
+	// refuses to recognise this oracle: what comes back has to decode as the form it
+	// claims to be.
+	onchainPublicKey := ocrtypes.OnchainPublicKey(keys.GetOnchainPublicKey())
+	if _, err := ocr2key.UnmarshalMultichainPublicKey(onchainPublicKey); err != nil {
+		return nil, fmt.Errorf("the signer's onchain public key is not the encoded form a configuration lists: %w", err)
 	}
 
 	k := &remoteKeyring{
@@ -170,7 +176,7 @@ func verifyReport(
 	report ocrtypes.Report,
 	signature []byte,
 ) bool {
-	key, err := ocr2key.OnchainPublicKeyFor(evmFamily, publicKey)
+	key, err := ocr2key.OnchainPublicKeyFor(EVMFamily, publicKey)
 	if err != nil {
 		return false
 	}
@@ -183,14 +189,14 @@ func verifyReport(
 // node that writes those configs; what is here is the EVM-shaped view of it that a
 // process delegating its signing needs.
 
-// evmFamily is the name the EVM entry is keyed by, and the name core's jobs give
+// EVMFamily is the name the EVM entry is keyed by, and the name core's jobs give
 // the EVM bundle in onchainSigningStrategy.config.
-const evmFamily = "evm"
+const EVMFamily = "evm"
 
 // marshalEVMOnchainPublicKey encodes a bare EVM key as the single-family form.
 func marshalEVMOnchainPublicKey(key ocrtypes.OnchainPublicKey) (ocrtypes.OnchainPublicKey, error) {
 	if len(key) == 0 {
 		return nil, errors.New("no evm onchain public key to encode")
 	}
-	return ocr2key.MarshalMultichainPublicKey(map[string]ocrtypes.OnchainPublicKey{evmFamily: key})
+	return ocr2key.MarshalMultichainPublicKey(map[string]ocrtypes.OnchainPublicKey{EVMFamily: key})
 }

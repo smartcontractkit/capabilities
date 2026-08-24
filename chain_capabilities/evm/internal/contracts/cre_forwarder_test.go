@@ -13,8 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/sha3"
 
-	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
+	evmcap "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"

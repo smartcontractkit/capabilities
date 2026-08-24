@@ -31,7 +31,7 @@ func TestMarshalEVMOnchainPublicKey(t *testing.T) {
 	want := append(ocrtypes.OnchainPublicKey{0x01, 0x14, 0x00}, key...)
 	assert.Equal(t, want, encoded)
 
-	got, err := ocr2key.OnchainPublicKeyFor(evmFamily, encoded)
+	got, err := ocr2key.OnchainPublicKeyFor(EVMFamily, encoded)
 	require.NoError(t, err)
 	assert.Equal(t, key, got)
 }
@@ -40,7 +40,7 @@ func TestOnchainPublicKeysRejectsNoEVMEntry(t *testing.T) {
 	t.Parallel()
 
 	// Aptos only: nothing here can check an EVM signature.
-	_, err := ocr2key.OnchainPublicKeyFor(evmFamily, ocrtypes.OnchainPublicKey{0x05, 0x01, 0x00, 0xaa})
+	_, err := ocr2key.OnchainPublicKeyFor(EVMFamily, ocrtypes.OnchainPublicKey{0x05, 0x01, 0x00, 0xaa})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no evm entry")
 }

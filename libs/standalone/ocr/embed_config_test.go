@@ -118,7 +118,7 @@ func TestEmbeddedOCRRefusesAnInstanceOutsideTheRun(t *testing.T) {
 }
 
 func TestEmbeddedOCRConfigRegistry(t *testing.T) {
-	registry := EmbeddedOCRConfigRegistry(4)
+	registry := embeddedOCRConfigRegistry(4)
 
 	got, err := registry.OCRConfig(t.Context(), testCapabilityID, 1, "")
 	require.NoError(t, err)

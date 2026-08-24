@@ -47,6 +47,36 @@ func TestProxy(t *testing.T) {
 		assert.Equal(t, ocr2types.Account("0x5994a5155e9b81ab7794b79bfbf076ef5ef7c437"), factories.TransmitAccount)
 	})
 
+	t.Run("the onchain key is announced exactly as the signer serves it", func(t *testing.T) {
+		// The signer holds the keyring, and a keyring's public key is already the
+		// multichain form a configuration lists (ocr2key.NewOCR3Keyring). Encoding it
+		// again here produced 01 17 00 01 14 00 <address> against a config carrying
+		// 01 14 00 <address>: an oracle whose offchain key matches and whose onchain key
+		// does not.
+		dep := &proxyDependency{lggr: logger.Test(t), cfg: ProxyConfig{
+			ProxyAddress:    serveSigner(t),
+			PeerID:          mustPeerID(t, 7),
+			TransmitAccount: "0x5994a5155e9b81ab7794b79bfbf076ef5ef7c437",
+		}}
+
+		factories, err := dep.Get(t.Context(), standalone.CommonConfig{})
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, factories.Close()) })
+
+		assert.Equal(t, ocr2types.OnchainPublicKey(stubOnchainPublicKey), factories.Onchain.PublicKey())
+	})
+
+	t.Run("a signer serving an unencoded key is rejected", func(t *testing.T) {
+		dep := &proxyDependency{lggr: logger.Test(t), cfg: ProxyConfig{
+			ProxyAddress:    serve(t, bareSigner{}),
+			PeerID:          mustPeerID(t, 7),
+			TransmitAccount: "0x5994a5155e9b81ab7794b79bfbf076ef5ef7c437",
+		}}
+
+		_, err := dep.Get(t.Context(), standalone.CommonConfig{})
+		require.ErrorContains(t, err, "not the encoded form a configuration lists")
+	})
+
 	t.Run("a peer ID is decoded from its text form", func(t *testing.T) {
 		// ragetypes.PeerID unmarshals text, so the flags package binds it as a leaf and rejects a
 		// malformed value when the configuration is decoded rather than when it is first used.
@@ -90,12 +120,17 @@ func TestProxy(t *testing.T) {
 // signer_test.go for the signing itself.
 func serveSigner(t *testing.T) string {
 	t.Helper()
+	return serve(t, stubSigner{})
+}
+
+func serve(t *testing.T, signer proxy.SignerServer) string {
+	t.Helper()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	server := grpc.NewServer()
-	proxy.RegisterSignerServer(server, stubSigner{})
+	proxy.RegisterSignerServer(server, signer)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 
@@ -114,8 +149,28 @@ func (stubSigner) Keys(context.Context, *proxy.KeysRequest) (*proxy.KeysReply, e
 		// ed25519 sized, as the remote keyring checks.
 		OffchainPublicKey:         make([]byte, ed25519.PublicKeySize),
 		ConfigEncryptionPublicKey: make([]byte, ed25519.PublicKeySize),
-		// An EVM onchain public key is an address.
-		OnchainPublicKey:   make([]byte, 20),
+		// The encoded form, which is what an onchain keyring's public key is and
+		// therefore what the signer holding one serves.
+		OnchainPublicKey:   stubOnchainPublicKey,
 		MaxSignatureLength: 65,
+	}, nil
+}
+
+// stubOnchainPublicKey is an EVM address in the form a configuration lists it.
+var stubOnchainPublicKey = append([]byte{0x01, 0x14, 0x00}, make([]byte, 20)...)
+
+// bareSigner serves the address itself rather than the encoded form: the mistake
+// this guards against, since an oracle announcing a key wrapped twice matches no
+// configuration and says so only once a DON has refused it.
+type bareSigner struct {
+	proxy.UnimplementedSignerServer
+}
+
+func (bareSigner) Keys(context.Context, *proxy.KeysRequest) (*proxy.KeysReply, error) {
+	return &proxy.KeysReply{
+		OffchainPublicKey:         make([]byte, ed25519.PublicKeySize),
+		ConfigEncryptionPublicKey: make([]byte, ed25519.PublicKeySize),
+		OnchainPublicKey:          make([]byte, 20),
+		MaxSignatureLength:        65,
 	}, nil
 }

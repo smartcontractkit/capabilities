@@ -13,10 +13,25 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 )
 
+// Config is the database: the connection settings it is opened with, and the schema this binary's
+// tables live in.
+//
+// The connection settings are the database's own (sqlutil.Config, which also knows how to open it),
+// inlined rather than nested so they keep the names every other binary gives them.
+type Config struct {
+	//nolint:revive // struct-tag: "inline" is pkg/config/flags' squash option (Options.SquashTagOption), not a go-toml one
+	*sqlutil.Config `toml:",inline"`
+
+	// Schema is where this binary's tables are created and read. Empty leaves the connection's own
+	// search path alone, which is right for a database of this binary's own.
+	//
+	// It is for the other case: a database shared with something else, usually the node's. A binary
+	// given a schema there cannot collide with the node's tables however plainly its own are named,
+	// and an operator can see at a glance which tables are whose.
+	Schema string `usage:"database schema this binary's tables are created in and read from; empty uses the connection's own search path"`
+}
+
 // Dependency returns a standalone.BootstrapDependency that resolves an opened, migrated database.
-// The connection settings belong to the database itself (sqlutil.Config, which also knows how to
-// open it), so they are bound directly rather than wrapped: this dependency adds no setting of its
-// own.
 //
 // Each embedded instance gets its own schema (see ForEmbedding), so the instances of an embedded
 // DON keep their state apart while sharing one server, one URL and one set of credentials.
@@ -27,12 +42,12 @@ func Dependency(migrationsFS fs.FS, migrationTable string) standalone.BootstrapD
 		// The instance the flags are bound to and decoded into, so an unset setting keeps the
 		// value it is given here. Fresh per call rather than shared, as every other dependency's
 		// config is.
-		cfg: &sqlutil.Config{},
+		cfg: &Config{Config: &sqlutil.Config{}},
 	})
 }
 
 type dependency struct {
-	cfg            *sqlutil.Config
+	cfg            *Config
 	migrationsFS   fs.FS
 	migrationTable string
 }
@@ -60,9 +75,34 @@ func (d *dependency) ForEmbedding(i, _ int) standalone.BootstrapDependency[*sql.
 	return &embedded{dependency: d, schema: fmt.Sprintf("node_%d", i)}
 }
 
-// Get opens the database as configured.
+// Get opens the database as configured, in the configured schema when there is one.
 func (d *dependency) Get(ctx context.Context, _ standalone.CommonConfig) (*sql.DB, error) {
-	return d.open(ctx, *d.cfg, nil)
+	if d.cfg.Schema == "" {
+		return d.open(ctx, *d.cfg.Config, nil)
+	}
+	return d.openInSchema(ctx, d.cfg.Schema)
+}
+
+// openInSchema opens the database with schema at the front of its search path, creating the schema if
+// it is not already there. A configured schema and an embedded instance's schema both come through
+// here: they want the same thing for different reasons.
+//
+// The schema is usually created by whoever owns the database - the node's migrations, for a binary
+// the node launches - so the create is for the other case: a database of this binary's own, and the
+// per-instance schemas of an embedded run, which no migration knows about.
+func (d *dependency) openInSchema(ctx context.Context, schema string) (*sql.DB, error) {
+	cfg := *d.cfg.Config
+	var err error
+	if cfg.URL, err = withSearchPath(cfg.URL, schema); err != nil {
+		return nil, err
+	}
+
+	return d.open(ctx, cfg, func(ctx context.Context, db *sql.DB) error {
+		if _, err := db.ExecContext(ctx, `CREATE SCHEMA IF NOT EXISTS `+quoteIdentifier(schema)); err != nil {
+			return fmt.Errorf("failed to create schema %s: %w", schema, err)
+		}
+		return nil
+	})
 }
 
 // open opens the database at cfg and applies the migrations, running prepare (when given) on the
@@ -102,20 +142,9 @@ type embedded struct {
 var _ standalone.BootstrapDependency[*sql.DB] = (*embedded)(nil)
 
 func (d *embedded) Get(ctx context.Context, _ standalone.CommonConfig) (*sql.DB, error) {
-	cfg := *d.cfg
-	var err error
-	if cfg.URL, err = withSearchPath(cfg.URL, d.schema); err != nil {
-		return nil, err
-	}
-
-	return d.open(ctx, cfg, func(ctx context.Context, db *sql.DB) error {
-		// The search path names the schema but does not bring it into being, and an instance is not
-		// something an operator sets up by hand.
-		if _, err := db.ExecContext(ctx, `CREATE SCHEMA IF NOT EXISTS `+quoteIdentifier(d.schema)); err != nil {
-			return fmt.Errorf("failed to create schema %s: %w", d.schema, err)
-		}
-		return nil
-	})
+	// An instance's own schema, whatever the configured one was: instances of one run must not share
+	// tables, and a schema configured for all of them would be exactly that.
+	return d.openInSchema(ctx, d.schema)
 }
 
 // withSearchPath returns rawURL with schema at the front of its search path, so unqualified names

@@ -15,7 +15,6 @@ import (
 	"github.com/smartcontractkit/libocr/networking"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 
@@ -33,11 +32,6 @@ type Factories struct {
 	// Keyring signs with the same P2P key the peer above uses, for don2don.Dispatcher's
 	// message-level signatures.
 	Keyring ragetypes.PeerKeyring
-
-	// OCR2 is the node's OCR key bundle, which this process signs with on behalf of oracles that
-	// hold no keys of their own. An embedded instance's is its own rather than a node's, since there
-	// is no node behind it to borrow one from.
-	OCR2 ocr2key.KeyBundle
 }
 
 // defaultPeerConfig is the peer settings the flags are bound to and decoded into, so an unset

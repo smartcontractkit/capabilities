@@ -1,7 +1,7 @@
 {
   "name": "evm",
   "projectType": "capability",
-  "implicitDependencies": ["loopserver"],
+  "implicitDependencies": ["chainconsensus"],
   "tags": [],
   "targets": {
     "lint": {

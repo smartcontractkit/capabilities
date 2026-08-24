@@ -16,11 +16,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
-	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
+	evmcap "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 )
 
 type TransmissionState uint8

@@ -6,7 +6,6 @@ import (
 
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
@@ -97,11 +96,11 @@ func (d *embedded) Get(context.Context, standalone.CommonConfig) (*OCRFactories,
 	// Its own bundle, for the same reason it derives its own peer identity: there is no node keystore
 	// behind an embedded instance and so nothing to sign on its behalf. Which also means it signs
 	// here rather than asking a proxy - what the proxy form does is reach a key it does not have.
-	bundle, err := EmbeddedOCR2Bundle(d.index)
+	keyrings, err := EmbeddedKeyrings(d.index)
 	if err != nil {
 		return nil, err
 	}
-	onchain, err := ocr2key.NewOCR3Keyring(evmFamily, bundle)
+	bundle, err := EmbeddedOCR2Bundle(d.index)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +111,7 @@ func (d *embedded) Get(context.Context, standalone.CommonConfig) (*OCRFactories,
 		// the configuration it joins is the one built over this process's instances (see
 		// EmbeddedOCRConfig), which lists it under exactly this account.
 		TransmitAccount: EmbeddedTransmitAccount(bundle),
-		Keyrings:        Keyrings{Offchain: bundle, Onchain: onchain},
+		Keyrings:        keyrings,
 		// Bootstrappers stays empty: an embedded instance's peers are goroutines beside it, so there
 		// is nothing to dial and no address anyone could be told.
 	}, nil

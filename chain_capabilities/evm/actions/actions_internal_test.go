@@ -9,18 +9,20 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmprotos "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+
+	evmprotos "github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
 
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )

@@ -13,7 +13,6 @@ import (
 	"github.com/smartcontractkit/libocr/networking/rageping"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ocrcommon"
 
@@ -23,44 +22,42 @@ import (
 )
 
 // Config is the configuration of a locally hosted libocr peer: the peer's own settings
-// (ocrcommon.Config, shared with anything else that runs one) plus the keystore password.
+// (ocrcommon.Config), and nothing else.
 //
-// The password is this struct's rather than the shared one's because needing it is this
-// framework's choice, not the peer's: the peer needs an identity, and this process happens to get
-// one by unlocking the keystore in the database it shares with the node it fronts. An embedded
-// instance derives its identity instead and resolves a dependency with no settings at all (see
-// ForEmbedding), so neither this nor the listen addresses is `validate:"required"` - a rule that
-// only holds for the form a real deployment resolves is checked when that form is resolved, and
-// spelled out in the usage text since the generated docs can only show what a tag says.
+// The listen addresses are not `validate:"required"`: an embedded instance has no network to listen
+// on and resolves a dependency with no settings at all (see ForEmbedding), so a rule that only holds
+// for the form a real deployment resolves is checked when that form is resolved, and spelled out in
+// the usage text since the generated docs can only show what a tag says.
 type Config struct {
 	// Embedded as a pointer so this struct adds to the shared peer settings rather than copying
-	// them; inline so its fields sit alongside keystore-password under ocr.* instead of nesting.
+	// them; inline so its fields sit under ocr.* rather than nesting.
 	//
 	//nolint:revive // struct-tag: "inline" is pkg/config/flags' squash option (Options.SquashTagOption), not a go-toml one
 	*ocrcommon.Config `toml:",inline"`
-
-	// KeystorePassword unlocks the keystore holding the P2P identity the peer announces under.
-	// Typed as a SecretString so it redacts itself in logs, docs and generated example configs.
-	KeystorePassword config.SecretString `usage:"password for the node keystore holding the shared P2P identity; required unless the identity is derived, as it is under embed"`
-
-	// KeyBundleID names the OCR2 key bundle to sign with on behalf of the capabilities this
-	// process signs for. Only needed when the node holds more than one.
-	KeyBundleID string `usage:"OCR2 key bundle in the node keystore to sign with; only needed when the node holds more than one"`
 }
 
-// Host returns a standalone.BootstrapDependency that resolves the libocr Factories from a peer
-// this process hosts itself. It wraps the database dependency, which it uses to load the node's
-// P2P identity and to back the OCR discoverer table. discovererTable is the migration-created
-// table holding p2p announcements.
+// Host returns a standalone.BootstrapDependency that resolves the libocr Factories from a peer this
+// process hosts itself.
+//
+// keyring is the identity the peer announces under, taken as a dependency because a key is not this
+// package's business: whoever holds the node's keys resolves it, and this listens and dials with it.
+// db backs the OCR discoverer table, whose name discovererTable is - the migration that made it
+// belongs to the binary, not to this.
 //
 // An embedded instance resolves neither: see ForEmbedding.
-func Host(lggr commonlogger.Logger, db standalone.BootstrapDependency[*sql.DB], discovererTable string) standalone.BootstrapDependency[*Factories] {
+func Host(
+	lggr commonlogger.Logger,
+	db standalone.BootstrapDependency[*sql.DB],
+	discovererTable string,
+	keyring standalone.BootstrapDependency[ragetypes.PeerKeyring],
+) standalone.BootstrapDependency[*Factories] {
 	// Wrap in OnceBootstrapper so Get (which creates the peer) runs at most once even if several
 	// services resolve this dependency.
 	return standalone.OnceBootstrapper[*Factories](&hostDependency{
 		lggr:            lggr,
 		db:              db,
 		discovererTable: discovererTable,
+		keyring:         keyring,
 		cfg:             Config{Config: defaultPeerConfig()},
 	})
 }
@@ -69,6 +66,7 @@ type hostDependency struct {
 	lggr            commonlogger.Logger
 	db              standalone.BootstrapDependency[*sql.DB]
 	discovererTable string
+	keyring         standalone.BootstrapDependency[ragetypes.PeerKeyring]
 
 	cfg Config
 }
@@ -84,7 +82,7 @@ func (d *hostDependency) Namespace() string { return "ocr" }
 func (d *hostDependency) Config() any { return &d.cfg }
 
 func (d *hostDependency) Dependencies() []standalone.BootstrapCommand {
-	return []standalone.BootstrapCommand{d.db}
+	return []standalone.BootstrapCommand{d.db, d.keyring}
 }
 
 // ForEmbedding returns the in-process form, which hosts no peer at all: an embedded instance's peers
@@ -99,52 +97,18 @@ func (d *hostDependency) Get(ctx context.Context, cc standalone.CommonConfig) (*
 		return nil, errors.New("--ocr.listen-addresses is required to host a peer")
 	}
 
-	ds, keyring, peerID, err := d.keystoreIdentity(ctx, cc)
+	keyring, err := d.keyring.Get(ctx, cc)
 	if err != nil {
-		return nil, err
-	}
-
-	// From the same key ring, unlocked once: this process is the only one given the password, so
-	// it is the only one that can sign as this node - with its P2P key on the wire, and with its
-	// OCR keys for whoever it signs on behalf of.
-	bundle, err := loadOCR2Bundle(ctx, ds, string(d.cfg.KeystorePassword), d.cfg.KeyBundleID)
-	if err != nil {
-		return nil, err
-	}
-
-	factories, err := d.localFactories(ds, keyring, peerID)
-	if err != nil {
-		return nil, err
-	}
-	// The bundle itself rather than keyrings over it: this process signs on behalf of oracles
-	// elsewhere (see the Signer service), and an oracle here would build its own keyrings from the
-	// same bundle - see ocr2key.NewOCR3Keyring, which is what the delegating side ends up with.
-	factories.OCR2 = bundle
-	return factories, nil
-}
-
-// keystoreIdentity loads the node's P2P identity from the keystore in the database this process
-// shares with the node, so this process is the same peer as the node it fronts. The returned
-// sqlx.DB is the same connection, which localFactories also needs for the discoverer table.
-//
-// Only a process hosting a peer does this: it is the one that needs the private key, and so the
-// only one that is given the password to it.
-func (d *hostDependency) keystoreIdentity(ctx context.Context, cc standalone.CommonConfig) (*sqlx.DB, ragetypes.PeerKeyring, ragetypes.PeerID, error) {
-	if d.cfg.KeystorePassword == "" {
-		return nil, nil, ragetypes.PeerID{}, errors.New("--ocr.keystore-password is required to unlock the node's P2P identity")
+		return nil, fmt.Errorf("failed to get the peer keyring: %w", err)
 	}
 
 	sqlDB, err := d.db.Get(ctx, cc)
 	if err != nil {
-		return nil, nil, ragetypes.PeerID{}, fmt.Errorf("failed to get database: %w", err)
+		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
-	ds := sqlx.NewDb(sqlDB, "pgx")
 
-	keyring, err := loadPeerKeyring(ctx, ds, string(d.cfg.KeystorePassword))
-	if err != nil {
-		return nil, nil, ragetypes.PeerID{}, err
-	}
-	return ds, keyring, ragetypes.PeerIDFromKeyring(keyring), nil
+	// The peer ID libocr keys everything by, derived from the same public half the peer announces.
+	return d.localFactories(sqlx.NewDb(sqlDB, "pgx"), keyring, ragetypes.PeerIDFromKeyring(keyring))
 }
 
 // localFactories builds a real libocr peer and exposes its factories.

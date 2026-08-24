@@ -112,6 +112,22 @@ func (s *bundleSet) get(i int) (ocr2key.KeyBundle, error) {
 // serve the node's (see libs/standalone/rage).
 func EmbeddedOCR2Bundle(i int) (ocr2key.KeyBundle, error) { return embedBundles.get(i) }
 
+// EmbeddedKeyrings is instance i's OCR identity as the two keyrings an oracle signs with, which is
+// the shape a hosted peer hands back for the node's keys too - so a caller does not have to know
+// which kind of run it is in.
+func EmbeddedKeyrings(i int) (Keyrings, error) {
+	bundle, err := EmbeddedOCR2Bundle(i)
+	if err != nil {
+		return Keyrings{}, err
+	}
+	onchain, err := ocr2key.NewOCR3Keyring(EVMFamily, bundle)
+	if err != nil {
+		return Keyrings{}, fmt.Errorf("failed to build the onchain keyring of instance %d: %w", i, err)
+	}
+	// The bundle is already an offchain keyring, so only the onchain half is adapted.
+	return Keyrings{Offchain: bundle, Onchain: onchain}, nil
+}
+
 // peerKeyring is a ragetypes.PeerKeyring backed by a P2P key (a crypto.Signer): the node's own,
 // loaded from its keystore, or one derived from an instance index. Used in place of the deprecated
 // PeerConfig.PrivKey field.

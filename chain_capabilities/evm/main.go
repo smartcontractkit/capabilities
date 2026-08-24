@@ -1,291 +1,200 @@
+// Command evm runs the EVM chain capability as its own binary.
+//
+// It hosts no node of its own. The chain it reads and writes is built here from
+// chainlink-evm's own components - an RPC client, a head tracker, a log poller
+// and a transaction manager over a database of its own - rather than reached
+// through a relayer in the node's process. What it still borrows from the node is
+// what only a node has: the keys it transmits under, the rage networking its
+// oracle runs over, and the registry that says which DON it is.
 package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
+	"database/sql"
+	"embed"
 	"fmt"
-	"strconv"
-	"time"
+	"log"
 
-	"github.com/ethereum/go-ethereum/common"
-	chainselectors "github.com/smartcontractkit/chain-selectors"
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+	"github.com/jmoiron/sqlx"
+	"github.com/spf13/cobra"
 
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	"github.com/smartcontractkit/chainlink-evm/pkg/chains/legacyevm"
+	creevm "github.com/smartcontractkit/chainlink-evm/pkg/cre/evm"
 
-	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
-
-	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/chain"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
-	"github.com/smartcontractkit/capabilities/libs/loopserver"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/protos"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/simulated"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/standalone"
+	"github.com/smartcontractkit/capabilities/libs/standalone/capability"
+	"github.com/smartcontractkit/capabilities/libs/standalone/eventstore"
+	standalonegrpc "github.com/smartcontractkit/capabilities/libs/standalone/grpc"
+	"github.com/smartcontractkit/capabilities/libs/standalone/keystore"
+	"github.com/smartcontractkit/capabilities/libs/standalone/ocr"
 )
 
-const CapabilityName = "evm"
+//go:embed migrations/*.sql
+var embeddedMigrations embed.FS
 
-type capabilityGRPCService struct {
-	capabilities.CapabilityInfo
-	chainSelector uint64
-	capability
-	lggr          logger.Logger
-	limitsFactory limits.Factory
-}
-
-type capability struct {
-	*actions.EVM
-	id               string
-	requestPoller    *poller.Poller
-	consensusHandler chainconsensus.Handler
-	oracle           core.Oracle
-	triggerService   *trigger.LogTriggerService
-	heightProvider   *height.Provider
-}
-
-var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
+// migrationsTable is this binary's goose history. Named for the binary rather
+// than shared, so that a database holding more than one capability's tables keeps
+// their migrations apart.
+const migrationsTable = "evm_capability_migrations"
 
 func main() {
-	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
-	}, loop.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	c.lggr.Infof("Initialising %s", CapabilityName)
+func run() error {
+	// The capability's own settings, bound directly: the chain, the client, the
+	// database and the keys are dependencies, and each binds its own.
+	cfg := config.Default
 
-	cfg, err := c.unmarshalConfig(dependencies.Config)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
+	root := &cobra.Command{
+		Use:   "evm",
+		Short: "The CRE EVM chain capability",
+		Long: `Runs the EVM capability, which reads an EVM chain for a workflow, fires its
+log triggers, and writes the reports a DON agrees on.
+
+It reaches the chain itself: --evm.http-url is the RPC it dials, --chain.chain-id
+says which chain that is, and --database.url plus --database.schema is where its
+log poller and transaction manager keep their state - a schema of this
+capability's own, so nothing it runs shares a table with the node's own relayers.
+What it does not hold is keys or a peer - --keystore.proxy-address signs as this
+node, --ocr.proxy-address carries the oracle's messages, and
+--capabilities.proxy-url is the registry that says which DON this is and what OCR
+configuration it runs under.
+
+Settings can come from flags, from CRE_/CL_ env vars, or from a --config file;
+run "docs" to write the full reference to docs/CONFIG.md.`,
+	}
+	root.PersistentFlags().String("config", "", "Path to config file")
+
+	opts := flags.DefaultTOMLOptions("CRE", "CL")
+	opts.Namespace = "evm"
+	if err := flags.RegisterCommandFlags(root, &cfg, opts); err != nil {
+		return err
 	}
 
-	c.lggr.Infof("Initialising %s, ChainId: %d, Network: %s", CapabilityName, cfg.ChainID, cfg.Network)
+	bootstrapper := standalone.NewBootstrapper(root,
+		standalone.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
+	lggr := bootstrapper.Logger()
 
-	metrics, err := monitoring.NewMetrics()
-	if err != nil {
-		return fmt.Errorf("failed to create metrics: %w", err)
-	}
+	// This capability's own database, in a schema of its own: the tables are
+	// chainlink-evm's, and the node's copies of them are not this capability's to
+	// share.
+	dbDep := chain.DBDependency(lggr.Named("Database"), embeddedMigrations, migrationsTable)
+	// The keys are the node's, borrowed a signature at a time: the transaction
+	// manager sends as the account the registry knows this node by. An embedded run
+	// has no node to borrow from and signs with keys derived from its index.
+	ksDep := keystore.Proxy(lggr.Named("Keystore"), embeddedKeystore(&cfg))
+	// The client says where the chain is; the chain is built over it. An embedded run
+	// told about no chain gets one of its own, started in this process by the client
+	// dependency itself.
+	clientDep := creevm.Dependency(lggr.Named("EVMClient"))
+	// What a deployment would have put on that chain: the instances' accounts funded,
+	// and the forwarder they write reports through deployed and told who they are.
+	// Nothing at all when the run named a chain, which came with its own.
+	simDep := simulated.Dependency(lggr.Named("SimulatedChain"), clientDep.Simulated(), embeddedKeystore(&cfg))
+	// Narrowed to this chain's account, the way a node's key states narrow the
+	// keystore a relayer is handed: the store behind the proxy holds a key per chain
+	// this node runs, and only one of them is this chain's transmitter.
+	chainDep := chain.Dependency(lggr.Named("Chain"), clientDep, dbDep, ksDep, &cfg.NodeAddress)
+	// The proxy form, not the host one: this binary drives an oracle, it does not run a peer.
+	ocrDep := ocr.Proxy(lggr.Named("OCR"))
+	capDep := capability.Dependency(lggr.Named("Capabilities"), standalonegrpc.FactoryDependency(lggr.Named("CapabilityAPI")))
 
-	processor, err := monitoring.NewProcessor(c.lggr, metrics)
-	if err != nil {
-		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
-	}
+	return standalone.Run6(bootstrapper, func(
+		ctx context.Context,
+		scfg *standalone.StandaloneConfig,
+		evmChain legacyevm.Chain,
+		keys core.Keystore,
+		database *sql.DB,
+		factories *ocr.OCRFactories,
+		deps capability.Dependencies,
+		deployment *simulated.Deployment,
+	) []services.Service {
+		lggr := scfg.Logger.Named("evm")
 
-	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
-	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
-	if err != nil {
-		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
-	}
+		// A simulated chain names its own forwarder: this process deployed it, and there
+		// was nothing to configure the capability with before it existed.
+		cfg := cfg
+		if deployment != nil {
+			cfg.CREForwarderAddress = deployment.Forwarder.Hex()
+			if cfg.ReceiverGasMinimum == 0 {
+				cfg.ReceiverGasMinimum = simulated.DefaultReceiverGasMinimum
+			}
+		}
 
-	cs, ok := chainselectors.EvmChainIdToChainSelector()[cfg.ChainID]
-	if !ok {
-		return fmt.Errorf("chain selector not found for chainID: %d", cfg.ChainID)
-	}
-
-	c.chainSelector = cs
-	c.id = "evm" + ":ChainSelector:" + strconv.FormatUint(cs, 10) + "@1.0.0"
-
-	chainInfo, err := relayer.GetChainInfo(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to fetch chain info for chainID %d from relayer: %w", cfg.ChainID, err)
-	}
-
-	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, cfg.NodeAddress)
-
-	evmRelayer, err := relayer.EVM()
-	if err != nil {
-		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
-	}
-
-	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
-	if err != nil {
-		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
-	}
-	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
-
-	// capabilityDonID is the on-chain DON ID of the capability DON this plugin
-	// process serves, used to label emitted trigger events with the *sending*
-	// DON ID. The host (chainlink) resolves it authoritatively and injects it via
-	// dependencies.CapabilityDonID at Initialise time:
-	//   - syncer boot path: always populated;
-	//   - job-spec boot path: populated when unambiguous, otherwise 0 (e.g. a node
-	//     that belongs to multiple DONs running this capability, or a core node
-	//     that pre-dates CRE-4409).
-	// When it is 0 the trigger service falls back to the consumer workflow's DON
-	// ID (see trigger.NewLogTriggerService). We deliberately do NOT re-resolve it
-	// from the registry here: that lookup cannot disambiguate multi-DON nodes and
-	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
-	capabilityDonID := dependencies.CapabilityDonID
-
-	var scheduler ts.TransmissionScheduler
-	if cfg.DeltaStage > 0 {
-		// The transmission scheduler needs this DON's membership/quorum. Pass the
-		// authoritative DON ID so a multi-DON node selects the correct DON; when it
-		// is 0, InitMyDON keeps its legacy "first matched DON" behavior.
-		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, c.lggr, cfg.IsLocaL)
+		chainInfo, err := evmChain.GetChainInfo(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to init DON: %w", err)
+			lggr.Fatalw("Failed to read chain info", "error", err)
 		}
-		c.DON = &myDON
-		c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
 
-		scheduler, err = ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, cfg.IsLocaL)
+		// The chain's read and write surface, as a relayer would have handed it over.
+		evmService, err := chain.EVMService(lggr.Named("EVMService"), evmChain, database, keys, deps.CapabilityRegistry)
 		if err != nil {
-			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
+			lggr.Fatalw("Failed to build the chain's service", "error", err)
 		}
-	} else {
-		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
-	}
 
-	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler)
-	if err != nil {
-		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
-	}
-
-	// TODO: add org resolver
-	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
-	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, capabilityDonID, processor, messageBuilder,
-		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
-		dependencies.OrgResolver, dependencies.TriggerEventStore)
-	if err != nil {
-		return fmt.Errorf("error when creating trigger: %w", err)
-	}
-
-	c.heightProvider = height.NewProvider(c.lggr, cfg.ChainHeightPollPeriod, evmRelayer)
-
-	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
-		LocalConfig: ocrtypes.LocalConfig{
-			BlockchainTimeout:                  time.Second * 20,
-			ContractConfigTrackerPollInterval:  time.Second * 10,
-			ContractConfigConfirmations:        1,
-			ContractTransmitterTransmitTimeout: time.Second * 10,
-			DatabaseTimeout:                    time.Second * 10,
-			ContractConfigLoadTimeout:          time.Second * 10,
-			DefaultMaxDurationInitialization:   time.Second * 10,
-		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics),
-		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
-	})
-	if err != nil {
-		return fmt.Errorf("error when creating oracle: %w", err)
-	}
-
-	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
-	for _, service := range startServices {
-		if err := service.Start(ctx); err != nil {
-			return err
+		capabilityImpl, err := New(lggr, cfg, Dependencies{
+			EVMService:         evmService,
+			ChainInfo:          chainInfo,
+			DonID:              deps.CapabilityDonID,
+			Registry:           deps.OCRConfigRegistry,
+			CapabilityRegistry: deps.CapabilityRegistry,
+			Endpoints:          factories.OCR2Endpoint,
+			Offchain:           factories.Offchain,
+			Onchain:            factories.Onchain,
+			TransmitAccount:    factories.TransmitAccount,
+			Bootstrappers:      factories.Bootstrappers,
+			// Trigger events outlive a restart, so they are kept where the chain state is,
+			// under this chain's ID: the schema holds every chain this node runs the
+			// capability on, the same way the chain tables do.
+			EventStore:    eventstore.New(sqlx.NewDb(database, "pgx"), chainInfo.ChainID),
+			LimitsFactory: deps.LimitsFactory,
+			Metrics:       scfg.MetricsRegisterer,
+		})
+		if err != nil {
+			lggr.Fatalw("Failed to create the EVM capability", "error", err)
 		}
+
+		// Run supervises the capability and makes it reachable: registered, served,
+		// and announced to the node's registry.
+		svcs, err := capability.Run(deps, *scfg, protos.NewClientServer(capabilityImpl))
+		if err != nil {
+			lggr.Fatalw("Failed to host the EVM capability", "error", err)
+		}
+
+		// The chain goes first: it is what the capability answers with, and the
+		// bootstrapper starts services in the order given.
+		return append([]services.Service{evmChain}, svcs...)
+	}, chainDep, ksDep, dbDep, ocrDep, capDep, simDep)
+}
+
+// embeddedKeystore is what an embedded instance signs this chain's transactions
+// with: the key it was given, or - given none - the one its index derives.
+//
+// Configured keys are per instance and in instance order, because the instances
+// of an embedded run are separate DON members: two of them sending from one
+// account would be two transaction managers assigning the same nonces.
+func embeddedKeystore(cfg *config.Config) func(instance int) (core.Keystore, error) {
+	return func(instance int) (core.Keystore, error) {
+		keys := cfg.PrivateKeys
+		if len(keys) == 0 {
+			return chain.DeterministicKeystore(instance)
+		}
+		if instance >= len(keys) {
+			return nil, fmt.Errorf("instance %d has no --evm.private-keys entry: %d were given, and every instance sends from an account of its own", instance, len(keys))
+		}
+		return chain.KeystoreFromPrivateKey(keys[instance])
 	}
-
-	c.lggr.Infof("Successfully initialised %s", CapabilityName)
-	return nil
-}
-
-func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
-	var cfg config.Config
-	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse EVM capability config: %w", err)
-	}
-
-	if cfg.LogTriggerPollInterval < 0 {
-		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
-	}
-
-	if !common.IsHexAddress(cfg.CREForwarderAddress) {
-		return nil, fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
-	}
-
-	if cfg.ReceiverGasMinimum == 0 {
-		return nil, fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
-	}
-
-	if cfg.ObservationPollerWorkersCount == 0 {
-		cfg.ObservationPollerWorkersCount = 10
-		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
-	}
-
-	if cfg.ObservationPollPeriod == 0 {
-		cfg.ObservationPollPeriod = 2 * time.Second
-		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
-	}
-
-	if cfg.ChainHeightPollPeriod == 0 {
-		cfg.ChainHeightPollPeriod = time.Second
-		c.lggr.Infof("ChainHeightPollPeriod is zero, setting to %s.", cfg.ChainHeightPollPeriod)
-	}
-
-	if cfg.UnknownRequestsTTL == 0 {
-		cfg.UnknownRequestsTTL = 10 * time.Second
-		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
-	}
-
-	// DeltaStage is optional - if not set, transmission scheduling will be disabled
-	return &cfg, nil
-}
-
-func (c *capabilityGRPCService) Start(_ context.Context) error {
-	c.lggr.Infof("Start %s", CapabilityName)
-	return nil
-}
-
-func (c *capabilityGRPCService) Close() error {
-	c.lggr.Infof("Closing %s", CapabilityName)
-	return errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
-}
-
-func (c *capabilityGRPCService) HealthReport() map[string]error {
-	return map[string]error{c.Name(): nil}
-}
-
-func (c *capabilityGRPCService) Name() string {
-	return c.lggr.Name()
-}
-
-func (c *capabilityGRPCService) ChainSelector() uint64 {
-	return c.chainSelector
-}
-
-func (c *capabilityGRPCService) Description() string {
-	return "Contains EVM chain functionalities"
-}
-
-func (c *capabilityGRPCService) Ready() error {
-	return nil
-}
-
-func (c *capabilityGRPCService) RegisterToWorkflow(_ context.Context, _ capabilities.RegisterToWorkflowRequest) error {
-	return errors.New("not implemented")
-}
-
-func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capabilities.UnregisterFromWorkflowRequest) error {
-	// TODO implement me
-	return errors.New("not implemented")
-}
-
-func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], caperrors.Error) {
-	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
-}
-
-func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) caperrors.Error {
-	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
-}
-
-func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
-	return c.triggerService.AckEvent(ctx, triggerID, eventID)
 }

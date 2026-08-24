@@ -92,10 +92,10 @@ var DefaultEmbeddedOCRConfig = ocr3confighelper.PublicConfig{
 // init hands the builder below to the capability dependency, which is where an OCR-based capability
 // finds its configuration however the run was started.
 func init() {
-	capability.RegisterEmbeddedOCRConfig(EmbeddedOCRConfigRegistry)
+	capability.RegisterEmbeddedOCRConfig(embeddedOCRConfigRegistry)
 }
 
-// EmbeddedOCRConfigRegistry returns the core.OCRConfigRegistry an embedded run's oracles read their
+// embeddedOCRConfigRegistry returns the core.OCRConfigRegistry an embedded run's oracles read their
 // configuration from.
 //
 // It is a registry in the sense that matters to an oracle - it answers what configuration a
@@ -106,7 +106,7 @@ func init() {
 // oracles is how many instances the run has, which is the oracle set: instance i of that many is the
 // i-th member. It cannot be discovered from here, which is why it is asked for - see the embedded
 // capability dependency, which takes it as a setting.
-func EmbeddedOCRConfigRegistry(oracles int) core.OCRConfigRegistry {
+func embeddedOCRConfigRegistry(oracles int) core.OCRConfigRegistry {
 	return embeddedRegistry{oracles: oracles}
 }
 
