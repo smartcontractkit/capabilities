@@ -544,3 +544,77 @@ button.cre-copy-btn {
     opacity: 0.7;
     white-space: nowrap;
 }
+
+/* ---- special value types: BigInt and Decimal ----------------------------
+ *
+ * A values.v1.BigInt is a sign plus base64 bytes, and a values.v1.Decimal is
+ * that plus an exponent. The page shows one box holding the number instead, and
+ * form.js drives the real fields behind it.
+ */
+
+/* Visually hidden, NOT display:none. The real fields have to stay focusable:
+ * grpcui registers its validator on focus and commits on blur, so focusing them
+ * is how a value gets in. */
+.cre-visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+.cre-special {
+    display: inline-block;
+}
+
+.cre-special-input {
+    font-family: monospace;
+    min-width: 20em;
+}
+
+/* Said rather than silently ignored: the raw fields keep their previous value,
+ * so without this the box would look accepted and the request would not match. */
+.cre-special-input.cre-special-invalid {
+    outline: 2px solid #b00020;
+}
+
+.cre-special-response {
+    margin-top: 6px;
+}
+
+.cre-special-response-title {
+    font-weight: bold;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+.cre-special-response-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 0.9em;
+}
+
+.cre-special-path {
+    font-family: monospace;
+    opacity: 0.7;
+}
+
+.cre-special-number {
+    font-family: monospace;
+    font-weight: bold;
+}
+
+/* The response shown as numbers, beneath grpcui's own textarea. The textarea keeps
+ * the raw response: that is the one worth copying, and the one a replay elsewhere
+ * has to send. */
+.cre-special-json {
+    margin: 4px 0 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.9em;
+}

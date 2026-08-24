@@ -18,6 +18,13 @@ var (
 	//go:embed resources/form.js
 	formJS string
 
+	// The arithmetic for the special value types, shared by both pages: the
+	// encoding has to match Go's big.Int and decimal.Decimal exactly, and two
+	// copies of that would be two things to keep right. Prepended to each page's
+	// own script rather than served separately, so it cannot load second.
+	//go:embed resources/values.js
+	valuesJS string
+
 	//go:embed resources/request.js
 	requestJS string
 
@@ -44,7 +51,9 @@ func hashedName(base, content, ext string) string {
 
 func cssFileName() string             { return hashedName("cre-debug", pageCSS, "css") }
 func jsFileName(served string) string { return hashedName("cre-debug", served, "js") }
-func requestJSFileName() string       { return hashedName("cre-debug-request", requestJS, "js") }
+func requestJSFileName() string {
+	return hashedName("cre-debug-request", valuesJS+requestJS, "js")
+}
 func subscriptionsJSFileName() string {
 	return hashedName("cre-debug-subscriptions", subscriptionsJS, "js")
 }
@@ -67,16 +76,20 @@ func customJS(s *Server) (string, error) {
 		// Path is where the pages are mounted, so the form can link to the fan-out
 		// page - which is where a subscription's events are shown.
 		Path string `json:"prefix"`
+		// Special are the messages the form offers a number for instead of their
+		// fields, and where a response holds them. See special.go.
+		Special SpecialConfig `json:"special"`
 	}{
 		Metadata:        Fields(),
 		Prefix:          HeaderPrefix,
 		Subscriptions:   s.subscriptionServices(),
 		TriggerIDHeader: TriggerIDHeader,
 		Path:            s.prefix,
+		Special:         s.specialConfig(),
 	}
 	encoded, err := json.Marshal(cfg)
 	if err != nil {
 		return "", fmt.Errorf("encoding the debug page config: %w", err)
 	}
-	return "window.__CRE_DEBUG__ = " + string(encoded) + ";\n" + formJS, nil
+	return "window.__CRE_DEBUG__ = " + string(encoded) + ";\n" + valuesJS + "\n" + formJS, nil
 }

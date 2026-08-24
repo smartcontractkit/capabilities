@@ -11,7 +11,8 @@
 
 document.addEventListener("DOMContentLoaded", function () {
     var CONFIG = window.__CRE_DEBUG__ || {
-        metadata: [], headerPrefix: "", subscriptions: [], triggerIdHeader: "", prefix: ""
+        metadata: [], headerPrefix: "", subscriptions: [], triggerIdHeader: "", prefix: "",
+        special: { bigInt: "", decimal: "", methods: {} }
     };
 
     // A method on one of these services registers a trigger rather than calling
@@ -447,6 +448,344 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+
+    // ---- special value types: BigInt and Decimal -----------------------------
+    //
+    // A values.v1.BigInt is a sign and a big-endian byte string, so filling one in
+    // by hand means working out that -1000 is sign -1 and the base64 of 0x03e8.
+    // A values.v1.Decimal is that plus an exponent. Neither is a number anybody
+    // wants to type, so the page offers a box holding the number and does the
+    // arithmetic.
+    //
+    // Which messages these are, and where a response holds them, comes from
+    // CONFIG.special - built from the descriptors, see special.go. Nothing here
+    // recognises one from the shape of the data.
+    //
+    // Request side: grpcui renders a nested message as its own <table>. That table
+    // is left in the DOM, visually hidden, and its inputs are driven, because the
+    // request is built from grpcui's own model rather than from the DOM - writing
+    // the model directly would desync the Raw Request tab, the grpcurl text and
+    // grpcui's history.
+    //
+    // Response side: grpcui dumps each message as JSON into a textarea. The
+    // configured paths are followed into it and the numbers shown beside it, with
+    // the raw JSON left in place so the exact server output is still there.
+
+    var SPECIAL = CONFIG.special || { bigInt: "", decimal: "", methods: {} };
+
+    // The arithmetic lives in values.js, shared with the fan-out page: the
+    // encoding has to match Go's big.Int and decimal.Decimal exactly, and two
+    // copies of that would be two things to keep right.
+    var VALUES = window.__CRE_VALUES__;
+
+    // The proto field names these messages are made of. Read from the descriptors
+    // would be better, but they are the message's own contract - a BigInt without
+    // an abs_val is not a BigInt - so a mismatch is a missing widget, not silently
+    // wrong arithmetic: subfieldEditors below returns nothing and the raw fields
+    // stay visible.
+    var ABS_VAL = VALUES.fields.absVal;
+    var SIGN = VALUES.fields.sign;
+    var COEFFICIENT = VALUES.fields.coefficient;
+    var EXPONENT = VALUES.fields.exponent;
+
+    // ---- encoding ------------------------------------------------------------
+
+    // ---- request side --------------------------------------------------------
+
+    // Maps a nested message table to { protoFieldName: editorElement }.
+    //
+    // Only this table's own rows, and only rows whose editor is their own: a row
+    // holding a nested message has no editor of its own, and querySelector would
+    // otherwise reach into the nested table and report its first field as this
+    // row's value.
+    function subfieldEditors(table) {
+        var editors = {};
+        Array.prototype.forEach.call(table.rows, function (tr) {
+            var label = tr.querySelector("td.name strong");
+            var editor = tr.querySelector("textarea, input[type='text']");
+            if (label && editor && editor.closest("tr") === tr) {
+                editors[label.textContent.trim()] = editor;
+            }
+        });
+        return editors;
+    }
+
+    // The table of a nested message field, by field name.
+    function nestedTable(table, field) {
+        var found = null;
+        Array.prototype.forEach.call(table.rows, function (tr) {
+            var label = tr.querySelector("td.name strong");
+            if (!label || label.textContent.trim() !== field) {
+                return;
+            }
+            var inner = tr.querySelector("td div.input_container > table");
+            if (inner && inner.closest("tr") === tr) {
+                found = inner;
+            }
+        });
+        return found;
+    }
+
+    // Which special message a table is, or null. The type comes from the label
+    // cell of the row enclosing it, where grpcui writes it straight from the
+    // descriptor - so this reads the declared type rather than guessing from
+    // which fields happen to be present.
+    function specialKind(table) {
+        var row = $(table).closest("tr.message_field")[0];
+        if (!row) {
+            return null;
+        }
+        var cell = row.querySelector("td.name");
+        if (!cell) {
+            return null;
+        }
+
+        // Only the cell's own text: the field name is in a <strong> and "repeated"
+        // in an <em>, and a copy picker adds a <select> of its own.
+        var declared = "";
+        Array.prototype.forEach.call(cell.childNodes, function (node) {
+            if (node.nodeType === 3) {
+                declared += node.nodeValue;
+            }
+        });
+        declared = declared.trim();
+
+        if (SPECIAL.decimal && declared === SPECIAL.decimal) {
+            return "decimal";
+        }
+        if (SPECIAL.bigInt && declared === SPECIAL.bigInt) {
+            return "bigInt";
+        }
+        return null;
+    }
+
+    // The editors one widget drives, or null if the table is not fully built yet.
+    function specialEditors(table, kind) {
+        if (kind === "bigInt") {
+            var own = subfieldEditors(table);
+            if (!own[ABS_VAL] || !own[SIGN]) {
+                return null;
+            }
+            return { absVal: own[ABS_VAL], sign: own[SIGN] };
+        }
+
+        var outer = subfieldEditors(table);
+        var inner = nestedTable(table, COEFFICIENT);
+        if (!outer[EXPONENT] || !inner) {
+            return null;
+        }
+        var coefficient = subfieldEditors(inner);
+        if (!coefficient[ABS_VAL] || !coefficient[SIGN]) {
+            return null;
+        }
+        return { absVal: coefficient[ABS_VAL], sign: coefficient[SIGN], exponent: outer[EXPONENT] };
+    }
+
+    // Pushes a value into one of grpcui's own inputs. grpcui registers its
+    // validator on focus and commits the value on blur, so both are required - and
+    // they must be the native methods: jQuery's .trigger('blur') runs handlers
+    // before the native blur, and grpcui's own handler ignores the event while
+    // document.activeElement is still the element. Focus is restored afterwards so
+    // committing does not yank the caret out of the widget.
+    function commitToGrpcui(editor, value) {
+        if (!editor || editor.value === value) {
+            return;
+        }
+        var previous = document.activeElement;
+        editor.focus();
+        editor.value = value;
+        editor.blur();
+        if (previous && previous !== editor && typeof previous.focus === "function") {
+            previous.focus();
+        }
+    }
+
+    // The number currently held in the raw fields, for the box to open with.
+    function readSpecial(editors, kind) {
+        if (kind === "bigInt") {
+            return VALUES.decodeBigInt(editors.absVal.value, editors.sign.value);
+        }
+        return VALUES.decodeDecimal(editors.absVal.value, editors.sign.value, editors.exponent.value);
+    }
+
+    // writeSpecial pushes what was typed back into the raw fields.
+    function writeSpecial(table, kind, text, $box) {
+        var editors = specialEditors(table, kind);
+        if (!editors) {
+            return;
+        }
+
+        var encoded = kind === "bigInt" ? VALUES.encodeBigInt(text) : VALUES.encodeDecimal(text);
+        if (encoded === undefined) {
+            // Not a number. Said so, and the raw fields are left as they were.
+            $box.addClass("cre-special-invalid");
+            return;
+        }
+        $box.removeClass("cre-special-invalid");
+
+        if (encoded === null) {
+            // Cleared, which is the message left at its zero value.
+            commitToGrpcui(editors.absVal, "");
+            commitToGrpcui(editors.sign, "0");
+            if (kind === "decimal") {
+                commitToGrpcui(editors.exponent, "0");
+            }
+            return;
+        }
+
+        if (kind === "bigInt") {
+            commitToGrpcui(editors.absVal, encoded.absVal);
+            commitToGrpcui(editors.sign, encoded.sign);
+            return;
+        }
+        commitToGrpcui(editors.absVal, encoded.coefficient.absVal);
+        commitToGrpcui(editors.sign, encoded.coefficient.sign);
+        commitToGrpcui(editors.exponent, encoded.exponent);
+    }
+
+    function decorateSpecialTable(table, kind) {
+        var $table = $(table);
+        if ($table.data("creSpecial")) {
+            return;
+        }
+
+        var editors = specialEditors(table, kind);
+        if (!editors) {
+            // Half-built; the poll below comes back to it.
+            return;
+        }
+        $table.data("creSpecial", true);
+
+        var $box = $("<input>", {
+            type: "text",
+            "class": "cre-special-input",
+            inputmode: kind === "bigInt" ? "numeric" : "decimal",
+            placeholder: kind === "bigInt" ? "whole number, any size" : "number, e.g. 123.45",
+            title: kind === "bigInt" ? SPECIAL.bigInt : SPECIAL.decimal,
+            value: readSpecial(editors, kind)
+        });
+
+        // Only digits go in, so the box cannot hold something that is not a number
+        // in the first place.
+        var allowed = kind === "bigInt" ? /[^0-9+-]/g : /[^0-9+.\-]/g;
+        $box.on("input", function () {
+            var cleaned = this.value.replace(allowed, "");
+            if (cleaned !== this.value) {
+                var at = this.selectionStart - (this.value.length - cleaned.length);
+                this.value = cleaned;
+                if (typeof this.setSelectionRange === "function") {
+                    this.setSelectionRange(at, at);
+                }
+            }
+        });
+
+        // Committed on change, which fires when the box loses focus, so the caret
+        // is never moved mid-number.
+        $box.on("change", function () {
+            writeSpecial(table, kind, this.value, $box);
+        });
+
+        var $widget = $("<span>", { "class": "cre-special" }).append($box);
+
+        // Visually hidden rather than display:none - the raw fields have to stay
+        // focusable, because focusing them is how a value is committed.
+        $table.addClass("cre-visually-hidden").after($widget);
+        $widget.data("creSpecialTable", table).data("creSpecialKind", kind);
+    }
+
+    function decorateSpecialTables() {
+        // Document order, so an outer table is decorated before anything inside it.
+        // That matters for a Decimal: its coefficient is a BigInt, so it would get
+        // a box of its own - hidden inside the Decimal's hidden table, and writing
+        // to the very fields the Decimal's box drives. Whichever flushed last would
+        // win, so the inner one is not offered at all.
+        $("#grpc-request-form div.input_container > table").each(function () {
+            var kind = specialKind(this);
+            if (!kind || $(this).parents("table.cre-visually-hidden").length) {
+                return;
+            }
+            decorateSpecialTable(this, kind);
+        });
+    }
+
+    // Safety net: flush every widget before an RPC goes out, in case a box is still
+    // focused and has therefore not fired its change event yet.
+    function flushSpecialWidgets() {
+        $(".cre-special").each(function () {
+            var $widget = $(this);
+            var table = $widget.data("creSpecialTable");
+            if (!table || !document.body.contains(table)) {
+                return;
+            }
+            var $box = $widget.find(".cre-special-input");
+            writeSpecial(table, $widget.data("creSpecialKind"), $box.val(), $box);
+        });
+    }
+
+    // Capture phase, so this runs before grpcui's own click handler.
+    document.addEventListener("mousedown", function (e) {
+        if (e.target && $(e.target).is(".grpc-invoke")) {
+            flushSpecialWidgets();
+        }
+    }, true);
+
+    // ---- response side -------------------------------------------------------
+
+    function currentMethod() {
+        var service = $("#grpc-service").val();
+        var method = $("#grpc-method").val();
+        if (!service || !method) {
+            return null;
+        }
+        return "/" + service + "/" + method;
+    }
+
+    function decorateResponseSpecials() {
+        var method = currentMethod();
+        var paths = (method && SPECIAL.methods[method]) || [];
+
+        $("#grpc-response-data textarea.grpc-response-textarea").each(function () {
+            var $textArea = $(this);
+            var raw = $textArea.val();
+            var stamp = method + " " + raw;
+            if ($textArea.data("creSpecialFor") === stamp) {
+                return;
+            }
+            $textArea.data("creSpecialFor", stamp);
+
+            var $container = $textArea.parent();
+            $container.find(".cre-special-response").remove();
+            if (!paths.length) {
+                return;
+            }
+
+            var response;
+            try {
+                response = JSON.parse(raw);
+            } catch (e) {
+                return;
+            }
+
+            // A copy with the special messages replaced by their numbers. The
+            // textarea keeps the raw response, because that is the one worth
+            // copying: it is what the server actually sent, and what a replay
+            // somewhere else has to send back.
+            var shown = VALUES.parsed(response, paths, SPECIAL);
+            if (JSON.stringify(shown) === JSON.stringify(response)) {
+                // Nothing special in this particular response, so a second copy of
+                // it would only be noise.
+                return;
+            }
+
+            $container.append($("<div>", { "class": "cre-special-response" })
+                .append($("<div>", {
+                    "class": "cre-special-response-title",
+                    text: "As numbers (the raw response is above)"
+                }))
+                .append($("<pre>", { "class": "cre-special-json", text: JSON.stringify(shown, null, 2) })));
+        });
+    }
+
     // ---- embedding -----------------------------------------------------------
     //
     // The fan-out page embeds this page once per request. In embed mode the
@@ -472,5 +811,7 @@ document.addEventListener("DOMContentLoaded", function () {
         renderSubscribeFields();
         syncMetadataRows();
         decorateFieldCopies();
+        decorateSpecialTables();
+        decorateResponseSpecials();
     }, 100);
 });
