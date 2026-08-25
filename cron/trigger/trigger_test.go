@@ -1229,8 +1229,79 @@ func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
 	maximumFastest := 5 * time.Second
 
 	jobDef := gocron.CronJob(schedule, true)
-	capErr := enforceFastestSchedule(logger.Nop(), jobDef, maximumFastest)
+	capErr := enforceFastestSchedule(logger.Nop(), gocron.NewScheduler, jobDef, maximumFastest)
 	require.NotNil(t, capErr, "should reject schedule with 1s gaps")
 	require.Equal(t, caperrors.LimitExceeded, capErr.Code())
 	require.Contains(t, capErr.Error(), "maximum fastest cron schedule is 5s")
+}
+
+type mockScheduler struct {
+	gocron.Scheduler
+	shutdowns int
+}
+
+func (s *mockScheduler) Shutdown() error {
+	s.shutdowns++
+	return s.Scheduler.Shutdown()
+}
+
+func mockFactory(mocks *[]*mockScheduler) schedulerFactory {
+	return func(options ...gocron.SchedulerOption) (gocron.Scheduler, error) {
+		sched, err := gocron.NewScheduler(options...)
+		if err != nil {
+			return nil, err
+		}
+		mock := &mockScheduler{Scheduler: sched}
+		*mocks = append(*mocks, mock)
+		return mock, nil
+	}
+}
+
+// TestEnforceFastestSchedule_ShutsDownTempScheduler covers a regression where the
+// temporary scheduler's Shutdown was deferred below the NewJob error check, so every
+// workflow-supplied cron string that gocron failed to parse retained a scheduler
+// goroutine for the life of the plugin. Each schedule below exercises a different
+// return path through the check; all of them must dispose of the scheduler.
+func TestEnforceFastestSchedule_ShutsDownTempScheduler(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		schedule  string
+		shouldErr bool
+	}{
+		{name: "valid schedule", schedule: everyMinute, shouldErr: false},
+		{name: "invalid timezone", schedule: "TZ=moon * * * * *", shouldErr: true},
+		{name: "empty schedule", schedule: "", shouldErr: true},
+		{name: "not a cron schedule", schedule: "d d d d d", shouldErr: true},
+		{name: "exceeds maximum fastest", schedule: everySecond, shouldErr: true},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var mocks []*mockScheduler
+			capErr := enforceFastestSchedule(logger.Nop(), mockFactory(&mocks), gocron.CronJob(tt.schedule, true), 5*time.Second)
+			if tt.shouldErr {
+				require.NotNil(t, capErr, "schedule %q should have been rejected", tt.schedule)
+			} else {
+				require.Nil(t, capErr)
+			}
+
+			require.Len(t, mocks, 1, "expected exactly one temporary scheduler to be created")
+			require.Equal(t, 1, mocks[0].shutdowns, "temporary scheduler was not shut down on this path")
+		})
+	}
+}
+
+func TestEnforceFastestSchedule_SchedulerConstructionFails(t *testing.T) {
+	t.Parallel()
+
+	failing := func(...gocron.SchedulerOption) (gocron.Scheduler, error) {
+		return nil, errors.New("cannot construct")
+	}
+	capErr := enforceFastestSchedule(logger.Nop(), failing, gocron.CronJob(everyMinute, true), 5*time.Second)
+	require.NotNil(t, capErr)
+	require.Equal(t, caperrors.Internal, capErr.Code())
 }

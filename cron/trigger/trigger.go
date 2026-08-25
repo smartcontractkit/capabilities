@@ -210,7 +210,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	if err != nil {
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to look up fastest schedule interval: %w", err), caperrors.Internal)
 	}
-	capErr := enforceFastestSchedule(s.lggr, jobDef, limit)
+	capErr := enforceFastestSchedule(s.lggr, gocron.NewScheduler, jobDef, limit)
 	if capErr != nil {
 		return nil, capErr
 	}
