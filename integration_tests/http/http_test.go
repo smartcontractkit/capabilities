@@ -24,7 +24,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/connector"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/network"
 
-	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
+	httpcap "github.com/smartcontractkit/capabilities/http/action"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"

@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package capabilities.networking.http.v1alpha;
+
+import "google/protobuf/duration.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+
+// CacheSettings defines cache control options for outbound HTTP requests.
+message CacheSettings {
+  bool store = 1; // If true, cache the response.
+  google.protobuf.Duration max_age = 2; // Maximum age of a cached response. If zero, do not attempt to read from cache
+}
+
+// HeaderValues represents multiple values for a single header key
+message HeaderValues {
+  repeated string values = 1;
+}
+
+// MtlsAuth represents the private-key/cert pair for mtls auth.
+message MtlsAuth {
+  bytes private_key = 1;
+  bytes certificate = 2;
+}
+
+message Request {
+  string url = 1;
+  string method = 2;
+  map<string, string> headers = 3 [deprecated = true]; // Deprecated: use multi_headers
+  bytes body = 4;
+  google.protobuf.Duration timeout = 5; // Request timeout duration
+  CacheSettings cache_settings = 6;
+  map<string, HeaderValues> multi_headers = 7;
+  optional MtlsAuth mtls = 8;
+}
+
+message Response {
+  uint32 status_code = 1;
+  map<string, string> headers = 2 [deprecated = true]; // Deprecated: use multi_headers
+  bytes body = 3;
+  map<string, HeaderValues> multi_headers = 4;
+}
+
+service Client {
+  option (tools.generator.v1alpha.capability) = {
+    mode: MODE_NODE
+    capability_id: "http-actions@1.0.0-alpha"
+  };
+  rpc SendRequest(Request) returns (Response);
+}

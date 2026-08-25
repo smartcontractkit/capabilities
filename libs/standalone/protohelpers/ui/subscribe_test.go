@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -442,4 +443,68 @@ func csrfPost(path string, body []byte) *http.Request {
 	request.Header.Set(fanoutHeaderName, "a-token")
 	request.AddCookie(&http.Cookie{Name: fanoutCookieName, Value: "a-token"})
 	return request
+}
+
+// A registration every instance refused is not a subscription: nothing is
+// watching anything, so the endpoint names no trigger ID and the sidebar - which
+// is the hub's list - has nothing in it. A page told otherwise would show a row
+// for a subscription that does not exist, and offer to close it.
+func TestFanoutReportsNoTriggerIDWhenNobodySubscribed(t *testing.T) {
+	hub := NewHub()
+	t.Cleanup(func() { _ = hub.Close() })
+
+	fleet := &Fleet{}
+	server, trigger := newSubscribableServer(t, fleet, hub, 0)
+	trigger.registerErr = errors.New("the workflow was not accepted")
+
+	f := &fanout{fleet: fleet, hub: hub, prefix: DefaultPrefix, uiPath: DefaultPrefix + "/ui", server: server}
+
+	body, err := json.Marshal(fanoutRequest{
+		Method: strings.ReplaceAll(subscriptionKey("Execute"), "/", "."),
+		Groups: []requestGroup{{Instances: []int{0}, Body: []byte(`{"metadata":[],"data":[{}]}`)}},
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	f.invoke(recorder, csrfPost(DefaultPrefix+"/request/fanout", body))
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+	var response fanoutResponse
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+
+	require.Len(t, response.Results, 1)
+	assert.Empty(t, response.TriggerID, "there is no subscription to watch")
+	assert.Empty(t, hub.List(), "and none for the sidebar to list")
+}
+
+// One instance taking it is a subscription, though: the trigger ID is reported so
+// the reader can watch what did register, and the instance that refused says so
+// on its own row.
+func TestFanoutReportsTheTriggerIDWhenOneInstanceSubscribed(t *testing.T) {
+	hub := NewHub()
+	t.Cleanup(func() { _ = hub.Close() })
+
+	fleet := &Fleet{}
+	first, _ := newSubscribableServer(t, fleet, hub, 0)
+	_, refusing := newSubscribableServer(t, fleet, hub, 1)
+	refusing.registerErr = errors.New("the workflow was not accepted")
+
+	f := &fanout{fleet: fleet, hub: hub, prefix: DefaultPrefix, uiPath: DefaultPrefix + "/ui", server: first}
+
+	body, err := json.Marshal(fanoutRequest{
+		Method: strings.ReplaceAll(subscriptionKey("Execute"), "/", "."),
+		Groups: []requestGroup{{Instances: []int{0, 1}, Body: []byte(`{"metadata":[],"data":[{}]}`)}},
+	})
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	f.invoke(recorder, csrfPost(DefaultPrefix+"/request/fanout", body))
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+	var response fanoutResponse
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+
+	assert.NotEmpty(t, response.TriggerID)
+	require.Len(t, hub.List(), 1)
+	assert.Len(t, hub.List()[0].Instances, 1, "only the instance that took it is attached")
 }

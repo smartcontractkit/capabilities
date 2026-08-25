@@ -1,0 +1,402 @@
+package validate
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
+
+	"github.com/smartcontractkit/capabilities/http/protos"
+	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+)
+
+func testValidator(t *testing.T) *Validator {
+	return testValidatorWithSettings(t, nil)
+}
+
+func testValidatorWithSettings(t *testing.T, getter settings.Getter) *Validator {
+	lggr := logger.Test(t)
+	limitsFactory := limits.Factory{
+		Logger:   lggr,
+		Settings: getter,
+	}
+
+	validator, err := NewValidator(lggr, limitsFactory)
+	require.NoError(t, err)
+	return validator
+}
+
+func TestValidatorCreation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates validator successfully", func(t *testing.T) {
+		validator := testValidator(t)
+		require.NotNil(t, validator)
+	})
+}
+
+func TestValidatedRequest(t *testing.T) {
+	t.Parallel()
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: "test-owner", Workflow: "test-workflow"})
+
+	t.Run("valid input", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{
+			Url:     "https://example.com",
+			Method:  "POST",
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Body:    []byte(`{"foo":"bar"}`),
+			Timeout: durationpb.New(1000 * time.Millisecond),
+		}
+		out, err := validator.ValidatedRequest(ctx, input)
+		require.NoError(t, err)
+		require.Equal(t, "https://example.com", out.Url)
+		require.Equal(t, "POST", out.Method)
+		require.Equal(t, input.Headers, out.Headers)
+		require.Equal(t, input.Body, out.Body)
+		require.Equal(t, time.Duration(1000)*time.Millisecond, out.Timeout.AsDuration())
+	})
+
+	t.Run("nil input", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		_, err := validator.ValidatedRequest(ctx, nil)
+		require.ErrorContains(t, err, "input cannot be nil")
+	})
+
+	t.Run("empty URL", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{Url: ""}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.ErrorContains(t, err, "URL must not be empty")
+	})
+
+	t.Run("both Headers and MultiHeaders set", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{
+			Url:          "https://example.com",
+			Method:       "GET",
+			Headers:      map[string]string{"X-Test": "1"},
+			MultiHeaders: map[string]*protos.HeaderValues{"Accept": {Values: []string{"application/json"}}},
+			Timeout:      durationpb.New(5000 * time.Millisecond),
+		}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrRequestHeadersBothSet)
+		require.Contains(t, err.Error(), "either Headers or MultiHeaders, not both")
+	})
+
+	t.Run("timeout exceeds limit", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{Url: "https://foo", Method: "GET",
+			Timeout: durationpb.New(cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout.DefaultValue + time.Second)}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ConnectionTimeout limited")
+	})
+
+	t.Run("request size exceeds limit", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		exceedingSize := cresettings.Default.PerWorkflow.HTTPAction.RequestSizeLimit.DefaultValue + 1000
+		largeBody := make([]byte, exceedingSize)
+		input := &protos.Request{
+			Url:     "https://foo",
+			Method:  "POST",
+			Body:    largeBody,
+			Timeout: durationpb.New(1000 * time.Millisecond),
+		}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "RequestSizeLimit limited")
+	})
+
+	t.Run("invalid HTTP method", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{Url: "https://foo", Method: "INVALID", Timeout: durationpb.New(1000 * time.Millisecond)}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.ErrorContains(t, err, "invalid HTTP method")
+	})
+
+	t.Run("valid cache settings", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		cacheAge := cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit.DefaultValue / 2
+		input := &protos.Request{
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &protos.CacheSettings{
+				Store:  true,
+				MaxAge: durationpb.New(cacheAge),
+			},
+		}
+		out, err := validator.ValidatedRequest(ctx, input)
+		require.NoError(t, err)
+		require.NotNil(t, out.CacheSettings)
+		require.True(t, out.CacheSettings.Store)
+		require.Equal(t, cacheAge, out.CacheSettings.MaxAge.AsDuration())
+	})
+
+	t.Run("cache settings with Store=true but MaxAge=0 is valid", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &protos.CacheSettings{
+				Store:  true,
+				MaxAge: durationpb.New(0),
+			},
+		}
+		out, err := validator.ValidatedRequest(ctx, input)
+		require.NoError(t, err)
+		require.NotNil(t, out.CacheSettings)
+		require.True(t, out.CacheSettings.Store)
+		require.Equal(t, time.Duration(0), out.CacheSettings.MaxAge.AsDuration())
+	})
+
+	t.Run("cache settings with negative MaxAge fails", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &protos.CacheSettings{
+				Store:  false,
+				MaxAge: durationpb.New(-1 * time.Second),
+			},
+		}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.ErrorContains(t, err, "MaxAge cannot be negative")
+	})
+
+	t.Run("nil cache settings is valid", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &protos.Request{
+			Url:           "https://foo",
+			Method:        "GET",
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: nil,
+		}
+		out, err := validator.ValidatedRequest(ctx, input)
+		require.NoError(t, err)
+		require.NotNil(t, out.CacheSettings) // Default empty cache settings are added
+		require.False(t, out.CacheSettings.Store)
+		require.Equal(t, time.Duration(0), out.CacheSettings.MaxAge.AsDuration())
+	})
+
+	t.Run("cache age exceeds limit", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		exceedingAge := cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit.DefaultValue + time.Second
+		input := &protos.Request{
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &protos.CacheSettings{
+				Store:  true,
+				MaxAge: durationpb.New(exceedingAge),
+			},
+		}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cache age validation failed")
+		require.Contains(t, err.Error(), "CacheAgeLimit limited")
+	})
+}
+
+func TestValidatedRequestMtlsRateLimit(t *testing.T) {
+	t.Parallel()
+
+	mtlsRequest := func() *protos.Request {
+		return &protos.Request{
+			Url:     "https://example.com",
+			Method:  "GET",
+			Timeout: durationpb.New(1000 * time.Millisecond),
+			Mtls: &protos.MtlsAuth{
+				PrivateKey:  []byte("private-key"),
+				Certificate: []byte("certificate"),
+			},
+		}
+	}
+
+	t.Run("mtls request within burst limit is allowed", func(t *testing.T) {
+		t.Parallel()
+		// Org must be set: the mtls rate limiter is scoped per-org and fails open when the org is missing.
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "burst-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		// Default MtlsRateLimit allows a burst of 3 (see cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit).
+		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
+		require.Positive(t, burst)
+		for i := 0; i < burst; i++ {
+			out, err := validator.ValidatedRequest(ctx, mtlsRequest())
+			require.NoError(t, err, "request %d within burst should be allowed", i)
+			require.NotNil(t, out)
+		}
+	})
+
+	t.Run("mtls request exceeding rate limit is rejected", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "exceed-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		// Exhaust the burst; the rate refills every 30s so it won't replenish during the test.
+		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
+		for i := 0; i < burst; i++ {
+			_, err := validator.ValidatedRequest(ctx, mtlsRequest())
+			require.NoError(t, err)
+		}
+
+		_, err := validator.ValidatedRequest(ctx, mtlsRequest())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "would exceed rate limits")
+	})
+
+	t.Run("mtls request missing private key is rejected", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "missing-key-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		req := mtlsRequest()
+		req.Mtls.PrivateKey = nil
+		_, err := validator.ValidatedRequest(ctx, req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mtls requires both a private key and a certificate")
+	})
+
+	t.Run("mtls request missing certificate is rejected", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "missing-cert-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		req := mtlsRequest()
+		req.Mtls.Certificate = nil
+		_, err := validator.ValidatedRequest(ctx, req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mtls requires both a private key and a certificate")
+	})
+
+	t.Run("non-mtls requests are not rate limited", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "no-mtls-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		// Far more than the burst, none of which carry mtls, so the limiter must not engage.
+		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
+		for i := 0; i < burst+5; i++ {
+			input := &protos.Request{
+				Url:     "https://example.com",
+				Method:  "GET",
+				Timeout: durationpb.New(1000 * time.Millisecond),
+			}
+			_, err := validator.ValidatedRequest(ctx, input)
+			require.NoError(t, err, "non-mtls request %d should not be rate limited", i)
+		}
+	})
+}
+
+func TestRequestHeaders(t *testing.T) {
+	t.Parallel()
+
+	t.Run("both set returns ErrRequestHeadersBothSet", func(t *testing.T) {
+		input := &protos.Request{
+			Headers:      map[string]string{"X-Test": "1"},
+			MultiHeaders: map[string]*protos.HeaderValues{"Accept": {Values: []string{"application/json"}}},
+		}
+		err := RequestHeaders(input)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrRequestHeadersBothSet)
+	})
+
+	t.Run("only Headers set is valid", func(t *testing.T) {
+		input := &protos.Request{Headers: map[string]string{"X-Test": "1"}}
+		require.NoError(t, RequestHeaders(input))
+	})
+
+	t.Run("only MultiHeaders set is valid", func(t *testing.T) {
+		input := &protos.Request{MultiHeaders: map[string]*protos.HeaderValues{"Accept": {Values: []string{"application/json"}}}}
+		require.NoError(t, RequestHeaders(input))
+	})
+
+	t.Run("neither set is valid", func(t *testing.T) {
+		input := &protos.Request{}
+		require.NoError(t, RequestHeaders(input))
+	})
+}
+
+func TestValidateResponseSize(t *testing.T) {
+	t.Parallel()
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: "test-owner", Workflow: "test-workflow"})
+
+	t.Run("valid response size", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		response := []byte("small response")
+		err := validator.ValidateResponseSize(ctx, response)
+		require.NoError(t, err)
+	})
+
+	t.Run("response size exceeds limit", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		exceedingSize := cresettings.Default.PerWorkflow.HTTPAction.ResponseSizeLimit.DefaultValue + 1000
+		largeResponse := make([]byte, exceedingSize)
+
+		err := validator.ValidateResponseSize(ctx, largeResponse)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ResponseSizeLimit limited")
+	})
+}
+
+func TestResolveGatewayProxyDonID(t *testing.T) {
+	t.Parallel()
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "test-org", Owner: "test-owner", Workflow: "test-workflow"})
+
+	t.Run("returns empty when no settings configured", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		got, err := validator.ResolveGatewayProxyDonID(ctx)
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+
+	t.Run("returns org-scoped override", func(t *testing.T) {
+		t.Parallel()
+		getter, err := settings.NewJSONGetter([]byte(`{
+			"org": {
+				"test-org": {
+					"PerWorkflow": {
+						"HTTPAction": {
+							"GatewayProxyDonID": "gateway_don_eu"
+						}
+					}
+				}
+			}
+		}`))
+		require.NoError(t, err)
+
+		validator := testValidatorWithSettings(t, getter)
+		got, err := validator.ResolveGatewayProxyDonID(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "gateway_don_eu", got)
+	})
+}

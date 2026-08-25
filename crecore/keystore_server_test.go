@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -95,4 +96,21 @@ func TestSignWithAnAccount(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("signature"), reply.GetSigned())
 	assert.Equal(t, account, ks.signed)
+}
+
+// TestSignMatchesHowAnAddressIsWritten is the case a node hits: the keystore
+// stored the account checksummed, and the capability asking to sign with it has
+// the lowercase form its configuration carried.
+func TestSignMatchesHowAnAddressIsWritten(t *testing.T) {
+	const checksummed = "0xAbC4567890123456789012345678901234567890"
+	ks := &fakeKeystore{names: []string{checksummed}}
+	server := newKeystoreServer(ks)
+
+	reply, err := server.Sign(t.Context(), &creproxy.SignRequest{
+		Account: strings.ToLower(checksummed),
+		Data:    []byte("a digest"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []byte("signature"), reply.GetSigned())
+	assert.Equal(t, checksummed, ks.signed, "the keystore must be asked for the name it holds")
 }

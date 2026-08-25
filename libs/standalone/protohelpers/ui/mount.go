@@ -362,7 +362,15 @@ func (f *fanout) invoke(w http.ResponseWriter, r *http.Request) {
 	header.Set(TriggerIDHeader, triggerID)
 
 	response := f.run(req, header)
-	response.TriggerID = triggerID
+
+	// The trigger ID is reported only when it names a subscription that exists.
+	// A registration every instance refused leaves none behind - see Hub.subscribe -
+	// and the refusal arrives as an answer rather than as a failed call, so the rows
+	// above can all say "ok" with nothing registered. Naming it anyway would put a
+	// row in the sidebar for something that is not running.
+	if f.hub != nil && f.hub.Live(triggerID) {
+		response.TriggerID = triggerID
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {

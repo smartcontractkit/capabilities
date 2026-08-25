@@ -117,6 +117,7 @@ $(function () {
             capabilityId: s.capabilityId,
             service: s.service,
             method: s.method,
+            workflowId: s.workflowId || "",
             instances: s.instances || []
         };
     }
@@ -401,9 +402,20 @@ $(function () {
         $head.append($("<h3>", {
             text: (t.meta.service ? t.meta.service + "." : "") + (t.meta.method || "subscription")
         }));
-        $head.append($("<div>", { "class": "cre-subscription-view-facts" })
+        var $facts = $("<div>", { "class": "cre-subscription-view-facts" })
             .append($("<span>", { "class": "cre-badge " + mark.cls, text: mark.text }))
-            .append($("<code>", { text: triggerId })));
+            .append($("<code>", { text: triggerId }));
+        // The workflow this was registered on behalf of. Whatever fires the trigger
+        // from outside - a gateway request, say - names the workflow rather than the
+        // subscription, and the page usually invented this one, so it is shown here
+        // to be copied.
+        if (t.meta.workflowId) {
+            $facts.append($("<code>", {
+                text: "workflow " + t.meta.workflowId,
+                title: "The workflow this subscription is registered on; name it to fire the trigger"
+            }));
+        }
+        $head.append($facts);
         $view.append($head);
 
         if (t.order.length === 0) {

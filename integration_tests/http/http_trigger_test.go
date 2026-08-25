@@ -20,7 +20,7 @@ import (
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
-	triggercap "github.com/smartcontractkit/capabilities/http_trigger/trigger"
+	triggercap "github.com/smartcontractkit/capabilities/http/trigger"
 
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway"
 	"github.com/smartcontractkit/chainlink/v2/core/utils"

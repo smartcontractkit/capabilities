@@ -16,7 +16,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
+	httpcap "github.com/smartcontractkit/capabilities/http/action"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"

@@ -163,12 +163,17 @@ type Attached struct {
 
 // Status is a subscription as the sidebar shows it.
 type Status struct {
-	TriggerID    string     `json:"triggerId"`
-	CapabilityID string     `json:"capabilityId"`
-	Service      string     `json:"service"`
-	Method       string     `json:"method"`
-	Instances    []Attached `json:"instances"`
-	Events       int        `json:"events"`
+	TriggerID    string `json:"triggerId"`
+	CapabilityID string `json:"capabilityId"`
+	Service      string `json:"service"`
+	Method       string `json:"method"`
+	// WorkflowID is the workflow this was registered on behalf of, which is what
+	// something firing the trigger from outside has to name. It is usually one the
+	// page invented rather than one the reader chose, so it is reported back here:
+	// a subscription nobody can address is one nobody can deliver to.
+	WorkflowID string     `json:"workflowId,omitempty"`
+	Instances  []Attached `json:"instances"`
+	Events     int        `json:"events"`
 	// Readers is how many streams are watching. Zero with InGrace set is a
 	// subscription counting down to being unregistered.
 	Readers int  `json:"readers"`

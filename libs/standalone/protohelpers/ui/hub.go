@@ -161,6 +161,7 @@ func (h *Hub) subscription(r registration) (*subscription, error) {
 		capabilityID: r.capabilityID,
 		service:      r.service,
 		method:       r.method,
+		workflowID:   r.metadata.WorkflowID,
 		eventType:    r.eventType,
 		created:      time.Now().UTC(),
 		attached:     map[int]*attachment{},
@@ -189,6 +190,19 @@ func (h *Hub) dropIfEmpty(s *subscription) {
 	if h.subs[s.triggerID] == s {
 		delete(h.subs, s.triggerID)
 	}
+}
+
+// Live reports whether this trigger ID names a subscription that exists.
+//
+// It is what the fan-out asks before telling a page which subscription it just
+// started: a registration can fail while the call that carried it succeeds - the
+// capability answers with an error rather than the transport failing - so
+// "the request went through" is not the same question as "is anything watching".
+func (h *Hub) Live(triggerID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := h.subs[triggerID]
+	return ok
 }
 
 // get is the subscription with this trigger ID.
@@ -273,6 +287,7 @@ type subscription struct {
 	capabilityID string
 	service      string
 	method       string
+	workflowID   string
 	eventType    reflect.Type
 	created      time.Time
 
@@ -560,6 +575,7 @@ func (s *subscription) status(closed bool) Status {
 		CapabilityID: s.capabilityID,
 		Service:      s.service,
 		Method:       s.method,
+		WorkflowID:   s.workflowID,
 		Instances:    instances,
 		Events:       events,
 		Readers:      readers,

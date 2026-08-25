@@ -10,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grafana/pyroscope-go v1.3.0
 	github.com/hashicorp/go-plugin v1.8.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jhump/protoreflect v1.18.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/mr-tron/base58 v1.3.0
@@ -93,7 +94,6 @@ require (
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jhump/protoreflect/v2 v2.0.0-beta.1 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect

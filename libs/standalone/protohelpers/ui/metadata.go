@@ -158,18 +158,26 @@ const uiMarker = "7569"
 // Every hex field is a valid one of the right length, because "valid" here means
 // what the report encoder accepts rather than what looks reasonable.
 //
-// The execution identifier is not a constant. A capability may well key work,
-// dedupe or cache on the execution it was asked under, so two requests sharing one
-// would be two runs of the same execution rather than two executions. Every call
-// therefore gets its own, and a fan-out settles on one before sending so its
-// instances still agree (see HeadersFromMetadata).
+// The identifiers are not constants. A capability may well key work, dedupe or
+// cache on the execution it was asked under, so two requests sharing one would be
+// two runs of the same execution rather than two executions; and a trigger
+// capability keys its subscriptions on the workflow, so two subscriptions sharing
+// one workflow are one subscription - registering the second ends the first.
+// Every call therefore gets its own of each, and a fan-out settles on them before
+// sending so its instances still agree (see HeadersFromMetadata).
+//
+// The workflow's name varies with its ID because the two are looked up together:
+// a workflow is found by ID, or by the owner, name and tag that refer to it, and
+// leaving the reference constant would collide subscriptions that have distinct
+// IDs. The owner is left alone - it is who is running these, and that is one
+// person however many workflows they have.
 func defaultMetadata() capabilities.RequestMetadata {
 	return capabilities.RequestMetadata{
-		WorkflowID:                    markedHex(workflowIDBytes),
+		WorkflowID:                    uniqueHex(workflowIDBytes),
 		WorkflowOwner:                 markedHex(workflowOwnerBytes),
 		OrgID:                         "ui-org-id",
 		WorkflowExecutionID:           uniqueHex(executionIDBytes),
-		WorkflowName:                  markedHex(workflowNameBytes),
+		WorkflowName:                  uniqueHex(workflowNameBytes),
 		WorkflowDonID:                 1,
 		WorkflowDonConfigVersion:      1,
 		ReferenceID:                   "ui-reference-id",

@@ -62,7 +62,8 @@ func TestMetadataDefaultsWhenNothingIsSpecified(t *testing.T) {
 	md, err := MetadataFromHeaders(func(string) []string { return nil })
 	require.NoError(t, err)
 
-	assert.Equal(t, markedHex(workflowIDBytes), md.WorkflowID)
+	assert.True(t, strings.HasPrefix(md.WorkflowID, uiMarker), "%s", md.WorkflowID)
+	assert.Len(t, md.WorkflowID, workflowIDBytes*2)
 	assert.Equal(t, markedHex(workflowOwnerBytes), md.WorkflowOwner)
 	assert.NotContains(t, md.WorkflowID, "test", "the defaults are the UI's, not a test's")
 	assert.EqualValues(t, 1, md.WorkflowDonID)
@@ -103,10 +104,12 @@ func TestMetadataFromHeaders(t *testing.T) {
 func TestBlankHeadersFallBackToDefaults(t *testing.T) {
 	header := http.Header{}
 	header.Set(HeaderPrefix+"WORKFLOW-ID", "   ")
+	header.Set(HeaderPrefix+"WORKFLOW-OWNER", "   ")
 
 	md, err := MetadataFromHeaders(header.Values)
 	require.NoError(t, err)
-	assert.Equal(t, markedHex(workflowIDBytes), md.WorkflowID)
+	assert.Equal(t, markedHex(workflowOwnerBytes), md.WorkflowOwner)
+	assert.Len(t, md.WorkflowID, workflowIDBytes*2, "a blank is a default, not a blank")
 }
 
 // A value the caller asked for that cannot be parsed is an error, not a silent
@@ -144,9 +147,37 @@ func TestExecutionIDIsUniquePerRequest(t *testing.T) {
 
 	assert.NotEqual(t, first.WorkflowExecutionID, second.WorkflowExecutionID)
 	assert.True(t, strings.HasPrefix(first.WorkflowExecutionID, uiMarker))
+}
 
-	// The workflow itself is the same workflow, so that one is stable.
-	assert.Equal(t, first.WorkflowID, second.WorkflowID)
+// The workflow is unique per request too, and its name with it: a trigger
+// capability keys a subscription on the workflow, so two calls left to the
+// defaults would be two registrations of one workflow - and the second of those
+// ends the first. A caller who wants one workflow says so by naming it.
+func TestWorkflowIsUniquePerRequest(t *testing.T) {
+	first, err := MetadataFromHeaders(func(string) []string { return nil })
+	require.NoError(t, err)
+	second, err := MetadataFromHeaders(func(string) []string { return nil })
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first.WorkflowID, second.WorkflowID)
+	assert.NotEqual(t, first.WorkflowName, second.WorkflowName,
+		"the reference a workflow is also found by has to vary with it")
+	assert.Equal(t, first.WorkflowOwner, second.WorkflowOwner, "one person runs both")
+}
+
+// And a caller who names one gets that one, on every call.
+func TestWorkflowCanBeSpecified(t *testing.T) {
+	header := http.Header{}
+	mine := strings.Repeat("ab", workflowIDBytes)
+	header.Set(HeaderPrefix+"WORKFLOW-ID", mine)
+
+	first, err := MetadataFromHeaders(header.Values)
+	require.NoError(t, err)
+	second, err := MetadataFromHeaders(header.Values)
+	require.NoError(t, err)
+
+	assert.Equal(t, mine, first.WorkflowID)
+	assert.Equal(t, mine, second.WorkflowID)
 }
 
 // A caller who names an execution gets the one they named.

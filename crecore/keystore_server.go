@@ -104,21 +104,42 @@ func (s *keystoreServer) Sign(ctx context.Context, req *creproxy.SignRequest) (*
 	// nothing. Answered here for the same reason: what asks is chainlink-evm, which
 	// asks a node's keystore the same question.
 	if len(req.GetData()) == 0 {
-		accounts, err := s.keystore.Accounts(ctx)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+		if _, err := s.held(ctx, req.GetAccount()); err != nil {
+			return nil, err
 		}
-		for _, account := range accounts {
-			if strings.EqualFold(account, req.GetAccount()) {
-				return &creproxy.SignReply{}, nil
-			}
-		}
-		return nil, status.Errorf(codes.InvalidArgument, "this node holds no key for account %s", req.GetAccount())
+		return &creproxy.SignReply{}, nil
 	}
 
-	signed, err := s.keystore.Sign(ctx, req.GetAccount(), req.GetData())
+	// Matched however it was written: an address is an account whether or not it was
+	// checksummed, and the caller that asks for one - a chain capability - has no way
+	// to know which spelling this node happened to store it under.
+	account, err := s.held(ctx, req.GetAccount())
+	if err != nil {
+		return nil, err
+	}
+
+	signed, err := s.keystore.Sign(ctx, account, req.GetData())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	return &creproxy.SignReply{Signed: signed}, nil
+}
+
+// held resolves an account to the name this node's keystore knows it by.
+//
+// The comparison is case-insensitive because the two ends spell an address
+// differently: a keystore stores what it was given, which for a copied chain key
+// is the checksummed form, and a capability asks with whatever its configuration
+// carries.
+func (s *keystoreServer) held(ctx context.Context, account string) (string, error) {
+	accounts, err := s.keystore.Accounts(ctx)
+	if err != nil {
+		return "", status.Error(codes.Internal, err.Error())
+	}
+	for _, held := range accounts {
+		if !isProtocolKey(held) && strings.EqualFold(held, account) {
+			return held, nil
+		}
+	}
+	return "", status.Errorf(codes.InvalidArgument, "this node holds no key for account %s", account)
 }
