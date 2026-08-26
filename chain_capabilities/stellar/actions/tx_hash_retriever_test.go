@@ -14,19 +14,22 @@ import (
 )
 
 type stubForwarderClient struct {
-	events             []ReportProcessedEvent
-	eventsErr          error
-	eventsFn           func(call int, searchRange EventSearchRange) ([]ReportProcessedEvent, error)
-	eventRange         EventSearchRange
-	eventRangeFn       func(call int) (EventSearchRange, error)
-	eventRangeErr      error
-	eventRangeCalls    int
-	eventRanges        []EventSearchRange
-	eventCalls         int
-	transmissionInfoFn func(call int) (TransmissionInfo, error)
-	invokeOnReportResp *stellartypes.SubmitTransactionResponse
-	invokeOnReportErr  error
-	transmissionCalls  int
+	events              []ReportProcessedEvent
+	eventsErr           error
+	eventsFn            func(call int, searchRange EventSearchRange) ([]ReportProcessedEvent, error)
+	eventRange          EventSearchRange
+	eventRangeFn        func(call int) (EventSearchRange, error)
+	eventRangeErr       error
+	eventEndLedgerFn    func(call int) (uint32, error)
+	eventEndLedgerErr   error
+	eventRangeCalls     int
+	eventEndLedgerCalls int
+	eventRanges         []EventSearchRange
+	eventCalls          int
+	transmissionInfoFn  func(call int) (TransmissionInfo, error)
+	invokeOnReportResp  *stellartypes.SubmitTransactionResponse
+	invokeOnReportErr   error
+	transmissionCalls   int
 }
 
 func (s *stubForwarderClient) InvokeOnReport(context.Context, string, *sdk.ReportResponse) (*stellartypes.SubmitTransactionResponse, error) {
@@ -59,6 +62,20 @@ func (s *stubForwarderClient) GetReportProcessedEventSearchRange(context.Context
 		return s.eventRange, nil
 	}
 	return EventSearchRange{StartLedger: 1, EndLedger: 200}, nil
+}
+
+func (s *stubForwarderClient) GetReportProcessedEventSearchEndLedger(context.Context) (uint32, error) {
+	s.eventEndLedgerCalls++
+	if s.eventEndLedgerFn != nil {
+		return s.eventEndLedgerFn(s.eventEndLedgerCalls)
+	}
+	if s.eventEndLedgerErr != nil {
+		return 0, s.eventEndLedgerErr
+	}
+	if s.eventRange != (EventSearchRange{}) {
+		return s.eventRange.EndLedger, nil
+	}
+	return 200, nil
 }
 
 func (s *stubForwarderClient) GetReportProcessedEvents(_ context.Context, _ TransmissionID, searchRange EventSearchRange) ([]ReportProcessedEvent, error) {
@@ -168,7 +185,7 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 		require.Contains(t, err.Error(), failedToRetrieveTxHashErrorMsg)
 	})
 
-	t.Run("retries with a fixed event search range", func(t *testing.T) {
+	t.Run("retries without moving the start ledger", func(t *testing.T) {
 		t.Parallel()
 		searchRange := EventSearchRange{StartLedger: 100, EndLedger: 200}
 		client := &stubForwarderClient{
@@ -186,7 +203,8 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 		hash, err := retriever.GetSuccessfulTransmissionHash(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, testTxHash, hash)
-		require.Equal(t, 2, client.eventRangeCalls)
+		require.Equal(t, 1, client.eventRangeCalls)
+		require.Equal(t, 1, client.eventEndLedgerCalls)
 		require.Len(t, client.eventRanges, 2)
 		require.Equal(t, searchRange, client.eventRanges[0])
 		require.Equal(t, searchRange, client.eventRanges[1])
@@ -196,10 +214,12 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 		t.Parallel()
 		client := &stubForwarderClient{
 			eventRangeFn: func(call int) (EventSearchRange, error) {
-				if call == 1 {
-					return EventSearchRange{StartLedger: 100, EndLedger: 300}, nil
-				}
-				return EventSearchRange{StartLedger: 120, EndLedger: 304}, nil
+				require.Equal(t, 1, call)
+				return EventSearchRange{StartLedger: 100, EndLedger: 300}, nil
+			},
+			eventEndLedgerFn: func(call int) (uint32, error) {
+				require.Equal(t, 1, call)
+				return 304, nil
 			},
 			eventsFn: func(call int, gotRange EventSearchRange) ([]ReportProcessedEvent, error) {
 				if call == 1 {
@@ -215,7 +235,8 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 		hash, err := retriever.GetSuccessfulTransmissionHash(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, testTxHash, hash)
-		require.Equal(t, 2, client.eventRangeCalls)
+		require.Equal(t, 1, client.eventRangeCalls)
+		require.Equal(t, 1, client.eventEndLedgerCalls)
 		require.Len(t, client.eventRanges, 2)
 		require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 300}, client.eventRanges[0])
 		require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 304}, client.eventRanges[1])

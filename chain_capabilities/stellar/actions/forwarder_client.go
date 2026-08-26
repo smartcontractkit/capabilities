@@ -101,6 +101,7 @@ type CREForwarderClient interface {
 	// GetTransmissionInfo queries the forwarder for transmission state.
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	GetReportProcessedEventSearchRange(ctx context.Context) (EventSearchRange, error)
+	GetReportProcessedEventSearchEndLedger(ctx context.Context) (uint32, error)
 	GetReportProcessedEvents(ctx context.Context, transmissionID TransmissionID, searchRange EventSearchRange) ([]ReportProcessedEvent, error)
 	ForwarderAddress() string
 }
@@ -259,18 +260,26 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 }
 
 func (fc *forwarderClient) GetReportProcessedEventSearchRange(ctx context.Context) (EventSearchRange, error) {
-	latest, err := fc.GetLatestLedger(ctx)
+	endLedger, err := fc.GetReportProcessedEventSearchEndLedger(ctx)
 	if err != nil {
 		return EventSearchRange{}, err
 	}
-	if int64(latest.Sequence) <= fc.forwarderLookbackLedgers {
-		return EventSearchRange{StartLedger: 1, EndLedger: latest.Sequence}, nil
+	if int64(endLedger) <= fc.forwarderLookbackLedgers {
+		return EventSearchRange{StartLedger: 1, EndLedger: endLedger}, nil
 	}
-	start := int64(latest.Sequence) - fc.forwarderLookbackLedgers
+	start := int64(endLedger) - fc.forwarderLookbackLedgers
 	return EventSearchRange{
-		StartLedger: uint32(start), //nolint:gosec // G115: start is positive and at most latest.Sequence (uint32)
-		EndLedger:   latest.Sequence,
+		StartLedger: uint32(start), //nolint:gosec // G115: start is positive and at most endLedger (uint32)
+		EndLedger:   endLedger,
 	}, nil
+}
+
+func (fc *forwarderClient) GetReportProcessedEventSearchEndLedger(ctx context.Context) (uint32, error) {
+	latest, err := fc.GetLatestLedger(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return latest.Sequence, nil
 }
 
 func (fc *forwarderClient) resolveSigningAccount(ctx context.Context) (string, error) {

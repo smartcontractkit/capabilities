@@ -127,12 +127,12 @@ func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context) (eventDetails
 			return nil, fetchErr
 		}
 		if len(events) == 0 {
-			latestRange, rangeErr := r.forwarderClient.GetReportProcessedEventSearchRange(ctx)
+			latestEndLedger, rangeErr := r.forwarderClient.GetReportProcessedEventSearchEndLedger(ctx)
 			if rangeErr != nil {
 				return nil, rangeErr
 			}
-			if latestRange.EndLedger > searchRange.EndLedger {
-				searchRange.EndLedger = latestRange.EndLedger
+			if latestEndLedger > searchRange.EndLedger {
+				searchRange.EndLedger = latestEndLedger
 			}
 			return nil, errors.New("no matching events found yet, retrying")
 		}
