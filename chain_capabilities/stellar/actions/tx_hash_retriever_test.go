@@ -16,6 +16,13 @@ import (
 type stubForwarderClient struct {
 	events             []ReportProcessedEvent
 	eventsErr          error
+	eventsFn           func(call int, searchRange EventSearchRange) ([]ReportProcessedEvent, error)
+	eventRange         EventSearchRange
+	eventRangeFn       func(call int) (EventSearchRange, error)
+	eventRangeErr      error
+	eventRangeCalls    int
+	eventRanges        []EventSearchRange
+	eventCalls         int
 	transmissionInfoFn func(call int) (TransmissionInfo, error)
 	invokeOnReportResp *stellartypes.SubmitTransactionResponse
 	invokeOnReportErr  error
@@ -40,7 +47,26 @@ func (s *stubForwarderClient) GetTransmissionInfo(context.Context, TransmissionI
 	panic("stubForwarderClient.GetTransmissionInfo not configured")
 }
 
-func (s *stubForwarderClient) GetReportProcessedEvents(context.Context, TransmissionID) ([]ReportProcessedEvent, error) {
+func (s *stubForwarderClient) GetReportProcessedEventSearchRange(context.Context) (EventSearchRange, error) {
+	s.eventRangeCalls++
+	if s.eventRangeFn != nil {
+		return s.eventRangeFn(s.eventRangeCalls)
+	}
+	if s.eventRangeErr != nil {
+		return EventSearchRange{}, s.eventRangeErr
+	}
+	if s.eventRange != (EventSearchRange{}) {
+		return s.eventRange, nil
+	}
+	return EventSearchRange{StartLedger: 1, EndLedger: 200}, nil
+}
+
+func (s *stubForwarderClient) GetReportProcessedEvents(_ context.Context, _ TransmissionID, searchRange EventSearchRange) ([]ReportProcessedEvent, error) {
+	s.eventCalls++
+	s.eventRanges = append(s.eventRanges, searchRange)
+	if s.eventsFn != nil {
+		return s.eventsFn(s.eventCalls, searchRange)
+	}
 	if s.eventsErr != nil {
 		return nil, s.eventsErr
 	}
@@ -140,6 +166,59 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 		_, err := retriever.GetSuccessfulTransmissionHash(ctx)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), failedToRetrieveTxHashErrorMsg)
+	})
+
+	t.Run("retries with a fixed event search range", func(t *testing.T) {
+		t.Parallel()
+		searchRange := EventSearchRange{StartLedger: 100, EndLedger: 200}
+		client := &stubForwarderClient{
+			eventRange: searchRange,
+			eventsFn: func(call int, gotRange EventSearchRange) ([]ReportProcessedEvent, error) {
+				require.Equal(t, searchRange, gotRange)
+				if call == 1 {
+					return nil, nil
+				}
+				return []ReportProcessedEvent{{TxHash: testTxHash, Ledger: 108, Success: true}}, nil
+			},
+		}
+		retriever := NewTxHashRetriever(client, lggr, transmissionID)
+
+		hash, err := retriever.GetSuccessfulTransmissionHash(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, testTxHash, hash)
+		require.Equal(t, 2, client.eventRangeCalls)
+		require.Len(t, client.eventRanges, 2)
+		require.Equal(t, searchRange, client.eventRanges[0])
+		require.Equal(t, searchRange, client.eventRanges[1])
+	})
+
+	t.Run("expands end ledger on miss without moving start ledger", func(t *testing.T) {
+		t.Parallel()
+		client := &stubForwarderClient{
+			eventRangeFn: func(call int) (EventSearchRange, error) {
+				if call == 1 {
+					return EventSearchRange{StartLedger: 100, EndLedger: 300}, nil
+				}
+				return EventSearchRange{StartLedger: 120, EndLedger: 304}, nil
+			},
+			eventsFn: func(call int, gotRange EventSearchRange) ([]ReportProcessedEvent, error) {
+				if call == 1 {
+					require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 300}, gotRange)
+					return nil, nil
+				}
+				require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 304}, gotRange)
+				return []ReportProcessedEvent{{TxHash: testTxHash, Ledger: 302, Success: true}}, nil
+			},
+		}
+		retriever := NewTxHashRetriever(client, lggr, transmissionID)
+
+		hash, err := retriever.GetSuccessfulTransmissionHash(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, testTxHash, hash)
+		require.Equal(t, 2, client.eventRangeCalls)
+		require.Len(t, client.eventRanges, 2)
+		require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 300}, client.eventRanges[0])
+		require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 304}, client.eventRanges[1])
 	})
 }
 

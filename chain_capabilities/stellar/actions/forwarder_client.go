@@ -21,6 +21,8 @@ const (
 	forwarderReportFunction              = "report"
 	forwarderGetTransmissionInfoFunction = "get_transmission_info"
 	defaultLedgerBoundsOffset            = uint32(20)
+	reportProcessedEventPageLimit        = uint32(100)
+	reportProcessedEventMaxPages         = 10
 	// DefaultForwarderLookbackLedgers is how many ledgers back to search for ReportProcessed events.
 	DefaultForwarderLookbackLedgers = int64(100)
 )
@@ -40,6 +42,11 @@ type TransmissionInfo struct {
 	LedgerSequence  uint32
 	Success         bool
 	InvalidReceiver bool
+}
+
+type EventSearchRange struct {
+	StartLedger uint32
+	EndLedger   uint32
 }
 
 // TransmissionID uniquely identifies a forwarder transmission (receiver + report components).
@@ -93,7 +100,8 @@ type CREForwarderClient interface {
 	InvokeOnReport(ctx context.Context, receiver string, report *sdk.ReportResponse) (*stellartypes.SubmitTransactionResponse, error)
 	// GetTransmissionInfo queries the forwarder for transmission state.
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
-	GetReportProcessedEvents(ctx context.Context, transmissionID TransmissionID) ([]ReportProcessedEvent, error)
+	GetReportProcessedEventSearchRange(ctx context.Context) (EventSearchRange, error)
+	GetReportProcessedEvents(ctx context.Context, transmissionID TransmissionID, searchRange EventSearchRange) ([]ReportProcessedEvent, error)
 	ForwarderAddress() string
 }
 
@@ -185,57 +193,84 @@ func (fc *forwarderClient) GetTransmissionInfo(
 func (fc *forwarderClient) GetReportProcessedEvents(
 	ctx context.Context,
 	transmissionID TransmissionID,
+	searchRange EventSearchRange,
 ) ([]ReportProcessedEvent, error) {
-	startLedger, err := fc.startLedger(ctx)
-	if err != nil {
-		return nil, err
+	if searchRange.StartLedger == 0 {
+		return nil, errors.New("event search start ledger is required")
 	}
+	if searchRange.EndLedger == 0 {
+		return nil, errors.New("event search end ledger is required")
+	}
+	if searchRange.StartLedger > searchRange.EndLedger {
+		return nil, fmt.Errorf("invalid event search range: start ledger %d is after end ledger %d", searchRange.StartLedger, searchRange.EndLedger)
+	}
+
 	topicFilter, err := fc.forwarderCodec.EncodeReportProcessedTopicFilter(transmissionID)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := fc.GetEvents(ctx, stellartypes.GetEventsRequest{
-		StartLedger: startLedger,
-		Filters: []stellartypes.EventFilter{
-			{
-				EventTypes:  []stellartypes.EventType{stellartypes.EventTypeContract},
-				ContractIDs: []string{fc.forwarderAddress},
-				Topics:      []stellartypes.TopicFilter{topicFilter},
+	var events []ReportProcessedEvent
+	cursor := ""
+	for page := 0; page < reportProcessedEventMaxPages; page++ {
+		resp, err := fc.GetEvents(ctx, stellartypes.GetEventsRequest{
+			StartLedger: searchRange.StartLedger,
+			EndLedger:   searchRange.EndLedger,
+			Filters: []stellartypes.EventFilter{
+				{
+					EventTypes:  []stellartypes.EventType{stellartypes.EventTypeContract},
+					ContractIDs: []string{fc.forwarderAddress},
+					Topics:      []stellartypes.TopicFilter{topicFilter},
+				},
 			},
-		},
-	})
-	if err != nil {
-		return nil, err
+			Pagination: &stellartypes.PaginationOptions{
+				Cursor: cursor,
+				Limit:  reportProcessedEventPageLimit,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if resp.LatestLedger > 0 && resp.LatestLedger < searchRange.EndLedger {
+			return nil, fmt.Errorf("event index has not reached requested range: latest ledger %d, requested end ledger %d", resp.LatestLedger, searchRange.EndLedger)
+		}
+
+		for i, e := range resp.Events {
+			if e.TransactionHash == "" {
+				return nil, fmt.Errorf("empty tx hash at event index %d", i)
+			}
+			if e.Value.Type != stellartypes.ScValTypeBool || e.Value.Bool == nil {
+				return nil, fmt.Errorf("event %s value is not a bool", e.TransactionHash)
+			}
+			events = append(events, ReportProcessedEvent{
+				TxHash:  e.TransactionHash,
+				Ledger:  e.Ledger,
+				Success: *e.Value.Bool,
+			})
+		}
+
+		if resp.Cursor == "" {
+			return events, nil
+		}
+		cursor = resp.Cursor
 	}
 
-	events := make([]ReportProcessedEvent, 0, len(resp.Events))
-	for i, e := range resp.Events {
-		if e.TransactionHash == "" {
-			return nil, fmt.Errorf("empty tx hash at event index %d", i)
-		}
-		if e.Value.Type != stellartypes.ScValTypeBool || e.Value.Bool == nil {
-			return nil, fmt.Errorf("event %s value is not a bool", e.TransactionHash)
-		}
-		events = append(events, ReportProcessedEvent{
-			TxHash:  e.TransactionHash,
-			Ledger:  e.Ledger,
-			Success: *e.Value.Bool,
-		})
-	}
-	return events, nil
+	return nil, fmt.Errorf("too many ReportProcessed event pages for range %d-%d", searchRange.StartLedger, searchRange.EndLedger)
 }
 
-func (fc *forwarderClient) startLedger(ctx context.Context) (uint32, error) {
+func (fc *forwarderClient) GetReportProcessedEventSearchRange(ctx context.Context) (EventSearchRange, error) {
 	latest, err := fc.GetLatestLedger(ctx)
 	if err != nil {
-		return 0, err
+		return EventSearchRange{}, err
 	}
 	if int64(latest.Sequence) <= fc.forwarderLookbackLedgers {
-		return 1, nil
+		return EventSearchRange{StartLedger: 1, EndLedger: latest.Sequence}, nil
 	}
 	start := int64(latest.Sequence) - fc.forwarderLookbackLedgers
-	return uint32(start), nil //nolint:gosec // G115: start is positive and at most latest.Sequence (uint32)
+	return EventSearchRange{
+		StartLedger: uint32(start), //nolint:gosec // G115: start is positive and at most latest.Sequence (uint32)
+		EndLedger:   latest.Sequence,
+	}, nil
 }
 
 func (fc *forwarderClient) resolveSigningAccount(ctx context.Context) (string, error) {
