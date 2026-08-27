@@ -116,12 +116,24 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 }
 
 func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context) (eventDetailsList, error) {
+	searchRange, err := r.forwarderClient.GetReportProcessedEventSearchRange(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMsg, err)
+	}
+
 	events, err := capcommon.WithPollingRetry(ctx, r.lggr, func(ctx context.Context) ([]ReportProcessedEvent, error) {
-		events, fetchErr := r.forwarderClient.GetReportProcessedEvents(ctx, r.transmissionID)
+		events, fetchErr := r.forwarderClient.GetReportProcessedEvents(ctx, r.transmissionID, searchRange)
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
 		if len(events) == 0 {
+			latestEndLedger, rangeErr := r.forwarderClient.GetReportProcessedEventSearchEndLedger(ctx)
+			if rangeErr != nil {
+				return nil, rangeErr
+			}
+			if latestEndLedger > searchRange.EndLedger {
+				searchRange.EndLedger = latestEndLedger
+			}
 			return nil, errors.New("no matching events found yet, retrying")
 		}
 		return events, nil
