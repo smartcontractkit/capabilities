@@ -1,0 +1,26 @@
+dir: "{{ .InterfaceDir }}"
+mockname: "{{ .InterfaceName }}_mock"
+outpkg: actions
+inpackage: true
+filename: "test_{{ .InterfaceName | snakecase }}_mock.go"
+fail-on-missing: true
+resolve-type-alias: false
+packages:
+  github.com/smartcontractkit/chainlink-common/pkg/types:
+    config:
+      dir: actions
+      mockname: "StellarService_mock"
+      outpkg: actions
+      inpackage: true
+      filename: "test_stellar_service_mock.go"
+    interfaces:
+      StellarService:
+  github.com/smartcontractkit/capabilities/chain_capabilities/stellar/height:
+    config:
+      dir: "{{ .InterfaceDir }}/mocks"
+      mockname: "{{ .InterfaceName }}"
+      outpkg: mocks
+      inpackage: false
+      filename: "{{ .InterfaceName | snakecase }}.go"
+    interfaces:
+      LedgerProvider:

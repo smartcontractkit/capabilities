@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	AttrNodeAddress = "node_address"
-	AttrProxyMode   = "proxy_mode"
-	AttrStatusCode  = "status_code"
-	AttrMethodName  = "method_name"
-	AttrSuccess     = "success"
+	AttrNodeAddress       = "node_address"
+	AttrGatewayProxyDonID = "gateway_proxy_don_id"
+	AttrProxyMode         = "proxy_mode"
+	AttrStatusCode        = "status_code"
+	AttrMethodName        = "method_name"
+	AttrSuccess           = "success"
 )
 
 // Metrics contains metrics for HTTP actions
@@ -32,6 +33,7 @@ type Metrics struct {
 	requestLatency                  metric.Int64Histogram
 	requestLatencyExcludingExternal metric.Int64Histogram
 	externalEndpointLatency         metric.Int64Histogram
+	noGatewaysAvailable             metric.Int64Counter
 }
 
 // NewMetrics creates a new instance of Metrics
@@ -135,6 +137,14 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create external endpoint latency metric: %w", err)
 	}
 
+	m.noGatewaysAvailable, err = meter.Int64Counter(
+		"http_action_no_gateways_available_count",
+		metric.WithDescription("Number of times the HTTP action capability found no gateways available for the configured DON"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create no gateways available metric: %w", err)
+	}
+
 	return nil
 }
 
@@ -146,9 +156,9 @@ func (m *Metrics) IncrementInputValidationFailures(ctx context.Context, lggr log
 	m.inputValidationFailures.Add(ctx, 1)
 }
 
-func (m *Metrics) IncrementGatewaySendError(ctx context.Context, nodeAddress string, lggr logger.Logger) {
+func (m *Metrics) IncrementGatewaySendError(ctx context.Context, nodeAddress, gatewayProxyDonID string, lggr logger.Logger) {
 	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, ProxyModeGateway.String())))
-	m.gatewaySendError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress)))
+	m.gatewaySendError.Add(ctx, 1, gatewaySendMetricAttrs(nodeAddress, gatewayProxyDonID))
 }
 
 func (m *Metrics) IncrementSuccessfulResponse(ctx context.Context, proxyMode ProxyMode, statusCode uint32, lggr logger.Logger) {
@@ -170,8 +180,19 @@ func (m *Metrics) IncrementExternalEndpointError(ctx context.Context, proxyMode 
 	m.externalEndpointError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
 }
 
-func (m *Metrics) IncrementGatewaySendCount(ctx context.Context, nodeAddress string, lggr logger.Logger) {
-	m.gatewaySendCount.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress)))
+func (m *Metrics) IncrementGatewaySendCount(ctx context.Context, nodeAddress, gatewayProxyDonID string, lggr logger.Logger) {
+	m.gatewaySendCount.Add(ctx, 1, gatewaySendMetricAttrs(nodeAddress, gatewayProxyDonID))
+}
+
+func (m *Metrics) IncrementNoGatewaysAvailable(ctx context.Context, gatewayProxyDonID string, lggr logger.Logger) {
+	m.noGatewaysAvailable.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrGatewayProxyDonID, gatewayProxyDonID)))
+}
+
+func gatewaySendMetricAttrs(nodeAddress, gatewayProxyDonID string) metric.AddOption {
+	return metric.WithAttributes(
+		attribute.String(AttrNodeAddress, nodeAddress),
+		attribute.String(AttrGatewayProxyDonID, gatewayProxyDonID),
+	)
 }
 
 func (m *Metrics) RecordRequestLatency(ctx context.Context, totalLatencyMs, externalLatencyMs int64, proxyMode ProxyMode, success bool, lggr logger.Logger) {

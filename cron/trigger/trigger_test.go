@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"sync"
 	"testing"
@@ -22,11 +21,8 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
@@ -116,7 +112,7 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 		payload := &protos.LegacyPayload{} //nolint:staticcheck
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
-		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
+		response.Payload = Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
 		return response
 	}
 
@@ -1109,96 +1105,62 @@ func (m *MockOrgResolver) Name() string {
 // Ensure MockOrgResolver implements the interface
 var _ orgresolver.OrgResolver = (*MockOrgResolver)(nil)
 
-// TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths verifies the branch at the
-// multiTriggerFlag.Check call: when the flag's active-period range contains the
-// current time, GenerateExecutionIDWithTriggerIndex (which includes the trigger
-// index) is used and isLegacyExecutionID is false; when the range excludes the
-// current time the legacy EncodeExecutionID is used and isLegacyExecutionID is true.
-func TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths(t *testing.T) {
+// TestCronTrigger_ExecutionIDWithTriggerIndex verifies execution IDs include the
+// trigger index parsed from ReferenceID.
+func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
+	t.Parallel()
+
 	const testWorkflowID = "workflow-id-multi-trigger-test"
 	const testReferenceID = "trigger_2" // parsed to triggerIndex = 2
 	const testTriggerIndex = 2
 	const testTriggerID = testWorkflowID + "|test-trigger"
 
-	run := func(t *testing.T, flagActive bool) {
-		t.Helper()
-		t.Parallel()
+	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	fakeClock := clockwork.NewFakeClockAt(startTime)
+	lggr, observedLogs := logger.TestObserved(t, zap.DebugLevel)
 
-		startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-		fakeClock := clockwork.NewFakeClockAt(startTime)
-		lggr, observedLogs := logger.TestObserved(t, zap.DebugLevel)
+	ts, err := NewTriggerService(lggr, fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
+	require.NoError(t, err)
+	require.NoError(t, ts.Start(t.Context()))
 
-		ts, err := NewTriggerService(lggr, fakeClock, Config{FastestScheduleIntervalSeconds: 1}, Dependencies{LimitsFactory: limits.Factory{}})
-		require.NoError(t, err)
-		require.NoError(t, ts.Start(t.Context()))
-
-		if flagActive {
-			// [0, MaxInt64] always contains the fake clock's time (2024-01-01...).
-			ts.multiTriggerFlag = limits.NewRangeLimiter(settings.Range[config.Timestamp]{
-				Lower: 0,
-				Upper: config.Timestamp(math.MaxInt64),
-			})
-		} else {
-			// [MaxInt64-1, MaxInt64] never contains the fake clock's time.
-			ts.multiTriggerFlag = limits.NewRangeLimiter(settings.Range[config.Timestamp]{
-				Lower: config.Timestamp(math.MaxInt64) - 1,
-				Upper: config.Timestamp(math.MaxInt64),
-			})
-		}
-
-		metadata := capabilities.RequestMetadata{
-			WorkflowID:  testWorkflowID,
-			ReferenceID: testReferenceID,
-		}
-		ch, capErr := ts.RegisterTrigger(t.Context(), testTriggerID, metadata, &protos.Config{Schedule: everySecond})
-		require.Nil(t, capErr)
-
-		fakeClock.Advance(time.Second + time.Millisecond)
-		msg := <-ch
-
-		// Compute the expected execution ID from the received event ID.
-		eventID := msg.Id
-		var expectedExecID string
-		if flagActive {
-			expectedExecID, err = workflows.GenerateExecutionIDWithTriggerIndex(testWorkflowID, eventID, testTriggerIndex)
-		} else {
-			expectedExecID, err = workflows.EncodeExecutionID(testWorkflowID, eventID) //nolint:staticcheck
-		}
-		require.NoError(t, err)
-
-		// The debug log at "task callback sending trigger response" is written
-		// before the channel send, so it is already present once we receive msg.
-		var execIDFromLog string
-		var isLegacyFromLog bool
-		var found bool
-		for _, entry := range observedLogs.All() {
-			if entry.Message == "task callback sending trigger response" {
-				for _, field := range entry.Context {
-					switch field.Key {
-					case "executionID":
-						execIDFromLog = field.String
-					case "isLegacyExecutionID":
-						isLegacyFromLog = field.Integer == 1
-					}
-				}
-				found = true
-				break
-			}
-		}
-		require.True(t, found, "expected log entry 'task callback sending trigger response'")
-		require.Equal(t, expectedExecID, execIDFromLog, "execution ID should match expected hash function")
-		require.Equal(t, !flagActive, isLegacyFromLog, "isLegacyExecutionID should reflect which path was taken")
-
-		require.Nil(t, ts.UnregisterTrigger(t.Context(), testTriggerID, metadata, &protos.Config{Schedule: everySecond}))
-		require.NoError(t, ts.Close())
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:  testWorkflowID,
+		ReferenceID: testReferenceID,
 	}
+	ch, capErr := ts.RegisterTrigger(t.Context(), testTriggerID, metadata, &protos.Config{Schedule: everySecond})
+	require.Nil(t, capErr)
 
-	t.Run("flag active uses GenerateExecutionIDWithTriggerIndex", func(t *testing.T) {
-		run(t, true)
-	})
-	t.Run("flag inactive uses legacy EncodeExecutionID", func(t *testing.T) {
-		run(t, false)
-	})
+	fakeClock.Advance(time.Second + time.Millisecond)
+	msg := <-ch
+
+	expectedExecID, err := workflows.GenerateExecutionIDWithTriggerIndex(testWorkflowID, msg.Id, testTriggerIndex)
+	require.NoError(t, err)
+
+	// The debug log at "task callback sending trigger response" is written
+	// before the channel send, so it is already present once we receive msg.
+	var execIDFromLog string
+	var isLegacyFromLog bool
+	var found bool
+	for _, entry := range observedLogs.All() {
+		if entry.Message == "task callback sending trigger response" {
+			for _, field := range entry.Context {
+				switch field.Key {
+				case "executionID":
+					execIDFromLog = field.String
+				case "isLegacyExecutionID":
+					isLegacyFromLog = field.Integer == 1
+				}
+			}
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "expected log entry 'task callback sending trigger response'")
+	require.Equal(t, expectedExecID, execIDFromLog, "execution ID should match expected hash function")
+	require.False(t, isLegacyFromLog)
+
+	require.Nil(t, ts.UnregisterTrigger(t.Context(), testTriggerID, metadata, &protos.Config{Schedule: everySecond}))
+	require.NoError(t, ts.Close())
 }
 
 func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
@@ -1209,8 +1171,79 @@ func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
 	maximumFastest := 5 * time.Second
 
 	jobDef := gocron.CronJob(schedule, true)
-	capErr := enforceFastestSchedule(logger.Nop(), jobDef, maximumFastest)
+	capErr := enforceFastestSchedule(logger.Nop(), gocron.NewScheduler, jobDef, maximumFastest)
 	require.NotNil(t, capErr, "should reject schedule with 1s gaps")
 	require.Equal(t, caperrors.LimitExceeded, capErr.Code())
 	require.Contains(t, capErr.Error(), "maximum fastest cron schedule is 5s")
+}
+
+type mockScheduler struct {
+	gocron.Scheduler
+	shutdowns int
+}
+
+func (s *mockScheduler) Shutdown() error {
+	s.shutdowns++
+	return s.Scheduler.Shutdown()
+}
+
+func mockFactory(mocks *[]*mockScheduler) schedulerFactory {
+	return func(options ...gocron.SchedulerOption) (gocron.Scheduler, error) {
+		sched, err := gocron.NewScheduler(options...)
+		if err != nil {
+			return nil, err
+		}
+		mock := &mockScheduler{Scheduler: sched}
+		*mocks = append(*mocks, mock)
+		return mock, nil
+	}
+}
+
+// TestEnforceFastestSchedule_ShutsDownTempScheduler covers a regression where the
+// temporary scheduler's Shutdown was deferred below the NewJob error check, so every
+// workflow-supplied cron string that gocron failed to parse retained a scheduler
+// goroutine for the life of the plugin. Each schedule below exercises a different
+// return path through the check; all of them must dispose of the scheduler.
+func TestEnforceFastestSchedule_ShutsDownTempScheduler(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		schedule  string
+		shouldErr bool
+	}{
+		{name: "valid schedule", schedule: everyMinute, shouldErr: false},
+		{name: "invalid timezone", schedule: "TZ=moon * * * * *", shouldErr: true},
+		{name: "empty schedule", schedule: "", shouldErr: true},
+		{name: "not a cron schedule", schedule: "d d d d d", shouldErr: true},
+		{name: "exceeds maximum fastest", schedule: everySecond, shouldErr: true},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var mocks []*mockScheduler
+			capErr := enforceFastestSchedule(logger.Nop(), mockFactory(&mocks), gocron.CronJob(tt.schedule, true), 5*time.Second)
+			if tt.shouldErr {
+				require.NotNil(t, capErr, "schedule %q should have been rejected", tt.schedule)
+			} else {
+				require.Nil(t, capErr)
+			}
+
+			require.Len(t, mocks, 1, "expected exactly one temporary scheduler to be created")
+			require.Equal(t, 1, mocks[0].shutdowns, "temporary scheduler was not shut down on this path")
+		})
+	}
+}
+
+func TestEnforceFastestSchedule_SchedulerConstructionFails(t *testing.T) {
+	t.Parallel()
+
+	failing := func(...gocron.SchedulerOption) (gocron.Scheduler, error) {
+		return nil, errors.New("cannot construct")
+	}
+	capErr := enforceFastestSchedule(logger.Nop(), failing, gocron.CronJob(everyMinute, true), 5*time.Second)
+	require.NotNil(t, capErr)
+	require.Equal(t, caperrors.Internal, capErr.Code())
 }

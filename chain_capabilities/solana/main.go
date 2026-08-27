@@ -35,6 +35,7 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	solcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana/server"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 )
 
 const (
@@ -67,7 +68,7 @@ var _ solcapserver.ClientCapability = &capabilityGRPCService{}
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
 		return solcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
-	})
+	}, loop.WithOtelViews(append(consMetrics.MetricViews(), capmon.MetricViews()...)))
 }
 
 func (c *capabilityGRPCService) ChainSelector() uint64 {
@@ -103,6 +104,9 @@ func (c *capabilityGRPCService) Close() error {
 	if c.triggerService != nil {
 		closers = append(closers, c.triggerService)
 	}
+	if c.Solana != nil {
+		closers = append(closers, c.Solana)
+	}
 	return services.CloseAll(closers...)
 }
 
@@ -125,6 +129,7 @@ func (c *capabilityGRPCService) Description() string {
 func (c *capabilityGRPCService) Ready() error {
 	return nil
 }
+
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
@@ -150,10 +155,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	c.id = "solana" + ":ChainSelector:" + strconv.FormatUint(c.chainSelector, 10) + "@1.0.0"
+	c.CapabilityInfo = capabilities.CapabilityInfo{
+		ID:             c.id,
+		CapabilityType: capabilities.CapabilityTypeCombined,
+		Description:    c.Description(),
+		IsLocal:        cfg.IsLocal,
+	}
 
 	var chainInfo types.ChainInfo
-	// protection for e2e tests when we run against local validator
-	if !cfg.IsLocal {
+	if cfg.IsLocal {
+		chainInfo = localChainInfo(cfg, c.chainSelector)
+	} else {
 		chainInfo, err = relayer.GetChainInfo(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
@@ -252,11 +264,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	return nil
 }
 
-func (s *capabilityGRPCService) setSelector(cfg *config.Config) error {
+func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	// When we run against a local validator (e.g. local CRE) we can't resolve chain selector
 	// since ChainID is always different
 	if cfg.IsLocal {
-		s.chainSelector = chain_selectors.TEST_22222222222222222222222222222222222222222222.Selector
+		c.chainSelector = chain_selectors.TEST_22222222222222222222222222222222222222222222.Selector
 		return nil
 	}
 
@@ -265,9 +277,32 @@ func (s *capabilityGRPCService) setSelector(cfg *config.Config) error {
 		return fmt.Errorf("chain selector not found for chainID: %s", cfg.ChainID)
 	}
 
-	s.chainSelector = cs
+	c.chainSelector = cs
 
 	return nil
+}
+
+// localChainInfo builds monitoring labels for local CRE runs where the relayer
+// cannot resolve chain metadata from a fixed genesis hash.
+func localChainInfo(cfg *config.Config, chainSelector uint64) types.ChainInfo {
+	chainID := cfg.ChainID
+	if chainID == "" {
+		chainID = strconv.FormatUint(chainSelector, 10)
+	}
+
+	networkName := cfg.Network
+	if networkName == "" {
+		networkName = "local"
+	}
+
+	networkNameFull := networkName + "-local"
+
+	return types.ChainInfo{
+		FamilyName:      "solana",
+		ChainID:         chainID,
+		NetworkName:     networkName,
+		NetworkNameFull: networkNameFull,
+	}
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
@@ -294,13 +329,13 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	return &cfg, nil
 }
 
-func (s *capabilityGRPCService) RegisterLogTrigger(
+func (c *capabilityGRPCService) RegisterLogTrigger(
 	ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*solana.Log], caperrors.Error) {
-	return s.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
+	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
-func (s *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) caperrors.Error {
-	return s.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
+func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) caperrors.Error {
+	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
 type closeFunc func() error

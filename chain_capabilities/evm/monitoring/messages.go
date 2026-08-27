@@ -17,7 +17,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
@@ -40,15 +39,15 @@ func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.Capabilit
 	}
 }
 
-func (m *MessageBuilder) BuildCallContractInitiated(tc TelemetryContext, msg *evm.CallMsg, bn int64) *CallContractInitiated {
+func (m *MessageBuilder) BuildCallContractInitiated(tc TelemetryContext, msg *evmtypes.CallMsg, bn int64) *CallContractInitiated {
 	return &CallContractInitiated{Req: &CallContractRequest{BlockNumber: bn, ContractAddress: common.Bytes2Hex(msg.To[:])}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildCallContractSuccess(tc TelemetryContext, msg *evm.CallMsg, bn int64) Message {
+func (m *MessageBuilder) BuildCallContractSuccess(tc TelemetryContext, msg *evmtypes.CallMsg, bn int64) Message {
 	return &CallContractSuccess{Req: &CallContractRequest{BlockNumber: bn, ContractAddress: common.Bytes2Hex(msg.To[:])}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildCallContractError(tc TelemetryContext, msg *evm.CallMsg, bn int64, summary string, err caperrors.Error) ErrorMessage {
+func (m *MessageBuilder) BuildCallContractError(tc TelemetryContext, msg *evmtypes.CallMsg, bn int64, summary string, err caperrors.Error) ErrorMessage {
 	return &CallContractError{Req: &CallContractRequest{BlockNumber: bn, ContractAddress: common.Bytes2Hex(msg.To[:])}, Summary: summary, Cause: err.Error(), IsUserError: err.Origin() == caperrors.OriginUser, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
@@ -218,7 +217,7 @@ func (m *MessageBuilder) BuildLogTriggerCleanUpError(tc TelemetryContext, summar
 	}
 }
 
-func (m *MessageBuilder) BuildLogTriggerEventDroppedError(tc TelemetryContext, triggerID string, log *evm.Log, summary, cause string, isLimitError bool) ErrorMessage {
+func (m *MessageBuilder) BuildLogTriggerEventDroppedError(tc TelemetryContext, triggerID string, log *evmtypes.Log, summary, cause string, isLimitError bool) ErrorMessage {
 	return &LogTriggerEventDroppedError{
 		TriggerID:        triggerID,
 		TxHash:           common.Bytes2Hex(log.TxHash[:]),

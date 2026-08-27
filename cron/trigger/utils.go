@@ -11,27 +11,38 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-func enforceFastestSchedule(lggr logger.Logger, jobDef gocron.JobDefinition, maximumFastest time.Duration) caperrors.Error {
+// schedulerFactory constructs a gocron scheduler. Production code passes
+// gocron.NewScheduler; tests pass a double to observe the scheduler's lifecycle.
+type schedulerFactory func(options ...gocron.SchedulerOption) (gocron.Scheduler, error)
+
+// enforceFastestSchedule rejects a schedule that fires more often than maximumFastest.
+//
+// The scheduler constructor is a parameter so tests can assert the temporary scheduler
+// is always disposed of; production callers pass gocron.NewScheduler.
+func enforceFastestSchedule(lggr logger.Logger, newScheduler schedulerFactory, jobDef gocron.JobDefinition, maximumFastest time.Duration) caperrors.Error {
 	var options []gocron.SchedulerOption
 	// Use a fixed location and point in time for consistency across nodes.
 	options = append(options, gocron.WithLocation(time.UTC))
 	options = append(options, gocron.WithClock(clockwork.NewFakeClockAt(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))))
 
-	tempScheduler, err := gocron.NewScheduler(options...)
+	tempScheduler, err := newScheduler(options...)
 	if err != nil {
 		return caperrors.NewPublicSystemError(fmt.Errorf("failed to initialize temp scheduler: %w", err), caperrors.Internal)
 	}
+	// gocron starts a goroutine inside NewScheduler and Shutdown is the only thing that
+	// stops it, so this defer belongs directly under the constructor: a return between
+	// the two retains the scheduler for the life of the process.
+	defer func() {
+		if err := tempScheduler.Shutdown(); err != nil {
+			lggr.Errorw("error shutting down enforceFastestSchedule temporary scheduler", "err", err)
+		}
+	}()
+
 	tempJob, err := tempScheduler.NewJob(jobDef, gocron.NewTask(func() {}))
 	if err != nil {
 		return caperrors.NewPublicUserError(fmt.Errorf("failed to initialize job: %w", err), caperrors.InvalidArgument)
 	}
 	tempScheduler.Start()
-	defer func() {
-		err := tempScheduler.Shutdown()
-		if err != nil {
-			lggr.Errorw("error shutting down enforceFastestSchedule temporary scheduler")
-		}
-	}()
 
 	// We need to check several runs to make sure there are enough to catch any short gaps (see unit test).
 	// 12 is technically not enough in a general case but should work in practice when maximumFastest is between 5 and 60 seconds.

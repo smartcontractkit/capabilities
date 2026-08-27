@@ -150,7 +150,7 @@ func failedLogData() []byte {
 	return make([]byte, 32)
 }
 
-func nonNilPositiveGasCfgMatcher() interface{} {
+func nonNilPositiveGasCfgMatcher() any {
 	return mock.MatchedBy(func(gc *evm.GasConfig) bool {
 		return gc != nil && gc.GasLimit > 0
 	})
@@ -729,7 +729,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    capcommon.Ptr(fixture.transmissionID.InvalidReceiverMessage()),
+			ErrorMessage:                    new(fixture.transmissionID.InvalidReceiverMessage()),
 		}, txResult.Response)
 
 		// No metering because we did not submit a new tx locally.
@@ -843,7 +843,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    capcommon.Ptr("receiver contract execution failure"),
+			ErrorMessage:                    new("receiver contract execution failure"),
 		}, txResult.Response)
 		require.Len(t, txResult.ResponseMetadata.Metering, 0)
 	})
@@ -936,7 +936,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 					TxHash:                          receipt.TxHash[:],
 					ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 					TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-					ErrorMessage:                    capcommon.Ptr("receiver contract execution failure"),
+					ErrorMessage:                    new("receiver contract execution failure"),
 				}, txResult.Response)
 				require.Len(t, txResult.ResponseMetadata.Metering, 0)
 			})
@@ -1022,7 +1022,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		}, txResult.Response)
 
 		// Retried tx => should be metered.
-		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003", "300")
 	})
 
 	t.Run("TX first transmission - Successful TX execution (ensures non-nil + positive gas config passed to forwarder)", func(t *testing.T) {
@@ -1094,7 +1094,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult.Response)
 
-		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003", "300")
 	})
 
 	t.Run("TX first transmission - Error submitting TX (ensures gas config passed is non-nil + positive)", func(t *testing.T) {
@@ -1194,7 +1194,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult.Response)
 
-		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003", "300")
 	})
 
 	t.Run("TX first transmission - Duplicate tx: txmgr reports reverted but transmission succeeded => use onchain tx hash", func(t *testing.T) {
@@ -1272,7 +1272,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(txFee)),
 		}, txResult.Response)
 
-		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003", "300")
 	})
 
 	t.Run("TX first transmission - Fatal tx but transmission succeeded => use onchain tx hash", func(t *testing.T) {
@@ -1345,7 +1345,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(txFee)),
 		}, txResult.Response)
 
-		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003", "300")
 	})
 
 	t.Run("TX first transmission - Fatal tx and GetSuccessfulTransmissionHash fails => returns error", func(t *testing.T) {
@@ -1519,7 +1519,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				require.Equal(t, receiptTxHash[:], txResult.Response.TxHash)
 				require.NotNil(t, txResult.Response.ReceiverContractExecutionStatus)
 				require.Equal(t, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(), txResult.Response.ReceiverContractExecutionStatus.Enum())
-				evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+				evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003", "300")
 
 				if queuePosition == 0 {
 					mockForwarderClient.AssertNotCalled(t, "GetReportProcessedEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -2254,7 +2254,7 @@ func TestWriteReport_RevertReceiptFetchFailsReturnsUserError(t *testing.T) {
 			assertMetadata: func(t *testing.T, metadata capabilities.ResponseMetadata) {
 				t.Helper()
 
-				evmtest.ValidateMeteringWriteReport(t, metadata, 1, "0.0000000000000003")
+				evmtest.ValidateMeteringWriteReport(t, metadata, 1, "0.0000000000000003", "300")
 			},
 		},
 	}
@@ -2390,7 +2390,7 @@ func createTestRequestMetadata(metadata ocrtypes.Metadata) capabilities.RequestM
 func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *ts.TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
 	t.Helper()
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, err := reportMetadata.Encode()
 		require.NoError(t, err)

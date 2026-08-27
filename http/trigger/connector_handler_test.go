@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/http/protos"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -269,7 +270,7 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, triggerResp.WorkflowID)
 
-	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID) //nolint:staticcheck // SA1019 default FeatureMultiTrigger period is inactive
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
@@ -974,7 +975,7 @@ func TestHandleGatewayMessage_TriggerFailureDoesNotCacheThenSameRequestSucceeds(
 		t.Fatal("timed out waiting for trigger delivery")
 	}
 
-	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID) //nolint:staticcheck // SA1019 default FeatureMultiTrigger period is inactive
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)

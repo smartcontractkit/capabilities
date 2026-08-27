@@ -16,7 +16,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -121,8 +120,8 @@ func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.
 	}, nil
 }
 
-func (cfclient *creForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
-	latest, err := cfclient.evmService.HeaderByNumber(ctx, evm.HeaderByNumberRequest{Number: big.NewInt(rpc.LatestBlockNumber.Int64())})
+func (cfclient *creForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evmtypes.Log, error) {
+	latest, err := cfclient.evmService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{Number: big.NewInt(rpc.LatestBlockNumber.Int64())})
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +164,7 @@ func padBytes2ToBytes32(b2 [2]byte) common.Hash {
 type CREForwarderClient interface {
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *workflowpb.ReportResponse, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error)
-	GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error)
+	GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evmtypes.Log, error)
 }
 
 type CREForwarderCodec interface {

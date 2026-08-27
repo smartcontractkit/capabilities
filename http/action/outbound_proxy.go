@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -17,12 +16,12 @@ import (
 	"github.com/smartcontractkit/capabilities/http/common"
 
 	"github.com/smartcontractkit/capabilities/http/protos"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
@@ -75,21 +74,29 @@ func responseHeadersFromGateway(resp *gc.OutboundHTTPResponse) (headers map[stri
 		multiHeaders = make(map[string]*protos.HeaderValues, len(resp.MultiHeaders))
 		headers = make(map[string]string, len(resp.MultiHeaders))
 		for k, v := range resp.MultiHeaders {
-			multiHeaders[k] = &protos.HeaderValues{Values: slices.Clone(v)}
-			if len(v) > 0 {
-				headers[k] = strings.Join(v, ",")
+			// Sanitize invalid UTF-8: proto string fields must be valid UTF-8 to marshal over gRPC.
+			key := common.SanitizeUTF8(k)
+			sanitized := make([]string, len(v))
+			for i, val := range v {
+				sanitized[i] = common.SanitizeUTF8(val)
+			}
+			multiHeaders[key] = &protos.HeaderValues{Values: sanitized}
+			if len(sanitized) > 0 {
+				headers[key] = strings.Join(sanitized, ",")
 			}
 		}
 		return headers, multiHeaders
 	}
 	// Source is Headers: populate headers, derive multiHeaders (single value per key).
-	headers = maps.Clone(resp.Headers) //nolint:staticcheck // Headers deprecated but gateway may send it
-	if headers == nil {
-		headers = make(map[string]string)
-	}
-	multiHeaders = make(map[string]*protos.HeaderValues, len(headers))
-	for k, v := range headers {
-		multiHeaders[k] = &protos.HeaderValues{Values: []string{v}}
+	// Sanitize invalid UTF-8: proto string fields must be valid UTF-8 to marshal over gRPC.
+	srcHeaders := resp.Headers //nolint:staticcheck // Headers deprecated but gateway may send it
+	headers = make(map[string]string, len(srcHeaders))
+	multiHeaders = make(map[string]*protos.HeaderValues, len(srcHeaders))
+	for k, v := range srcHeaders {
+		key := common.SanitizeUTF8(k)
+		val := common.SanitizeUTF8(v)
+		headers[key] = val
+		multiHeaders[key] = &protos.HeaderValues{Values: []string{val}}
 	}
 	return headers, multiHeaders
 }
@@ -174,8 +181,6 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 	defer p.responses.cleanup(requestID)
 
-	lggr.Debugw("sending request to gateway")
-
 	rawRes := json.RawMessage(payload)
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
@@ -194,12 +199,15 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, gatewayReq.Hash())
 	if err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to establish connection to gateway: %w", err)
 	}
-	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, lggr)
+
+	lggr.Debugw("sending request to gateway", "donID", donID, "selectedGateway", selectedGateway)
+
+	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
@@ -269,6 +277,7 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 			return "", ctx.Err()
 		default:
 			if len(selector.Members()) == 0 {
+				p.metrics.IncrementNoGatewaysAvailable(ctx, donID, lggr)
 				lggr.Warn("no available gateways found, retrying after backoff")
 				select {
 				case <-ctx.Done():
@@ -278,6 +287,7 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 					if err != nil {
 						return "", err
 					}
+					lggr.Debugw("setting up ring", "gatewayIDs", gatewayIDs, "donID", donID)
 					selector = setupRing(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
 					continue
@@ -288,13 +298,15 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 				return "", fmt.Errorf("failed to select gateway using consistent hashing: %w", err)
 			}
 
+			lggr = logger.With(lggr, "selectedGateway", gateway, "donID", donID)
+
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
-				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err, "gateway", gateway)
+				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err)
 				selector.Remove(gateway)
 				continue
 			}
 
-			lggr.Debug("connected successfully")
+			lggr.Debugw("connected successfully")
 			return gateway, nil
 		}
 	}
@@ -310,6 +322,7 @@ func (p *gatewayOutboundProxy) gatewayIDsForDon(ctx context.Context, donID strin
 		return nil, fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
 	if len(gatewayIDs) == 0 {
+		p.metrics.IncrementNoGatewaysAvailable(ctx, donID, p.lggr)
 		return nil, fmt.Errorf("no gateways configured for DON %q", donID)
 	}
 	return gatewayIDs, nil
@@ -338,7 +351,7 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 		req.Params = &json.RawMessage{}
 	}
 
-	var msg gateway.OutboundHTTPResponse
+	var msg gc.OutboundHTTPResponse
 	err := json.Unmarshal(*req.Params, &msg)
 	if err != nil {
 		l.Errorw("failed to unmarshal request params", "error", err)

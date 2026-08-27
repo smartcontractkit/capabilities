@@ -17,8 +17,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -62,9 +60,20 @@ type Dependencies struct {
 	OrgResolver orgresolver.OrgResolver
 }
 
+// Payload is what an untyped cron trigger event carries. It mirrors the struct
+// that used to be generated into chainlink-common's capabilities/triggers/cron
+// package, which no longer exists: the field names and mapstructure keys are
+// what values.UnwrapTo reads, so they are part of the wire format rather than
+// ours to rename.
+type Payload struct {
+	// Time that cron trigger's task execution had been scheduled to occur
+	// (RFC3339Nano formatted)
+	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
+}
+
 type Response struct {
 	capabilities.TriggerEvent
-	Payload cron.Payload
+	Payload Payload
 }
 
 type cronTrigger struct {
@@ -78,7 +87,6 @@ type Service struct {
 	capabilities.CapabilityInfo
 	limitsFactory           limits.Factory
 	fastestScheduleInterval limits.TimeLimiter
-	multiTriggerFlag        limits.RangeLimiter[config.Timestamp] // TODO(CRE-2774): remove when fully rolled out
 	clock                   clockwork.Clock
 	lggr                    logger.Logger
 	scheduler               gocron.Scheduler
@@ -147,11 +155,6 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, cfg Conf
 		return nil, fmt.Errorf("failed to create limiter: %w", err)
 	}
 
-	multiTriggerFlag, err := limits.MakeRangeLimiter(deps.LimitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create rangelimiter: %w", err)
-	}
-
 	if deps.OrgResolver == nil {
 		lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
 	}
@@ -179,7 +182,6 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, cfg Conf
 		CapabilityInfo:          cronTriggerInfo,
 		limitsFactory:           deps.LimitsFactory,
 		fastestScheduleInterval: fastestScheduleInterval,
-		multiTriggerFlag:        multiTriggerFlag,
 		orgResolver:             deps.OrgResolver,
 		triggers:                NewCronStore(),
 		scheduler:               scheduler,
@@ -222,7 +224,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	if err != nil {
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to look up fastest schedule interval: %w", err), caperrors.Internal)
 	}
-	capErr := enforceFastestSchedule(s.lggr, jobDef, limit)
+	capErr := enforceFastestSchedule(s.lggr, gocron.NewScheduler, jobDef, limit)
 	if capErr != nil {
 		return nil, capErr
 	}
@@ -259,16 +261,8 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			if displayWorkflowName == "" {
 				displayWorkflowName = metadata.WorkflowName
 			}
-			var workflowExecutionID string
-			var execIDErr error
-			isLegacyExecutionID := true
-			// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
-			if s.multiTriggerFlag.Check(ctx, config.NewTimestamp(currentTimeUTC)) == nil {
-				workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(trigger.workflowID, response.Id, triggerIndex)
-				isLegacyExecutionID = false
-			} else { // legacy behavior
-				workflowExecutionID, execIDErr = workflows.EncodeExecutionID(trigger.workflowID, response.Id) //nolint:staticcheck
-			}
+
+			workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(trigger.workflowID, response.Id, triggerIndex)
 
 			if execIDErr != nil {
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
@@ -312,7 +306,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				}
 			}
 
-			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "isLegacyExecutionID", isLegacyExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "isLegacyExecutionID", false, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {

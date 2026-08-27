@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -183,7 +182,7 @@ func (wr *WriteReport) executeWriteReport(
 			"returning without a transmission attempt - transmission already attempted and failed",
 			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.failedWriteReportReply(&transmissionInfo.Signature, capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
+		return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("unexpected transmission state: %d", transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
@@ -224,12 +223,11 @@ func (wr *WriteReport) executeWriteReport(
 	}
 
 	var meteringMetadata capabilities.ResponseMetadata
-	transactionFee, err := wr.getFee(ctx, last.Signature)
+	feeInLamports, err := wr.getFee(ctx, last.Signature)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, last.Signature, err.Error()))
 	} else {
-		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee,
-			wr.chainSelector)
+		meteringMetadata = metering.GetResponseMetadataWriteReport(feeInLamports, wr.chainSelector)
 	}
 
 	switch last.State {
@@ -239,7 +237,7 @@ func (wr *WriteReport) executeWriteReport(
 
 	case TransmissionStateFailed:
 		wr.lggr.Errorw("WriteReport failed (receiver execution reverted)", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
-		return wr.failedWriteReportReply(&last.Signature, capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)), meteringMetadata, nil
+		return wr.failedWriteReportReply(&last.Signature, new(UnknownIssueExecutingReceiverContractMessage)), meteringMetadata, nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("transmission state not expected after submit: %d", last.State)), meteringMetadata, nil
@@ -423,10 +421,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 			}
 		}
 
-		wait := (100 * time.Millisecond) << min(attempt, 5)
-		if wait > 2*time.Second {
-			wait = 2 * time.Second
-		}
+		wait := min((100*time.Millisecond)<<min(attempt, 5), 2*time.Second)
 		attempt++
 
 		select {
@@ -454,16 +449,22 @@ func (wr *WriteReport) pollTransmissionInfo(
 	}
 }
 
-func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.Float, error) {
+func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, error) {
 	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get transaction: %w", err)
+		return 0, fmt.Errorf("failed to get transaction: %w", err)
+	}
+	if tx == nil {
+		return 0, errors.New("failed to get transaction fee: empty transaction response")
+	}
+	if tx.Meta == nil {
+		return 0, errors.New("failed to get transaction fee: empty transaction meta")
 	}
 
-	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(tx.Meta.Fee), big.NewFloat(1e9))
+	feeInLamports := tx.Meta.Fee
 
-	wr.lggr.Debugw("WriteReport fee", "feeInSol", feeInSol.String(), "feeInLamports", tx.Meta.Fee)
-	return feeInSol, nil
+	wr.lggr.Debugw("WriteReport fee", "feeInLamports", feeInLamports)
+	return feeInLamports, nil
 }
 
 func (wr *WriteReport) successWriteReportReply(sig *solana.Signature) *solcap.WriteReportReply {
@@ -486,7 +487,7 @@ func (wr *WriteReport) failedWriteReportReply(sig *solana.Signature, msg *string
 func (wr *WriteReport) fatalWriteReportReply(message string) *solcap.WriteReportReply {
 	r := &solcap.WriteReportReply{}
 	r.TxStatus = solcap.TxStatus_TX_STATUS_FATAL
-	r.ErrorMessage = capcommon.Ptr(message)
+	r.ErrorMessage = new(message)
 
 	return r
 }

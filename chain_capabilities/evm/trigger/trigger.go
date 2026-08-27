@@ -73,8 +73,6 @@ type LogTriggerService struct {
 	eventRateLimit             limits.RateLimiter
 	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
 	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
-
-	multiTriggerFlag limits.RangeLimiter[commoncfg.Timestamp]
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
@@ -148,11 +146,11 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 }
 
 func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err error) {
-	lts.filterAddressLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterAddressLimit)
+	lts.filterAddressLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterAddressLimit)
 	if err != nil {
 		return
 	}
-	lts.filterTopicsPerSlotLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterTopicsPerSlotLimit)
+	lts.filterTopicsPerSlotLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterTopicsPerSlotLimit)
 	if err != nil {
 		return
 	}
@@ -160,11 +158,10 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 	if err != nil {
 		return
 	}
-	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
+	lts.eventPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
 	if err != nil {
 		return
 	}
-	lts.multiTriggerFlag, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
 	return
 }
 
@@ -323,6 +320,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	lts.srvcEng.Go(func(ctx context.Context) {
 		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		lts.triggers.Write(triggerID, logTriggerState{
 			cancelFunc:              cancel,
 			lastBlock:               fromBlock,
@@ -480,22 +478,13 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		var workflowExecutionID string
-		var execIDErr error
-		isLegacyExecutionID := true
-		// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
-		if lts.multiTriggerFlag.Check(ctx, commoncfg.NewTimestamp(time.Now())) == nil {
-			workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
-			isLegacyExecutionID = false
-		} else { // legacy behavior
-			workflowExecutionID, execIDErr = workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id) //nolint:staticcheck
-		}
+		workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
 		if execIDErr != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "isLegacyExecutionID", isLegacyExecutionID, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "isLegacyExecutionID", false, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
 			workflowExecutionID = ""
 		}
-		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID, "isLegacyExecutionID", isLegacyExecutionID)
+		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID, "isLegacyExecutionID", false)
 
 		displayWorkflowName := telemetryContext.DecodedWorkflowName
 		if displayWorkflowName == "" {

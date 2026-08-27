@@ -3,6 +3,7 @@ package metering
 import (
 	"fmt"
 	"math/big"
+	"strconv"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
@@ -16,14 +17,18 @@ const (
 
 var WriteReportSpendUnitFormat = "GAS.%d" // %d will be replaced with the chain selector
 
-// GetMeteringNodeDetail returns a MeteringNodeDetail for a given SpendValueCredits.
-func GetResponseMetadataWriteReport(fee *big.Float, chainSelector uint64) capabilities.ResponseMetadata {
+// GetResponseMetadataWriteReport returns billing ResponseMetadata for a completed write-report
+// submission. feeInLamports is the transaction fee in lamports (native fixed-point integer).
+// The legacy SpendValue (in SOL) is derived from feeInLamports for backwards compatibility.
+func GetResponseMetadataWriteReport(feeInLamports uint64, chainSelector uint64) capabilities.ResponseMetadata {
+	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(feeInLamports), big.NewFloat(1e9))
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{
 				//Peer2PeerID will be assigned by the engine, leaving it empty here.
-				SpendValue: fee.Text('f', -1), // have to be stored in SOL
-				SpendUnit:  fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
+				SpendValue:           feeInSol.Text('f', -1),
+				SpendValueInGasUnits: strconv.FormatUint(feeInLamports, 10),
+				SpendUnit:            fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
 			},
 		},
 	}

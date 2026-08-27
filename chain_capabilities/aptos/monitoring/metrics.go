@@ -132,7 +132,7 @@ func NewMetrics() (Metrics, error) {
 	invokeOnReportDuration := commonbeholder.MetricInfo{
 		Name:        ns("write_report_invoke_on_report_duration_ms"),
 		Unit:        "ms",
-		Description: "The duration of Aptos WriteReport InvokeOnReport calls by tx status",
+		Description: "The duration from Aptos WriteReport transaction submission to its on-chain block timestamp, by tx status",
 	}
 	m.WriteReportInvokeOnReportDuration.duration, err = invokeOnReportDuration.NewInt64Histogram(meter)
 	if err != nil {

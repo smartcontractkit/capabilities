@@ -3,6 +3,7 @@ package trigger
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -35,14 +36,24 @@ import (
 const (
 	SuffixLogTriggerFilterID = "-solana-log-trigger"
 	defaultQueryLimit        = 1000
+	defaultMaxPagesPerPoll   = 5
 )
+
+func publicKeyFromBytes(fieldName string, raw []byte) (solana.PublicKey, error) {
+	var key solana.PublicKey
+	if len(raw) != solana.PublicKeyLength {
+		return key, fmt.Errorf("invalid %s length: expected %d bytes, got %d", fieldName, solana.PublicKeyLength, len(raw))
+	}
+	copy(key[:], raw)
+	return key, nil
+}
 
 func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
 	}
-	if len(config.Address) != 32 {
-		return fmt.Errorf("invalid address length: expected 32 bytes, got %d", len(config.Address))
+	if _, err := publicKeyFromBytes("address", config.Address); err != nil {
+		return err
 	}
 	if config.EventName == "" {
 		return fmt.Errorf("event name cannot be empty")
@@ -53,6 +64,34 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if len(config.ContractIdlJson) == 0 {
 		return fmt.Errorf("event idl json cannot be empty")
 	}
+
+	if config.CpiFilterConfig != nil {
+		if _, err := publicKeyFromBytes("cpi filter destination address", config.CpiFilterConfig.DestAddress); err != nil {
+			return err
+		}
+	}
+	return validateSubkeyComparers(config.Subkeys)
+}
+
+func validateSubkeyComparers(subkeys []*solanacappb.SubkeyConfig) error {
+	for i, subkey := range subkeys {
+		if subkey == nil || len(subkey.Comparers) < 2 {
+			continue
+		}
+
+		eqValues := make(map[string]struct{})
+		for _, comp := range subkey.Comparers {
+			if comp == nil || comp.Operator != solanacappb.ComparisonOperator_COMPARISON_OPERATOR_EQ {
+				continue
+			}
+			eqValues[string(comp.Value)] = struct{}{}
+		}
+
+		if len(eqValues) > 1 {
+			return fmt.Errorf("subkey %d has conflicting equality filters", i)
+		}
+	}
+
 	return nil
 }
 
@@ -61,16 +100,19 @@ func newUserError(err error) caperrors.Error {
 }
 
 func (lts *SolanaLogTriggerService) ToLogPollerFilter(triggerID string, config *solanacappb.FilterLogTriggerRequest) (*solana.LPFilterQuery, error) {
-	var address solana.PublicKey
-	if len(config.Address) != len(address) {
-		return nil, fmt.Errorf("invalid address length: expected %d bytes, got %d", len(address), len(config.Address))
+	address, err := publicKeyFromBytes("address", config.Address)
+	if err != nil {
+		return nil, err
 	}
-	copy(address[:], config.Address)
 
 	var cpiFilterConfig *solana.CPIFilterConfig
 	if config.CpiFilterConfig != nil {
+		destAddress, err := publicKeyFromBytes("cpi filter destination address", config.CpiFilterConfig.DestAddress)
+		if err != nil {
+			return nil, err
+		}
 		cpiFilterConfig = &solana.CPIFilterConfig{
-			DestAddress: address,
+			DestAddress: destAddress,
 			MethodName:  string(config.CpiFilterConfig.MethodName),
 		}
 	}
@@ -134,6 +176,9 @@ func (lts *SolanaLogTriggerService) getFinalizedBlockNumber(ctx context.Context,
 		return 0, fmt.Errorf("failed to get latest finalized block: '%w' for triggerID: %s", err, triggerID)
 	}
 	lts.lggr.Debugf("Latest finalized block number: %d, triggerID: %s", block.Height, triggerID)
+	if block.Height > math.MaxInt64 {
+		return 0, fmt.Errorf("block height %d exceeds int64 max", block.Height)
+	}
 	return int64(block.Height), nil
 }
 
@@ -252,7 +297,7 @@ func (lts *SolanaLogTriggerService) initLimiters(limitsFactory limits.Factory) e
 	if err != nil {
 		return fmt.Errorf("failed to create event rate limiter: %w", err)
 	}
-	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory,
+	lts.eventPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory,
 		cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
 	if err != nil {
 		return fmt.Errorf("failed to create event payload size limiter: %w", err)
@@ -482,8 +527,11 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 	defer ticker.Stop()
 	defer close(logCh)
 
-	// Use the finalized block number from registration as the starting point
+	// Commit cursor advances only for terminally processed logs and is used to build
+	// keyset pagination state. Keep a block offset for compatibility with existing
+	// telemetry and startup behavior.
 	lastProcessedBlock := startingBlock
+	committedCursor := logPollCursor{}
 
 	for {
 		select {
@@ -491,58 +539,80 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 			lts.lggr.Debugf("Context cancelled for triggerID: %s, stopping polling", triggerID)
 			return
 		case <-ticker.C:
-			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, lastProcessedBlock)
-			expressions, err := BuildQueryExpressions(config, lastProcessedBlock)
+			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d, cursorSet: %t", triggerID, lastProcessedBlock, committedCursor.hasValue)
+			expressions, err := BuildQueryExpressions(config, startingBlock)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to build query expressions for trigger %s: %v", triggerID, err)
 				lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
 				continue
 			}
 
-			limitAndSort := query.NewLimitAndSort(
-				query.CountLimit(defaultQueryLimit),
-				query.NewSortBySequence(query.Asc),
-			)
-
-			logs, err := lts.SolanaService.QueryTrackedLogs(ctx, expressions, limitAndSort)
-			if err != nil {
-				summary := fmt.Sprintf("Failed to query tracked logs for trigger %s: %v", triggerID, err)
-				lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
-				continue
-			}
-
 			sentCount := 0
-			calculatedLatestBlock := lastProcessedBlock
-			for _, log := range logs {
-				if log == nil {
-					lts.lggr.Warnw("Received nil log from QueryTrackedLogs, skipping", "triggerID", triggerID)
-					continue
+			processedPages := 0
+			for ; processedPages < defaultMaxPagesPerPoll; processedPages++ {
+				limit := query.CountLimit(defaultQueryLimit)
+				if committedCursor.hasValue {
+					limit = query.CursorLimit(committedCursor.String(), query.CursorFollowing, defaultQueryLimit)
 				}
 
-				// Track the highest block number from logs (all logs from log poller are already finalized)
-				if log.BlockNumber > calculatedLatestBlock {
-					calculatedLatestBlock = log.BlockNumber
+				limitAndSort := query.NewLimitAndSort(limit, query.NewSortBySequence(query.Asc))
+				logs, err := lts.SolanaService.QueryTrackedLogs(ctx, expressions, limitAndSort)
+				if err != nil {
+					summary := fmt.Sprintf("Failed to query tracked logs for trigger %s: %v", triggerID, err)
+					lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
+					break
 				}
 
-				protoLog := solanacappb.ConvertLogToProto(log)
-				eventID := lts.generateLogIdentifier(log)
-
-				checksLimitsOk := lts.checkLimitsOnLog(ctx, telemetryContext, protoLog, triggerID, eventID, log)
-				if !checksLimitsOk {
-					continue
+				if len(logs) == 0 {
+					break
 				}
 
-				if ctx.Err() != nil {
-					return
-				}
-				if lts.deliverLogReliably(ctx, telemetryContext, triggerID, protoLog, eventID, log) {
+				pageFailed := false
+				for _, log := range logs {
+					if log == nil {
+						lts.lggr.Warnw("Received nil log from QueryTrackedLogs, skipping", "triggerID", triggerID)
+						continue
+					}
+
+					protoLog := solanacappb.ConvertLogToProto(log)
+					eventID := lts.generateLogIdentifier(log)
+
+					checksLimitsOk := lts.checkLimitsOnLog(ctx, telemetryContext, protoLog, triggerID, eventID, log)
+					if !checksLimitsOk {
+						committedCursor.Commit(log)
+						if log.BlockNumber > lastProcessedBlock {
+							lastProcessedBlock = log.BlockNumber
+						}
+						continue
+					}
+
+					if ctx.Err() != nil {
+						return
+					}
+
+					if !lts.deliverLogReliably(ctx, telemetryContext, triggerID, protoLog, eventID, log) {
+						pageFailed = true
+						break
+					}
+
 					sentCount++
+					committedCursor.Commit(log)
+					if log.BlockNumber > lastProcessedBlock {
+						lastProcessedBlock = log.BlockNumber
+					}
+				}
+
+				if pageFailed {
+					break
+				}
+
+				if len(logs) < defaultQueryLimit {
+					break
 				}
 			}
 
-			lastProcessedBlock = calculatedLatestBlock
-			successMessage := fmt.Sprintf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d, sent logs: %d", triggerID, calculatedLatestBlock, sentCount)
-			lts.logAndEmitSuccess(ctx, successMessage, telemetryContext, triggerID, config, sentCount, calculatedLatestBlock)
+			successMessage := fmt.Sprintf("Finished polling triggerID: %s, BlockNumber: %d, sent logs: %d, pages processed: %d", triggerID, lastProcessedBlock, sentCount, processedPages)
+			lts.logAndEmitSuccess(ctx, successMessage, telemetryContext, triggerID, config, sentCount, lastProcessedBlock)
 		}
 	}
 }

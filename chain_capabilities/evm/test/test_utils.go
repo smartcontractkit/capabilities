@@ -19,11 +19,12 @@ func ValidateMetering(t *testing.T, metadata capabilities.ResponseMetadata, expe
 	require.Empty(t, meteringNodeDetail.Peer2PeerID, "Peer2PeerID should be empty as it will be assigned by the engine")
 }
 
-func ValidateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector int, expectedValue string) {
+func ValidateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector int, expectedValue string, expectedValueInGasUnits string) {
 	require.Len(t, metadata.Metering, 1)
 	meteringNodeDetail := metadata.Metering[0]
 	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), meteringNodeDetail.SpendUnit)
 	require.Equal(t, expectedValue, meteringNodeDetail.SpendValue)
+	require.Equal(t, expectedValueInGasUnits, meteringNodeDetail.SpendValueInGasUnits)
 	require.Empty(t, meteringNodeDetail.Peer2PeerID, "Peer2PeerID should be empty as it will be assigned by the engine")
 }
 

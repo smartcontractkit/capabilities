@@ -301,7 +301,7 @@ func Test_Server_V2Request_ExcludesNonDeterministicInputAttributes(t *testing.T)
 
 type v2WriteChainMessageHasher struct{}
 
-func (r *v2WriteChainMessageHasher) Hash(msg *don2dontypes.MessageBody) ([32]byte, error) {
+func (r *v2WriteChainMessageHasher) Hash(ctx context.Context, msg *don2dontypes.MessageBody) ([32]byte, error) {
 	req, err := pb.UnmarshalCapabilityRequest(msg.Payload)
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("failed to unmarshal capability request: %w", err)

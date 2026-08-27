@@ -6,13 +6,13 @@ import (
 	solgo "github.com/gagliardetto/solana-go"
 	"go.opentelemetry.io/otel/attribute"
 
-	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	"github.com/mr-tron/base58"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 
@@ -36,7 +36,19 @@ func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.Capabilit
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *solcap.WriteReportRequest, signature solgo.Signature, cause string) ErrorMessage {
+// CapabilityMetricsAttributes returns capability-scoped OTel labels for v2 action metrics.
+func (m *MessageBuilder) CapabilityMetricsAttributes() []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String(capmon.LabelChainFamilyName, capmon.ValOrUnknown(m.ChainInfo.FamilyName)),
+		attribute.String(capmon.LabelChainID, capmon.ValOrUnknown(m.ChainInfo.ChainID)),
+		attribute.String(capmon.LabelNetworkName, capmon.ValOrUnknown(m.ChainInfo.NetworkName)),
+		attribute.String(capmon.LabelNetworkNameFull, capmon.ValOrUnknown(m.ChainInfo.NetworkNameFull)),
+		attribute.String(capmon.LabelCapabilityType, capmon.ValOrUnknown(string(m.CapInfo.CapabilityType))),
+		attribute.String(capmon.LabelCapabilityID, capmon.ValOrUnknown(m.CapInfo.ID)),
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *solanacappb.WriteReportRequest, signature solgo.Signature, cause string) ErrorMessage {
 	summary := "Failed to calculate transaction fee"
 	if !signature.IsZero() {
 		summary = fmt.Sprintf("Failed to calculate transaction fee for tx: %s", signature)

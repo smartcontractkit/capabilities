@@ -2,8 +2,10 @@ package contracts_test
 
 import (
 	"context"
+	"crypto/sha3"
 	"errors"
 	"fmt"
+	"hash"
 	"math/big"
 	"testing"
 
@@ -11,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/sha3"
 
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
@@ -19,7 +20,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
@@ -140,7 +140,7 @@ func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
 		mockEVMService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(100)}}, nil).Maybe()
 		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, contracts.DefaultLookbackBlocks, testLogger)
-		mockLogs := []*evm.Log{{
+		mockLogs := []*evmtypes.Log{{
 			TxHash: expectedHash,
 		}}
 		mockEVMService.EXPECT().FilterLogs(ctx, mock.Anything).Return(&evmtypes.FilterLogsReply{Logs: mockLogs}, nil)
@@ -270,7 +270,7 @@ func TestNewCREForwarderClient_LookbackConfig(t *testing.T) {
 				// FromBlock 50 == 150 - 100 (default value) = 90
 				return big.NewInt(50).Cmp(req.FilterQuery.FromBlock) == 0
 			})).
-			Return(&evmtypes.FilterLogsReply{Logs: []*evm.Log{}}, nil)
+			Return(&evmtypes.FilterLogsReply{Logs: []*evmtypes.Log{}}, nil)
 
 		_, err = forwarderClient.GetReportProcessedEvents(ctx, common.BytesToAddress(test.RandomBytes(20)), [32]byte(test.RandomBytes(32)), [2]byte(test.RandomBytes(2)))
 		require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestNewCREForwarderClient_LookbackConfig(t *testing.T) {
 				// FromBlock 90 == 100 - 10 = 90
 				return big.NewInt(90).Cmp(req.FilterQuery.FromBlock) == 0
 			})).
-			Return(&evmtypes.FilterLogsReply{Logs: []*evm.Log{}}, nil)
+			Return(&evmtypes.FilterLogsReply{Logs: []*evmtypes.Log{}}, nil)
 
 		_, err = forwarderClient.GetReportProcessedEvents(ctx, common.BytesToAddress(test.RandomBytes(20)), [32]byte(test.RandomBytes(32)), [2]byte(test.RandomBytes(2)))
 		require.NoError(t, err)
@@ -452,7 +452,7 @@ func legacyDebugID(t contracts.TransmissionID) string {
 // common/transmission_schedule.transmissionScheduleSeed, which is what actually
 // consumes the string and feeds it to the permutation.
 func transmissionScheduleSeed(transmissionID string) [16]byte {
-	hash := sha3.New256()
+	hash := hash.Hash(sha3.New256())
 	hash.Write([]byte(transmissionID))
 	var key [16]byte
 	copy(key[:], hash.Sum(nil))

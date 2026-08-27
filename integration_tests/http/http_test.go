@@ -1,3 +1,4 @@
+//nolint:staticcheck // SA1019: Response.Headers is deprecated but tests still use it
 package http
 
 import (
@@ -62,7 +63,7 @@ const serviceConfigTemplate = `
 `
 
 func startTestHTTPServer(t *testing.T, handler http.Handler) (net.Listener, func()) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(context.Background(), "tcp", "127.0.0.1:0") //nolint:noctx // test code
 	require.NoError(t, err)
 
 	srv := &http.Server{

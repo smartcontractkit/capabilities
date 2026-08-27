@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/capabilities/http/validate"
 
 	"github.com/smartcontractkit/capabilities/http/protos"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -41,7 +42,7 @@ func multiDonGatewayConnector(t *testing.T, onSend func(gatewayID string)) *mock
 func newValidatorWithGatewayProxyDonID(t *testing.T, donID string) common.RequestValidator {
 	t.Helper()
 
-	getter, err := settings.NewJSONGetter([]byte(fmt.Sprintf(`{
+	getter, err := settings.NewJSONGetter(fmt.Appendf(nil, `{
 		"org": {
 			"test-org": {
 				"PerWorkflow": {
@@ -51,7 +52,7 @@ func newValidatorWithGatewayProxyDonID(t *testing.T, donID string) common.Reques
 				}
 			}
 		}
-	}`, donID)))
+	}`, donID))
 	require.NoError(t, err)
 
 	lggr := logger.Test(t)
