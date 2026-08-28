@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"slices"
@@ -141,6 +142,20 @@ func handleFieldsMapAggregation(
 	return valuespb.NewMapValue(result), nil
 }
 
+// float64ToSortableInt returns a safe uint64 to sort with
+// Go uses IEEE 754 for math.Float64Bits, so ordering is persevered and NaNs become comparable as either the largest or smallest numbers
+// See more at https://en.wikipedia.org/wiki/IEEE_754
+func float64ToSortableInt(f float64) uint64 {
+	u := math.Float64bits(f)
+
+	// If sign bit is 1 (negative float), invert all bits.
+	// If sign bit is 0 (positive float), flip only the sign bit.
+	if u&0x8000000000000000 != 0 {
+		return u ^ 0xFFFFFFFFFFFFFFFF
+	}
+	return u ^ 0x8000000000000000
+}
+
 func handleMedianAggregation(
 	lggr logger.Logger,
 	observations []*valuespb.Value,
@@ -210,10 +225,12 @@ func handleMedianAggregation(
 				return val.GetFloat64Value(), nil
 			},
 			func(a, b float64) int {
-				if a < b {
+				ai := float64ToSortableInt(a)
+				bi := float64ToSortableInt(b)
+				if ai < bi {
 					return -1
 				}
-				if a > b {
+				if ai > bi {
 					return 1
 				}
 				return 0
