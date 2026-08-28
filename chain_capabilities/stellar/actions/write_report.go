@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -40,6 +41,7 @@ type writeReport struct {
 	forwarderLookbackLedgers int64
 	chainSelector            uint64
 	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
+	maxResourceFeeLimit      limits.BoundLimiter[uint64]
 	transmissionScheduler    ts.TransmissionScheduler
 	messageBuilder           *monitoring.MessageBuilder
 	beholderProcessor        beholder.ProtoProcessor
@@ -93,6 +95,7 @@ func (s *Stellar) executeWriteReport(
 		forwarderLookbackLedgers: s.forwarderLookbackLedgers,
 		chainSelector:            s.chainSelector,
 		reportSizeLimit:          s.reportSizeLimit,
+		maxResourceFeeLimit:      s.maxResourceFeeLimit,
 		transmissionScheduler:    s.transmissionScheduler,
 		messageBuilder:           s.messageBuilder,
 		beholderProcessor:        s.beholderProcessor,
@@ -107,6 +110,17 @@ func (wr *writeReport) execute(
 	telemetryContext monitoring.TelemetryContext,
 ) (*stellarcap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	ctx = contexts.WithChainSelector(ctx, wr.chainSelector)
+
+	if request.ContractId == wr.forwarderClient.ForwarderAddress() {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s receiver contract cannot be the forwarder contract", capcommon.UserError)
+	}
+	if err := wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
+	}
+	requiredSigs := int(wr.transmissionScheduler.F) + 1
+	if len(request.Report.Sigs) < requiredSigs {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s signed report contains too few signatures: got %d, want at least %d", capcommon.UserError, len(request.Report.Sigs), requiredSigs)
+	}
 
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
@@ -168,16 +182,45 @@ func (wr *writeReport) execute(
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	case TransmissionStateNotAttempted:
+	case TransmissionStateUnknown:
+		// Unknown state must not authorize spend.
+		wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, "WriteReport transmission state unknown during pre-submit poll; refusing to spend", invalidTransmissionStateError(info.State).Error())
+		return nil, capabilities.ResponseMetadata{}, invalidTransmissionStateError(info.State)
 	default:
 		wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, "WriteReport invalid transmission state during pre-submit poll", invalidTransmissionStateError(info.State).Error())
 		return nil, capabilities.ResponseMetadata{}, invalidTransmissionStateError(info.State)
 	}
 
-	if err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
+	// Simulate the same report() call before submitting, then enforce outcome and fee limits.
+	transmitter, err := wr.forwarderClient.ResolveSigningAccount(ctx)
+	if err != nil {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to resolve signing account: %w", err)
+	}
+	simResp, err := wr.forwarderClient.SimulateReport(ctx, transmitter, request.ContractId, request.Report)
+	if err != nil {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s pre-submit report simulation failed: %w", capcommon.UserError, err)
+	}
+	if simResp.Error != "" || !simResp.Success {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s pre-submit report simulation indicated receiver cannot accept the report: %s", capcommon.UserError, simResp.Error)
+	}
+	// The forwarder can return Ok while recording receiver failure; verify the event too.
+	if err = wr.forwarderClient.ValidateReportSimulation(simResp, transmissionID); err != nil {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s %w", capcommon.UserError, err)
+	}
+	if simResp.MinResourceFee > 0 {
+		if err = wr.maxResourceFeeLimit.Check(ctx, uint64(simResp.MinResourceFee)); err != nil {
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s estimated resource fee exceeds configured limit: %w", capcommon.UserError, err)
+		}
+		if err = wr.checkEstimatedSpendLimit(metadata, uint64(simResp.MinResourceFee)); err != nil {
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s %w", capcommon.UserError, err)
+		}
+	}
+	maxResourceFee, err := wr.maxResourceFeeLimit.Limit(ctx)
+	if err != nil {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to read max resource fee limit: %w", err)
 	}
 
-	submitResp, err := wr.forwarderClient.InvokeOnReport(ctx, request.ContractId, request.Report)
+	submitResp, err := wr.forwarderClient.InvokeOnReport(ctx, transmitter, request.ContractId, request.Report, transmissionID, maxResourceFee)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
 	}
@@ -189,7 +232,7 @@ func (wr *writeReport) execute(
 		if readErr != nil {
 			return TransmissionInfo{}, readErr
 		}
-		if readInfo.State == TransmissionStateNotAttempted {
+		if readInfo.State == TransmissionStateNotAttempted || readInfo.State == TransmissionStateUnknown {
 			return TransmissionInfo{}, errors.New("tx submitted but transmission info not yet visible on-chain, retrying")
 		}
 		return readInfo, nil
@@ -212,14 +255,16 @@ func (wr *writeReport) execute(
 			"localTxStatus", submitResp.TxStatus,
 		)
 
-		return nil, capabilities.ResponseMetadata{}, errors.New("failed to retrieve transmission outcome after report submission")
+		return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), errors.New("failed to retrieve transmission outcome after report submission")
 	}
 
 	switch postInfo.State {
 	case TransmissionStateSucceeded:
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, err
+			// A submit occurred and was paid for; bill the local submit hash even though
+			// the canonical successful tx hash could not be resolved.
+			return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), err
 		}
 		if submitResp.TxStatus != stellartypes.TxSuccess && submitResp.TxHash != "" && submitResp.TxHash != txHash {
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission succeeded, but local submit did not confirm (likely duplicate)",
@@ -236,7 +281,7 @@ func (wr *writeReport) execute(
 			} else {
 				wr.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve failed transmission tx hash", "error", err, "localTxHash", submitResp.TxHash)
 			}
-			return nil, capabilities.ResponseMetadata{}, err
+			return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), err
 		}
 		if submitResp.TxHash != "" && submitResp.TxHash != txHash {
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission failed, but local submit hash differs from canonical failed transmission",
@@ -252,7 +297,7 @@ func (wr *writeReport) execute(
 	default:
 		wr.lggr.Errorw("Invalid transmission state after submit", "state", postInfo.State, "localTxStatus", submitResp.TxStatus)
 		wr.emitInvalidTransmissionState(ctx, request, telemetryContext, postInfo, transmissionID, "WriteReport invalid transmission state after submit", invalidTransmissionStateError(postInfo.State).Error())
-		return nil, capabilities.ResponseMetadata{}, invalidTransmissionStateError(postInfo.State)
+		return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), invalidTransmissionStateError(postInfo.State)
 	}
 }
 
@@ -365,7 +410,10 @@ func (wr *writeReport) pollTransmissionInfo(
 			switch lastValidInfo.State {
 			case TransmissionStateSucceeded, TransmissionStateInvalidReceiver, TransmissionStateFailed:
 				return lastValidInfo, nil
-			case TransmissionStateNotAttempted:
+			case TransmissionStateNotAttempted, TransmissionStateUnknown:
+				// Not yet visible or unreadable; keep polling until the delta stage window
+				// expires. Unknown is fail-closed at the submit decision but is retried
+				// here because the slot may become readable as the ledger advances.
 			default:
 				if !invalidStateEmitted {
 					wr.emitInvalidTransmissionState(ctx, request, telemetryContext, lastValidInfo, transmissionID,
@@ -408,6 +456,44 @@ func (wr *writeReport) meteringFromReply(reply *stellarcap.WriteReportReply) cap
 		return capabilities.ResponseMetadata{}
 	}
 	return metering.GetResponseMetadataWriteReport(*reply.TransactionFee, wr.chainSelector)
+}
+
+func (wr *writeReport) checkEstimatedSpendLimit(metadata capabilities.RequestMetadata, estimatedFeeStroops uint64) error {
+	unit := fmt.Sprintf(metering.WriteReportSpendUnitFormat, wr.chainSelector)
+	var limitStr string
+	for _, spendLimit := range metadata.SpendLimits {
+		if string(spendLimit.SpendType) == unit {
+			limitStr = spendLimit.Limit
+			break
+		}
+	}
+	if limitStr == "" {
+		wr.lggr.Warnf("no spend limit found for action %s - allowing request", unit)
+		return nil
+	}
+	limit, ok := new(big.Rat).SetString(limitStr)
+	if !ok {
+		return fmt.Errorf("invalid spend limit %q for action %s", limitStr, unit)
+	}
+	estimate := new(big.Rat).SetUint64(estimatedFeeStroops)
+	if limit.Cmp(estimate) < 0 {
+		return fmt.Errorf("insufficient CRE funds: current limit is %s, estimated resource fee %d", limitStr, estimatedFeeStroops)
+	}
+	return nil
+}
+
+// meteringFromSubmitHash returns fee metering for a submitted tx, or zero if lookup fails.
+func (wr *writeReport) meteringFromSubmitHash(ctx context.Context, txHash string) capabilities.ResponseMetadata {
+	if txHash == "" {
+		return metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
+	}
+	txResp, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (stellartypes.GetTransactionResponse, error) {
+		return wr.service.GetTransaction(ctx, stellartypes.GetTransactionRequest{TxHash: txHash})
+	})
+	if err != nil || txResp.FeeStroops == 0 {
+		return metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
+	}
+	return metering.GetResponseMetadataWriteReport(txResp.FeeStroops, wr.chainSelector)
 }
 
 func invalidTransmissionStateError(state TransmissionState) error {

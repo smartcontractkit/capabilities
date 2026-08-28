@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 
 	"google.golang.org/protobuf/proto"
@@ -90,10 +91,26 @@ func signingAccountResp() stellartypes.GetSigningAccountResponse {
 	return stellartypes.GetSigningAccountResponse{AccountAddress: testNodeAddress}
 }
 
-func (h *writeReportHelper) expectSigningAccount(t *testing.T) {
+func (h *writeReportHelper) expectSigningAccount(t *testing.T, reqMeta capabilities.RequestMetadata, req *stellarcap.WriteReportRequest) {
 	t.Helper()
 	h.svc.EXPECT().GetSigningAccount(mock.Anything).
 		Return(signingAccountResp(), nil).Once()
+	// Default report() simulation returns a matching ReportProcessed(success=true) event.
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(r stellartypes.SimulateTransactionRequest) bool {
+		return r.Function == forwarderReportFunction
+	})).
+		Return(reportSimulationResp(t, transmissionID, true), nil).Once()
+}
+
+// expectSimulateReport sets up the report() simulation expectation.
+func (h *writeReportHelper) expectSimulateReport(t *testing.T, resp stellartypes.SimulateTransactionResponse, err error) {
+	t.Helper()
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+		return req.Function == forwarderReportFunction
+	})).
+		Return(resp, err).Once()
 }
 
 // newWRReportFixture generates a self-consistent (metadata, RequestMetadata, WriteReportRequest) triple.
@@ -206,6 +223,60 @@ func transmissionResp(xdrResult string) stellartypes.SimulateTransactionResponse
 	return stellartypes.SimulateTransactionResponse{Success: true, ReturnValueXDR: xdrResult, LedgerSequence: 100}
 }
 
+// reportSimulationResp returns a report() simulation response with a matching event.
+func reportSimulationResp(t *testing.T, transmissionID TransmissionID, success bool) stellartypes.SimulateTransactionResponse {
+	t.Helper()
+	return stellartypes.SimulateTransactionResponse{
+		Success:        true,
+		EventsXDR:      []string{reportProcessedEventXDR(t, transmissionID, success)},
+		MinResourceFee: 50_000,
+	}
+}
+
+// reportProcessedEventXDR encodes a ReportProcessed diagnostic event.
+func reportProcessedEventXDR(t *testing.T, transmissionID TransmissionID, success bool) string {
+	t.Helper()
+	sym := xdr.ScSymbol(reportProcessedTopicPrefix)
+	receiverBytes, err := strkey.Decode(strkey.VersionByteContract, transmissionID.Receiver)
+	require.NoError(t, err)
+	require.Len(t, receiverBytes, 32)
+	var receiverContractID xdr.ContractId
+	copy(receiverContractID[:], receiverBytes)
+	forwarderBytes, err := strkey.Decode(strkey.VersionByteContract, testForwarderAddress)
+	require.NoError(t, err)
+	require.Len(t, forwarderBytes, 32)
+	var forwarderContractID xdr.ContractId
+	copy(forwarderContractID[:], forwarderBytes)
+	wfBytes := xdr.ScBytes(transmissionID.WorkflowExecutionID[:])
+	ridBytes := xdr.ScBytes(transmissionID.ReportID[:])
+	successVal := xdr.ScVal{Type: xdr.ScValTypeScvBool, B: &success}
+	diag := xdr.DiagnosticEvent{
+		InSuccessfulContractCall: true,
+		Event: xdr.ContractEvent{
+			ContractId: &forwarderContractID,
+			Type:       xdr.ContractEventTypeContract,
+			Body: xdr.ContractEventBody{
+				V: 0,
+				V0: &xdr.ContractEventV0{
+					Topics: []xdr.ScVal{
+						{Type: xdr.ScValTypeScvSymbol, Sym: &sym},
+						{Type: xdr.ScValTypeScvAddress, Address: &xdr.ScAddress{
+							Type:       xdr.ScAddressTypeScAddressTypeContract,
+							ContractId: &receiverContractID,
+						}},
+						{Type: xdr.ScValTypeScvBytes, Bytes: &wfBytes},
+						{Type: xdr.ScValTypeScvBytes, Bytes: &ridBytes},
+					},
+					Data: successVal,
+				},
+			},
+		},
+	}
+	b64, err := xdr.MarshalBase64(&diag)
+	require.NoError(t, err, "XDR encode ReportProcessed event")
+	return b64
+}
+
 func successSubmitResp() *stellartypes.SubmitTransactionResponse {
 	fee := testFee
 	ts := testBlockTimestamp
@@ -253,6 +324,17 @@ func (h *writeReportHelper) expectGetTransaction(t *testing.T) {
 			LedgerSequence:  100,
 			LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
 		}, nil).Once()
+}
+
+// expectGetTransactionMaybe sets up a non-strict GetTransaction expectation for error paths that bill the local submit hash.
+func (h *writeReportHelper) expectGetTransactionMaybe(t *testing.T) {
+	t.Helper()
+	h.svc.EXPECT().GetTransaction(mock.Anything, mock.Anything).
+		Return(stellartypes.GetTransactionResponse{
+			FeeStroops:      testFee,
+			LedgerSequence:  100,
+			LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
+		}, nil).Maybe()
 }
 
 func (h *writeReportHelper) expectObservedTxHashLookup(t *testing.T, rm ocrtypes.Metadata, receiver string, eventSuccess bool) {
@@ -344,6 +426,17 @@ func TestWriteReport_Validation(t *testing.T) {
 		require.Contains(t, err.Error(), "invalid receiver contract address")
 	})
 
+	t.Run("receiver cannot be forwarder", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		req.ContractId = testForwarderAddress
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "receiver contract cannot be the forwarder contract")
+	})
+
 	t.Run("invalid report context length", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
@@ -365,6 +458,18 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
 		require.Contains(t, err.Error(), "signed report must contain at least one signature")
+	})
+
+	t.Run("too few signatures for scheduler fault tolerance", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		h.stellar.transmissionScheduler.F = 2
+		_, reqMeta, req := newWRReportFixture(t)
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "signed report contains too few signatures")
+		require.Contains(t, err.Error(), "want at least 3")
 	})
 
 	t.Run("invalid signature length", func(t *testing.T) {
@@ -448,9 +553,6 @@ func TestWriteReport_Validation(t *testing.T) {
 		encoded, err2 := rm.Encode()
 		require.NoError(t, err2)
 
-		// Pre-submit poll: NotAttempted so code reaches the size check.
-		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
-			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 
 		req := &stellarcap.WriteReportRequest{
 			ContractId: testReceiverAddress,
@@ -550,7 +652,7 @@ func TestWriteReport_HappyPath(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		rm, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		// Call 1: pre-submit get_transmission_info → NotAttempted
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
@@ -587,7 +689,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
@@ -603,17 +705,16 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(successSubmitResp(), nil).Once()
-		// Post-submit polling remains NotAttempted and event lookup is unavailable,
-		// so the canonical receiver outcome cannot be determined.
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 		h.expectEventTxHashLookupUnavailable(t)
+		h.expectGetTransactionMaybe(t)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 		defer cancel()
@@ -628,7 +729,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		rm, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
@@ -657,7 +758,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		rm, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
@@ -681,7 +782,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		fee := uint64(0)
 		failedResp := &stellartypes.SubmitTransactionResponse{
@@ -698,6 +799,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 		h.expectEventTxHashLookupUnavailable(t)
+		h.expectGetTransactionMaybe(t)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 		defer cancel()
@@ -713,11 +815,9 @@ func TestWriteReport_Submit(t *testing.T) {
 		h := newWriteReportHelper(t)
 		processor := h.withRecordingProcessor()
 		rm, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		fee := uint64(0)
-		// Our node's submission "fails" (another node already succeeded), but
-		// the post-submit poll shows Succeeded.
 		myResp := &stellartypes.SubmitTransactionResponse{
 			TxStatus:       stellartypes.TxFailed,
 			TxHash:         "mytx",
@@ -749,7 +849,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		h := newWriteReportHelper(t)
 		processor := h.withRecordingProcessor()
 		rm, reqMeta, req := newWRReportFixture(t)
-		h.expectSigningAccount(t)
+		h.expectSigningAccount(t, reqMeta, req)
 
 		myResp := &stellartypes.SubmitTransactionResponse{
 			TxStatus: stellartypes.TxFailed,
@@ -774,6 +874,130 @@ func TestWriteReport_Submit(t *testing.T) {
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "not a Wasm contract or missing on_report")
 		requireDuplicateTxTelemetry(t, processor.messages, "mytx", testTxHash)
+	})
+}
+
+// ─── Pre-submit simulation gate tests ─────────────────────────────────────────
+
+func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("simulation traps - aborts without submitting, no fee billed", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+			return req.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{Error: "host function trapped"}, nil).Once()
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, result)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "receiver cannot accept the report")
+		require.Contains(t, capErr.Error(), "host function trapped")
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("simulation indicates failure - aborts without submitting", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+			return req.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{Success: false, Error: "not a Wasm contract"}, nil).Once()
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, result)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "receiver cannot accept the report")
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("bad receiver passes sim but ReportProcessed(success=false) - aborts without submitting", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+		require.NoError(t, err)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(r stellartypes.SimulateTransactionRequest) bool {
+			return r.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{
+				Success:   true,
+				EventsXDR: []string{reportProcessedEventXDR(t, transmissionID, false)},
+			}, nil).Once()
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, result)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "ReportProcessed(success=false)")
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("simulation RPC error - aborts without submitting", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+			return req.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc unavailable")).Once()
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, result)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "pre-submit report simulation failed")
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("estimated resource fee exceeds ceiling - aborts without submitting", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+		require.NoError(t, err)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		// Valid outcome, but fee exceeds the configured ceiling.
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+			return req.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{
+				Success:        true,
+				EventsXDR:      []string{reportProcessedEventXDR(t, transmissionID, true)},
+				MinResourceFee: 2_000_000,
+			}, nil).Once()
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, result)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "estimated resource fee exceeds configured limit")
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 }
 
@@ -866,7 +1090,7 @@ func TestGetTransmissionInfo(t *testing.T) {
 		return h, h.stellar.forwarderClient, transmissionID
 	}
 
-	t.Run("empty result treated as not attempted", func(t *testing.T) {
+	t.Run("empty result treated as unknown (fail-closed)", func(t *testing.T) {
 		t.Parallel()
 		h, fc, transmissionID := newWR(t)
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
@@ -874,7 +1098,7 @@ func TestGetTransmissionInfo(t *testing.T) {
 
 		info, err := fc.GetTransmissionInfo(t.Context(), transmissionID)
 		require.NoError(t, err)
-		require.Equal(t, TransmissionStateNotAttempted, info.State)
+		require.Equal(t, TransmissionStateUnknown, info.State)
 	})
 
 	t.Run("forwarder simulation error is propagated", func(t *testing.T) {
@@ -1078,7 +1302,7 @@ func TestWriteReport_TxFatalSubmitWithoutCanonicalOutcomeReturnsError(t *testing
 	t.Parallel()
 	h := newWriteReportHelper(t)
 	_, reqMeta, req := newWRReportFixture(t)
-	h.expectSigningAccount(t)
+	h.expectSigningAccount(t, reqMeta, req)
 
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
@@ -1090,6 +1314,7 @@ func TestWriteReport_TxFatalSubmitWithoutCanonicalOutcomeReturnsError(t *testing
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil)
 	h.expectEventTxHashLookupUnavailable(t)
+	h.expectGetTransactionMaybe(t)
 
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 	defer cancel()
@@ -1181,7 +1406,7 @@ func TestWriteReport_PostSubmitPollRecoversFromEvents(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
 	rm, reqMeta, req := newWRReportFixture(t)
-	h.expectSigningAccount(t)
+	h.expectSigningAccount(t, reqMeta, req)
 
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
@@ -1396,6 +1621,7 @@ func TestWriteReport_EmitsInvalidTransmissionStateAfterSubmitWithStubForwarder(t
 		},
 		invokeOnReportResp: successSubmitResp(),
 	}
+	h.expectGetTransactionMaybe(t)
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
@@ -1490,7 +1716,7 @@ func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(
 	h := newWriteReportHelper(t)
 	processor := h.withRecordingProcessor()
 	rm, reqMeta, req := newWRReportFixture(t)
-	h.expectSigningAccount(t)
+	h.expectSigningAccount(t, reqMeta, req)
 
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
@@ -1502,6 +1728,7 @@ func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(
 		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
 	h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
 		Return(reportProcessedEventsForFixture(t, rm, req.ContractId, true), nil).Once()
+	h.expectGetTransactionMaybe(t)
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
@@ -1584,7 +1811,7 @@ func TestWriteReport_PostSubmitFailed_EventsUnavailable(t *testing.T) {
 	h := newWriteReportHelper(t)
 	processor := h.withRecordingProcessor()
 	_, reqMeta, req := newWRReportFixture(t)
-	h.expectSigningAccount(t)
+	h.expectSigningAccount(t, reqMeta, req)
 
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
@@ -1593,6 +1820,7 @@ func TestWriteReport_PostSubmitFailed_EventsUnavailable(t *testing.T) {
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(failedXDR(t)), nil).Once()
 	h.expectEventTxHashLookupUnavailable(t)
+	h.expectGetTransactionMaybe(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()

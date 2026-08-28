@@ -44,6 +44,7 @@ type Stellar struct {
 	forwarderClient          CREForwarderClient
 	forwarderLookbackLedgers int64
 	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
+	maxResourceFeeLimit      limits.BoundLimiter[uint64]
 	transmissionScheduler    ts.TransmissionScheduler
 }
 
@@ -79,11 +80,15 @@ func NewStellar(
 
 func (s *Stellar) initLimiters(limitsFactory limits.Factory) (err error) {
 	s.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.ReportSizeLimit)
+	if err != nil {
+		return err
+	}
+	s.maxResourceFeeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Stellar.MaxResourceFee)
 	return err
 }
 
 func (s *Stellar) Close() error {
-	return services.CloseAll(s.reportSizeLimit)
+	return services.CloseAll(s.reportSizeLimit, s.maxResourceFeeLimit)
 }
 
 // GetLatestLedger performs a consensus read of the current ledger. Each node
