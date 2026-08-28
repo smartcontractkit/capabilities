@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/smartcontractkit/capabilities/cron/protos"
+	"github.com/smartcontractkit/capabilities/libs/capability"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -41,6 +42,10 @@ var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 
 // Config is what this capability needs that its host cannot tell it.
 type Config struct {
+	// capability.Config marks this as the binary's own settings: the host binds them as flags
+	// under the binary's name, so the interval below is --cron.fastest-schedule-interval-seconds.
+	capability.Config
+
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds" usage:"fastest cron schedule a workflow may register, in seconds; 0 keeps the CRE default"`
 }
 

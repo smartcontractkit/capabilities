@@ -18,11 +18,8 @@ import (
 	prombridge "go.opentelemetry.io/contrib/bridges/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
@@ -39,20 +36,6 @@ type settings struct {
 // configuration has been decoded.
 func WithOtelViews(otelViews []sdkmetric.View) Option {
 	return func(s *settings) { s.otelViews = append(s.otelViews, otelViews...) }
-}
-
-// newLogger returns a logger encoding hclog-compatible JSON on stderr, like a
-// LOOP plugin's: a go-plugin host parses and re-levels these entries, while
-// standalone they are plain zap JSON logs. Level is Debug because filtering is
-// the reader's job (host-side, or the log pipeline).
-func newLogger() (logger.Logger, error) {
-	return logger.NewWith(func(cfg *zap.Config) {
-		cfg.Level.SetLevel(zap.DebugLevel)
-		cfg.EncoderConfig.LevelKey = "@level"
-		cfg.EncoderConfig.MessageKey = "@message"
-		cfg.EncoderConfig.TimeKey = "@timestamp"
-		cfg.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout("2006-01-02T15:04:05.000000Z07:00")
-	})
 }
 
 // startTelemetry creates, starts, and installs the process-global beholder

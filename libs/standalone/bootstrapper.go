@@ -28,6 +28,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services/promhealth"
 
 	"github.com/grafana/pyroscope-go"
+
+	"github.com/smartcontractkit/capabilities/libs/capability"
 )
 
 // StandaloneConfig holds the per-instance dependencies the Bootstrapper provides
@@ -90,7 +92,7 @@ func NewBootstrapper(root *cobra.Command, opts ...Option) *Bootstrapper {
 		opt(&s)
 	}
 
-	lggr, err := newLogger()
+	lggr, err := capability.NewLogger()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to create logger: %s\n", err)
 		os.Exit(1)
