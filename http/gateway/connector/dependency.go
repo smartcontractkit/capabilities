@@ -2,8 +2,11 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"sync"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -20,6 +23,11 @@ import (
 type Connection interface {
 	core.MultiGatewayConnector
 	services.Service
+
+	// Tunnel opens a connection to a host through the gateway, for a request the
+	// gateway is not to see. It is the same connection in its other role: a node
+	// tunnels through the gateway it is already talking to, on the same address.
+	Tunnel(ctx context.Context, gatewayID, address string) (net.Conn, error)
 }
 
 // Dependency returns this process's gateway connection.
@@ -54,6 +62,51 @@ type embeddedRun struct {
 	gateway *service.Gateway
 	err     error
 	started bool
+
+	// proxy is the gateway's CONNECT listener, and members who may use it.
+	//
+	// It is a real socket, dialled over real TCP, even though both ends are in this
+	// process. Tunnelling is what an uncached request does on a node, and an embedded
+	// run is for finding out whether that works: a shortcut here would test a path
+	// that nothing runs in earnest.
+	proxy   net.Listener
+	members *members
+
+	// connections is instance i's end of the gateway, kept because an instance is
+	// asked for more than once - once by whatever hosts the capabilities, and again
+	// by whatever their outbound requests go through. Building a second one would
+	// register a second node under the same name, and the gateway would send to the
+	// one holding no handlers.
+	connections map[int]*embeddedConnection
+}
+
+// members is the embedded DON, which fills up as its instances resolve. The
+// gateway is serving before the last of them exists, so membership cannot be a
+// list settled once.
+type members struct {
+	mu        sync.Mutex
+	donID     string
+	addresses []string
+}
+
+func (m *members) add(address string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.addresses = append(m.addresses, address)
+}
+
+func (m *members) Nodes(donID string) ([]string, bool) {
+	if donID != m.donID {
+		return nil, false
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return auth.DONs{m.donID: m.addresses}.Nodes(m.donID)
+}
+
+func (m *members) Verify(address string, hash, sig []byte) bool {
+	return auth.DONs{}.Verify(address, hash, sig)
 }
 
 var _ standalone.BootstrapDependency[Connection] = (*dependency)(nil)
@@ -79,9 +132,12 @@ func (d *dependency) ForEmbedding(i, instances int) standalone.BootstrapDependen
 		// network, so the names are only names.
 		cfg.DonID, cfg.Gateways = "embedded", nil
 		d.embedded = &dependency{
-			lggr:   d.lggr,
-			cfg:    &cfg,
-			shared: &embeddedRun{nodes: inproc.NewNodes(logger.Named(d.lggr, "Gateway"))},
+			lggr: d.lggr,
+			cfg:  &cfg,
+			shared: &embeddedRun{
+				nodes:       inproc.NewNodes(logger.Named(d.lggr, "Gateway")),
+				connections: map[int]*embeddedConnection{},
+			},
 		}
 	}
 	_ = instances
@@ -124,17 +180,74 @@ func (d *dependency) embed() (Connection, error) {
 			d.shared.err = err
 		}
 		d.shared.gateway = gateway
+
+		if err := d.listen(); err != nil {
+			d.shared.err = err
+		}
 	}
 	if d.shared.err != nil {
 		return nil, d.shared.err
 	}
 
+	if existing, built := d.shared.connections[d.instance]; built {
+		return existing, nil
+	}
+
+	// This instance's identity on the proxy. The control connection needs none -
+	// it is a function call - but the tunnel is a socket with a handshake on it, and
+	// the whole point of dialling it is that the handshake runs.
+	sign, address, err := auth.Generated()
+	if err != nil {
+		return nil, err
+	}
+	d.shared.members.add(address)
+
 	node := fmt.Sprintf("node-%d", d.instance)
-	return &embeddedConnection{
+	connection := &embeddedConnection{
 		Connector: d.shared.nodes.Connector(d.shared.gateway, embeddedGatewayID, d.cfg.DonID, node),
 		gateway:   d.shared.gateway,
 		first:     d.instance == 0,
-	}, nil
+		proxy:     d.shared.proxy,
+		donID:     d.cfg.DonID,
+		signer:    sign,
+	}
+	d.shared.connections[d.instance] = connection
+
+	return connection, nil
+}
+
+// listen starts the embedded gateway's CONNECT proxy.
+//
+// On a loopback socket rather than in memory: what a node does with an uncached
+// request is dial a proxy and speak HTTP to it, and an embedded run is where that
+// is meant to be exercised. The port is the OS's to choose, since two embedded
+// runs on one machine are two proxies.
+func (d *dependency) listen() error {
+	d.shared.members = &members{donID: d.cfg.DonID}
+
+	tunnel, err := service.NewTunnel(
+		logger.Named(d.lggr, "Proxy"),
+		service.TunnelConfig{GatewayID: embeddedGatewayID},
+		d.shared.members,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to build the embedded gateway's proxy: %w", err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("failed to open the embedded gateway's proxy: %w", err)
+	}
+	d.shared.proxy = listener
+
+	d.lggr.Infow("The embedded gateway tunnels here", "address", listener.Addr().String())
+	go func() {
+		//nolint:gosec // A proxy hijacks its connections; a read header timeout would cut a tunnel.
+		if err := (&http.Server{Handler: tunnel}).Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			d.lggr.Errorw("The embedded gateway's proxy stopped", "err", err)
+		}
+	}()
+	return nil
 }
 
 // embeddedGatewayID is what an embedded run's gateway calls itself. Nothing
@@ -147,6 +260,12 @@ type embeddedConnection struct {
 	*inproc.Connector
 	gateway *service.Gateway
 	first   bool
+
+	// proxy, donID and signer are this instance's way through the tunnel: the
+	// gateway's own listener, and what proves this instance may use it.
+	proxy  net.Listener
+	donID  string
+	signer auth.SignerFunc
 }
 
 var _ Connection = (*embeddedConnection)(nil)
@@ -162,7 +281,7 @@ func (c *embeddedConnection) Close() error {
 	if !c.first {
 		return nil
 	}
-	return c.gateway.Close()
+	return errors.Join(c.gateway.Close(), c.proxy.Close())
 }
 
 func (c *embeddedConnection) Ready() error {
@@ -212,4 +331,22 @@ func Serve(c Connection, mux *http.ServeMux) bool {
 func Embedded(c Connection) bool {
 	_, embedded := c.(*embeddedConnection)
 	return embedded
+}
+
+// Tunnel opens a connection to address through the gateway this process runs.
+//
+// The same CONNECT with the same two signatures a node makes to a gateway across
+// a network: what is embedded here is the gateway, not the protocol.
+func (c *embeddedConnection) Tunnel(ctx context.Context, gatewayID, address string) (net.Conn, error) {
+	if gatewayID != embeddedGatewayID {
+		return nil, fmt.Errorf("gateway %q is not the one this process runs", gatewayID)
+	}
+
+	tunnel := &Tunnel{
+		Gateway:   c.proxy.Addr().String(),
+		GatewayID: embeddedGatewayID,
+		DonID:     c.donID,
+		Signer:    c.signer,
+	}
+	return tunnel.DialContext(ctx, "tcp", address)
 }

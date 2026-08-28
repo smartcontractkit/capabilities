@@ -143,3 +143,50 @@ func TestTunnelNeedsAHostPort(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(answer), "407", "an unauthenticated CONNECT is challenged before anything else")
 }
+
+// TestTunnelSharesTheNodeListener is why a node needs one address for a gateway
+// rather than two: the control traffic and the tunnels arrive on the same port.
+// They can, because a tunnel is an HTTP/1.1 CONNECT that takes over its
+// connection while the control traffic is HTTP/2 that multiplexes on one - and
+// they should, because a second address is a second thing to configure wrongly.
+func TestTunnelSharesTheNodeListener(t *testing.T) {
+	n := newNode(t)
+	// serve is the gateway as its binary runs it: node routes and the proxy on one
+	// listener.
+	url, _ := serve(t, &collector{}, n)
+
+	// The control side: a node handshakes and is connected.
+	connected := connect(t, url, n)
+	require.Eventually(t, func() bool {
+		return connected.AwaitConnection(t.Context(), gatewayID) == nil
+	}, 5*time.Second, 20*time.Millisecond)
+
+	// The tunnel side, on the same address, proved by the same key.
+	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("through the same port"))
+	}))
+	t.Cleanup(origin.Close)
+
+	tunnel := &connector.Tunnel{
+		Gateway:   strings.TrimPrefix(url, "http://"),
+		GatewayID: gatewayID,
+		DonID:     donID,
+		Signer:    auth.SignerFunc(n.Sign),
+	}
+
+	client := &http.Client{Transport: &http.Transport{
+		DialContext:     tunnel.DialContext,
+		TLSClientConfig: &tls.Config{RootCAs: origin.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs}, //#nosec G402 - the test's own CA
+	}}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL+"/", nil)
+	require.NoError(t, err)
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, resp.Body.Close()) })
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "through the same port", string(body))
+}

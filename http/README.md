@@ -40,6 +40,18 @@ The HTTP Action Capability enables Chainlink Runtime Environment (CRE) workflows
 #### 2.1.4 Gateway Mode Client
 - **Purpose**: Gateway-proxied HTTP request execution
 - **Features**: Rate limiting, request deduplication via consistent hashing, exponential backoff retry
+- **Two ways out, chosen per request by the cache settings:**
+  - **Cached** (`store`, or a non-zero `maxAge`): the gateway fetches and every node
+    of the DON is served the same answer, which is what lets them agree on it. The
+    gateway sees the request and the response.
+  - **Uncached**: each node was always going to get its own answer, so the node
+    makes the request itself through a CONNECT tunnel the gateway opens. The
+    gateway learns the host, the timing and the byte counts; the TLS runs on the
+    node, so not the content. Such a request must be `https`, and a client
+    certificate (`mtls`) is used by the node rather than handed to the gateway.
+
+The tunnel is the same gateway on the same address as the control connection, so
+gateway mode has both or neither: a node configured for it can always tunnel.
 
 ---
 

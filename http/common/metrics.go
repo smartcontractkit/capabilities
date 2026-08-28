@@ -14,7 +14,6 @@ import (
 const (
 	AttrNodeAddress       = "node_address"
 	AttrGatewayProxyDonID = "gateway_proxy_don_id"
-	AttrProxyMode         = "proxy_mode"
 	AttrStatusCode        = "status_code"
 	AttrMethodName        = "method_name"
 	AttrSuccess           = "success"
@@ -157,27 +156,25 @@ func (m *Metrics) IncrementInputValidationFailures(ctx context.Context, lggr log
 }
 
 func (m *Metrics) IncrementGatewaySendError(ctx context.Context, nodeAddress, gatewayProxyDonID string, lggr logger.Logger) {
-	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, ProxyModeGateway.String())))
+	m.executionError.Add(ctx, 1)
 	m.gatewaySendError.Add(ctx, 1, gatewaySendMetricAttrs(nodeAddress, gatewayProxyDonID))
 }
 
-func (m *Metrics) IncrementSuccessfulResponse(ctx context.Context, proxyMode ProxyMode, statusCode uint32, lggr logger.Logger) {
-	m.successfulResponse.Add(ctx, 1, metric.WithAttributes(
-		attribute.String(AttrProxyMode, proxyMode.String()),
-		attribute.Int64(AttrStatusCode, int64(statusCode))))
+func (m *Metrics) IncrementSuccessfulResponse(ctx context.Context, statusCode uint32, lggr logger.Logger) {
+	m.successfulResponse.Add(ctx, 1, metric.WithAttributes(attribute.Int64(AttrStatusCode, int64(statusCode))))
 }
 
-func (m *Metrics) IncrementExecutionError(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
-	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
+func (m *Metrics) IncrementExecutionError(ctx context.Context, lggr logger.Logger) {
+	m.executionError.Add(ctx, 1)
 }
 
-func (m *Metrics) IncrementExecutionTimeout(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
-	m.executionTimeout.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
-	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
+func (m *Metrics) IncrementExecutionTimeout(ctx context.Context, lggr logger.Logger) {
+	m.executionTimeout.Add(ctx, 1)
+	m.executionError.Add(ctx, 1)
 }
 
-func (m *Metrics) IncrementExternalEndpointError(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
-	m.externalEndpointError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
+func (m *Metrics) IncrementExternalEndpointError(ctx context.Context, lggr logger.Logger) {
+	m.externalEndpointError.Add(ctx, 1)
 }
 
 func (m *Metrics) IncrementGatewaySendCount(ctx context.Context, nodeAddress, gatewayProxyDonID string, lggr logger.Logger) {
@@ -195,11 +192,8 @@ func gatewaySendMetricAttrs(nodeAddress, gatewayProxyDonID string) metric.AddOpt
 	)
 }
 
-func (m *Metrics) RecordRequestLatency(ctx context.Context, totalLatencyMs, externalLatencyMs int64, proxyMode ProxyMode, success bool, lggr logger.Logger) {
-	attrs := metric.WithAttributes(
-		attribute.String(AttrProxyMode, proxyMode.String()),
-		attribute.Bool(AttrSuccess, success),
-	)
+func (m *Metrics) RecordRequestLatency(ctx context.Context, totalLatencyMs, externalLatencyMs int64, success bool, lggr logger.Logger) {
+	attrs := metric.WithAttributes(attribute.Bool(AttrSuccess, success))
 	latencyMsExcludingExternal := totalLatencyMs - externalLatencyMs
 	m.requestLatency.Record(ctx, totalLatencyMs, attrs)
 	m.requestLatencyExcludingExternal.Record(ctx, latencyMsExcludingExternal, attrs)

@@ -7,90 +7,71 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http/common"
-	"github.com/smartcontractkit/capabilities/http/validate"
 
 	"github.com/smartcontractkit/capabilities/http/protos"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
+	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
 const WorkflowID = "workflow123"
 const WorkflowExecutionID = "execution123"
 const WorkflowOwner = "owner123"
 
-type MockOutboundRequestClient struct {
-	CapturedInput *protos.Request
-	Response      *protos.Response
+// MockOutbound stands in for wherever requests go. It is the whole of what the
+// capability is given, which is what these tests are about: everything else -
+// the limits, the validation, the errors a workflow is answered with - is the
+// capability's own, and is exercised without a gateway anywhere in sight.
+type MockOutbound struct {
+	CapturedInput gc.OutboundHTTPRequest
+	Response      gc.OutboundHTTPResponse
 	Err           error
 }
 
-func (m *MockOutboundRequestClient) Start(ctx context.Context) error {
-	return nil
+var _ common.Outbound = (*MockOutbound)(nil)
+
+func (m *MockOutbound) Start(context.Context) error { return nil }
+
+func (m *MockOutbound) Close() error { return nil }
+
+func (m *MockOutbound) SendRequest(_ context.Context, request gc.OutboundHTTPRequest) (gc.OutboundHTTPResponse, error) {
+	m.CapturedInput = request
+	return m.Response, m.Err
 }
 
-func (m *MockOutboundRequestClient) Close() error {
-	return nil
+func (m *MockOutbound) HealthReport() map[string]error {
+	return map[string]error{m.Name(): nil}
 }
 
-func (m *MockOutboundRequestClient) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *protos.Request, startTime time.Time) (*protos.Response, time.Duration, error) {
-	m.CapturedInput = input
-	return m.Response, 0, m.Err
-}
+func (m *MockOutbound) Name() string { return "MockOutbound" }
 
-func (m *MockOutboundRequestClient) HealthReport() map[string]error {
-	return map[string]error{"MockOutboundRequestClient": nil}
-}
-
-func (m *MockOutboundRequestClient) Name() string {
-	return "MockOutboundRequestClient"
-}
-
-func (m *MockOutboundRequestClient) Ready() error {
-	return nil
-}
+func (m *MockOutbound) Ready() error { return nil }
 
 // testSetup contains the test setup for service validation tests
 type testSetup struct {
 	service    *service
-	mockClient *MockOutboundRequestClient
+	mockClient *MockOutbound
 	metadata   capabilities.RequestMetadata
 }
 
 // setupServiceTest creates a fresh test setup for service validation tests
 func setupServiceTest(t *testing.T) *testSetup {
-	lggr := logger.Test(t)
+	limitsFactory := limits.Factory{Logger: logger.Test(t)}
 
-	gc := gcmocks.NewGatewayConnector(t)
-	// Registered when the capability starts rather than when it is built, and these
-	// tests build one to look at it.
-	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-
-	srv, err := NewService(lggr, common.ServiceConfig{ProxyMode: common.ProxyModeGateway}, Dependencies{
-		Connector:     gc,
-		LimitsFactory: limits.Factory{},
+	mockClient := &MockOutbound{}
+	srv, err := NewService(logger.Test(t), Dependencies{
+		Outbound:      mockClient,
+		LimitsFactory: limitsFactory,
 	})
-	require.NoError(t, err)
-
-	mockClient := &MockOutboundRequestClient{}
-	srv.client = mockClient
-	srv.cfg = common.ServiceConfig{}
-
-	limitsFactory := limits.Factory{
-		Logger: logger.Test(t),
-	}
-	srv.limitsFactory = limitsFactory
-
-	srv.validator, err = validate.NewValidator(logger.Test(t), limitsFactory)
 	require.NoError(t, err)
 
 	metadata := capabilities.RequestMetadata{
@@ -116,18 +97,21 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &protos.CacheSettings{},
 		}
-		expectedResponse := &protos.Response{
+		answered := gc.OutboundHTTPResponse{
 			StatusCode: 200,
 			Headers:    map[string]string{"Content-Type": "application/json"},
 			Body:       []byte(`{"result": "success"}`),
 		}
-		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Response = answered
 		setup.mockClient.Err = nil
 
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, setup.mockClient.CapturedInput)
+		assert.Equal(t, uint32(answered.StatusCode), response.Response.StatusCode)
+		assert.Equal(t, answered.Body, response.Response.Body)
+		assert.Equal(t, answered.Headers["Content-Type"], response.Response.Headers["Content-Type"]) //nolint:staticcheck // Headers is what these tests set
+		assert.Equal(t, input.Url, setup.mockClient.CapturedInput.URL)
+		assert.Equal(t, input.Method, setup.mockClient.CapturedInput.Method)
 	})
 
 	t.Run("valid request with cache settings gets validated and forwarded to client", func(t *testing.T) {
@@ -143,18 +127,21 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 				MaxAge: durationpb.New(10 * time.Second), // 10 seconds
 			},
 		}
-		expectedResponse := &protos.Response{
+		answered := gc.OutboundHTTPResponse{
 			StatusCode: 200,
 			Headers:    map[string]string{"Content-Type": "application/json"},
 			Body:       []byte(`{"result": "success"}`),
 		}
-		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Response = answered
 		setup.mockClient.Err = nil
 
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, setup.mockClient.CapturedInput)
+		assert.Equal(t, uint32(answered.StatusCode), response.Response.StatusCode)
+		assert.Equal(t, answered.Body, response.Response.Body)
+		assert.Equal(t, answered.Headers["Content-Type"], response.Response.Headers["Content-Type"]) //nolint:staticcheck // Headers is what these tests set
+		assert.Equal(t, input.Url, setup.mockClient.CapturedInput.URL)
+		assert.Equal(t, input.Method, setup.mockClient.CapturedInput.Method)
 	})
 
 	t.Run("empty headers are allowed", func(t *testing.T) {
@@ -167,20 +154,23 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &protos.CacheSettings{},
 		}
-		expectedResponse := &protos.Response{
+		answered := gc.OutboundHTTPResponse{
 			StatusCode: 200,
 			Body:       []byte(`{"result": "success"}`),
 		}
-		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Response = answered
 		setup.mockClient.Err = nil
 
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, setup.mockClient.CapturedInput)
+		assert.Equal(t, uint32(answered.StatusCode), response.Response.StatusCode)
+		assert.Equal(t, answered.Body, response.Response.Body)
+		assert.Equal(t, answered.Headers["Content-Type"], response.Response.Headers["Content-Type"]) //nolint:staticcheck // Headers is what these tests set
+		assert.Equal(t, input.Url, setup.mockClient.CapturedInput.URL)
+		assert.Equal(t, input.Method, setup.mockClient.CapturedInput.Method)
 	})
 
-	t.Run("invalid URL returns validation error from client", func(t *testing.T) {
+	t.Run("invalid URL is refused before anything is sent", func(t *testing.T) {
 		setup := setupServiceTest(t)
 
 		input := &protos.Request{
@@ -188,15 +178,13 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Method:  "GET",
 			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
-		// Mock simulates client validating and returning error (real gateway/direct proxy does this)
-		setup.mockClient.Err = common.InputValidationError{Err: errors.New("URL must not be empty")}
-
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "URL must not be empty")
-		// Client is called; validation error is returned from client
-		assert.NotNil(t, setup.mockClient.CapturedInput)
+		// Validation is the capability's, and it happens first: nothing was sent
+		// anywhere, whatever "anywhere" would have been.
+		assert.Empty(t, setup.mockClient.CapturedInput.URL)
 	})
 
 	t.Run("request with large body gets processed", func(t *testing.T) {
@@ -211,20 +199,23 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &protos.CacheSettings{},
 		}
-		expectedResponse := &protos.Response{
+		answered := gc.OutboundHTTPResponse{
 			StatusCode: 200,
 			Body:       []byte(`{"result": "success"}`),
 		}
-		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Response = answered
 		setup.mockClient.Err = nil
 
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, setup.mockClient.CapturedInput)
+		assert.Equal(t, uint32(answered.StatusCode), response.Response.StatusCode)
+		assert.Equal(t, answered.Body, response.Response.Body)
+		assert.Equal(t, answered.Headers["Content-Type"], response.Response.Headers["Content-Type"]) //nolint:staticcheck // Headers is what these tests set
+		assert.Equal(t, input.Url, setup.mockClient.CapturedInput.URL)
+		assert.Equal(t, input.Method, setup.mockClient.CapturedInput.Method)
 	})
 
-	t.Run("invalid HTTP method returns validation error from client", func(t *testing.T) {
+	t.Run("invalid HTTP method is refused before anything is sent", func(t *testing.T) {
 		setup := setupServiceTest(t)
 
 		input := &protos.Request{
@@ -232,13 +223,11 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Method:  "CONNECT",
 			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
-		setup.mockClient.Err = common.InputValidationError{Err: errors.New("invalid HTTP method: CONNECT")}
-
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
-		assert.Contains(t, err.Error(), "invalid HTTP method")
-		assert.NotNil(t, setup.mockClient.CapturedInput)
+		assert.Contains(t, err.Error(), "method")
+		assert.Empty(t, setup.mockClient.CapturedInput.URL, "nothing should have been sent")
 	})
 
 	t.Run("request with normal timeout gets processed", func(t *testing.T) {
@@ -251,45 +240,39 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Timeout:       durationpb.New(allowedTimeout),
 			CacheSettings: &protos.CacheSettings{},
 		}
-		expectedResponse := &protos.Response{
+		answered := gc.OutboundHTTPResponse{
 			StatusCode: 200,
 			Body:       []byte(`{"result": "success"}`),
 		}
-		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Response = answered
 		setup.mockClient.Err = nil
 
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, setup.mockClient.CapturedInput)
+		assert.Equal(t, uint32(answered.StatusCode), response.Response.StatusCode)
+		assert.Equal(t, answered.Body, response.Response.Body)
+		assert.Equal(t, answered.Headers["Content-Type"], response.Response.Headers["Content-Type"]) //nolint:staticcheck // Headers is what these tests set
+		assert.Equal(t, input.Url, setup.mockClient.CapturedInput.URL)
+		assert.Equal(t, input.Method, setup.mockClient.CapturedInput.Method)
 	})
 }
 
 // TestNewService_Rejects covers what a capability cannot be built with.
 //
-// It used to be about parsing a JSON config, because the node handed one over as
-// a string. The configuration is decoded before this now, so what is left is what
-// the values themselves have to be.
+// Which is now one thing. It used to be about proxy modes: whether the mode was
+// one, whether a gateway had been supplied for it. None of that reaches here any
+// more - where requests go is settled before this is built, and what arrives is
+// something that makes them.
 func TestNewService_Rejects(t *testing.T) {
-	t.Run("a proxy mode that is not one", func(t *testing.T) {
-		_, err := NewService(logger.Test(t), common.ServiceConfig{ProxyMode: common.ProxyMode(9)}, Dependencies{
-			Connector:     gcmocks.NewGatewayConnector(t),
-			LimitsFactory: limits.Factory{},
-		})
+	t.Run("nowhere for its requests to go", func(t *testing.T) {
+		_, err := NewService(logger.Test(t), Dependencies{LimitsFactory: limits.Factory{}})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid ProxyMode")
+		assert.Contains(t, err.Error(), "somewhere for its requests to go")
 	})
 
-	t.Run("gateway mode with no gateway to send through", func(t *testing.T) {
-		_, err := NewService(logger.Test(t), common.ServiceConfig{ProxyMode: common.ProxyModeGateway}, Dependencies{
-			LimitsFactory: limits.Factory{},
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "gateway connector")
-	})
-
-	t.Run("direct mode needs no gateway: making the request itself is what it is", func(t *testing.T) {
-		_, err := NewService(logger.Test(t), common.ServiceConfig{ProxyMode: common.ProxyModeDirect}, Dependencies{
+	t.Run("anything that makes requests will do", func(t *testing.T) {
+		_, err := NewService(logger.Test(t), Dependencies{
+			Outbound:      &MockOutbound{},
 			LimitsFactory: limits.Factory{},
 		})
 		require.NoError(t, err)
@@ -328,7 +311,7 @@ func TestSendRequest_ErrorHandling(t *testing.T) {
 			CacheSettings: &protos.CacheSettings{},
 		}
 
-		userError := NewUserError(errors.New("external endpoint failed"))
+		userError := common.NewUserError(errors.New("external endpoint failed"))
 		setup.mockClient.Err = userError
 
 		_, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
@@ -360,5 +343,85 @@ func TestSendRequest_ErrorHandling(t *testing.T) {
 		assert.True(t, errors.As(err, &capErr))
 		assert.Equal(t, caperrors.Internal, capErr.Code())
 		assert.Equal(t, caperrors.VisibilityPublic, capErr.Visibility())
+	})
+}
+
+// The limits are the capability's, applied to whatever answered: how much a
+// workflow may be given back does not depend on where the request went.
+func TestResponseSizeIsTheCapabilitysLimit(t *testing.T) {
+	setup := setupServiceTest(t)
+	setup.mockClient.Response = gc.OutboundHTTPResponse{
+		StatusCode: 200,
+		Body:       make([]byte, 10*1024*1024),
+	}
+
+	_, err := setup.service.SendRequest(t.Context(), setup.metadata, &protos.Request{
+		Url:           "https://example.com",
+		Method:        "GET",
+		Timeout:       durationpb.New(time.Second),
+		CacheSettings: &protos.CacheSettings{},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ResponseSizeLimit limited")
+}
+
+// Validation is the capability's too, and it runs before anything is sent: a
+// request that names both header forms means two things at once, and is refused
+// here rather than by whoever would have carried it.
+func TestBothHeaderFormsAreRefused(t *testing.T) {
+	setup := setupServiceTest(t)
+
+	_, err := setup.service.SendRequest(t.Context(), setup.metadata, &protos.Request{
+		Url:           "https://example.com",
+		Method:        "GET",
+		Headers:       map[string]string{"X-Test": "value"}, //nolint:staticcheck // Headers is deprecated but is what this refuses alongside MultiHeaders
+		MultiHeaders:  map[string]*protos.HeaderValues{"Accept": {Values: []string{"application/json"}}},
+		Timeout:       durationpb.New(time.Second),
+		CacheSettings: &protos.CacheSettings{},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "either Headers or MultiHeaders, not both")
+	assert.Empty(t, setup.mockClient.CapturedInput.URL, "nothing should have been sent")
+}
+
+// A workflow reads either header form, so both are filled in whichever the
+// answer used.
+func TestResponseHeadersAreGivenBothWays(t *testing.T) {
+	t.Run("from the repeated form", func(t *testing.T) {
+		setup := setupServiceTest(t)
+		setup.mockClient.Response = gc.OutboundHTTPResponse{
+			StatusCode: 200,
+			MultiHeaders: map[string][]string{
+				"Set-Cookie": {"sessionid=abc123; Path=/", "pref=dark; Path=/"},
+			},
+		}
+
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, &protos.Request{
+			Url: "https://example.com", Method: "GET",
+			Timeout: durationpb.New(time.Second), CacheSettings: &protos.CacheSettings{},
+		})
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"sessionid=abc123; Path=/", "pref=dark; Path=/"}, response.Response.MultiHeaders["Set-Cookie"].Values)
+		//nolint:staticcheck // Headers is deprecated, and is derived for whoever still reads it
+		assert.Equal(t, "sessionid=abc123; Path=/,pref=dark; Path=/", response.Response.Headers["Set-Cookie"])
+	})
+
+	t.Run("from the single form", func(t *testing.T) {
+		setup := setupServiceTest(t)
+		setup.mockClient.Response = gc.OutboundHTTPResponse{
+			StatusCode: 200,
+			Headers:    map[string]string{"Content-Type": "application/json"},
+		}
+
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, &protos.Request{
+			Url: "https://example.com", Method: "GET",
+			Timeout: durationpb.New(time.Second), CacheSettings: &protos.CacheSettings{},
+		})
+		require.NoError(t, err)
+
+		//nolint:staticcheck // Headers is deprecated but is what the answer set
+		assert.Equal(t, "application/json", response.Response.Headers["Content-Type"])
+		assert.Equal(t, []string{"application/json"}, response.Response.MultiHeaders["Content-Type"].Values)
 	})
 }

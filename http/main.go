@@ -25,8 +25,12 @@ import (
 	"github.com/smartcontractkit/capabilities/http/action"
 	"github.com/smartcontractkit/capabilities/http/common"
 	"github.com/smartcontractkit/capabilities/http/gateway/connector"
+	"github.com/smartcontractkit/capabilities/http/outbound"
 	"github.com/smartcontractkit/capabilities/http/protos"
 	"github.com/smartcontractkit/capabilities/http/trigger"
+
+	commonstandalone "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
+
 	"github.com/smartcontractkit/capabilities/libs/standalone"
 	"github.com/smartcontractkit/capabilities/libs/standalone/capability"
 	"github.com/smartcontractkit/capabilities/libs/standalone/db"
@@ -50,10 +54,7 @@ func main() {
 }
 
 func run() error {
-	var (
-		triggerConfig = trigger.ServiceConfig{}
-		actionConfig  = common.ServiceConfig{}
-	)
+	triggerConfig := trigger.ServiceConfig{}
 
 	root := &cobra.Command{
 		Use:   "http",
@@ -71,15 +72,10 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	}
 	root.PersistentFlags().String("config", "", "Path to config file")
 
-	for namespace, cfg := range map[string]any{
-		"trigger": &triggerConfig,
-		"action":  &actionConfig,
-	} {
-		opts := flags.DefaultTOMLOptions("CRE", "CL")
-		opts.Namespace = namespace
-		if err := flags.RegisterCommandFlags(root, cfg, opts); err != nil {
-			return err
-		}
+	opts := flags.DefaultTOMLOptions("CRE", "CL")
+	opts.Namespace = "trigger"
+	if err := flags.RegisterCommandFlags(root, &triggerConfig, opts); err != nil {
+		return err
 	}
 
 	bootstrapper := standalone.NewBootstrapper(root)
@@ -94,15 +90,20 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 	dbDep := db.Dependency(embeddedMigrations, migrationsTable)
 	// The gateway this process talks to. An embedded run has none to talk to, so it
 	// runs one here and reaches it by function call rather than by dialling itself.
-	connDep := connector.Dependency(lggr.Named("Gateway"), ksDep)
+	connDep := commonstandalone.OnceBootstrapper[connector.Connection](connector.Dependency(lggr.Named("Gateway"), ksDep))
 	capDep := capability.Dependency(lggr.Named("Capabilities"), standalonegrpc.FactoryDependency(lggr.Named("CapabilityAPI")))
+	// Where the action's requests go, and the whole of what deciding that involves:
+	// through the gateway above, or straight out of this process. Nothing outside
+	// that package knows which - see outbound.Dependency.
+	outDep := outbound.Dependency(lggr.Named("Outbound"), connDep, capDep)
 
-	return standalone.Run3(bootstrapper, func(
+	return standalone.Run4(bootstrapper, func(
 		ctx context.Context,
 		scfg *standalone.StandaloneConfig,
 		gatewayConnector connector.Connection,
 		database *sql.DB,
 		deps capability.Dependencies,
+		requests common.Outbound,
 	) []services.Service {
 		lggr := scfg.Logger.Named("http")
 
@@ -116,17 +117,8 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 			lggr.Fatalw("Failed to create the HTTP trigger capability", "error", err)
 		}
 
-		// An embedded run has a gateway of its own, so the action goes through it.
-		// Reaching out directly is what a node does when its gateway is somebody else's
-		// to trust; here the gateway is this process, and running the action past it is
-		// what makes an embedded run the same shape as a real one.
-		actionCfg := actionConfig
-		if connector.Embedded(gatewayConnector) {
-			actionCfg.ProxyMode = common.ProxyModeGateway
-		}
-
-		actionService, err := action.NewService(lggr, actionCfg, action.Dependencies{
-			Connector:     gatewayConnector,
+		actionService, err := action.NewService(lggr, action.Dependencies{
+			Outbound:      requests,
 			LimitsFactory: deps.LimitsFactory,
 		})
 		if err != nil {
@@ -151,5 +143,5 @@ run "docs" to write the full reference to docs/CONFIG.md.`,
 		}
 
 		return append([]services.Service{gatewayConnector}, svcs...)
-	}, connDep, dbDep, capDep)
+	}, connDep, dbDep, capDep, outDep)
 }

@@ -5,13 +5,16 @@
 // the DON; and a workflow's outbound HTTP request goes out from here, so that
 // every node of the DON is answered with the same thing.
 //
-// It serves three listeners, because the three have nothing to do with each
-// other and should not be reachable from the same places:
+// It serves two listeners, because who may reach them differs:
 //
-//   - --user.address, where customers send JSON-RPC. Public.
-//   - --node.address, where the DON's nodes connect. Reachable by the DON.
-//   - --proxy.address, the CONNECT proxy a workflow uses when it has turned the
-//     cache off. Reachable by the DON; carries bytes this process cannot read.
+//   - --gateway.user-address, where customers send JSON-RPC. Public.
+//   - --gateway.node-address, where the DON's nodes connect. Reachable by the DON.
+//
+// The node listener carries two things: the control traffic, over HTTP/2, and the
+// tunnels a workflow uses when it has turned the cache off, as HTTP/1.1 CONNECTs.
+// One address, because they serve the same nodes and prove them the same way, and
+// a node that can reach one can reach the other. What goes through a tunnel this
+// process cannot read.
 //
 // A node proves who it is by signing: a header naming this gateway and the
 // moment, then a challenge this gateway chose. Both signatures are made with the
@@ -56,12 +59,11 @@ type Config struct {
 	// anything else is refused, so this is the whole of who may connect.
 	Nodes []string `json:"nodes" usage:"addresses of the nodes of this gateway's DON" example:"['0x0000000000000000000000000000000000000000']"`
 
-	// UserAddress, NodeAddress and ProxyAddress are the three listeners. An empty
-	// proxy address serves no proxy, which is what a deployment that only allows
-	// cached requests wants.
-	UserAddress  string `json:"userAddress" usage:"address the customer-facing JSON-RPC listener binds to"`
-	NodeAddress  string `json:"nodeAddress" usage:"address the DON's nodes connect to"`
-	ProxyAddress string `json:"proxyAddress" usage:"address the CONNECT proxy binds to; empty serves no proxy"`
+	// UserAddress and NodeAddress are the two listeners. The proxy a node tunnels
+	// through is not a third: it shares the node listener, since it serves the same
+	// nodes and proves them the same way.
+	UserAddress string `json:"userAddress" usage:"address the customer-facing JSON-RPC listener binds to"`
+	NodeAddress string `json:"nodeAddress" usage:"address the DON's nodes connect to, for control traffic and for tunnels"`
 
 	// TLSCertFile and TLSKeyFile turn on TLS for the customer-facing listener. The
 	// node listener needs none - a node's identity is proved by signature, not by the
@@ -160,10 +162,19 @@ func run(ctx context.Context, cfg Config, healthPort uint16) error {
 	users := http.NewServeMux()
 	gateway.Routes(users)
 
+	// The proxy half, on the same listener as the control traffic: a node that
+	// turned the cache off fetches for itself through this, and the gateway carries
+	// bytes it cannot read.
+	tunnel, err := service.NewTunnel(logger.Named(lggr, "Proxy"), service.TunnelConfig{GatewayID: cfg.GatewayID}, dons)
+	if err != nil {
+		return err
+	}
+
 	servers := []*listener{
 		// HTTP/2 without TLS on the node listener: a session is pinned to one
 		// connection, and the poll and the messages that answer it have to share it.
-		{name: "nodes", address: cfg.NodeAddress, handler: server.Serve(nodes)},
+		// The CONNECTs that arrive here are HTTP/1.1 and are handed to the tunnel.
+		{name: "nodes", address: cfg.NodeAddress, handler: server.Serve(nodes, tunnel)},
 		{name: "users", address: cfg.UserAddress, handler: users, cert: cfg.TLSCertFile, key: cfg.TLSKeyFile},
 	}
 
@@ -181,17 +192,6 @@ func run(ctx context.Context, cfg Config, healthPort uint16) error {
 		health.HandleFunc("GET /reload/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 
 		servers = append(servers, &listener{name: "health", address: fmt.Sprintf(":%d", healthPort), handler: health})
-	}
-
-	if cfg.ProxyAddress != "" {
-		tunnel, terr := service.NewTunnel(logger.Named(lggr, "Proxy"), service.TunnelConfig{GatewayID: cfg.GatewayID}, dons)
-		if terr != nil {
-			return terr
-		}
-		// Plain HTTP/1.1: a CONNECT takes over its connection, so there is nothing to
-		// multiplex, and TLS here would encrypt a hop whose contents are already
-		// encrypted end to end.
-		servers = append(servers, &listener{name: "proxy", address: cfg.ProxyAddress, handler: tunnel})
 	}
 
 	stopped := make(chan error, len(servers))

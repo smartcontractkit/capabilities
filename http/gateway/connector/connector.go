@@ -23,6 +23,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -511,4 +512,54 @@ func parseGateways(pairs []string) (map[string]string, error) {
 		gateways[id] = strings.TrimSuffix(url, "/")
 	}
 	return gateways, nil
+}
+
+// Tunnel opens a connection to address through gatewayID's proxy.
+//
+// It is how the action capability reaches the internet when a workflow turned the
+// cache off: the gateway opens the socket and carries the bytes, and the TLS the
+// caller runs over what comes back is between it and the far side. The proxy is
+// on the same address as the control traffic - see the gateway's node listener -
+// so a node that can talk to a gateway can tunnel through it, with no second
+// setting to keep in step with the first.
+func (c *Connector) Tunnel(ctx context.Context, gatewayID, address string) (net.Conn, error) {
+	url, known := c.gateways[gatewayID]
+	if !known {
+		return nil, fmt.Errorf("gateway %q is not one this node connects to", gatewayID)
+	}
+
+	proxy, err := hostPort(url)
+	if err != nil {
+		return nil, err
+	}
+
+	tunnel := &Tunnel{
+		Gateway:   proxy,
+		GatewayID: gatewayID,
+		DonID:     c.cfg.DonID,
+		Signer:    c.signer,
+	}
+	return tunnel.DialContext(ctx, "tcp", address)
+}
+
+// hostPort is the address to dial for a gateway's URL, with the port its scheme
+// implies when it names none.
+func hostPort(gateway string) (string, error) {
+	parsed, err := neturl.Parse(gateway)
+	if err != nil {
+		return "", fmt.Errorf("gateway URL %q cannot be parsed: %w", gateway, err)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("gateway URL %q names no host", gateway)
+	}
+	if parsed.Port() != "" {
+		return parsed.Host, nil
+	}
+
+	switch parsed.Scheme {
+	case "https":
+		return net.JoinHostPort(parsed.Host, "443"), nil
+	default:
+		return net.JoinHostPort(parsed.Host, "80"), nil
+	}
 }

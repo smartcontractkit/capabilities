@@ -68,6 +68,10 @@ document.addEventListener("DOMContentLoaded", function () {
         // as the metadata - blank means the server mints one - and carried the same
         // way, since syncMetadataRows mirrors anything with a header attribute.
         //
+        // Worth naming even though the events are shown elsewhere: the fan-out page
+        // reattaches to whatever is running when it loads, so a subscription started
+        // here under a name you chose is one you can go and watch there.
+        //
         // Only useful for a subscription, so it is only shown for one: see
         // renderSubscribeFields.
         var $trigger = $("<div>", { id: "cre-trigger-field", "class": "cre-metadata-field" });

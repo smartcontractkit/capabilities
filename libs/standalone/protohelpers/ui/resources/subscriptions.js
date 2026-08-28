@@ -13,6 +13,12 @@
 // unregisters once nobody comes back. Which is why this reattaches to everything
 // live as soon as it loads: a reload is a window closing, and coming straight back
 // is what tells the server it was a reload.
+//
+// The other side of that is forgetting. A subscription the server no longer has
+// cannot be reattached to later either - the process may have been restarted, or
+// the grace period may have passed while the browser sat idle - so its row is
+// dropped rather than left in the sidebar looking live. Every row here has
+// something behind it.
 
 $(function () {
     var CONFIG = window.__CRE_REQUEST__ || {
@@ -22,9 +28,14 @@ $(function () {
     var COOKIE = "_cre_debug_csrf_token";
     var HEADER = "x-cre-debug-csrf-token";
 
-    // The tables are cached so a reload comes back to the table it left, even for
-    // a subscription the server has since dropped: the server keeps a bounded ring
-    // for a reattaching reader, and this keeps what the browser was shown.
+    // The tables are cached so a reload paints the table it left straight away,
+    // rather than waiting for the server to answer and the events to arrive again.
+    //
+    // Only for subscriptions the server still has, though. What is cached is rows,
+    // not a subscription: the moment the server says it no longer has one - the
+    // process was restarted, or the grace period passed while the browser sat idle -
+    // the rows are history nobody can add to, and they are dropped. See reattach.
+    //
     // Versioned: a cached table is a row shape as well as some data, so a build
     // that changes the shape must not read the last one's back.
     var CACHE_KEY = "cre-debug-subscriptions-v2-" + window.location.host;
@@ -142,14 +153,17 @@ $(function () {
         };
 
         // A subscription the server has dropped answers the reconnect with a 400,
-        // which EventSource treats as fatal and stops retrying. Anything else is a
-        // hiccup it retries on its own, so there is nothing to do here.
+        // which EventSource treats as fatal and stops retrying. That is the same
+        // news as not being in the list at all - it is gone and will not come back -
+        // so it is forgotten rather than left in the sidebar as a dead row.
+        //
+        // Anything short of CLOSED is a hiccup EventSource retries on its own, so
+        // there is nothing to do for it here.
         source.onerror = function () {
             if (source.readyState === EventSource.CLOSED) {
                 delete streams[triggerId];
-                if (status[triggerId]) {
-                    status[triggerId].closed = true;
-                }
+                forget(triggerId);
+                writeCache();
                 render();
             }
         };
@@ -181,9 +195,13 @@ $(function () {
                 mergeStatus(triggerId, message.status);
                 break;
             case "closed":
-                mergeStatus(triggerId, message.status);
-                close(triggerId);
-                break;
+                // Unregistered, so there is nothing to come back to. Forgotten for
+                // the same reason a dropped one is: the alternative is a row that
+                // sits there looking live and cannot be reattached to.
+                forget(triggerId);
+                writeCache();
+                render();
+                return;
             default:
                 return;
         }
@@ -239,12 +257,15 @@ $(function () {
 
     // ---- rendering: sidebar --------------------------------------------------
 
+    // What a subscription is doing. There is no state for "gone": one that cannot
+    // be reattached to is dropped from the sidebar rather than labelled, so the only
+    // rows here are ones with something behind them.
+    //
+    // "checking" is the moment between painting the cache and hearing back from the
+    // server, which is the one time a row is shown before it is known to be live.
     function badge(s) {
         if (!s) {
-            return { text: "cached", cls: "cre-badge-cached" };
-        }
-        if (s.closed) {
-            return { text: "closed", cls: "cre-badge-closed" };
+            return { text: "checking", cls: "cre-badge-cached" };
         }
         if (s.inGrace) {
             return { text: "no readers", cls: "cre-badge-grace" };
@@ -311,10 +332,10 @@ $(function () {
     function closeSubscription(triggerId) {
         post("/request/subscriptions/close", { triggerId: triggerId })
             .always(function () {
-                close(triggerId);
-                if (status[triggerId]) {
-                    status[triggerId].closed = true;
-                }
+                // Forgotten either way. If the close succeeded it is gone; if it
+                // failed because the server had already dropped it, it is gone too.
+                forget(triggerId);
+                writeCache();
                 render();
             });
     }
@@ -505,22 +526,64 @@ $(function () {
 
     // ---- startup -------------------------------------------------------------
 
-    // Reattach to everything the server still has. This is what makes a reload
-    // survivable: the server gives an abandoned subscription a grace period, and
-    // coming back inside it is what says the window was reloaded rather than closed.
+    // Reattach to everything the server still has, and forget everything it does
+    // not.
+    //
+    // Reattaching is what makes a reload survivable: the server gives an abandoned
+    // subscription a grace period, and coming back inside it is what says the window
+    // was reloaded rather than closed.
+    //
+    // Forgetting is the other half, and it matters just as much. The cached tables
+    // outlive the subscriptions they came from - the process can have been restarted,
+    // or the grace period can have passed while the browser sat idle - and a
+    // subscription that is gone cannot be reattached to at any point later. Keeping
+    // its box would leave a row in the sidebar that looks live, opens a table nothing
+    // will ever be added to, and has to be closed by hand.
     function reattach() {
         $.ajax({ url: CONFIG.prefix + "/request/subscriptions", dataType: "json" })
             .done(function (data) {
-                (data.subscriptions || []).forEach(function (s) {
+                var subscriptions = data.subscriptions || [];
+                var live = {};
+
+                subscriptions.forEach(function (s) {
+                    live[s.triggerId] = true;
                     mergeStatus(s.triggerId, s);
                     open(s.triggerId);
                 });
-                if (!selected && (data.subscriptions || []).length) {
-                    selected = data.subscriptions[0].triggerId;
+
+                forgetAllBut(live);
+
+                if (!selected && subscriptions.length) {
+                    selected = subscriptions[0].triggerId;
                 }
                 writeCache();
                 render();
             });
+        // Deliberately no .fail: a request that did not arrive says nothing about
+        // what the server has, so nothing is forgotten on the strength of it.
+    }
+
+    // forget drops one subscription and everything remembered about it.
+    function forget(triggerId) {
+        close(triggerId);
+        delete tables[triggerId];
+        delete status[triggerId];
+        delete acked[triggerId];
+        if (selected === triggerId) {
+            selected = null;
+        }
+    }
+
+    // forgetAllBut drops every subscription the server did not list.
+    function forgetAllBut(live) {
+        Object.keys(tables).forEach(function (triggerId) {
+            if (!live[triggerId]) {
+                forget(triggerId);
+            }
+        });
+        if (!selected) {
+            selected = Object.keys(tables)[0] || null;
+        }
     }
 
     // The bridge the request page uses: it knows a subscription was just opened,

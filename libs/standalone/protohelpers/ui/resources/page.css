@@ -407,7 +407,8 @@ button.cre-copy-btn {
 
 .cre-badge-live { color: #2e8b57; }
 .cre-badge-grace { color: #b8860b; }
-.cre-badge-closed { color: #8b0000; }
+/* The moment between painting the cache and hearing back from the server. There is
+ * no style for a closed one: it is dropped instead of labelled. */
 .cre-badge-cached { opacity: 0.7; }
 
 /* The page keeps clear of the sidebar rather than sliding under it. */

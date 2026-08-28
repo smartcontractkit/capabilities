@@ -1,7 +1,6 @@
 package common
 
 import (
-	"bytes"
 	"io"
 	"net"
 	"net/http"
@@ -13,14 +12,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http/validate"
 
 	httpactions "github.com/smartcontractkit/capabilities/http/protos"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	gateway "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
@@ -42,35 +41,28 @@ func newTestMetrics(t *testing.T) *Metrics {
 	return m
 }
 
-func TestNewHTTPClientProxy(t *testing.T) {
+func TestNewDirect(t *testing.T) {
 	t.Run("with default config", func(t *testing.T) {
-		cfg := ServiceConfig{}
+		cfg := HTTPClientConfig{}
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
 	})
 
 	t.Run("with custom config", func(t *testing.T) {
-		cfg := ServiceConfig{
-			HTTPClientConfig: HTTPClientConfig{
-				AllowedPorts:   []int{8080, 9090},
-				AllowedSchemes: []string{"https"},
-				BlockedIPs:     []string{"192.168.1.1"},
-				AllowedIPs:     []string{"10.0.0.1"},
-			},
+		cfg := HTTPClientConfig{
+			AllowedPorts:   []int{8080, 9090},
+			AllowedSchemes: []string{"https"},
+			BlockedIPs:     []string{"192.168.1.1"},
+			AllowedIPs:     []string{"10.0.0.1"},
 		}
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
-		require.Equal(t, cfg, proxy.cfg)
 	})
 }
 
@@ -106,20 +98,11 @@ func TestSendRequest(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	metadata := capabilities.RequestMetadata{
-		WorkflowID:          "wf1",
-		WorkflowExecutionID: "exec1",
-		WorkflowOwner:       "owner1",
-	}
 
 	t.Run("successful request", func(t *testing.T) {
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, server.URL),
-		}
+		cfg := validClientCfg(t, server.URL)
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -133,23 +116,19 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte("success"),
 		}
 
-		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		response, err := proxy.SendRequest(t.Context(), outbound(input))
 
 		require.NoError(t, err)
-		require.Equal(t, uint32(200), response.StatusCode)
+		require.Equal(t, 200, response.StatusCode)
 		require.Equal(t, "test-value", response.Headers["X-Test-Header"])
 		require.Equal(t, "text/plain", response.Headers["Content-Type"])
 		require.Equal(t, "success", string(response.Body))
 	})
 
 	t.Run("echo request", func(t *testing.T) {
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, server.URL),
-		}
+		cfg := validClientCfg(t, server.URL)
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -162,21 +141,17 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte("echo"),
 		}
 
-		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		response, err := proxy.SendRequest(t.Context(), outbound(input))
 
 		require.NoError(t, err)
-		require.Equal(t, uint32(200), response.StatusCode)
+		require.Equal(t, 200, response.StatusCode)
 		require.Equal(t, "echo", string(response.Body))
 	})
 
 	t.Run("timeout", func(t *testing.T) {
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, server.URL),
-		}
+		cfg := validClientCfg(t, server.URL)
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -189,7 +164,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte{},
 		}
 
-		_, _, err = proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		_, err = proxy.SendRequest(t.Context(), outbound(input))
 
 		// We should get a timeout error
 		require.Error(t, err)
@@ -197,13 +172,9 @@ func TestSendRequest(t *testing.T) {
 	})
 
 	t.Run("invalid url", func(t *testing.T) {
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, server.URL),
-		}
+		cfg := validClientCfg(t, server.URL)
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -213,56 +184,18 @@ func TestSendRequest(t *testing.T) {
 			Body:    []byte{},
 		}
 
-		_, _, err = proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		_, err = proxy.SendRequest(t.Context(), outbound(input))
 
 		require.Error(t, err)
 	})
 
-	t.Run("max response bytes limit", func(t *testing.T) {
-		// Create a local test server that returns a large response
-		largeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			// Write a response larger than our limit (over 1MB to trigger the validator)
-			_, _ = w.Write(bytes.Repeat([]byte("a"), 2*1024*1024))
-		}))
-		defer largeServer.Close()
-
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, largeServer.URL),
-		}
-		lggr := logger.Test(t)
-
-		// Use the validator that rejects responses > 1MB
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
-		require.NoError(t, err)
-
-		input := &httpactions.Request{
-			Method:  http.MethodGet,
-			Url:     largeServer.URL,
-			Timeout: durationpb.New(1000 * time.Millisecond),
-			Body:    []byte{},
-		}
-
-		_, _, err = proxy.SendRequest(t.Context(), metadata, input, time.Now())
-
-		// Should get an error because response is too large
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "ResponseSizeLimit limited")
-	})
 }
 
 func TestSendRequest_MultiHeaders(t *testing.T) {
-	metadata := capabilities.RequestMetadata{
-		WorkflowID:          "wf1",
-		WorkflowExecutionID: "exec1",
-		WorkflowOwner:       "owner1",
-	}
 
 	// verifyBackwardCompatibility checks that all keys in MultiHeaders are also present in Headers
 	// with non-empty values, ensuring backward compatibility with the deprecated Headers field.
-	verifyBackwardCompatibility := func(t *testing.T, headers map[string]string, multiHeaders map[string]*httpactions.HeaderValues) {
+	verifyBackwardCompatibility := func(t *testing.T, headers map[string]string, multiHeaders map[string][]string) {
 		for key := range multiHeaders {
 			require.NotEmpty(t, headers[key], "Headers should contain %s for backward compatibility", key)
 		}
@@ -279,13 +212,9 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, server.URL),
-		}
+		cfg := validClientCfg(t, server.URL)
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -295,19 +224,19 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 			Body:    []byte{},
 		}
 
-		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		response, err := proxy.SendRequest(t.Context(), outbound(input))
 		require.NoError(t, err)
-		require.Equal(t, uint32(200), response.StatusCode)
+		require.Equal(t, 200, response.StatusCode)
 
 		// Verify MultiHeaders contains all Set-Cookie values
 		require.NotNil(t, response.MultiHeaders, "MultiHeaders should not be nil")
 		setCookieHeader, ok := response.MultiHeaders["Set-Cookie"]
 		require.True(t, ok, "Set-Cookie header should be in MultiHeaders")
 		require.NotNil(t, setCookieHeader)
-		require.Len(t, setCookieHeader.Values, 3, "Should have 3 Set-Cookie headers")
-		require.Contains(t, setCookieHeader.Values, "sessionid=abc123; Path=/; HttpOnly")
-		require.Contains(t, setCookieHeader.Values, "csrf_token=xyz789; Path=/; Secure")
-		require.Contains(t, setCookieHeader.Values, "pref=dark; Path=/")
+		require.Len(t, setCookieHeader, 3, "Should have 3 Set-Cookie headers")
+		require.Contains(t, setCookieHeader, "sessionid=abc123; Path=/; HttpOnly")
+		require.Contains(t, setCookieHeader, "csrf_token=xyz789; Path=/; Secure")
+		require.Contains(t, setCookieHeader, "pref=dark; Path=/")
 
 		// Verify Headers field has comma-joined values (backward compatibility)
 		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly,csrf_token=xyz789; Path=/; Secure,pref=dark; Path=/", response.Headers["Set-Cookie"]) //nolint:staticcheck
@@ -324,13 +253,9 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, server.URL),
-		}
+		cfg := validClientCfg(t, server.URL)
 		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		proxy, err := NewDirect(cfg, lggr)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -340,17 +265,17 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 			Body:    []byte{},
 		}
 
-		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		response, err := proxy.SendRequest(t.Context(), outbound(input))
 		require.NoError(t, err)
-		require.Equal(t, uint32(200), response.StatusCode)
+		require.Equal(t, 200, response.StatusCode)
 
 		// Verify MultiHeaders contains single value
 		require.NotNil(t, response.MultiHeaders)
 		contentTypeHeader, ok := response.MultiHeaders["Content-Type"]
 		require.True(t, ok, "Content-Type header should be in MultiHeaders")
 		require.NotNil(t, contentTypeHeader)
-		require.Len(t, contentTypeHeader.Values, 1, "Should have 1 Content-Type header")
-		require.Equal(t, "application/json", contentTypeHeader.Values[0])
+		require.Len(t, contentTypeHeader, 1, "Should have 1 Content-Type header")
+		require.Equal(t, "application/json", contentTypeHeader[0])
 
 		// Verify Headers field matches (backward compatibility)
 		require.Equal(t, "application/json", response.Headers["Content-Type"]) //nolint:staticcheck // SA1019 testing deprecated Headers field
@@ -373,13 +298,25 @@ func validClientCfg(t *testing.T, urlStr string) HTTPClientConfig {
 	return HTTPClientConfig{
 		AllowedPorts: []int{port},
 		AllowedIPs:   []string{"127.0.0.1"},
+		// Said out loud, because the default is https and these servers are not: a
+		// direct request reaches the internet with nothing in front of it, so what it
+		// may reach is never inferred.
+		AllowedSchemes: []string{"http"},
 	}
 }
 
-func TestToResponseHeaders(t *testing.T) {
+// ResponseOf is what an Outbound answers with; these cover the headers in it,
+// which is where the awkwardness lives - a header may repeat, and may hold bytes
+// that are not text.
+func TestResponseOf(t *testing.T) {
+	headersOf := func(h http.Header) (map[string][]string, map[string]string) {
+		response := ResponseOf(&http.Response{StatusCode: http.StatusOK, Header: h}, nil, 0)
+		return response.MultiHeaders, response.Headers
+	}
+
 	t.Run("empty header", func(t *testing.T) {
 		h := make(http.Header)
-		multi, single := toResponseHeaders(h)
+		multi, single := headersOf(h)
 		require.Empty(t, multi)
 		require.Empty(t, single)
 	})
@@ -389,11 +326,11 @@ func TestToResponseHeaders(t *testing.T) {
 			"Content-Type": []string{"application/json"},
 			"X-Request-Id": []string{"abc-123"},
 		}
-		multi, single := toResponseHeaders(h)
+		multi, single := headersOf(h)
 		require.Len(t, multi, 2)
 		require.Len(t, single, 2)
-		require.Equal(t, []string{"application/json"}, multi["Content-Type"].Values)
-		require.Equal(t, []string{"abc-123"}, multi["X-Request-Id"].Values)
+		require.Equal(t, []string{"application/json"}, multi["Content-Type"])
+		require.Equal(t, []string{"abc-123"}, multi["X-Request-Id"])
 		require.Equal(t, "application/json", single["Content-Type"])
 		require.Equal(t, "abc-123", single["X-Request-Id"])
 	})
@@ -403,11 +340,11 @@ func TestToResponseHeaders(t *testing.T) {
 			"Set-Cookie": []string{"a=1", "b=2", "c=3"},
 			"Accept":     []string{"application/json"},
 		}
-		multi, single := toResponseHeaders(h)
+		multi, single := headersOf(h)
 		require.Len(t, multi, 2)
 		require.Len(t, single, 2)
-		require.Equal(t, []string{"a=1", "b=2", "c=3"}, multi["Set-Cookie"].Values)
-		require.Equal(t, []string{"application/json"}, multi["Accept"].Values)
+		require.Equal(t, []string{"a=1", "b=2", "c=3"}, multi["Set-Cookie"])
+		require.Equal(t, []string{"application/json"}, multi["Accept"])
 		require.Equal(t, "a=1,b=2,c=3", single["Set-Cookie"])
 		require.Equal(t, "application/json", single["Accept"])
 	})
@@ -417,7 +354,7 @@ func TestToResponseHeaders(t *testing.T) {
 			"X-Good": []string{"value"},
 			"X-Bad":  []string{},
 		}
-		multi, single := toResponseHeaders(h)
+		multi, single := headersOf(h)
 		require.Len(t, multi, 1)
 		require.Len(t, single, 1)
 		require.Contains(t, multi, "X-Good")
@@ -430,9 +367,9 @@ func TestToResponseHeaders(t *testing.T) {
 			"Content-Type": []string{"application/json"},
 			"X-Multi":      []string{"héllo", "wörld", "日本語"},
 		}
-		multi, single := toResponseHeaders(h)
-		require.Equal(t, []string{"application/json"}, multi["Content-Type"].Values)
-		require.Equal(t, []string{"héllo", "wörld", "日本語"}, multi["X-Multi"].Values)
+		multi, single := headersOf(h)
+		require.Equal(t, []string{"application/json"}, multi["Content-Type"])
+		require.Equal(t, []string{"héllo", "wörld", "日本語"}, multi["X-Multi"])
 		require.Equal(t, "héllo,wörld,日本語", single["X-Multi"])
 	})
 
@@ -443,22 +380,25 @@ func TestToResponseHeaders(t *testing.T) {
 			"X-Good":   []string{"clean"},
 			invalidKey: []string{invalidVal, "also-clean"},
 		}
-		multi, single := toResponseHeaders(h)
+		multi, single := headersOf(h)
 
-		require.Equal(t, []string{"clean"}, multi["X-Good"].Values)
+		require.Equal(t, []string{"clean"}, multi["X-Good"])
 
 		sanitizedKey := SanitizeUTF8(invalidKey)
 		require.True(t, utf8.ValidString(sanitizedKey))
 		require.Contains(t, multi, sanitizedKey)
-		require.Len(t, multi[sanitizedKey].Values, 2)
-		require.True(t, utf8.ValidString(multi[sanitizedKey].Values[0]))
-		require.Equal(t, "also-clean", multi[sanitizedKey].Values[1])
+		require.Len(t, multi[sanitizedKey], 2)
+		require.True(t, utf8.ValidString(multi[sanitizedKey][0]))
+		require.Equal(t, "also-clean", multi[sanitizedKey][1])
 		require.True(t, utf8.ValidString(single[sanitizedKey]))
 
-		// The whole Response must now marshal without the gRPC UTF-8 error.
-		resp := &httpactions.Response{MultiHeaders: multi, Headers: single}
-		_, err := proto.Marshal(resp)
-		require.NoError(t, err)
+		// Which is what a workflow's response is built from, and what has to be valid
+		// UTF-8 for that to cross gRPC. See action.responseHeaders.
+		for _, values := range multi {
+			for _, value := range values {
+				require.True(t, utf8.ValidString(value))
+			}
+		}
 	})
 }
 
@@ -474,4 +414,25 @@ func TestSanitizeUTF8(t *testing.T) {
 		require.True(t, utf8.ValidString(got))
 		require.Equal(t, "a�b", got)
 	})
+}
+
+// outbound is the capability's request as an Outbound is given it. The capability
+// does this conversion for real (see action.outboundRequest); here it keeps these
+// tests written in the shape they were, which is the shape a reader knows.
+func outbound(input *httpactions.Request) gateway.OutboundHTTPRequest {
+	request := gateway.OutboundHTTPRequest{
+		URL:       input.Url,
+		Method:    input.Method,
+		Headers:   input.Headers, //nolint:staticcheck // Headers is deprecated but is what these tests set
+		Body:      input.Body,
+		TimeoutMs: uint32(input.Timeout.AsDuration().Milliseconds()), //nolint:gosec // G115 - a test's timeout
+	}
+	if len(input.MultiHeaders) > 0 {
+		request.Headers = nil
+		request.MultiHeaders = make(map[string][]string, len(input.MultiHeaders))
+		for name, values := range input.MultiHeaders {
+			request.MultiHeaders[name] = values.GetValues()
+		}
+	}
+	return request
 }

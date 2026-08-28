@@ -168,8 +168,28 @@ func NewTransport(lggr logger.Logger, cfg Config, verifier auth.Verifier, handle
 // A gateway serving TLS negotiates HTTP/2 in the handshake and needs none of
 // this, but wrapping is harmless there - the wrapper only acts on the plaintext
 // upgrade.
-func Serve(mux http.Handler) http.Handler {
-	return h2c.NewHandler(mux, &http2.Server{})
+//
+// connect, when it is not nil, is given the CONNECTs: the proxy a node tunnels
+// through shares this listener rather than having one of its own. It can, because
+// the two never collide - a tunnel is HTTP/1.1, since CONNECT takes over its
+// connection and there is nothing left to multiplex on it, while the control
+// traffic is HTTP/2 for exactly the opposite reason - and it should, because a
+// node that can reach one can reach the other: they are the same gateway, proved
+// to by the same signatures, and two addresses to configure would be two things
+// to get wrong.
+func Serve(mux http.Handler, connect http.Handler) http.Handler {
+	served := h2c.NewHandler(mux, &http2.Server{})
+	if connect == nil {
+		return served
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect {
+			connect.ServeHTTP(w, r)
+			return
+		}
+		served.ServeHTTP(w, r)
+	})
 }
 
 // Handles sets what node messages are given to, for a caller that had to build

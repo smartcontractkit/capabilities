@@ -1,4 +1,4 @@
-package action
+package outbound
 
 import (
 	"context"
@@ -17,10 +17,12 @@ import (
 
 	"github.com/smartcontractkit/capabilities/http/protos"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
@@ -33,7 +35,7 @@ const (
 
 var (
 	_ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
-	_ common.OutboundRequestClient = &gatewayOutboundProxy{}
+	_ common.Outbound              = &gatewayOutboundProxy{}
 )
 
 // routingGatewayConnector is the subset of MultiGatewayConnector used for outbound routing.
@@ -44,12 +46,18 @@ type routingGatewayConnector interface {
 
 type gatewayOutboundProxy struct {
 	services.StateMachine
-	gatewayConnector        core.GatewayConnector
+	// gateway is the connection in both its roles: what a cached request is sent
+	// over for the gateway to fetch, and what an uncached one is tunnelled through
+	// for this node to fetch itself. See tunnel.go.
+	gateway                 common.Gateway
 	lggr                    logger.Logger
 	responses               *responses
 	gatewayConnectionConfig common.GatewayConnectionConfig
 	metrics                 *common.Metrics
-	validator               common.RequestValidator
+
+	// settings is where the gateway DON a workflow's requests go to is looked up.
+	// It is per-workflow, so it is a lookup rather than a value.
+	settings settings.Getter
 }
 
 // gatewayHeadersFromInput returns either Headers or MultiHeaders for the gateway request, never both.
@@ -114,70 +122,79 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 	return cfg
 }
 
-func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.RequestValidator) (*gatewayOutboundProxy, error) {
+// NewGatewayOutboundProxy returns the Outbound that sends requests to the DON's
+// gateway - to be fetched there when the workflow wants them cached, or tunnelled
+// through when it does not.
+func NewGatewayOutboundProxy(gateway common.Gateway, config common.GatewayConnectionConfig, lggr logger.Logger, limitsFactory limits.Factory) (*gatewayOutboundProxy, error) {
+	if gateway == nil {
+		return nil, errors.New("a gateway outbound proxy needs a gateway connection: it is what its requests go out through")
+	}
+
+	metrics, err := common.NewMetrics()
+	if err != nil {
+		return nil, err
+	}
+
 	return &gatewayOutboundProxy{
-		gatewayConnector:        gatewayConnector,
+		gateway:                 gateway,
 		responses:               newResponses(),
-		lggr:                    lggr,
-		gatewayConnectionConfig: applyDefaults(config.GatewayConnectionConfig),
+		lggr:                    logger.Named(lggr, "Gateway"),
+		gatewayConnectionConfig: applyDefaults(config),
 		metrics:                 metrics,
-		validator:               validator,
+		settings:                limitsFactory.Settings,
 	}, nil
 }
 
-// SendRequest sends a request to gateway node and blocks until response is received
-func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *protos.Request, startTime time.Time) (resp *protos.Response, externalEndpointLatency time.Duration, err error) {
-	ctx = metadata.ContextWithCRE(ctx)
-	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
-	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
-	validatedInput, err := p.validator.ValidatedRequest(ctx, input)
-	if err != nil {
-		p.metrics.IncrementInputValidationFailures(ctx, lggr)
-		return nil, 0, NewUserError(err)
-	}
-	input = validatedInput
+// SendRequest puts the request to the gateway and blocks until it is answered.
+//
+// Which way it goes is the workflow's own choice, made by what it asked of the
+// cache. Cached, the gateway fetches once and every node of the DON is served the
+// same answer, which is how they agree on what the internet said - and what the
+// gateway sees is the request and the response. Uncached, each node was always
+// going to get its own answer, so this node makes the request itself through a
+// tunnel the gateway carries without reading.
+func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, request gc.OutboundHTTPRequest) (gc.OutboundHTTPResponse, error) {
+	// A fresh ID per request: it is what the answer is matched back by, and
+	// GetRequestID ends it with a UUID, so the workflow in it is for reading rather
+	// than for telling two requests apart.
+	requestID := common.GetRequestID(gc.MethodHTTPAction, request.WorkflowID)
+	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", request.WorkflowID, "workflowOwner", request.WorkflowOwner)
 
-	ctx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
+	// What the workflow asked to wait, bounding both ways out of here: the gateway
+	// fetching for us, and us fetching through it.
+	timeout := time.Duration(request.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = common.DefaultRequestTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Set only one of Headers or MultiHeaders on the outgoing request (MultiHeaders if input has it, else Headers).
-	gatewayHeaders, gatewayMultiHeaders := gatewayHeadersFromInput(input)
-
-	var mtls *gc.MtlsAuth
-	if input.Mtls != nil {
-		mtls = &gc.MtlsAuth{
-			PrivateKey:  gc.Secret(input.Mtls.PrivateKey),
-			Certificate: input.Mtls.Certificate,
-		}
-	}
-
-	gatewayReq := gc.OutboundHTTPRequest{
-		WorkflowID:    metadata.WorkflowID,
-		WorkflowOwner: metadata.WorkflowOwner,
-		URL:           input.Url,
-		Method:        input.Method,
-		Headers:       gatewayHeaders,      // set when input has no MultiHeaders
-		MultiHeaders:  gatewayMultiHeaders, // set when input has MultiHeaders
-		Body:          input.Body,
-		// Casting is safe because input to this function is already validated
-		TimeoutMs: uint32(input.Timeout.AsDuration().Milliseconds()), //nolint:gosec // G115
-		CacheSettings: gc.CacheSettings{
-			Store:    input.CacheSettings.Store,
-			MaxAgeMs: int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
-		},
-		Mtls: mtls,
-	}
-
-	payload, err := json.Marshal(gatewayReq)
+	donID, err := p.donID(ctx)
 	if err != nil {
-		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, 0, fmt.Errorf("failed to marshal request: %w", err)
+		p.metrics.IncrementExecutionError(ctx, lggr)
+		return gc.OutboundHTTPResponse{}, fmt.Errorf("failed to resolve gateway proxy DON: %w", err)
+	}
+
+	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, request.Hash())
+	if err != nil {
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
+		return gc.OutboundHTTPResponse{}, fmt.Errorf("failed to establish connection to gateway: %w", err)
+	}
+
+	if !wantsCache(request.CacheSettings) {
+		return p.tunnelled(ctx, lggr, selectedGateway, request)
+	}
+
+	payload, err := json.Marshal(request)
+	if err != nil {
+		p.metrics.IncrementExecutionError(ctx, lggr)
+		return gc.OutboundHTTPResponse{}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	responseCh, err := p.responses.new(requestID)
 	if err != nil {
-		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, 0, fmt.Errorf("duplicate request ID %s: %w", requestID, err)
+		p.metrics.IncrementExecutionError(ctx, lggr)
+		return gc.OutboundHTTPResponse{}, fmt.Errorf("duplicate request ID %s: %w", requestID, err)
 	}
 	defer p.responses.cleanup(requestID)
 
@@ -189,73 +206,49 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		Result:  &rawRes,
 	}
 
-	p.metrics.IncrementRequestCount(ctx, lggr)
-
-	donID, err := p.validator.ResolveGatewayProxyDonID(ctx)
-	if err != nil {
-		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, 0, fmt.Errorf("failed to resolve gateway proxy DON: %w", err)
-	}
-
-	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, gatewayReq.Hash())
-	if err != nil {
-		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
-		return nil, 0, fmt.Errorf("failed to establish connection to gateway: %w", err)
-	}
-
 	lggr.Debugw("sending request to gateway", "donID", donID, "selectedGateway", selectedGateway)
 
+	started := time.Now()
 	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
-	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
+	if err := p.gateway.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
-		return nil, 0, fmt.Errorf("failed to send request to gateway: %w", err)
+		return gc.OutboundHTTPResponse{}, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
 	select {
 	case resp := <-responseCh:
 		lggr.Debugw("received response from gateway")
-		if resp.ErrorMessage != "" {
-			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
-			if resp.IsExternalEndpointError {
-				p.metrics.IncrementExternalEndpointError(ctx, common.ProxyModeGateway, lggr)
-				return nil, resp.ExternalEndpointLatency, NewUserError(errors.New(resp.ErrorMessage))
-			}
-			if resp.IsValidationError {
-				p.metrics.IncrementInputValidationFailures(ctx, lggr)
-				return nil, resp.ExternalEndpointLatency, NewUserError(errors.New(resp.ErrorMessage))
-			}
-			p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-			return nil, resp.ExternalEndpointLatency, fmt.Errorf("gateway returned error: %s", resp.ErrorMessage)
-		}
-		headers, multiHeaders := responseHeadersFromGateway(&resp)
-
-		response := &protos.Response{
-			StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
-			Headers:      headers,
-			MultiHeaders: multiHeaders,
-			Body:         resp.Body,
+		if resp.ErrorMessage == "" {
+			return resp, nil
 		}
 
-		if err := p.validator.ValidateResponseSize(ctx, response.Body); err != nil {
-			p.metrics.IncrementExternalEndpointError(ctx, common.ProxyModeGateway, lggr)
-			return nil, resp.ExternalEndpointLatency, NewUserError(err)
+		lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
+		switch {
+		case resp.IsExternalEndpointError:
+			p.metrics.IncrementExternalEndpointError(ctx, lggr)
+			return resp, common.NewUserError(errors.New(resp.ErrorMessage))
+		case resp.IsValidationError:
+			p.metrics.IncrementInputValidationFailures(ctx, lggr)
+			return resp, common.NewUserError(errors.New(resp.ErrorMessage))
+		default:
+			p.metrics.IncrementExecutionError(ctx, lggr)
+			return resp, fmt.Errorf("gateway returned error: %s", resp.ErrorMessage)
 		}
-
-		return response, resp.ExternalEndpointLatency, nil
 	case <-ctx.Done():
-		p.metrics.IncrementExecutionTimeout(ctx, common.ProxyModeGateway, lggr)
-		elapsedMs := time.Since(startTime).Milliseconds()
-		timeoutMs := input.Timeout.AsDuration().Milliseconds()
+		p.metrics.IncrementExecutionTimeout(ctx, lggr)
+		elapsedMs := time.Since(started).Milliseconds()
 		cause := context.Cause(ctx)
-		lggr.Debugw(ErrMsgGatewayResponseWait,
-			"elapsedMs", elapsedMs,
-			"timeoutMs", timeoutMs,
-			"cause", cause,
-		)
-		return nil, 0, NewUserError(
-			fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause),
+		lggr.Debugw(ErrMsgGatewayResponseWait, "elapsedMs", elapsedMs, "timeoutMs", timeout.Milliseconds(), "cause", cause)
+		return gc.OutboundHTTPResponse{}, common.NewUserError(
+			fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseWait, elapsedMs, timeout.Milliseconds(), cause),
 		)
 	}
+}
+
+// donID is the gateway DON this workflow's requests go to, which a workflow may
+// be configured onto one of rather than taking the node's own.
+func (p *gatewayOutboundProxy) donID(ctx context.Context) (string, error) {
+	return cresettings.Default.PerWorkflow.HTTPAction.GatewayProxyDonID.GetOrDefault(ctx, p.settings)
 }
 
 // awaitConnection attempts to establish a connection to a gateway using consistent hashing algorithm.
@@ -313,7 +306,7 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 }
 
 func (p *gatewayOutboundProxy) gatewayIDsForDon(ctx context.Context, donID string) ([]string, error) {
-	routing, ok := p.gatewayConnector.(routingGatewayConnector)
+	routing, ok := p.gateway.(routingGatewayConnector)
 	if !ok {
 		return nil, fmt.Errorf("gateway connector does not support multi-gateway routing")
 	}
@@ -336,7 +329,7 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	if err := p.gatewayConnector.AwaitConnection(ctxWithTimeout, gateway); err != nil {
+	if err := p.gateway.AwaitConnection(ctxWithTimeout, gateway); err != nil {
 		return fmt.Errorf("gateway connection failed: %w", err)
 	}
 	return nil
@@ -385,7 +378,7 @@ func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
 func (p *gatewayOutboundProxy) Start(ctx context.Context) error {
 	p.lggr.Debug("Starting GatewayOutboundProxy...")
 	return p.StartOnce("GatewayOutboundProxy", func() error {
-		return p.gatewayConnector.AddHandler(ctx, []string{gc.MethodHTTPAction}, p)
+		return p.gateway.AddHandler(ctx, []string{gc.MethodHTTPAction}, p)
 	})
 }
 

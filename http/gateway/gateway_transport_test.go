@@ -30,6 +30,7 @@ import (
 	"github.com/smartcontractkit/capabilities/http/gateway/auth"
 	"github.com/smartcontractkit/capabilities/http/gateway/connector"
 	"github.com/smartcontractkit/capabilities/http/gateway/server"
+	"github.com/smartcontractkit/capabilities/http/gateway/service"
 )
 
 const (
@@ -119,9 +120,15 @@ func serve(t *testing.T, gateway *collector, nodes ...node) (string, *server.Tra
 	mux := http.NewServeMux()
 	transport.Routes(mux)
 
+	// The proxy shares this listener, as it does in the gateway binary: control
+	// traffic is HTTP/2 and a tunnel is an HTTP/1.1 CONNECT, so one address serves
+	// both and a node has one address to be told about.
+	tunnel, err := service.NewTunnel(logger.Test(t), service.TunnelConfig{GatewayID: gatewayID}, auth.DONs{donID: addresses})
+	require.NoError(t, err)
+
 	// The session is pinned to the connection it was issued on, so the server has to
 	// be the one that records connections - which is what ConnContext is for.
-	srv := httptest.NewUnstartedServer(server.Serve(mux))
+	srv := httptest.NewUnstartedServer(server.Serve(mux, tunnel))
 	srv.Config.ConnContext = server.ConnContext
 	srv.Start()
 	t.Cleanup(srv.Close)

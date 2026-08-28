@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"golang.org/x/crypto/sha3"
 
@@ -137,4 +138,33 @@ func decodeAddress(address string) ([]byte, error) {
 		return nil, fmt.Errorf("%q is not an address", address)
 	}
 	return hex.DecodeString(trimmed)
+}
+
+// Generated returns a signer over a key made here and now, and the address it
+// signs as.
+//
+// It is for a run with no keystore to borrow from: an embedded DON is instances
+// of a node in one process, and the identity each of them proves to its gateway
+// has to come from somewhere. Making one is honest about what it is - the key
+// lives as long as the process and is written down nowhere - and it keeps the
+// path under test the same path a node takes, signatures and all.
+func Generated() (SignerFunc, string, error) {
+	key, err := secp256k1.GeneratePrivateKey()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to make a key to sign with: %w", err)
+	}
+
+	address, err := AddressOf(key.PubKey().SerializeUncompressed())
+	if err != nil {
+		return nil, "", err
+	}
+
+	return func(_ context.Context, hash []byte) ([]byte, error) {
+		// dcrd puts the recovery byte first and offsets it by 27; what Recover reads
+		// puts it last, as 0 or 1. The same conversion a node's keystore does.
+		compact := ecdsa.SignCompact(key, hash, false)
+		signature := make([]byte, 0, SignatureLen)
+		signature = append(signature, compact[1:]...)
+		return append(signature, compact[0]-27), nil
+	}, address, nil
 }

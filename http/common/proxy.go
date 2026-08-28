@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -12,27 +13,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/doyensec/safeurl"
-	"github.com/google/uuid"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	gateway "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 
 	httpcap "github.com/smartcontractkit/capabilities/http/protos"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
-
-var _ OutboundRequestClient = &httpClientProxy{}
 
 const (
 	ClientName    = "HTTPClientProxy"
 	internalError = "internal error"
 )
-
-type OutboundRequestClient interface {
-	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error)
-	services.Service
-}
 
 // ResponseValidator is an interface for validating HTTP responses
 type ResponseValidator interface {
@@ -59,14 +51,17 @@ func (e InputValidationError) Error() string {
 
 func (e InputValidationError) Unwrap() error { return e.Err }
 
-// httpClientProxy implements OutboundRequestClient using a regular HTTP client
-type httpClientProxy struct {
-	client    *safeurl.WrappedClient
-	cfg       ServiceConfig
-	lggr      logger.Logger
-	validator RequestValidator
-	metrics   *Metrics
+// direct makes the request from this process.
+//
+// It is the Outbound a run with no gateway gets: nothing stands between this and
+// the far side, so the protection that a gateway would give has to be here -
+// safeurl refuses the addresses, ports and schemes a workflow must not reach.
+type direct struct {
+	client *safeurl.WrappedClient
+	lggr   logger.Logger
 }
+
+var _ Outbound = (*direct)(nil)
 
 var errRedirectsDisabled = errors.New("redirects are not allowed")
 
@@ -74,62 +69,116 @@ func disableRedirects(*http.Request, []*http.Request) error {
 	return errRedirectsDisabled
 }
 
-func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator RequestValidator, metrics *Metrics) (*httpClientProxy, error) {
+// NewDirect returns the Outbound that makes requests itself.
+func NewDirect(cfg HTTPClientConfig, lggr logger.Logger) (*direct, error) {
+	cfg = cfg.WithDefaults()
 	safeConfig := safeurl.
 		GetConfigBuilder().
-		SetAllowedIPs(cfg.HTTPClientConfig.AllowedIPs...).
-		SetAllowedIPsCIDR(cfg.HTTPClientConfig.AllowedIPsCIDR...).
-		SetAllowedPorts(cfg.HTTPClientConfig.AllowedPorts...).
-		SetAllowedSchemes(cfg.HTTPClientConfig.AllowedSchemes...).
-		SetBlockedIPs(cfg.HTTPClientConfig.BlockedIPs...).
-		SetBlockedIPsCIDR(cfg.HTTPClientConfig.BlockedIPsCIDR...).
+		SetAllowedIPs(cfg.AllowedIPs...).
+		SetAllowedIPsCIDR(cfg.AllowedIPsCIDR...).
+		SetAllowedPorts(cfg.AllowedPorts...).
+		SetAllowedSchemes(cfg.AllowedSchemes...).
+		SetBlockedIPs(cfg.BlockedIPs...).
+		SetBlockedIPsCIDR(cfg.BlockedIPsCIDR...).
 		SetCheckRedirect(disableRedirects).
 		Build()
 
-	return &httpClientProxy{
-		cfg:       cfg,
-		client:    safeurl.Client(safeConfig),
-		lggr:      lggr,
-		validator: validator,
-		metrics:   metrics,
-	}, nil
+	return &direct{client: safeurl.Client(safeConfig), lggr: logger.Named(lggr, "Direct")}, nil
 }
 
-func toRequestHeaders(req *httpcap.Request) http.Header {
-	h := make(http.Header)
-	if len(req.MultiHeaders) > 0 {
-		for k, v := range req.MultiHeaders {
-			h[k] = slices.Clone(v.GetValues())
+func (h *direct) SendRequest(ctx context.Context, request gateway.OutboundHTTPRequest) (gateway.OutboundHTTPResponse, error) {
+	timeout := time.Duration(request.TimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = DefaultRequestTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, request.Method, request.URL, bytes.NewReader(request.Body))
+	if err != nil {
+		h.lggr.Errorf("failed to create request: %v", err)
+		return gateway.OutboundHTTPResponse{}, errors.New(internalError)
+	}
+	req.Header = RequestHeaders(request)
+
+	h.lggr.Debugw("Sending HTTP request", "url", request.URL)
+	started := time.Now()
+	resp, err := h.client.Do(req)
+	if err != nil {
+		// safeurl refuses what a workflow must not reach, and the far side refuses what
+		// it likes: either way this is the workflow's request failing, not this.
+		return gateway.OutboundHTTPResponse{}, NewUserError(err)
+	}
+	defer resp.Body.Close()
+	latency := time.Since(started)
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, responseLimit(request)))
+	if err != nil {
+		return gateway.OutboundHTTPResponse{}, NewUserError(err)
+	}
+	h.lggr.Debugw("Received HTTP response", "status", resp.Status, "statusCode", resp.StatusCode)
+
+	return ResponseOf(resp, body, latency), nil
+}
+
+// DefaultRequestTimeout bounds a request whose caller named no timeout.
+const DefaultRequestTimeout = 30 * time.Second
+
+// defaultResponseLimit is how much of an answer is read when the caller named no
+// limit of its own.
+const defaultResponseLimit = 5 * 1024 * 1024
+
+func responseLimit(request gateway.OutboundHTTPRequest) int64 {
+	if request.MaxResponseBytes > 0 {
+		return int64(request.MaxResponseBytes)
+	}
+	return defaultResponseLimit
+}
+
+// RequestHeaders is an outbound request's headers as net/http wants them.
+//
+// Shared by every Outbound that reaches the internet with net/http - which is all
+// of them that reach it at all, whether directly or through a tunnel.
+func RequestHeaders(request gateway.OutboundHTTPRequest) http.Header {
+	h := make(http.Header, len(request.MultiHeaders)+len(request.Headers))
+	if len(request.MultiHeaders) > 0 {
+		for k, v := range request.MultiHeaders {
+			h[http.CanonicalHeaderKey(k)] = slices.Clone(v)
 		}
 		return h
 	}
-	// TODO: Remove fallback to using Headers.
-	for k, v := range req.Headers { //nolint:staticcheck
-		h[k] = []string{v}
+	for k, v := range request.Headers {
+		h.Set(k, v)
 	}
 	return h
 }
 
-// toResponseHeaders converts net/http response headers into capability Response format
-func toResponseHeaders(header http.Header) (map[string]*httpcap.HeaderValues, map[string]string) {
-	multiHeaders := make(map[string]*httpcap.HeaderValues, len(header))
-	headers := make(map[string]string, len(header))
-	for k, v := range header {
-		if len(v) == 0 {
+// ResponseOf is what an Outbound answers with, from what net/http answered.
+func ResponseOf(resp *http.Response, body []byte, latency time.Duration) gateway.OutboundHTTPResponse {
+	headers := make(map[string]string, len(resp.Header))
+	multi := make(map[string][]string, len(resp.Header))
+	for key, values := range resp.Header {
+		if len(values) == 0 {
 			continue
 		}
-		// HTTP header names and values may contain arbitrary bytes, but the proto
-		// HeaderValues fields are strings and must be valid UTF-8 to be marshaled
-		// over gRPC. Sanitize any invalid UTF-8 to avoid marshaling failures.
-		key := SanitizeUTF8(k)
-		sanitized := make([]string, len(v))
-		for i, val := range v {
-			sanitized[i] = SanitizeUTF8(val)
+		// HTTP header names and values may hold arbitrary bytes, and these end up in
+		// proto strings, which have to be valid UTF-8 to cross gRPC.
+		name := SanitizeUTF8(key)
+		sanitized := make([]string, len(values))
+		for i, value := range values {
+			sanitized[i] = SanitizeUTF8(value)
 		}
-		multiHeaders[key] = &httpcap.HeaderValues{Values: sanitized}
-		headers[key] = strings.Join(sanitized, ",") // Join via "," for backwards compatibility.
+		multi[name] = sanitized
+		headers[name] = strings.Join(sanitized, ",") // Joined with "," for backwards compatibility.
 	}
-	return multiHeaders, headers
+
+	return gateway.OutboundHTTPResponse{
+		StatusCode:              resp.StatusCode,
+		Headers:                 headers,
+		MultiHeaders:            multi,
+		Body:                    body,
+		ExternalEndpointLatency: latency,
+	}
 }
 
 // SanitizeUTF8 returns s unchanged if it is already valid UTF-8, otherwise it
@@ -143,79 +192,33 @@ func SanitizeUTF8(s string) string {
 	return strings.ToValidUTF8(s, "�")
 }
 
-func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error) {
-	ctx = metadata.ContextWithCRE(ctx)
-	requestID := uuid.New().String()
-	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
+func (h *direct) Start(context.Context) error { return nil }
 
-	input, err := h.validator.ValidatedRequest(ctx, input)
-	if err != nil {
-		h.metrics.IncrementInputValidationFailures(ctx, lggr)
-		return nil, 0, InputValidationError{Err: err}
-	}
+func (h *direct) Close() error { return nil }
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(timeoutCtx, input.Method, input.Url, bytes.NewReader(input.Body))
-	if err != nil {
-		h.metrics.IncrementExecutionError(ctx, ProxyModeDirect, lggr)
-		lggr.Errorf("failed to create request: %v", err)
-		return nil, 0, errors.New(internalError)
-	}
-
-	req.Header = toRequestHeaders(input)
-
-	lggr.Debugw("Sending HTTP request")
-	externalStartTime := time.Now()
-	resp, err := h.client.Do(req)
-	if err != nil {
-		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-	externalLatency := time.Since(externalStartTime)
-	lggr.Debugw("Received HTTP response", "status", resp.Status, "statusCode", resp.StatusCode)
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
-		return nil, 0, err
-	}
-
-	if err := h.validator.ValidateResponseSize(ctx, body); err != nil {
-		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
-		return nil, 0, err
-	}
-
-	multiHeaders, headers := toResponseHeaders(resp.Header)
-
-	outputs := &httpcap.Response{
-		StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
-		Headers:      headers,
-		MultiHeaders: multiHeaders,
-		Body:         body,
-	}
-
-	return outputs, externalLatency, nil
-}
-
-func (h *httpClientProxy) Start(ctx context.Context) error {
-	return nil
-}
-
-func (h *httpClientProxy) Close() error {
-	return nil
-}
-
-func (h *httpClientProxy) HealthReport() map[string]error {
+func (h *direct) HealthReport() map[string]error {
 	return map[string]error{h.Name(): nil}
 }
 
-func (h *httpClientProxy) Name() string {
+func (h *direct) Name() string {
 	return h.lggr.Name()
 }
 
-func (h *httpClientProxy) Ready() error {
+func (h *direct) Ready() error {
 	return nil
+}
+
+// Gateway is the gateway connection, as the client that goes out through one
+// needs it: somewhere to send a request for the gateway to fetch, and somewhere
+// to open a connection the gateway will carry without reading.
+//
+// Both, because they are one gateway on one address, reached by one handshake -
+// so a node that has the connection has both, and which of the two a request uses
+// is the client's decision to make rather than something to be configured.
+type Gateway interface {
+	core.GatewayConnector
+
+	// Tunnel opens a connection to address through gatewayID, for a request the
+	// gateway is not to see.
+	Tunnel(ctx context.Context, gatewayID, address string) (net.Conn, error)
 }
