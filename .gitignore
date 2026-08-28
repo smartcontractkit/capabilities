@@ -10,6 +10,11 @@
 **/.tools
 *.wasm
 
+# Locally built binaries (go build leaves them next to their main package)
+/crecore/crecore
+/consensus/consensus
+/cron/cron
+
 # IntelliJ IDE
 .idea
 .vscode/
