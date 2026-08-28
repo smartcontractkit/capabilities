@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"errors"
+	"math"
 	"math/big"
 	"testing"
 	"time"
@@ -340,6 +341,32 @@ func Test_handleMedianAggregation(t *testing.T) {
 			name: "float64 median: basic five values",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewFloat64(30.5)), values.Proto(values.NewFloat64(40.5)), values.Proto(values.NewFloat64(10.5)), values.Proto(values.NewFloat64(20.5)), values.Proto(values.NewFloat64(50.5)),
+			},
+			expectedOutcome: values.Proto(values.NewFloat64(30.5)),
+			expectedError:   nil,
+			f:               2,
+		},
+		{
+			name: "float64 median: negative NaN",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewFloat64(35.5)),
+				values.Proto(values.NewFloat64(40.5)),
+				values.Proto(values.NewFloat64(math.Float64frombits(0xFFF8000000000001))), // Negative NaN
+				values.Proto(values.NewFloat64(20.5)),
+				values.Proto(values.NewFloat64(10.5)),
+			},
+			expectedOutcome: values.Proto(values.NewFloat64(20.5)),
+			expectedError:   nil,
+			f:               2,
+		},
+		{
+			name: "float64 median: positive NaN",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewFloat64(30.5)),
+				values.Proto(values.NewFloat64(40.5)),
+				values.Proto(values.NewFloat64(math.Float64frombits(0x7FF8000000000001))), // positive NaN
+				values.Proto(values.NewFloat64(20.5)),
+				values.Proto(values.NewFloat64(10.5)),
 			},
 			expectedOutcome: values.Proto(values.NewFloat64(30.5)),
 			expectedError:   nil,
