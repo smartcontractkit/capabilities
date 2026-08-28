@@ -1,13 +1,11 @@
-// Package server is the gateway's end of the node connection, and the routes it
-// serves to the nodes of the DONs it knows.
+// Package server is the gateway's end of the node connection.
 //
 // The identity checks are the ones the websocket handshake made: a signed header,
-// a challenge, a signature over it. What is different is that a websocket held
-// the identity for as long as the socket lived, and HTTP has to say so per
-// request. A session token does that, and it is only honoured on the connection
-// it was issued on - so a token read from a log or a proxy's memory buys nothing,
-// and the property the socket gave (this is the same peer that authenticated) is
-// kept.
+// a challenge, a signature over it. What differs is that a websocket held the
+// identity for as long as the socket lived and HTTP has to say so per request. A
+// session token does that, and is only honoured on the connection it was issued
+// on - so a token read from a log or a proxy's memory buys nothing, and the
+// property the socket gave (this is the same peer that authenticated) is kept.
 package server
 
 import (
@@ -36,33 +34,25 @@ import (
 
 // Handler is what the gateway does with what a node says.
 //
-// The transport in this file knows who sent a message and nothing else; what a
-// message means - a trigger's answer, a fetch to perform - belongs to the
-// handlers, which is also where the difference between a cached fetch and a
-// tunnel lives.
+// This file knows who sent a message and nothing else; what one means - a
+// trigger's answer, a fetch to perform - belongs to the handlers.
 type Handler interface {
-	// HandleNodeMessage is called with a message a node sent, and the node it was
-	// authenticated as. The message is passed through as it was signed.
+	// The node is the authenticated one, and the message is passed through as it was
+	// signed.
 	HandleNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) error
 }
 
-// Transport serves the node-facing half of a gateway.
 type Transport struct {
 	lggr      logger.Logger
 	gatewayID string
 	verifier  auth.Verifier
 	handler   Handler
 
-	// tolerance is how far a header's timestamp may be from now, and ttl how long a
-	// session lasts before the node has to handshake again.
 	tolerance time.Duration
 	ttl       time.Duration
 
-	// receiveTimeout is how long an unanswered long-poll is held before it is sent
-	// back empty.
 	receiveTimeout time.Duration
 
-	// mailboxSize is how many messages may wait for a node that is not polling.
 	mailboxSize int
 
 	mu       sync.Mutex
@@ -71,8 +61,7 @@ type Transport struct {
 	mailbox  map[string]*mailbox
 }
 
-// attempt is a handshake in progress: a challenge issued to a node that has
-// proved nothing yet.
+// attempt is a challenge issued to a node that has proved nothing yet.
 type attempt struct {
 	donID     string
 	node      string
@@ -81,7 +70,6 @@ type attempt struct {
 	issued    time.Time
 }
 
-// session is an authenticated connection.
 type session struct {
 	donID   string
 	node    string
@@ -89,8 +77,6 @@ type session struct {
 	expires time.Time
 }
 
-// mailbox is where a request for a node waits for that node to ask for it.
-//
 // One channel per node rather than a queue per connection: a node with no poll in
 // flight for a moment - between one returning and the next going out - should not
 // lose what arrives in that moment.
@@ -98,28 +84,20 @@ type mailbox struct {
 	messages chan wire.Envelope
 }
 
-// Config is what a gateway needs told about itself.
 type Config struct {
-	// GatewayID is the name nodes authenticate to. A header signed for another
-	// gateway is refused, so this has to be the name the nodes were configured with.
+	// A header signed for another gateway is refused, so this has to be the name the
+	// nodes were configured with.
 	GatewayID string
 
-	// TimestampTolerance bounds how stale a handshake header may be.
 	TimestampTolerance time.Duration
 
-	// SessionTTL is how long an authenticated connection stays authenticated.
 	SessionTTL time.Duration
 
-	// ReceiveTimeout is how long a node's poll is held open when there is nothing
-	// for it.
 	ReceiveTimeout time.Duration
 
-	// Mailbox is how many messages may wait for a node that is not polling.
 	Mailbox int
 }
 
-// NewTransport returns the node-facing half of a gateway.
-//
 // The handler may be nil here and set with Handles: the gateway needs the
 // transport to be built (it is where its nodes are) and the transport needs the
 // gateway (it is what messages are for), so one of them is second.
@@ -158,25 +136,15 @@ func NewTransport(lggr logger.Logger, cfg Config, verifier auth.Verifier, handle
 	}, nil
 }
 
-// Serve wraps a mux so that a plaintext listener speaks HTTP/2.
+// Serve wraps a mux so that a plaintext listener speaks HTTP/2, which it has to:
+// a session is pinned to one connection, and a node's long-poll would otherwise
+// hold a whole HTTP/1.1 connection while the answers to it went out on another.
+// A gateway serving TLS negotiates HTTP/2 anyway; wrapping is harmless there.
 //
-// It has to: a session is pinned to one connection, and a node's long-poll would
-// otherwise hold a whole HTTP/1.1 connection while the answers to it went out on
-// another. Multiplexing is what makes "the connection this node authenticated" a
-// thing that exists for longer than one request.
-//
-// A gateway serving TLS negotiates HTTP/2 in the handshake and needs none of
-// this, but wrapping is harmless there - the wrapper only acts on the plaintext
-// upgrade.
-//
-// connect, when it is not nil, is given the CONNECTs: the proxy a node tunnels
-// through shares this listener rather than having one of its own. It can, because
-// the two never collide - a tunnel is HTTP/1.1, since CONNECT takes over its
-// connection and there is nothing left to multiplex on it, while the control
-// traffic is HTTP/2 for exactly the opposite reason - and it should, because a
-// node that can reach one can reach the other: they are the same gateway, proved
-// to by the same signatures, and two addresses to configure would be two things
-// to get wrong.
+// The CONNECTs go to connect, so the proxy shares this listener. They never
+// collide - a tunnel takes over its connection, leaving nothing to multiplex -
+// and a node that can reach one can reach the other, so two addresses to
+// configure would be two things to get wrong.
 func Serve(mux http.Handler, connect http.Handler) http.Handler {
 	served := h2c.NewHandler(mux, &http2.Server{})
 	if connect == nil {
@@ -192,8 +160,7 @@ func Serve(mux http.Handler, connect http.Handler) http.Handler {
 	})
 }
 
-// Handles sets what node messages are given to, for a caller that had to build
-// this first.
+// Handles is for a caller that had to build this first. See NewTransport.
 func (t *Transport) Handles(handler Handler) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -201,7 +168,6 @@ func (t *Transport) Handles(handler Handler) {
 	t.handler = handler
 }
 
-// Routes registers the node-facing routes on mux.
 func (t *Transport) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+wire.PathConnect, t.connect)
 	mux.HandleFunc("POST "+wire.PathFinish, t.finish)
@@ -210,7 +176,7 @@ func (t *Transport) Routes(mux *http.ServeMux) {
 }
 
 // ConnContext records which connection a request arrived on, which is what a
-// session is pinned to. It is meant for http.Server.ConnContext.
+// session is pinned to. For http.Server.ConnContext.
 func ConnContext(ctx context.Context, c net.Conn) context.Context {
 	return context.WithValue(ctx, connKey{}, c.RemoteAddr().String()+"|"+uuid.NewString())
 }
@@ -222,7 +188,6 @@ func connOf(r *http.Request) string {
 	return id
 }
 
-// connect answers a signed header with a challenge.
 func (t *Transport) connect(w http.ResponseWriter, r *http.Request) {
 	header, err := bearer(r)
 	if err != nil {
@@ -267,7 +232,6 @@ func (t *Transport) connect(w http.ResponseWriter, r *http.Request) {
 	write(w, wire.ConnectReply{AttemptID: id, Challenge: packedChallenge})
 }
 
-// finish checks the answer to a challenge and issues the session.
 func (t *Transport) finish(w http.ResponseWriter, r *http.Request) {
 	var body wire.FinishRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -316,7 +280,6 @@ func (t *Transport) finish(w http.ResponseWriter, r *http.Request) {
 	write(w, wire.FinishReply{Token: token, ExpiresIn: int64(t.ttl.Seconds())})
 }
 
-// receive holds a node's request open until there is something for it.
 func (t *Transport) receive(w http.ResponseWriter, r *http.Request) {
 	s, err := t.authenticated(r)
 	if err != nil {
@@ -332,12 +295,11 @@ func (t *Transport) receive(w http.ResponseWriter, r *http.Request) {
 	case envelope := <-box.messages:
 		write(w, envelope)
 	case <-ctx.Done():
-		// Nothing to say, which is what most polls end in. The node asks again.
+		// Which is how most polls end. The node asks again.
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
-// send takes what a node has to say and hands it to the handler.
 func (t *Transport) send(w http.ResponseWriter, r *http.Request) {
 	s, err := t.authenticated(r)
 	if err != nil {
@@ -373,11 +335,9 @@ func (t *Transport) send(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// Send queues a message for a node, to be handed to its next poll.
-//
-// It does not wait for the node to take it: what a caller wants to know is
-// whether the node is reachable at all, and a node whose mailbox is full is a
-// node that has stopped asking.
+// Send does not wait for the node to take the message: what a caller wants to
+// know is whether the node is reachable at all, and a node whose mailbox is full
+// is a node that has stopped asking.
 func (t *Transport) Send(node string, msg *jsonrpc.Request[json.RawMessage]) error {
 	encoded, err := json.Marshal(msg)
 	if err != nil {
@@ -392,10 +352,8 @@ func (t *Transport) Send(node string, msg *jsonrpc.Request[json.RawMessage]) err
 	}
 }
 
-// Connected reports which nodes of a DON have a live session.
-//
-// "Live" is a session that has not expired, rather than a socket that is open:
-// with kept-alive HTTP there is no socket to watch, and a node that stopped
+// Connected is about sessions that have not expired rather than sockets that are
+// open: with kept-alive HTTP there is no socket to watch, and a node that stopped
 // asking is one whose session lapses.
 func (t *Transport) Connected(donID string) []string {
 	t.mu.Lock()
@@ -413,8 +371,6 @@ func (t *Transport) Connected(donID string) []string {
 	return nodes
 }
 
-// authenticated resolves the session a request carries, and refuses one that is
-// being used from somewhere other than where it was issued.
 func (t *Transport) authenticated(r *http.Request) (*session, error) {
 	token, err := bearer(r)
 	if err != nil {

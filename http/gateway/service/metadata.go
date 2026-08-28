@@ -1,11 +1,9 @@
-// Package service is the gateway: what a customer's trigger request goes
-// through, and what a workflow's outbound HTTP request goes out through.
+// Package service is the gateway: a customer's trigger request goes through it,
+// and a workflow's outbound HTTP request goes out through it.
 //
-// It is the same two jobs the gateway does today, in a binary of its own rather
-// than inside a node, over the HTTP transport in the packages beside this one.
-// What a customer sends and receives is unchanged - the JSON-RPC request, the
-// JWT that authorises it, the response - because the customer is not part of this
-// migration.
+// The same two jobs the gateway does today, in a binary of its own rather than
+// inside a node. What a customer sends and receives is unchanged, because the
+// customer is not part of this migration.
 package service
 
 import (
@@ -18,8 +16,7 @@ import (
 	gateway "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
-// metadata is what the gateway knows about the workflows it may be asked to
-// trigger: which of them exist, and who is allowed to ask.
+// metadata is which workflows exist and who may ask for them.
 //
 // A node tells it, and one node is not enough. A workflow's authorised keys
 // decide who may run it, so taking one node's word would let a single
@@ -43,11 +40,9 @@ type metadata struct {
 	// reports is workflowID -> node -> what that node last said, and when.
 	reports map[string]map[string]report
 
-	// agreed is the answer the reports add up to, rebuilt as they change.
 	agreed map[string]gateway.WorkflowMetadata
 
-	// byReference resolves the selector a customer names a workflow by - owner, name
-	// and tag - to the ID the DON knows it as.
+	// The selector a customer names a workflow by, to the ID the DON knows it as.
 	byReference map[reference]string
 }
 
@@ -57,7 +52,6 @@ type report struct {
 	at       time.Time
 }
 
-// reference is how a request names a workflow when it does not name its ID.
 type reference struct {
 	owner string
 	name  string
@@ -78,17 +72,13 @@ func newMetadata(lggr logger.Logger, agreement int, stale time.Duration) *metada
 	}
 }
 
-// Record takes what one node says about some of the workflows it runs.
+// Record merges rather than replaces: a node pushes one workflow when it
+// registers it and answers a pull in batches, so a message is part of the picture
+// rather than the whole of it. Forgetting is left to staleness - a workflow the
+// node stopped running is one it stops reporting, and its report ages out.
 //
-// Some, not all: a node pushes one workflow when it registers it, and answers a
-// pull in batches, so a message is part of the picture rather than the whole of
-// it. What is recorded here is therefore merged into what that node said before,
-// and forgetting is left to staleness - a workflow the node has stopped running
-// is one it stops reporting, and its report ages out.
-//
-// The node is the authenticated one: the transport establishes who is on the
-// connection, so nothing here has to trust what the message claims about its
-// sender.
+// The node is the authenticated one: the transport established that, so nothing
+// here trusts what the message claims about its sender.
 func (m *metadata) Record(node string, reported []gateway.WorkflowMetadata) error {
 	now := time.Now()
 
@@ -116,7 +106,7 @@ func (m *metadata) Record(node string, reported []gateway.WorkflowMetadata) erro
 	return nil
 }
 
-// rebuild recomputes what the DON agrees on. Called with the lock held.
+// Called with the lock held.
 func (m *metadata) rebuild(now time.Time) {
 	agreed := make(map[string]gateway.WorkflowMetadata, len(m.reports))
 	byReference := make(map[reference]string, len(m.reports))
@@ -150,8 +140,7 @@ func (m *metadata) rebuild(now time.Time) {
 	m.agreed, m.byReference = agreed, byReference
 }
 
-// Resolve turns the selector a request carries into the workflow ID the DON
-// knows, whether the request named the ID or the owner, name and tag.
+// Resolve takes either shape of selector: the ID, or the owner, name and tag.
 func (m *metadata) Resolve(selector gateway.WorkflowSelector) (string, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -169,10 +158,8 @@ func (m *metadata) Resolve(selector gateway.WorkflowSelector) (string, bool) {
 	return workflowID, known
 }
 
-// Authorized reports whether signer may trigger workflowID.
-//
-// The comparison is on the address alone: a key is an account, and how it was
-// written down - checksummed or not - is not part of who it is.
+// On the address alone: a key is an account, and how it was written down -
+// checksummed or not - is not part of who it is.
 func (m *metadata) Authorized(workflowID, signer string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -189,7 +176,6 @@ func (m *metadata) Authorized(workflowID, signer string) bool {
 	return false
 }
 
-// Workflows is what the DON agrees it is running, for a gateway that has to say.
 func (m *metadata) Workflows() map[string]gateway.WorkflowMetadata {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -201,8 +187,7 @@ func (m *metadata) Workflows() map[string]gateway.WorkflowMetadata {
 	return workflows
 }
 
-// Expire drops reports that have gone stale and rebuilds. It is what makes a node
-// that stopped talking stop counting.
+// Expire is what makes a node that stopped talking stop counting.
 func (m *metadata) Expire() {
 	now := time.Now()
 

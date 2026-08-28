@@ -50,14 +50,10 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Verify checks a token against the request it came with and returns the account
-// that signed it, lowercased.
-//
-// Everything here is a reason a token may not be used: it has to be for this
-// request (the digest), it has to be alive (iat, exp), it has to be short-lived,
-// and it has to identify itself (jti) so that a gateway can refuse a second use.
-// Whether the signer may run the workflow is the caller's question, not this
-// one's.
+// Verify returns the account that signed, lowercased. Everything in it is a
+// reason a token may not be used: it has to be for this request (the digest),
+// alive (iat, exp), short-lived, and identified (jti) so that a second use can be
+// refused. Whether that signer may run the workflow is the caller's question.
 func Verify[T any](token string, req jsonrpc.Request[T]) (*Claims, string, error) {
 	signed, signature, err := split(token)
 	if err != nil {
@@ -96,8 +92,7 @@ func Verify[T any](token string, req jsonrpc.Request[T]) (*Claims, string, error
 	return claims, strings.ToLower(signer), nil
 }
 
-// check is the part of validation that is about this request rather than about
-// the token in general.
+// check is about this request rather than about the token in general.
 func check[T any](claims *Claims, req jsonrpc.Request[T]) error {
 	switch {
 	case claims.ID == "":
@@ -127,8 +122,7 @@ func check[T any](claims *Claims, req jsonrpc.Request[T]) error {
 	return nil
 }
 
-// personalHash is what an Ethereum personal signature is over: the prefix, the
-// length, then the message, hashed with keccak256.
+// What an Ethereum personal signature is over: prefix, length, message, keccak256.
 func personalHash(message []byte) []byte {
 	return auth.Hash([]byte(fmt.Sprintf("%s%d%s", ethSignedMessagePrefix, len(message), message)))
 }
@@ -141,8 +135,8 @@ func split(token string) (string, string, error) {
 	return parts[0] + "." + parts[1], parts[2], nil
 }
 
-// method is the ETH signing method, registered so that the parser recognises the
-// tokens customers send. Signing is not implemented: a gateway verifies.
+// Registered so the parser recognises the tokens customers send. Signing is not
+// implemented: a gateway verifies.
 type method struct{}
 
 func (method) Alg() string { return Alg }
@@ -151,8 +145,8 @@ func (method) Sign(string, any) ([]byte, error) {
 	return nil, errors.New("a gateway verifies tokens; it does not sign them")
 }
 
-// Verify is the library's hook. The signature was already recovered - that is how
-// the key got here - so this re-derives the address and compares.
+// The signature was already recovered - that is how the key got here - so this
+// re-derives the address and compares.
 func (method) Verify(signingString string, signature []byte, key any) error {
 	address, ok := key.(string)
 	if !ok {

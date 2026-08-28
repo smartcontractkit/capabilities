@@ -1,11 +1,9 @@
 // Package inproc is the gateway and its nodes in one process, talking by
 // function call.
 //
-// It exists for an embedded run, where the "DON" is a handful of goroutines and
-// the gateway is one more of them. Dialling itself over HTTP would prove nothing
-// there: what an embedded run is for is watching a workflow go round, and a
-// loopback socket between two objects in the same heap is a moving part with no
-// purpose.
+// It is for an embedded run, where the "DON" is a handful of goroutines and the
+// gateway is one more. Dialling itself over HTTP would prove nothing: a loopback
+// socket between two objects in the same heap is a moving part with no purpose.
 //
 // Everything above the connection is the same code as a deployed run: the same
 // gateway, the same agreement threshold, the same capabilities. What is missing
@@ -41,10 +39,8 @@ type Gateway interface {
 	HandleNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) error
 }
 
-// Nodes is the gateway's side of a set of in-process nodes.
-//
-// It satisfies the same interface the HTTP transport does, so the gateway cannot
-// tell which it has.
+// Nodes satisfies the same interface the HTTP transport does, so the gateway
+// cannot tell which it has.
 type Nodes struct {
 	lggr logger.Logger
 
@@ -52,16 +48,13 @@ type Nodes struct {
 	nodes map[string]*Connector
 }
 
-// NewNodes returns an empty set; connectors add themselves as they are made.
 func NewNodes(lggr logger.Logger) *Nodes {
 	return &Nodes{lggr: lggr, nodes: map[string]*Connector{}}
 }
 
-// Send hands a request to a node, by calling it.
-//
 // On its own goroutine, because the caller may be that node: a gateway answering
-// an outbound request sends the answer to the node that asked, and that send
-// would otherwise be waiting on the call it is inside.
+// an outbound request sends to the node that asked, and would otherwise be
+// waiting on the call it is inside.
 func (n *Nodes) Send(node string, req *jsonrpc.Request[json.RawMessage]) error {
 	n.mu.RLock()
 	connector, known := n.nodes[node]
@@ -74,8 +67,8 @@ func (n *Nodes) Send(node string, req *jsonrpc.Request[json.RawMessage]) error {
 	return nil
 }
 
-// Connected is every node in this process. There is no connection to lose, so
-// they are all reachable for as long as the process is.
+// There is no connection to lose, so every node is reachable for as long as the
+// process is.
 func (n *Nodes) Connected(string) []string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
@@ -83,8 +76,7 @@ func (n *Nodes) Connected(string) []string {
 	return slices.Sorted(maps.Keys(n.nodes))
 }
 
-// Connector returns the node's end of the connection: what the capabilities in
-// that instance are handed.
+// Connector returns what the capabilities in that instance are handed.
 func (n *Nodes) Connector(gateway Gateway, gatewayID, donID, node string) *Connector {
 	c := &Connector{
 		lggr:      logger.Named(n.lggr, "Node."+node),
@@ -102,7 +94,6 @@ func (n *Nodes) Connector(gateway Gateway, gatewayID, donID, node string) *Conne
 	return c
 }
 
-// Connector is one in-process node's connection to the gateway.
 type Connector struct {
 	lggr      logger.Logger
 	gateway   Gateway
@@ -116,7 +107,6 @@ type Connector struct {
 
 var _ core.MultiGatewayConnector = (*Connector)(nil)
 
-// deliver hands a request to whichever handler answers that method.
 func (c *Connector) deliver(req *jsonrpc.Request[json.RawMessage]) {
 	c.mu.RLock()
 	handler, ok := c.handlers[req.Method]
@@ -160,16 +150,14 @@ func (c *Connector) RemoveHandler(_ context.Context, methods []string) error {
 	return nil
 }
 
-// SendToGateway calls the gateway. The node it is attributed to is this node,
-// which is known rather than proved: in one process there is nobody else it could
-// be.
+// The node this is attributed to is known rather than proved: in one process
+// there is nobody else it could be.
 func (c *Connector) SendToGateway(ctx context.Context, _ string, resp *jsonrpc.Response[json.RawMessage]) error {
 	return c.gateway.HandleNodeMessage(ctx, c.donID, c.node, resp)
 }
 
-// SignMessage refuses. An embedded run's keys are derived and public, and nothing
-// in this shape asks a node to sign: a signature is how a message is attributed
-// across a network, and there is no network here.
+// SignMessage refuses: a signature is how a message is attributed across a
+// network, and there is no network here.
 func (c *Connector) SignMessage(context.Context, []byte) ([]byte, error) {
 	return nil, errors.New("an in-process gateway connection does not sign: it knows which node it is")
 }
@@ -188,6 +176,6 @@ func (c *Connector) DonIDForGateway(context.Context, string) (string, error) { r
 
 func (c *Connector) PrimaryDonID(context.Context) (string, error) { return c.donID, nil }
 
-// AwaitConnection returns at once: the gateway is in this process, and either it
-// exists or this could not have been built.
+// At once: the gateway is in this process, and either it exists or this could not
+// have been built.
 func (c *Connector) AwaitConnection(context.Context, string) error { return nil }

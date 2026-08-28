@@ -1,25 +1,17 @@
-// Command gateway runs the CRE gateway.
+// Command gateway runs the CRE gateway: what stands between a customer and a DON.
 //
-// It is what stands between a customer and a DON: a customer's trigger request
-// arrives here, is checked against what the workflow authorised, and is put to
-// the DON; and a workflow's outbound HTTP request goes out from here, so that
-// every node of the DON is answered with the same thing.
-//
-// It serves two listeners, because who may reach them differs:
+// Two listeners, because who may reach them differs:
 //
 //   - --gateway.user-address, where customers send JSON-RPC. Public.
 //   - --gateway.node-address, where the DON's nodes connect. Reachable by the DON.
 //
-// The node listener carries two things: the control traffic, over HTTP/2, and the
-// tunnels a workflow uses when it has turned the cache off, as HTTP/1.1 CONNECTs.
-// One address, because they serve the same nodes and prove them the same way, and
-// a node that can reach one can reach the other. What goes through a tunnel this
-// process cannot read.
+// The node listener carries the control traffic over HTTP/2 and, as HTTP/1.1
+// CONNECTs, the tunnels a workflow uses when it has turned the cache off. One
+// address, because they serve the same nodes and prove them the same way.
 //
-// A node proves who it is by signing: a header naming this gateway and the
-// moment, then a challenge this gateway chose. Both signatures are made with the
-// node's chain key, which is the key the DON's membership is recorded under - so
-// there is no credential to issue and none to leak.
+// A node proves who it is by signing with its chain key - the key the DON's
+// membership is recorded under - so there is no credential to issue and none to
+// leak.
 package main
 
 import (
@@ -51,23 +43,20 @@ func main() {
 	}
 }
 
-// Config is what this binary needs told.
 type Config struct {
 	service.Config `toml:",inline"`
 
-	// Nodes is the DON's membership, as node addresses. A signature that recovers to
-	// anything else is refused, so this is the whole of who may connect.
+	// A signature that recovers to anything else is refused, so this is the whole of
+	// who may connect.
 	Nodes []string `json:"nodes" usage:"addresses of the nodes of this gateway's DON" example:"['0x0000000000000000000000000000000000000000']"`
 
-	// UserAddress and NodeAddress are the two listeners. The proxy a node tunnels
-	// through is not a third: it shares the node listener, since it serves the same
-	// nodes and proves them the same way.
+	// The proxy a node tunnels through is not a third listener: it shares the node
+	// one, since it serves the same nodes and proves them the same way.
 	UserAddress string `json:"userAddress" usage:"address the customer-facing JSON-RPC listener binds to"`
 	NodeAddress string `json:"nodeAddress" usage:"address the DON's nodes connect to, for control traffic and for tunnels"`
 
-	// TLSCertFile and TLSKeyFile turn on TLS for the customer-facing listener. The
-	// node listener needs none - a node's identity is proved by signature, not by the
-	// transport - though a deployment may put one in front of it anyway.
+	// For the customer-facing listener. The node listener needs none - identity is
+	// proved by signature, not by the transport - though a deployment may add one.
 	TLSCertFile string `json:"tlsCertFile" usage:"certificate for the customer-facing listener; empty serves plaintext"`
 	TLSKeyFile  string `json:"tlsKeyFile" usage:"key for the customer-facing listener"`
 }
@@ -162,18 +151,16 @@ func run(ctx context.Context, cfg Config, healthPort uint16) error {
 	users := http.NewServeMux()
 	gateway.Routes(users)
 
-	// The proxy half, on the same listener as the control traffic: a node that
-	// turned the cache off fetches for itself through this, and the gateway carries
-	// bytes it cannot read.
+	// A node that turned the cache off fetches for itself through this, and the
+	// gateway carries bytes it cannot read.
 	tunnel, err := service.NewTunnel(logger.Named(lggr, "Proxy"), service.TunnelConfig{GatewayID: cfg.GatewayID}, dons)
 	if err != nil {
 		return err
 	}
 
 	servers := []*listener{
-		// HTTP/2 without TLS on the node listener: a session is pinned to one
-		// connection, and the poll and the messages that answer it have to share it.
-		// The CONNECTs that arrive here are HTTP/1.1 and are handed to the tunnel.
+		// HTTP/2 without TLS: a session is pinned to one connection, and the poll and the
+		// messages answering it have to share it. The CONNECTs go to the tunnel.
 		{name: "nodes", address: cfg.NodeAddress, handler: server.Serve(nodes, tunnel)},
 		{name: "users", address: cfg.UserAddress, handler: users, cert: cfg.TLSCertFile, key: cfg.TLSKeyFile},
 	}
@@ -187,8 +174,8 @@ func run(ctx context.Context, cfg Config, healthPort uint16) error {
 			}
 			_, _ = w.Write([]byte("ok\n"))
 		})
-		// Whoever launched this reloads settings by asking for them; this gateway has
-		// none to reload, and saying so is better than a connection refused.
+		// Whoever launched this reloads settings by asking; this gateway has none, and
+		// saying so is better than a connection refused.
 		health.HandleFunc("GET /reload/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 
 		servers = append(servers, &listener{name: "health", address: fmt.Sprintf(":%d", healthPort), handler: health})
@@ -204,14 +191,10 @@ func run(ctx context.Context, cfg Config, healthPort uint16) error {
 	defer cancel()
 
 	if underPluginHost() {
-		// Launched by a node rather than by a person: a capabilityrunner job supervises
-		// what it starts over go-plugin, and a process that does not answer the
-		// handshake is one it reports as unavailable however well it is running. The
-		// empty plugin is the answer - there is nothing to serve over it, since what
-		// this process does it does over its own listeners - and it blocks until the
-		// node shuts this down.
-		//
-		// The same thing the capabilities' bootstrapper does, for the same reason.
+		// A capabilityrunner job supervises what it starts over go-plugin, and a process
+		// that does not answer the handshake is reported unavailable however well it is
+		// running. There is nothing to serve over the plugin - this process works over
+		// its own listeners - so it is empty, and blocks until the node shuts it down.
 		lggr.Info("Serving the empty plugin: this gateway was launched by a node")
 		go func() {
 			plugin.Serve(&plugin.ServeConfig{
@@ -240,7 +223,6 @@ func run(ctx context.Context, cfg Config, healthPort uint16) error {
 	return nil
 }
 
-// listener is one of the three servers this binary runs.
 type listener struct {
 	name      string
 	address   string
@@ -255,8 +237,7 @@ func (l *listener) serve() error {
 		Addr:              l.address,
 		Handler:           l.handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		// Which connection a request arrived on, which is what a node's session is
-		// pinned to. Harmless on the other listeners, which do not ask.
+		// What a node's session is pinned to. Harmless on the listeners that do not ask.
 		ConnContext: server.ConnContext,
 	}
 
@@ -273,9 +254,8 @@ func (l *listener) close(ctx context.Context) error {
 	return l.server.Shutdown(ctx)
 }
 
-// underPluginHost reports whether a go-plugin host started this process, by the
-// handshake cookie it sets. go-plugin's Serve exits when that is absent, so this
-// only serves the plugin when there is a host to serve it to.
+// go-plugin's Serve exits when the handshake cookie is absent, so the plugin is
+// only served when there is a host to serve it to.
 func underPluginHost() bool {
 	handshake := loop.EmptyHandshakeConfig()
 	return os.Getenv(handshake.MagicCookieKey) == handshake.MagicCookieValue

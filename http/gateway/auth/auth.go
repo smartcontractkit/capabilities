@@ -1,18 +1,14 @@
 // Package auth is how a gateway knows which node it is talking to.
 //
-// It is the scheme the node's websocket connection uses today, byte for byte:
-// the node signs a header naming the moment, its DON and the gateway it means to
-// reach; the gateway answers with a random challenge; the node signs that too.
-// Both signatures are secp256k1, made with the node's chain key - the same key
-// the DON's membership is recorded under - so what proves identity here is what
-// the registry already knows about that node, rather than a second credential
-// issued for the purpose.
+// It is the scheme the node's websocket connection uses today, byte for byte.
+// Both signatures are secp256k1 made with the node's chain key - the key the
+// DON's membership is recorded under - so identity is proved by what the registry
+// already knows about that node rather than by a credential issued for this.
 //
-// The transport changed - HTTP rather than a websocket - and this did not. A
-// signed header can be replayed by anyone who sees it, for as long as its
-// timestamp is tolerated; a signature over a challenge the gateway chose cannot.
-// That is what makes this safe to run over a connection that is not itself
-// encrypted, which the proxy hop is.
+// The transport changed and this did not. A signed header can be replayed by
+// anyone who sees it, for as long as its timestamp is tolerated; a signature over
+// a challenge the gateway chose cannot. That is what makes this safe over a
+// connection that is not itself encrypted, which the proxy hop is.
 package auth
 
 import (
@@ -28,8 +24,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-// The layout of a packed auth header, in bytes. These are the lengths the
-// gateway's own handshake uses (core's gateway/network/constants.go), kept so
+// The lengths core's own handshake uses (gateway/network/constants.go), kept so
 // that a header produced here is the header that code would produce.
 const (
 	TimestampLen  = 4
@@ -38,18 +33,16 @@ const (
 	SignatureLen  = 65
 	AuthHeaderLen = TimestampLen + DonIDLen + GatewayIDLen + SignatureLen
 
-	// ChallengeLen is how many random bytes a challenge carries. Long enough that
-	// guessing one is not a strategy.
+	// Long enough that guessing one is not a strategy.
 	ChallengeLen = 32
 
-	// challengeMinLen is the shortest thing that could be a challenge: the fixed
-	// prefix plus at least one random byte.
+	// The fixed prefix plus at least one random byte.
 	challengeMinLen = TimestampLen + GatewayIDLen + 1
 )
 
-// DefaultTimestampTolerance is how far from now a header's timestamp may be. It
-// bounds how long a captured header could be replayed if the challenge step were
-// ever skipped, and it has to be wide enough for ordinary clock drift.
+// DefaultTimestampTolerance bounds how long a captured header would be worth
+// anything if the challenge step were ever skipped, and has to be wide enough for
+// ordinary clock drift.
 const DefaultTimestampTolerance = 30 * time.Second
 
 var (
@@ -63,53 +56,42 @@ var (
 	ErrFieldTooLong    = errors.New("field is longer than its fixed width")
 )
 
-// Header is what a node says about itself before it has proved anything.
 type Header struct {
-	// Timestamp is when the node signed this, in seconds. It bounds replay.
 	Timestamp uint32
 
-	// DonID is the DON the node claims to belong to, and GatewayID the gateway it
-	// means to be talking to - so a header captured by one gateway cannot be replayed
+	// GatewayID is named so that a header captured by one gateway cannot be replayed
 	// at another.
 	DonID     string
 	GatewayID string
 }
 
-// Challenge is what the gateway answers a header with: something the node could
-// not have signed in advance.
+// Challenge is something the node could not have signed in advance.
 type Challenge struct {
 	Timestamp uint32
 	GatewayID string
 	Random    []byte
 }
 
-// Signer signs on behalf of a node. It is the one thing this package cannot do
-// for itself: the key lives in another process (crecore), reached over its
-// keystore service, or is derived from an instance index for a local run.
+// Signer is the one thing this package cannot do for itself: the key lives in
+// another process (crecore), reached over its keystore service.
 //
-// What it is handed is already hashed - see Hash - because that is the shape the
-// keystore service signs: a digest in, a signature out, and the key stays where
-// it is.
+// What it is handed is already hashed because that is the shape that service
+// signs: a digest in, a signature out, and the key stays where it is.
 type Signer interface {
 	Sign(ctx context.Context, hash []byte) ([]byte, error)
 }
 
-// Verifier says whether a signature over a hash was made by one of the nodes it
-// knows, and which one.
-//
-// It is an interface because who the nodes are is the gateway's configuration,
-// not this package's business.
+// Verifier is an interface because who the nodes are is the gateway's
+// configuration, not this package's business.
 type Verifier interface {
-	// Nodes returns the addresses that count as members of donID, as 0x-prefixed
-	// hex, or false if the DON is not one this gateway serves.
+	// Addresses as 0x-prefixed hex, or false if the DON is not one this serves.
 	Nodes(donID string) ([]string, bool)
 
-	// Verify reports whether sig over hash was made by the key behind address.
 	Verify(address string, hash, sig []byte) bool
 }
 
-// PackHeader lays a header out for signing. The signature covers exactly these
-// bytes, and is appended to them to make the header that travels.
+// PackHeader lays a header out for signing: the signature covers exactly these
+// bytes and is appended to them.
 func PackHeader(h Header) ([]byte, error) {
 	don, err := fixed(h.DonID, DonIDLen)
 	if err != nil {
@@ -127,7 +109,6 @@ func PackHeader(h Header) ([]byte, error) {
 	return packed, nil
 }
 
-// UnpackHeader splits a signed header back into what was said and what signed it.
 func UnpackHeader(data []byte) (Header, []byte, error) {
 	if len(data) != AuthHeaderLen {
 		return Header{}, nil, fmt.Errorf("%w: got %d, want %d", ErrHeaderLength, len(data), AuthHeaderLen)
@@ -143,7 +124,6 @@ func UnpackHeader(data []byte) (Header, []byte, error) {
 	return h, data[AuthHeaderLen-SignatureLen:], nil
 }
 
-// PackChallenge lays a challenge out for signing.
 func PackChallenge(c Challenge) ([]byte, error) {
 	gateway, err := fixed(c.GatewayID, GatewayIDLen)
 	if err != nil {
@@ -156,8 +136,8 @@ func PackChallenge(c Challenge) ([]byte, error) {
 	return append(packed, c.Random...), nil
 }
 
-// UnpackChallenge reads a challenge, for a node that wants to check which gateway
-// and which moment it is about to sign for.
+// UnpackChallenge is for a node checking which gateway and which moment it is
+// about to sign for.
 func UnpackChallenge(data []byte) (Challenge, error) {
 	if len(data) < challengeMinLen {
 		return Challenge{}, fmt.Errorf("%w: got %d, want at least %d", ErrChallengeLength, len(data), challengeMinLen)
@@ -169,7 +149,6 @@ func UnpackChallenge(data []byte) (Challenge, error) {
 	return c, nil
 }
 
-// NewChallenge returns a challenge for this gateway, now.
 func NewChallenge(gatewayID string, now time.Time) (Challenge, error) {
 	random := make([]byte, ChallengeLen)
 	if _, err := rand.Read(random); err != nil {
@@ -182,16 +161,15 @@ func NewChallenge(gatewayID string, now time.Time) (Challenge, error) {
 	}, nil
 }
 
-// Hash is what is actually signed: keccak256 of the packed bytes, which is what
-// a chain key signs everywhere else in this system.
+// Hash is keccak256, which is what a chain key signs everywhere else here.
 func Hash(data []byte) []byte {
 	hash := sha3.NewLegacyKeccak256()
 	hash.Write(data)
 	return hash.Sum(nil)
 }
 
-// fixed right-pads s into a field of n bytes, rejecting anything that would not
-// fit rather than silently truncating an identity.
+// fixed rejects anything that would not fit rather than silently truncating an
+// identity.
 func fixed(s string, n int) ([]byte, error) {
 	if len(s) > n {
 		return nil, fmt.Errorf("%w: %d bytes into %d", ErrFieldTooLong, len(s), n)
@@ -201,7 +179,6 @@ func fixed(s string, n int) ([]byte, error) {
 	return field, nil
 }
 
-// unfixed reads a right-padded field back.
 func unfixed(field []byte) string {
 	for i, b := range field {
 		if b == 0 {
@@ -211,13 +188,9 @@ func unfixed(field []byte) string {
 	return string(field)
 }
 
-// VerifyHeader checks a signed header and says which node sent it.
-//
-// Everything a gateway can check without a round trip is checked here: that the
-// DON is one it serves, that the header is addressed to it rather than to
-// another gateway, that the timestamp is recent, and that the signature is from a
-// member of that DON. What it cannot check is whether the sender holds the key
-// now rather than having copied a header - which is what the challenge is for.
+// VerifyHeader is everything a gateway can check without a round trip. What it
+// cannot check is whether the sender holds the key now rather than having copied
+// a header, which is what the challenge is for.
 func VerifyHeader(v Verifier, gatewayID string, data []byte, now time.Time, tolerance time.Duration) (Header, string, error) {
 	header, signature, err := UnpackHeader(data)
 	if err != nil {
@@ -244,8 +217,8 @@ func VerifyHeader(v Verifier, gatewayID string, data []byte, now time.Time, tole
 	return header, node, nil
 }
 
-// VerifyChallengeResponse checks that the node the header claimed to be from is
-// the one on the other end of this connection, now.
+// VerifyChallengeResponse is what establishes that the node the header claimed to
+// be from is the one on the other end of this connection, now.
 func VerifyChallengeResponse(v Verifier, donID, node string, challenge, signature []byte) error {
 	nodes, ok := v.Nodes(donID)
 	if !ok {
@@ -260,8 +233,6 @@ func VerifyChallengeResponse(v Verifier, donID, node string, challenge, signatur
 	return nil
 }
 
-// signedBy returns which of nodes signed hash.
-//
 // Tried one at a time rather than recovered, because the answer only matters if
 // it is one of these: a DON is a handful of nodes, and this runs when a
 // connection is made rather than when it is used.

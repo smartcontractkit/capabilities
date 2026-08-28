@@ -24,19 +24,16 @@ type Connection interface {
 	core.MultiGatewayConnector
 	services.Service
 
-	// Tunnel opens a connection to a host through the gateway, for a request the
-	// gateway is not to see. It is the same connection in its other role: a node
-	// tunnels through the gateway it is already talking to, on the same address.
+	// The same connection in its other role: a node tunnels through the gateway it is
+	// already talking to, on the same address, for a request it is not to see.
 	Tunnel(ctx context.Context, gatewayID, address string) (net.Conn, error)
 }
 
 // Dependency returns this process's gateway connection.
 //
-// A configured run connects to the gateways it was told about, signing as this
-// node with the key crecore holds. An embedded run has no gateway to connect to
-// and no node to be, so it runs one in this process and talks to it by function
-// call: see the inproc package for why that is the honest shape rather than a
-// loopback socket.
+// An embedded run has no gateway to connect to and no node to be, so it runs one
+// in this process and talks to it by function call: see the inproc package for
+// why that is the honest shape rather than a loopback socket.
 func Dependency(lggr logger.Logger, keystore standalone.BootstrapDependency[core.Keystore]) standalone.BootstrapDependency[Connection] {
 	cfg := Defaults
 	return &dependency{lggr: lggr, keystore: keystore, cfg: &cfg}
@@ -47,42 +44,34 @@ type dependency struct {
 	keystore standalone.BootstrapDependency[core.Keystore]
 	cfg      *Config
 
-	// embedded is the one embedded form, and shared is what its instances share: a
-	// gateway, and the set of nodes it serves. The bootstrapper asks for a form per
-	// instance and once more to collect settings, and they all have to be the same
-	// gateway.
+	// The bootstrapper asks for a form per instance and once more to collect
+	// settings, and they all have to end up on the same gateway.
 	embedded *dependency
 	shared   *embeddedRun
 	instance int
 }
 
-// embeddedRun is the gateway an embedded run talks to, and the nodes on it.
 type embeddedRun struct {
 	nodes   *inproc.Nodes
 	gateway *service.Gateway
 	err     error
 	started bool
 
-	// proxy is the gateway's CONNECT listener, and members who may use it.
-	//
-	// It is a real socket, dialled over real TCP, even though both ends are in this
-	// process. Tunnelling is what an uncached request does on a node, and an embedded
-	// run is for finding out whether that works: a shortcut here would test a path
-	// that nothing runs in earnest.
+	// A real socket, dialled over real TCP, even though both ends are in this process:
+	// an embedded run is for finding out whether the tunnel works, and a shortcut here
+	// would exercise a path that nothing runs in earnest.
 	proxy   net.Listener
 	members *members
 
-	// connections is instance i's end of the gateway, kept because an instance is
-	// asked for more than once - once by whatever hosts the capabilities, and again
-	// by whatever their outbound requests go through. Building a second one would
-	// register a second node under the same name, and the gateway would send to the
-	// one holding no handlers.
+	// Kept because an instance is asked for more than once - by whatever hosts the
+	// capabilities, and by whatever their outbound requests go through. A second one
+	// would register a second node under the same name, and the gateway would send to
+	// whichever of them held no handlers.
 	connections map[int]*embeddedConnection
 }
 
-// members is the embedded DON, which fills up as its instances resolve. The
-// gateway is serving before the last of them exists, so membership cannot be a
-// list settled once.
+// members fills up as instances resolve: the gateway is serving before the last
+// of them exists, so membership cannot be a list settled once.
 type members struct {
 	mu        sync.Mutex
 	donID     string
@@ -128,8 +117,7 @@ func (d *dependency) Dependencies() []standalone.BootstrapCommand {
 func (d *dependency) ForEmbedding(i, instances int) standalone.BootstrapDependency[Connection] {
 	if d.embedded == nil {
 		cfg := Defaults
-		// An embedded run is one DON on one gateway, and neither is reached over a
-		// network, so the names are only names.
+		// Neither is reached over a network, so the names are only names.
 		cfg.DonID, cfg.Gateways = "embedded", nil
 		d.embedded = &dependency{
 			lggr: d.lggr,
@@ -142,8 +130,7 @@ func (d *dependency) ForEmbedding(i, instances int) standalone.BootstrapDependen
 	}
 	_ = instances
 
-	// One per instance, sharing the run: what differs between them is which node
-	// they are.
+	// What differs between instances is which node they are.
 	instanceDep := *d.embedded
 	instanceDep.instance = i
 	return &instanceDep
@@ -162,8 +149,7 @@ func (d *dependency) Get(ctx context.Context, cc standalone.CommonConfig) (Conne
 	return New(d.lggr, *d.cfg, auth.KeystoreSigner(keystore, d.cfg.NodeAddress))
 }
 
-// embed returns this instance's end of the in-process gateway, starting the
-// gateway the first time it is asked for.
+// embed starts the gateway the first time an instance asks for its end of it.
 func (d *dependency) embed() (Connection, error) {
 	if !d.shared.started {
 		d.shared.started = true
@@ -193,9 +179,8 @@ func (d *dependency) embed() (Connection, error) {
 		return existing, nil
 	}
 
-	// This instance's identity on the proxy. The control connection needs none -
-	// it is a function call - but the tunnel is a socket with a handshake on it, and
-	// the whole point of dialling it is that the handshake runs.
+	// The control connection needs no identity - it is a function call - but the
+	// tunnel is a socket, and the point of dialling it is that the handshake runs.
 	sign, address, err := auth.Generated()
 	if err != nil {
 		return nil, err
@@ -216,8 +201,6 @@ func (d *dependency) embed() (Connection, error) {
 	return connection, nil
 }
 
-// listen starts the embedded gateway's CONNECT proxy.
-//
 // On a loopback socket rather than in memory: what a node does with an uncached
 // request is dial a proxy and speak HTTP to it, and an embedded run is where that
 // is meant to be exercised. The port is the OS's to choose, since two embedded
@@ -300,18 +283,13 @@ func (c *embeddedConnection) HealthReport() map[string]error {
 
 func (c *embeddedConnection) Name() string { return "EmbeddedGatewayConnection" }
 
-// EmbeddedGatewayPath is where an embedded run's gateway takes customer
-// requests, on the same server the health endpoints are on.
-//
-// An embedded run has no customer-facing listener of its own - it is one process
-// pretending to be a DON, not a deployment - but a trigger only ever fires
-// because a customer asked for it, so there has to be somewhere to ask.
+// EmbeddedGatewayPath is on the same server the health endpoints are on: an
+// embedded run has no customer-facing listener of its own, but a trigger only
+// fires because a customer asked, so there has to be somewhere to ask.
 const EmbeddedGatewayPath = "/gateway"
 
-// Serve mounts an embedded run's gateway on mux, and reports whether it did.
-//
-// A connection to a gateway elsewhere is nobody's to serve, so this does nothing
-// for one: the customer's end of that gateway is wherever it is running.
+// Serve reports whether it mounted anything: a gateway elsewhere is nobody's to
+// serve here, and its customer end is wherever it is running.
 func Serve(c Connection, mux *http.ServeMux) bool {
 	embedded, ok := c.(*embeddedConnection)
 	if !ok {
@@ -321,20 +299,6 @@ func Serve(c Connection, mux *http.ServeMux) bool {
 	return true
 }
 
-// Embedded reports whether this connection is to a gateway this process runs
-// itself, rather than to one it dialled.
-//
-// It is how a capability tells the two apart when the difference changes what it
-// should do: the action, whose choice between reaching out directly and going
-// through a gateway is only a real choice when there is a gateway that is not
-// ours.
-func Embedded(c Connection) bool {
-	_, embedded := c.(*embeddedConnection)
-	return embedded
-}
-
-// Tunnel opens a connection to address through the gateway this process runs.
-//
 // The same CONNECT with the same two signatures a node makes to a gateway across
 // a network: what is embedded here is the gateway, not the protocol.
 func (c *embeddedConnection) Tunnel(ctx context.Context, gatewayID, address string) (net.Conn, error) {

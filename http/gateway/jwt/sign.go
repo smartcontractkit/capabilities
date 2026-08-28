@@ -15,15 +15,10 @@ import (
 	"github.com/smartcontractkit/capabilities/http/gateway/auth"
 )
 
-// Issue mints the token a customer's tooling sends with a request.
-//
-// It is the other half of Verify, and it lives here so that the two are read
+// Issue is the other half of Verify, and lives beside it so the two are read
 // together: what is signed, and in what order, is the whole of the scheme. The
-// caller supplies the token's ID, since refusing a second use of one is the
-// gateway's job and minting a fresh one is theirs.
-//
-// lifetime is how long the token is good for, and must be no more than
-// MaxExpiryDuration - a gateway refuses a token that claims longer.
+// caller supplies the token's ID, since refusing a second use is the gateway's
+// job and minting a fresh one is theirs.
 func Issue[T any](key *secp256k1.PrivateKey, id string, req jsonrpc.Request[T], lifetime time.Duration) (string, error) {
 	if lifetime > MaxExpiryDuration {
 		return "", fmt.Errorf("a token may live at most %s, not %s", MaxExpiryDuration, lifetime)

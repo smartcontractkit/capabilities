@@ -17,51 +17,40 @@ import (
 	"github.com/smartcontractkit/capabilities/http/gateway/wire"
 )
 
-// Nodes is the gateway's side of the connections to a DON.
-//
-// It is an interface because how a node is reached is not this package's
-// business: over HTTP for a deployed gateway (see the server package), or by a
-// function call for a run where the gateway and the nodes are the same process.
-// Everything above it - who may trigger what, when a DON has agreed, what is
-// worth caching - is the same either way.
+// Nodes is an interface because how a node is reached is not this package's
+// business: over HTTP for a deployed gateway, or by function call where the
+// gateway and the nodes are the same process. Everything above it - who may
+// trigger what, when a DON has agreed, what is worth caching - is the same.
 type Nodes interface {
-	// Send hands a request to a node, to be delivered when that node next asks.
 	Send(node string, req *jsonrpc.Request[json.RawMessage]) error
 
-	// Connected is which nodes of a DON are reachable now.
 	Connected(donID string) []string
 }
 
-// Config is what a gateway needs told.
 type Config struct {
-	// GatewayID is what nodes authenticate to, and what a node's signed header has to
-	// name. It is the gateway's identity, not its address.
+	// What a node's signed header has to name: the gateway's identity, not its
+	// address.
 	GatewayID string `json:"gatewayId" usage:"the name nodes authenticate to this gateway as"`
 
-	// DonID is the DON this gateway serves triggers for, and F its fault tolerance:
-	// a customer is answered when F+1 nodes have said the same thing.
+	// F is fault tolerance: a customer is answered when F+1 nodes said the same thing.
 	DonID string `json:"donId" usage:"the DON this gateway serves"`
 	F     int    `json:"f" usage:"the DON's fault tolerance; F+1 nodes must agree before a customer is answered"`
 
-	// RequestTimeout bounds how long a customer waits for the DON to agree.
 	RequestTimeout time.Duration `json:"requestTimeout" usage:"how long a customer's request waits for the DON to agree"`
 
-	// CacheTTL is how long an outbound response is remembered, and StaleAfter how
-	// long a node's workflow metadata counts for.
 	CacheTTL   time.Duration `json:"cacheTtl" usage:"how long an outbound HTTP response is cached"`
 	StaleAfter time.Duration `json:"staleAfter" usage:"how long a node's workflow metadata counts before it is treated as gone"`
 
-	// ReplayWindow is how long a spent JWT ID is remembered, so that a token
-	// authorises one request rather than every request until it expires.
+	// How long a spent JWT ID is remembered, so a token authorises one request rather
+	// than every request until it expires.
 	ReplayWindow time.Duration `json:"replayWindow" usage:"how long a used auth token's ID is remembered"`
 
-	// MetadataInterval is how often nodes are asked what workflows they run. They
-	// also push it as it changes; this is what notices a gateway that restarted.
+	// Nodes push their metadata as it changes; asking is what catches up a gateway
+	// that restarted.
 	MetadataInterval time.Duration `json:"metadataInterval" usage:"how often nodes are asked which workflows they run"`
 }
 
-// Defaults are what a gateway that says nothing else gets. They are the intervals
-// the gateway runs with today.
+// Defaults are the intervals the gateway runs with today.
 var Defaults = Config{
 	RequestTimeout:   time.Minute,
 	CacheTTL:         10 * time.Minute,
@@ -70,8 +59,6 @@ var Defaults = Config{
 	MetadataInterval: time.Minute,
 }
 
-// Gateway is what a customer's trigger request goes through and what a workflow's
-// outbound request goes out through.
 type Gateway struct {
 	services.Service
 	eng *services.Engine
@@ -84,11 +71,8 @@ type Gateway struct {
 	actions  *actions
 }
 
-// New returns a gateway over the node connections it is given.
-//
-// nodes is the seam: pass the HTTP transport for a gateway that serves a DON over
-// the network, or an in-process one for a run where the nodes are goroutines in
-// this process. Nothing else changes between the two.
+// nodes is the seam: the HTTP transport for a gateway serving a DON over the
+// network, or an in-process one where the nodes are goroutines here.
 func New(lggr logger.Logger, cfg Config, nodes Nodes) (*Gateway, error) {
 	if cfg.GatewayID == "" {
 		return nil, errors.New("a gateway needs an ID: it is what nodes sign their headers for")
@@ -103,8 +87,7 @@ func New(lggr logger.Logger, cfg Config, nodes Nodes) (*Gateway, error) {
 
 	g := &Gateway{lggr: lggr, cfg: cfg, nodes: nodes}
 
-	// F+1, which is what the DON itself calls agreement: enough nodes that at least
-	// one of them is honest.
+	// F+1: enough nodes that at least one of them is honest.
 	agreement := cfg.F + 1
 
 	g.metadata = newMetadata(logger.Named(lggr, "Metadata"), agreement, cfg.StaleAfter)
@@ -168,12 +151,10 @@ func (g *Gateway) keep(ctx context.Context) {
 	}
 }
 
-// pull asks every connected node for the workflows it runs.
 func (g *Gateway) pull(context.Context) {
 	for _, node := range g.nodes.Connected(g.cfg.DonID) {
-		// The ID says which method it is for, before the slash: that is the shape the
-		// capability answering this checks for, and a request it cannot recognise is one
-		// it refuses rather than answers.
+		// The method before the slash is the shape the answering capability checks for;
+		// one it cannot recognise it refuses rather than answers.
 		if err := g.nodes.Send(node, &jsonrpc.Request[json.RawMessage]{
 			Version: jsonrpc.JsonRpcVersion,
 			ID:      gateway.MethodPullWorkflowMetadata + "/" + g.cfg.GatewayID + "/" + time.Now().Format(time.RFC3339Nano),
@@ -184,10 +165,7 @@ func (g *Gateway) pull(context.Context) {
 	}
 }
 
-// HandleNodeMessage is what a node said, and the node it was authenticated as.
-//
-// Which of the gateway's jobs a message belongs to is decided by its method, and
-// nothing here trusts the message about who sent it: the connection established
+// Nothing here trusts the message about who sent it: the connection established
 // that.
 func (g *Gateway) HandleNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) error {
 	switch msg.Method {
@@ -196,17 +174,14 @@ func (g *Gateway) HandleNodeMessage(ctx context.Context, donID, node string, msg
 	case gateway.MethodPushWorkflowMetadata, gateway.MethodPullWorkflowMetadata:
 		return g.recordMetadata(node, msg)
 	default:
-		// Anything else is an answer to something this gateway asked a node to do, which
-		// today is only ever a trigger.
+		// An answer to something this gateway asked for, which today is only a trigger.
 		return g.triggers.Answer(node, msg)
 	}
 }
 
-// recordMetadata takes a node's account of the workflows it runs.
-//
-// A push carries one workflow and a pull's answer carries a batch of them, so
-// both shapes are read here: which of the two it is is the node's business, not
-// the gateway's, and either way it is workflows this node runs.
+// A push carries one workflow and a pull's answer carries a batch, so both shapes
+// are read: which it is is the node's business, and either way it is what that
+// node runs.
 func (g *Gateway) recordMetadata(node string, msg *jsonrpc.Response[json.RawMessage]) error {
 	if msg.Result == nil {
 		return fmt.Errorf("node %s sent workflow metadata with no payload", node)
@@ -223,8 +198,7 @@ func (g *Gateway) recordMetadata(node string, msg *jsonrpc.Response[json.RawMess
 	return g.metadata.Record(node, reported)
 }
 
-// ServeHTTP is the customer's end: a JSON-RPC request in, a JSON-RPC response
-// out, on the path the gateway serves today.
+// ServeHTTP is the customer's end, on the path the gateway serves today.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "this endpoint takes JSON-RPC over POST", http.StatusMethodNotAllowed)
@@ -249,13 +223,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, g.Handle(r.Context(), &req))
 }
 
-// Handle is the same thing without the HTTP: it is what ServeHTTP does, and what
-// an in-process caller uses instead of dialling itself.
+// Handle is what an in-process caller uses instead of dialling itself.
 func (g *Gateway) Handle(ctx context.Context, req *jsonrpc.Request[json.RawMessage]) *jsonrpc.Response[json.RawMessage] {
 	return g.triggers.Handle(ctx, req)
 }
 
-// Routes registers the customer-facing route on mux.
 func (g *Gateway) Routes(mux *http.ServeMux) {
 	mux.Handle("POST "+wire.PathUser, g)
 }

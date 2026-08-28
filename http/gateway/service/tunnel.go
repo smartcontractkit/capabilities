@@ -19,31 +19,24 @@ import (
 	"github.com/smartcontractkit/capabilities/http/gateway/auth"
 )
 
-// Tunnel is the gateway as a proxy: a node asks for a connection to a host, and
-// the gateway carries bytes it cannot read.
+// Tunnel is what a workflow gets when it turns the cache off.
 //
-// This is what a workflow gets when it turns the cache off. With the cache on,
-// the gateway fetches on the DON's behalf and every node is served the same
-// answer - which means the gateway sees the request and the response. With it
-// off, each node was always going to get its own answer anyway, so there is
-// nothing to be gained by the gateway being in the middle of it: it opens the
-// socket and stands back, and the node runs its own TLS to the far side. The
-// gateway learns the host and port, the timing and the byte counts. Not the
+// With the cache on the gateway fetches for the DON, so that every node is served
+// the same answer - and so the gateway sees the request and the response. With it
+// off each node was always going to get its own answer anyway, so there is
+// nothing to gain by the gateway being in the middle: it opens the socket and
+// stands back. It learns the host, the timing and the byte counts. Not the
 // content, and not enough to change it.
 //
-// Authentication is the handshake, in the place HTTP keeps it: the node's signed
-// header in Proxy-Authorization, a challenge back in a 407, the answer in the
-// retried CONNECT. The same two signatures as the control connection, so a
-// captured header is worth nothing and the hop needs no TLS of its own to be
-// safe.
+// The handshake is the same two signatures as the control connection, which is
+// why a captured header is worth nothing and this hop needs no TLS of its own.
 type Tunnel struct {
 	lggr      logger.Logger
 	gatewayID string
 	verifier  auth.Verifier
 	tolerance time.Duration
 
-	// dial opens the far side. It is a field so a test can watch where a tunnel went
-	// without opening a socket to it.
+	// A field so a test can watch where a tunnel went without opening a socket.
 	dial func(ctx context.Context, address string) (net.Conn, error)
 
 	mu       sync.Mutex
@@ -57,16 +50,13 @@ type tunnelAttempt struct {
 	issued    time.Time
 }
 
-// TunnelConfig is what the proxy needs told.
 type TunnelConfig struct {
 	GatewayID          string
 	TimestampTolerance time.Duration
 
-	// DialTimeout bounds how long opening the far side may take.
 	DialTimeout time.Duration
 }
 
-// NewTunnel returns the proxy half of a gateway.
 func NewTunnel(lggr logger.Logger, cfg TunnelConfig, verifier auth.Verifier) (*Tunnel, error) {
 	if cfg.GatewayID == "" {
 		return nil, errors.New("a gateway needs an ID: it is what nodes sign their headers for")
@@ -94,11 +84,9 @@ func NewTunnel(lggr logger.Logger, cfg TunnelConfig, verifier auth.Verifier) (*T
 	}, nil
 }
 
-// ServeHTTP answers CONNECT, and nothing else.
-//
-// A proxy that also served ordinary requests would be a proxy that could be asked
-// to fetch something on a node's behalf without the DON agreeing to it, which is
-// what the other half of this gateway is for.
+// ServeHTTP answers CONNECT, and nothing else: a proxy that also served ordinary
+// requests could be asked to fetch on a node's behalf without the DON agreeing to
+// it, which is what the other half of this gateway is for.
 func (t *Tunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodConnect {
 		http.Error(w, "this proxy serves CONNECT", http.StatusMethodNotAllowed)
@@ -107,7 +95,7 @@ func (t *Tunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	node, err := t.authenticate(w, r)
 	if err != nil {
-		// Answered by authenticate: either a challenge, or a refusal.
+		// Answered by authenticate, as a challenge or a refusal.
 		t.lggr.Debugw("Refused a tunnel", "err", err, "remote", r.RemoteAddr, "target", r.Host)
 		return
 	}
@@ -146,12 +134,9 @@ func (t *Tunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.lggr.Debugw("Tunnel closed", "node", node, "target", target)
 }
 
-// authenticate is the handshake, in two CONNECTs.
-//
-// The first carries the node's signed header and is answered with 407 and a
-// challenge; the second carries the answer. That is HTTP's own challenge
-// mechanism, so an ordinary proxy client understands the shape of it even though
-// the scheme is ours.
+// authenticate is the handshake, in two CONNECTs: 407 and a challenge, then the
+// answer. HTTP's own challenge mechanism, so an ordinary proxy client understands
+// the shape of it even though the scheme is ours.
 func (t *Tunnel) authenticate(w http.ResponseWriter, r *http.Request) (string, error) {
 	scheme, value, ok := strings.Cut(r.Header.Get("Proxy-Authorization"), " ")
 	if !ok || !strings.EqualFold(scheme, wireScheme) {
@@ -173,8 +158,7 @@ func (t *Tunnel) authenticate(w http.ResponseWriter, r *http.Request) (string, e
 		return "", t.challengeless(w, err.Error())
 	}
 
-	// No answer yet: issue a challenge and let the client come back with it. This is
-	// the round trip that makes a captured header useless.
+	// The round trip that makes a captured header useless.
 	answer, answering := credentials["response"]
 	if !answering {
 		return "", t.challenge(w, claimed.DonID, node)
@@ -207,7 +191,6 @@ func (t *Tunnel) authenticate(w http.ResponseWriter, r *http.Request) (string, e
 	return node, nil
 }
 
-// challenge answers with 407 and something to sign.
 func (t *Tunnel) challenge(w http.ResponseWriter, donID, node string) error {
 	challenge, err := auth.NewChallenge(t.gatewayID, time.Now())
 	if err != nil {
@@ -232,15 +215,12 @@ func (t *Tunnel) challenge(w http.ResponseWriter, donID, node string) error {
 	return errors.New("challenged")
 }
 
-// challengeless refuses without offering a challenge: whatever was wrong is not
-// something another round trip would fix.
+// challengeless refuses: whatever was wrong, another round trip would not fix it.
 func (t *Tunnel) challengeless(w http.ResponseWriter, reason string) error {
 	http.Error(w, reason, http.StatusProxyAuthRequired)
 	return errors.New(reason)
 }
 
-// parseCredentials reads the comma-separated key="value" pairs a proxy
-// authorization carries.
 func parseCredentials(value string) (map[string]string, error) {
 	credentials := map[string]string{}
 	for _, pair := range strings.Split(value, ",") {
@@ -256,8 +236,7 @@ func parseCredentials(value string) (map[string]string, error) {
 	return credentials, nil
 }
 
-// hijack takes the connection out of the server's hands, which is what a tunnel
-// is: after this there is no HTTP left, only bytes.
+// hijack is what a tunnel is: after this there is no HTTP left, only bytes.
 func hijack(w http.ResponseWriter) (net.Conn, error) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
@@ -277,7 +256,6 @@ func hijack(w http.ResponseWriter) (net.Conn, error) {
 	return conn, nil
 }
 
-// pipe carries bytes both ways until either side stops.
 func pipe(client, upstream net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -300,6 +278,5 @@ func pipe(client, upstream net.Conn) {
 	wg.Wait()
 }
 
-// wireScheme is the authorization scheme, the same word the control connection
-// uses.
+// The same word the control connection uses.
 const wireScheme = "CRE"

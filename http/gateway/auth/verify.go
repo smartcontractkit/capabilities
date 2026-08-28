@@ -89,8 +89,8 @@ func AddressOf(publicKey []byte) (string, error) {
 	return "0x" + hex.EncodeToString(hash.Sum(nil)[12:]), nil
 }
 
-// normalised lowercases addresses so that two spellings of one account are one
-// account. Nothing here is case-sensitive but hex is written both ways.
+// So that two spellings of one account are one account: nothing here is
+// case-sensitive, but hex is written both ways.
 func normalised(addresses []string) []string {
 	lowered := make([]string, 0, len(addresses))
 	for _, address := range addresses {
@@ -99,15 +99,11 @@ func normalised(addresses []string) []string {
 	return lowered
 }
 
-// Recover says which account signed hash.
+// Recover takes the 65-byte form everything in this system uses: r, s, and a
+// recovery byte of 0 or 1. dcrd wants that byte first and offset by 27.
 //
-// The signature is the 65-byte form everything in this system uses: r, s, and a
-// recovery byte of 0 or 1. dcrd wants that byte first and offset by 27, which is
-// the only difference between the two spellings of the same thing.
-//
-// It is here rather than borrowed from a chain library because this package is
-// about identity, and because a repository that is not about one chain should not
-// take a chain's client to check a signature.
+// Here rather than borrowed from a chain library, because a repository that is
+// not about one chain should not take a chain's client to check a signature.
 func Recover(hash, signature []byte) (string, error) {
 	if len(signature) != SignatureLen {
 		return "", fmt.Errorf("a signature is %d bytes, got %d", SignatureLen, len(signature))
@@ -140,14 +136,10 @@ func decodeAddress(address string) ([]byte, error) {
 	return hex.DecodeString(trimmed)
 }
 
-// Generated returns a signer over a key made here and now, and the address it
-// signs as.
-//
-// It is for a run with no keystore to borrow from: an embedded DON is instances
-// of a node in one process, and the identity each of them proves to its gateway
-// has to come from somewhere. Making one is honest about what it is - the key
-// lives as long as the process and is written down nowhere - and it keeps the
-// path under test the same path a node takes, signatures and all.
+// Generated is for a run with no keystore to borrow from: an embedded DON still
+// has to prove an identity to its gateway. The key lives as long as the process
+// and is written down nowhere, and the path under test stays the path a node
+// takes, signatures and all.
 func Generated() (SignerFunc, string, error) {
 	key, err := secp256k1.GeneratePrivateKey()
 	if err != nil {

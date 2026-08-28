@@ -15,34 +15,26 @@ import (
 	"github.com/smartcontractkit/capabilities/http/gateway/auth"
 )
 
-// Tunnel dials through a gateway's proxy, so that what travels is between this
-// node and the far side and nothing in between.
-//
-// It is the other end of service.Tunnel: a CONNECT with this node's signed
+// Tunnel is the other end of service.Tunnel: a CONNECT with this node's signed
 // header, a 407 carrying a challenge, and the same CONNECT again with the
 // challenge signed. Two signatures, the same two the control connection makes -
 // which is what lets the hop to the gateway be plaintext without a captured
 // header being worth anything.
 type Tunnel struct {
-	// Gateway is the proxy's address, host:port.
 	Gateway string
 
-	// GatewayID, DonID and Signer are this node's side of the handshake, the same
-	// three the control connection uses.
+	// This node's side of the handshake, the same three the control connection uses.
 	GatewayID string
 	DonID     string
 	Signer    auth.Signer
 
-	// Dial opens the hop to the gateway. Nil dials TCP, which is what a caller
-	// wants unless it is a test.
+	// Nil dials TCP, which is what a caller wants unless it is a test.
 	Dial func(ctx context.Context, address string) (net.Conn, error)
 }
 
-// DialContext opens a connection to address through the gateway.
-//
-// It is shaped to be an http.Transport's DialContext, which is how a node's HTTP
-// client is pointed at the proxy: the client then runs its own TLS through the
-// tunnel, and the gateway carries bytes it cannot read.
+// DialContext is shaped to be an http.Transport's DialContext, which is how a
+// node's HTTP client is pointed at the proxy: the client runs its own TLS through
+// the tunnel, and the gateway carries bytes it cannot read.
 func (t *Tunnel) DialContext(ctx context.Context, _, address string) (net.Conn, error) {
 	dial := t.Dial
 	if dial == nil {
@@ -64,7 +56,6 @@ func (t *Tunnel) DialContext(ctx context.Context, _, address string) (net.Conn, 
 	return conn, nil
 }
 
-// handshake is the two CONNECTs.
 func (t *Tunnel) handshake(ctx context.Context, conn net.Conn, address string) error {
 	header, err := t.header()
 	if err != nil {
@@ -73,25 +64,21 @@ func (t *Tunnel) handshake(ctx context.Context, conn net.Conn, address string) e
 
 	reader := bufio.NewReader(conn)
 
-	// The first CONNECT carries who this node is; a gateway that has not seen it
-	// before answers with something to sign.
 	resp, err := t.connect(ctx, conn, reader, address, credentials(header, "", ""))
 	if err != nil {
 		return err
 	}
 
 	if resp.StatusCode == http.StatusOK {
-		// A gateway that asked for no challenge is not one this node should be talking
-		// to: without it, the header it just sent could be replayed by anyone who saw it.
+		// Without a challenge the header just sent could be replayed by anyone who saw it.
 		return errors.New("the gateway accepted a tunnel without a challenge")
 	}
 	if resp.StatusCode != http.StatusProxyAuthRequired {
 		return fmt.Errorf("the gateway refused a tunnel to %s: %s", address, resp.Status)
 	}
 
-	// A 407 with nothing to sign is a refusal rather than a challenge: whatever was
-	// wrong with the header - an unknown node, a stale timestamp - another round trip
-	// would not fix.
+	// A 407 with nothing to sign is a refusal: an unknown node, a stale timestamp -
+	// whatever it was, another round trip would not fix it.
 	authenticate := resp.Header.Get("Proxy-Authenticate")
 	if authenticate == "" {
 		return fmt.Errorf("the gateway refused a tunnel to %s: %s", address, refusal(resp))
@@ -120,7 +107,6 @@ func (t *Tunnel) handshake(ctx context.Context, conn net.Conn, address string) e
 	return nil
 }
 
-// connect writes one CONNECT and reads its answer.
 func (t *Tunnel) connect(ctx context.Context, conn net.Conn, reader *bufio.Reader, address, authorization string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "http://"+address, nil)
 	if err != nil {
@@ -145,7 +131,6 @@ func (t *Tunnel) connect(ctx context.Context, conn net.Conn, reader *bufio.Reade
 	return resp, nil
 }
 
-// refusal is what the gateway said about why, for an error a caller can act on.
 func refusal(resp *http.Response) string {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 	if reason := strings.TrimSpace(string(body)); reason != "" {
@@ -154,8 +139,7 @@ func refusal(resp *http.Response) string {
 	return resp.Status
 }
 
-// header is this node's signed claim about itself, the same bytes the control
-// connection sends.
+// header is the same bytes the control connection sends.
 func (t *Tunnel) header() (string, error) {
 	packed, err := auth.PackHeader(auth.Header{
 		Timestamp: uint32(time.Now().Unix()), //#nosec G115 - seconds since the epoch, until 2106
@@ -184,7 +168,6 @@ func credentials(header, attempt, response string) string {
 	return "CRE " + strings.Join(pairs, ", ")
 }
 
-// parseChallenge reads what the gateway wants signed.
 func parseChallenge(header string) (string, []byte, error) {
 	scheme, value, ok := strings.Cut(header, " ")
 	if !ok || !strings.EqualFold(scheme, "CRE") {

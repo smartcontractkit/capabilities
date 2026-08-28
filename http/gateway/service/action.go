@@ -19,22 +19,16 @@ import (
 	gateway "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
-// actions is the outbound half: a workflow's node asks the gateway to make an
-// HTTP request, and the gateway makes it.
+// actions is why the gateway fetches at all: the nodes of a DON have to agree on
+// what the internet said, and cannot if each asks separately and gets a different
+// answer. One request is made, cached, and served to every node that asks - which
+// is what the cache is for, rather than saving traffic.
 //
-// Why the gateway makes it at all: the nodes of a DON have to agree on what the
-// internet said, and they cannot agree if each of them asks separately and gets a
-// different answer. So one request is made, cached, and served to every node that
-// asks for it - which is what the cache is for, rather than saving traffic.
-//
-// A workflow that turns the cache off is saying it does not need that: see
-// tunnel, where the gateway stops being the one who fetches and becomes the one
-// who lets the node fetch for itself, without seeing what passes.
+// A workflow that turns the cache off is saying it does not need that: see tunnel.
 type actions struct {
 	lggr   logger.Logger
 	client *http.Client
 
-	// send hands a result back to the node that asked for it.
 	send func(node string, req *jsonrpc.Request[json.RawMessage]) error
 
 	cache *responseCache

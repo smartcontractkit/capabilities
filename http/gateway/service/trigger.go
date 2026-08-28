@@ -15,35 +15,27 @@ import (
 	"github.com/smartcontractkit/capabilities/http/gateway/jwt"
 )
 
-// triggers is the customer-facing half: a request arrives, the DON runs it, and
-// the answer the DON agrees on goes back.
-//
-// "Agrees on" is the part that cannot be skipped. Each node answers for itself,
-// and a single node's answer is one node's word - so the gateway waits for F+1
-// nodes to say the same thing before it says anything to the customer. That is
-// what the gateway does today, and it is why a compromised node cannot make up an
-// execution ID.
+// triggers waits for the DON to agree, which is the part that cannot be skipped:
+// each node answers for itself, and one node's answer is one node's word. F+1
+// saying the same thing is why a compromised node cannot make up an execution ID.
 type triggers struct {
 	lggr     logger.Logger
 	metadata *metadata
 	send     func(node string, req *jsonrpc.Request[json.RawMessage]) error
 	nodes    func() []string
 
-	// agreement is F+1: how many identical answers make an answer.
 	agreement int
 
-	// timeout bounds how long a customer waits for that agreement.
 	timeout time.Duration
 
-	// replay remembers the JWT IDs already spent, so a token authorises one request
-	// rather than as many as anyone who saw it cares to make.
+	// So a token authorises one request rather than as many as anyone who saw it
+	// cares to make.
 	replay *replayCache
 
 	mu      sync.Mutex
 	pending map[string]*exchange
 }
 
-// exchange is one customer request, waiting for the DON.
 type exchange struct {
 	// answers is digest -> how many nodes gave it, and which nodes have answered at
 	// all, so that a node cannot vote twice.

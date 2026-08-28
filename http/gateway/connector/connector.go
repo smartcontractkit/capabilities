@@ -1,14 +1,9 @@
 // Package connector is the node's end of the gateway connection.
 //
-// It is what the capabilities in this binary are handed: they add handlers for
-// the JSON-RPC methods they answer, and they send messages back. That interface
-// (core.GatewayConnector) is the one a node hands a capability today, so the
-// capabilities did not have to change to move off the websocket - only this did.
-//
-// What replaces the websocket is a kept-alive HTTP connection carrying three
-// kinds of request: the handshake that proves who this node is, a long-poll that
-// the gateway answers when it has something for this node, and a post for what
-// this node has to say back. See package wire.
+// It implements core.GatewayConnector, the interface a node hands a capability
+// today, so the capabilities did not have to change to move off the websocket -
+// only this did. What replaces the socket is a kept-alive HTTP connection: see
+// package wire.
 package connector
 
 import (
@@ -40,33 +35,26 @@ import (
 	"github.com/smartcontractkit/capabilities/http/gateway/wire"
 )
 
-// Config is where the gateways are and who this node says it is.
 type Config struct {
-	// NodeAddress is the account this node is known by, 0x-prefixed. The gateway
-	// recognises it because the DON's membership lists it, and this process proves it
-	// by signing with the matching key - which lives in crecore, not here.
+	// The gateway recognises it because the DON's membership lists it, and this
+	// process proves it by signing with the matching key - which lives in crecore.
 	NodeAddress string `json:"nodeAddress" usage:"the account this node authenticates to gateways as; its key is held by the keystore this process signs through"`
 
-	// DonID is the DON this node belongs to, as the gateway knows it.
 	DonID string `json:"donId" usage:"the DON this node belongs to, as its gateways know it"`
 
-	// Gateways are the gateways to connect to, as id=url pairs. A node stays
-	// connected to all of them, and a request is answered by whichever one asked.
+	// A node stays connected to all of them, and a request is answered by whichever
+	// one asked.
 	Gateways []string `json:"gateways" usage:"gateways to connect to, as id=url pairs" example:"['gateway_1=http://localhost:5002']"`
 
-	// ReceiveTimeout is how long a long-poll waits before coming back empty, and
-	// RetryInterval how long to wait after a failed attempt before trying again.
 	ReceiveTimeout time.Duration `json:"receiveTimeout" usage:"how long a poll for gateway requests waits before returning empty"`
 	RetryInterval  time.Duration `json:"retryInterval" usage:"how long to wait before reconnecting to a gateway that failed"`
 }
 
-// Defaults are what a node that says nothing else gets.
 var Defaults = Config{
 	ReceiveTimeout: wire.DefaultReceiveTimeout,
 	RetryInterval:  5 * time.Second,
 }
 
-// Connector is the node's connection to its gateways.
 type Connector struct {
 	services.Service
 	eng *services.Engine
@@ -76,15 +64,12 @@ type Connector struct {
 	signer auth.Signer
 	client *http.Client
 
-	// gateways is id -> base URL, from Config.Gateways.
 	gateways map[string]string
 
-	// handlers is method -> handler, added by the capabilities as they start.
 	handlersMu sync.RWMutex
 	handlers   map[string]core.GatewayConnectorHandler
 
-	// sessions is gatewayID -> the token that connection is authenticated by, and
-	// connected closes as each gateway's first handshake succeeds so that a caller
+	// connected closes as each gateway's first handshake succeeds, so that a caller
 	// can wait for one.
 	sessionsMu sync.RWMutex
 	sessions   map[string]string
@@ -93,7 +78,6 @@ type Connector struct {
 
 var _ core.MultiGatewayConnector = (*Connector)(nil)
 
-// New returns the connector, not yet connected.
 func New(lggr logger.Logger, cfg Config, signer auth.Signer) (*Connector, error) {
 	if cfg.NodeAddress == "" {
 		return nil, errors.New("a gateway connector needs --gateway.node-address: it is the identity the gateway knows this node by")
@@ -134,13 +118,10 @@ func New(lggr logger.Logger, cfg Config, signer auth.Signer) (*Connector, error)
 			}
 			return waiters
 		}(),
-		// HTTP/2, and its own transport.
-		//
 		// HTTP/2 because everything this node says to one gateway has to travel on one
 		// connection: the gateway pins a session to the connection that proved who this
 		// node is, and under HTTP/1.1 the long-poll would hold a connection while the
-		// answers to it opened others. Multiplexed streams make "one connection" true
-		// again without holding anything up.
+		// answers to it opened others.
 		//
 		// Its own, because the default transport is shared by everything in the process -
 		// so two connectors would share connections, and with them each other's sessions.
@@ -162,8 +143,7 @@ func (c *Connector) start(context.Context) error {
 	return nil
 }
 
-// serve keeps one gateway connection alive: handshake, then poll for work until
-// something breaks, then handshake again.
+// serve keeps one gateway connection alive, handshaking again when it breaks.
 func (c *Connector) serve(ctx context.Context, gatewayID string) {
 	for ctx.Err() == nil {
 		if err := c.session(ctx, gatewayID); err != nil {
@@ -180,7 +160,6 @@ func (c *Connector) serve(ctx context.Context, gatewayID string) {
 	}
 }
 
-// session handshakes and then polls until the connection fails.
 func (c *Connector) session(ctx context.Context, gatewayID string) error {
 	token, err := c.handshake(ctx, gatewayID)
 	if err != nil {
@@ -209,8 +188,8 @@ func (c *Connector) session(ctx context.Context, gatewayID string) error {
 	return ctx.Err()
 }
 
-// handshake is the two round trips that prove this node's identity: a signed
-// header saying who and when, and a signature over the gateway's challenge.
+// handshake proves this node's identity: a signed header saying who and when,
+// and a signature over the gateway's challenge.
 func (c *Connector) handshake(ctx context.Context, gatewayID string) (string, error) {
 	header, err := auth.PackHeader(auth.Header{
 		Timestamp: uint32(time.Now().Unix()), //#nosec G115 - seconds since the epoch, until 2106
@@ -230,8 +209,7 @@ func (c *Connector) handshake(ctx context.Context, gatewayID string) (string, er
 		return "", err
 	}
 
-	// Checked before signing: the challenge names the gateway that issued it, and a
-	// node should not sign for a gateway it did not mean to talk to.
+	// Before signing: a node should not sign for a gateway it did not mean to reach.
 	challenge, err := auth.UnpackChallenge(reply.Challenge)
 	if err != nil {
 		return "", err
@@ -256,8 +234,7 @@ func (c *Connector) handshake(ctx context.Context, gatewayID string) (string, er
 	return finished.Token, nil
 }
 
-// receive holds a request open until the gateway has something for this node,
-// then hands it to whichever handler registered that method.
+// receive holds a request open until the gateway has something for this node.
 func (c *Connector) receive(ctx context.Context, gatewayID, token string) error {
 	var envelope wire.Envelope
 	empty, err := c.poll(ctx, gatewayID, token, &envelope)
@@ -279,8 +256,8 @@ func (c *Connector) receive(ctx context.Context, gatewayID, token string) error 
 		return nil
 	}
 
-	// Handled without holding the poll: the handler answers by sending, which is its
-	// own request, and this node should be waiting for the next message meanwhile.
+	// Without holding the poll: the handler answers with a request of its own, and
+	// this node should be waiting for the next message meanwhile.
 	c.eng.Go(func(ctx context.Context) {
 		if err := handler.HandleGatewayMessage(ctx, gatewayID, &request); err != nil {
 			c.lggr.Errorw("Handler rejected a gateway message", "gateway", gatewayID, "method", request.Method, "err", err)
@@ -289,7 +266,6 @@ func (c *Connector) receive(ctx context.Context, gatewayID, token string) error 
 	return nil
 }
 
-// AddHandler registers a handler for the methods it answers.
 func (c *Connector) AddHandler(_ context.Context, methods []string, handler core.GatewayConnectorHandler) error {
 	if handler == nil {
 		return errors.New("a handler is required")
@@ -319,11 +295,9 @@ func (c *Connector) RemoveHandler(_ context.Context, methods []string) error {
 	return nil
 }
 
-// SendToGateway sends a signed message to one gateway.
-//
 // Everything a node says is a JSON-RPC response, including what starts an
 // exchange: a request to fetch a URL is a response the gateway then answers with
-// a request of its own. That is the shape the websocket carried and the shape the
+// a request of its own. The shape the websocket carried, and the shape the
 // capabilities are written against.
 func (c *Connector) SendToGateway(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
 	token, err := c.token(ctx, gatewayID)
@@ -338,8 +312,7 @@ func (c *Connector) SendToGateway(ctx context.Context, gatewayID string, resp *j
 	return c.post(ctx, gatewayID, wire.PathSend, token, wire.Envelope{GatewayID: gatewayID, Message: message}, nil)
 }
 
-// SignMessage signs on this node's behalf, for a capability that has something of
-// its own to sign.
+// SignMessage is for a capability that has something of its own to sign.
 func (c *Connector) SignMessage(ctx context.Context, msg []byte) ([]byte, error) {
 	return c.signer.Sign(ctx, auth.Hash(msg))
 }
@@ -348,8 +321,8 @@ func (c *Connector) GatewayIDs(context.Context) ([]string, error) {
 	return slices.Sorted(maps.Keys(c.gateways)), nil
 }
 
-// GatewayIDsForDon is every gateway this node has: a node in this shape belongs
-// to one DON, and its gateways all serve it.
+// Every gateway this node has: a node in this shape belongs to one DON, and its
+// gateways all serve it.
 func (c *Connector) GatewayIDsForDon(ctx context.Context, _ string) ([]string, error) {
 	return c.GatewayIDs(ctx)
 }
@@ -362,7 +335,6 @@ func (c *Connector) DonIDForGateway(context.Context, string) (string, error) {
 
 func (c *Connector) PrimaryDonID(context.Context) (string, error) { return c.cfg.DonID, nil }
 
-// AwaitConnection waits until this node has handshaked with gatewayID.
 func (c *Connector) AwaitConnection(ctx context.Context, gatewayID string) error {
 	c.sessionsMu.RLock()
 	waiter, known := c.connected[gatewayID]
@@ -379,7 +351,6 @@ func (c *Connector) AwaitConnection(ctx context.Context, gatewayID string) error
 	}
 }
 
-// token is the session token for a gateway this node has already handshaked with.
 func (c *Connector) token(ctx context.Context, gatewayID string) (string, error) {
 	c.sessionsMu.RLock()
 	token, ok := c.sessions[gatewayID]
@@ -396,7 +367,6 @@ func (c *Connector) token(ctx context.Context, gatewayID string) (string, error)
 	return c.sessions[gatewayID], nil
 }
 
-// post sends one request to a gateway, with an optional body and reply.
 func (c *Connector) post(ctx context.Context, gatewayID, path, authorization string, body, reply any) error {
 	var payload io.Reader
 	if body != nil {
@@ -431,9 +401,8 @@ func (c *Connector) post(ctx context.Context, gatewayID, path, authorization str
 	return json.NewDecoder(resp.Body).Decode(reply)
 }
 
-// poll holds a request open until the gateway has a message, and reports whether
-// it came back with nothing - which is the ordinary outcome of a quiet minute,
-// not a failure.
+// poll reports whether the request came back with nothing, which is the ordinary
+// outcome of a quiet minute rather than a failure.
 func (c *Connector) poll(ctx context.Context, gatewayID, token string, envelope *wire.Envelope) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.ReceiveTimeout*2)
 	defer cancel()
@@ -460,14 +429,9 @@ func (c *Connector) poll(ctx context.Context, gatewayID, token string, envelope 
 	}
 }
 
-// transport dials one connection per gateway and multiplexes over it, whether or
-// not the hop is encrypted.
-//
-// A plaintext gateway is reached with prior-knowledge HTTP/2 - h2c - because
-// there is no TLS to negotiate the protocol with. That is not a downgrade: the
-// handshake proves identity by signature over a challenge, so the hop being
-// readable costs the same as it does for the proxy tunnel, which is nothing that
-// matters here.
+// A plaintext gateway is reached with prior-knowledge HTTP/2 - h2c - because there
+// is no TLS to negotiate the protocol with. Not a downgrade: identity is proved by
+// signature over a challenge, so a readable hop costs nothing that matters here.
 func transport() http.RoundTripper {
 	plaintext := &http2.Transport{
 		AllowHTTP: true,
@@ -478,8 +442,8 @@ func transport() http.RoundTripper {
 	return &schemeTransport{plaintext: plaintext, encrypted: &http2.Transport{}}
 }
 
-// schemeTransport picks the dialling by the URL: https gets TLS and the protocol
-// negotiated in it, http gets prior-knowledge HTTP/2.
+// https gets TLS and the protocol negotiated in it, http gets prior-knowledge
+// HTTP/2.
 type schemeTransport struct {
 	plaintext *http2.Transport
 	encrypted *http2.Transport
@@ -501,7 +465,6 @@ func authorization(header []byte) string {
 	return base64.StdEncoding.EncodeToString(header)
 }
 
-// parseGateways reads the id=url pairs a node is configured with.
 func parseGateways(pairs []string) (map[string]string, error) {
 	gateways := make(map[string]string, len(pairs))
 	for _, pair := range pairs {
@@ -514,14 +477,12 @@ func parseGateways(pairs []string) (map[string]string, error) {
 	return gateways, nil
 }
 
-// Tunnel opens a connection to address through gatewayID's proxy.
+// Tunnel is how the action capability reaches the internet when a workflow turned
+// the cache off: the gateway opens the socket and carries the bytes, and the TLS
+// the caller runs over it is between the caller and the far side.
 //
-// It is how the action capability reaches the internet when a workflow turned the
-// cache off: the gateway opens the socket and carries the bytes, and the TLS the
-// caller runs over what comes back is between it and the far side. The proxy is
-// on the same address as the control traffic - see the gateway's node listener -
-// so a node that can talk to a gateway can tunnel through it, with no second
-// setting to keep in step with the first.
+// The proxy is on the same address as the control traffic, so a node that can talk
+// to a gateway can tunnel through it with no second setting to keep in step.
 func (c *Connector) Tunnel(ctx context.Context, gatewayID, address string) (net.Conn, error) {
 	url, known := c.gateways[gatewayID]
 	if !known {
@@ -542,8 +503,7 @@ func (c *Connector) Tunnel(ctx context.Context, gatewayID, address string) (net.
 	return tunnel.DialContext(ctx, "tcp", address)
 }
 
-// hostPort is the address to dial for a gateway's URL, with the port its scheme
-// implies when it names none.
+// hostPort supplies the port a gateway's scheme implies when its URL names none.
 func hostPort(gateway string) (string, error) {
 	parsed, err := neturl.Parse(gateway)
 	if err != nil {
