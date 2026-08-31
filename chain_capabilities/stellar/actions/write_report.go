@@ -70,6 +70,12 @@ func (s *Stellar) WriteReport(
 		capErr := capcommon.GetError(err, isUserError)
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
 			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", capErr))
+		if reply != nil || len(meteringMeta.Metering) > 0 {
+			return &capabilities.ResponseAndMetadata[*stellarcap.WriteReportReply]{
+				Response:         reply,
+				ResponseMetadata: meteringMeta,
+			}, capErr
+		}
 		return nil, capErr
 	}
 
@@ -224,6 +230,7 @@ func (wr *writeReport) execute(
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
 	}
+	ownMeteringMetadata := wr.meteringFromSubmitResponse(submitResp)
 
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
@@ -244,7 +251,7 @@ func (wr *writeReport) execute(
 		txHash, lookupErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if lookupErr == nil {
 			reply, buildErr := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
-			return reply, wr.meteringFromReply(reply), buildErr
+			return reply, ownMeteringMetadata, buildErr
 		}
 
 		wr.lggr.Errorw(
@@ -255,7 +262,7 @@ func (wr *writeReport) execute(
 			"localTxStatus", submitResp.TxStatus,
 		)
 
-		return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), errors.New("failed to retrieve transmission outcome after report submission")
+		return nil, ownMeteringMetadata, errors.New("failed to retrieve transmission outcome after report submission")
 	}
 
 	switch postInfo.State {
@@ -264,7 +271,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			// A submit occurred and was paid for; bill the local submit hash even though
 			// the canonical successful tx hash could not be resolved.
-			return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), err
+			return nil, ownMeteringMetadata, err
 		}
 		if submitResp.TxStatus != stellartypes.TxSuccess && submitResp.TxHash != "" && submitResp.TxHash != txHash {
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission succeeded, but local submit did not confirm (likely duplicate)",
@@ -272,7 +279,7 @@ func (wr *writeReport) execute(
 				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, submitResp.TxHash, txHash))
 		}
 		reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
-		return reply, wr.meteringFromReply(reply), err
+		return reply, ownMeteringMetadata, err
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
@@ -281,7 +288,7 @@ func (wr *writeReport) execute(
 			} else {
 				wr.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve failed transmission tx hash", "error", err, "localTxHash", submitResp.TxHash)
 			}
-			return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), err
+			return nil, ownMeteringMetadata, err
 		}
 		if submitResp.TxHash != "" && submitResp.TxHash != txHash {
 			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission failed, but local submit hash differs from canonical failed transmission",
@@ -291,13 +298,13 @@ func (wr *writeReport) execute(
 		wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", txHash, "transmissionState", postInfo.State)
 		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, postInfo, transmissionID)
 		if err != nil {
-			return nil, wr.meteringFromReply(reply), revertReplyBuildError(postInfo, transmissionID, err)
+			return nil, ownMeteringMetadata, revertReplyBuildError(postInfo, transmissionID, err)
 		}
-		return reply, wr.meteringFromReply(reply), nil
+		return reply, ownMeteringMetadata, nil
 	default:
 		wr.lggr.Errorw("Invalid transmission state after submit", "state", postInfo.State, "localTxStatus", submitResp.TxStatus)
 		wr.emitInvalidTransmissionState(ctx, request, telemetryContext, postInfo, transmissionID, "WriteReport invalid transmission state after submit", invalidTransmissionStateError(postInfo.State).Error())
-		return nil, wr.meteringFromSubmitHash(ctx, submitResp.TxHash), invalidTransmissionStateError(postInfo.State)
+		return nil, ownMeteringMetadata, invalidTransmissionStateError(postInfo.State)
 	}
 }
 
@@ -451,11 +458,19 @@ func (wr *writeReport) pollTransmissionInfo(
 	}
 }
 
-func (wr *writeReport) meteringFromReply(reply *stellarcap.WriteReportReply) capabilities.ResponseMetadata {
-	if reply == nil || reply.TransactionFee == nil {
-		return capabilities.ResponseMetadata{}
+func (wr *writeReport) meteringFromSubmitResponse(submitResp *stellartypes.SubmitTransactionResponse) capabilities.ResponseMetadata {
+	if submitResp == nil {
+		wr.lggr.Errorw("Submitted transaction returned nil response; using zero for metering")
+		return metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
 	}
-	return metering.GetResponseMetadataWriteReport(*reply.TransactionFee, wr.chainSelector)
+	if submitResp.TransactionFee == nil {
+		wr.lggr.Errorw("Submitted transaction fee is unavailable; using zero for metering",
+			"txHash", submitResp.TxHash,
+			"txStatus", submitResp.TxStatus,
+		)
+		return metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
+	}
+	return metering.GetResponseMetadataWriteReport(*submitResp.TransactionFee, wr.chainSelector)
 }
 
 func (wr *writeReport) checkEstimatedSpendLimit(metadata capabilities.RequestMetadata, estimatedFeeStroops uint64) error {
@@ -480,20 +495,6 @@ func (wr *writeReport) checkEstimatedSpendLimit(metadata capabilities.RequestMet
 		return fmt.Errorf("insufficient CRE funds: current limit is %s, estimated resource fee %d", limitStr, estimatedFeeStroops)
 	}
 	return nil
-}
-
-// meteringFromSubmitHash returns fee metering for a submitted tx, or zero if lookup fails.
-func (wr *writeReport) meteringFromSubmitHash(ctx context.Context, txHash string) capabilities.ResponseMetadata {
-	if txHash == "" {
-		return metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
-	}
-	txResp, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (stellartypes.GetTransactionResponse, error) {
-		return wr.service.GetTransaction(ctx, stellartypes.GetTransactionRequest{TxHash: txHash})
-	})
-	if err != nil || txResp.FeeStroops == 0 {
-		return metering.GetResponseMetadataWriteReport(0, wr.chainSelector)
-	}
-	return metering.GetResponseMetadataWriteReport(txResp.FeeStroops, wr.chainSelector)
 }
 
 func invalidTransmissionStateError(state TransmissionState) error {

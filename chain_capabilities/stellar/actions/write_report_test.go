@@ -269,7 +269,10 @@ func reportProcessedEventXDR(t *testing.T, transmissionID TransmissionID, succes
 }
 
 func successSubmitResp() *stellartypes.SubmitTransactionResponse {
-	fee := testFee
+	return successSubmitRespWithFee(testFee)
+}
+
+func successSubmitRespWithFee(fee uint64) *stellartypes.SubmitTransactionResponse {
 	ts := testBlockTimestamp
 	return &stellartypes.SubmitTransactionResponse{
 		TxStatus:       stellartypes.TxSuccess,
@@ -309,23 +312,17 @@ func reportProcessedEventsForFixture(t *testing.T, rm ocrtypes.Metadata, receive
 
 func (h *writeReportHelper) expectGetTransaction(t *testing.T) {
 	t.Helper()
+	h.expectGetTransactionWithFee(t, testFee)
+}
+
+func (h *writeReportHelper) expectGetTransactionWithFee(t *testing.T, fee uint64) {
+	t.Helper()
 	h.svc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
 		Return(stellartypes.GetTransactionResponse{
-			FeeStroops:      testFee,
+			FeeStroops:      fee,
 			LedgerSequence:  100,
 			LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
 		}, nil).Once()
-}
-
-// expectGetTransactionMaybe sets up a non-strict GetTransaction expectation for error paths that bill the local submit hash.
-func (h *writeReportHelper) expectGetTransactionMaybe(t *testing.T) {
-	t.Helper()
-	h.svc.EXPECT().GetTransaction(mock.Anything, mock.Anything).
-		Return(stellartypes.GetTransactionResponse{
-			FeeStroops:      testFee,
-			LedgerSequence:  100,
-			LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
-		}, nil).Maybe()
 }
 
 func (h *writeReportHelper) expectObservedTxHashLookup(t *testing.T, rm ocrtypes.Metadata, receiver string, eventSuccess bool) {
@@ -638,22 +635,28 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 func TestWriteReport_HappyPath(t *testing.T) {
 	t.Parallel()
 
-	t.Run("fresh submit succeeds - reply contains hash, fee and metering", func(t *testing.T) {
+	t.Run("fresh submit succeeds - reply uses canonical tx and metering uses own submit fee", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		rm, reqMeta, req := newWRReportFixture(t)
 		h.expectSigningAccount(t, reqMeta, req)
+		ownFee := uint64(7_777)
+		canonicalFee := uint64(9_999)
 
 		// Call 1: pre-submit get_transmission_info → NotAttempted
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		// TXM submit → success with fee
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
-			Return(successSubmitResp(), nil).Once()
+			Return(successSubmitRespWithFee(ownFee), nil).Once()
 		// Call 3: post-submit get_transmission_info → Succeeded
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(succeededXDR(t)), nil).Once()
-		h.expectPostSubmitSuccessTxLookup(t, rm, req.ContractId)
+		h.svc.EXPECT().GetLatestLedger(mock.Anything).
+			Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
+		h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
+			Return(reportProcessedEventsForFixture(t, rm, req.ContractId, true), nil).Once()
+		h.expectGetTransactionWithFee(t, canonicalFee)
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -663,10 +666,10 @@ func TestWriteReport_HappyPath(t *testing.T) {
 		require.NotNil(t, result.Response.TxHash)
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
-		require.Equal(t, testFee, *result.Response.TransactionFee)
+		require.Equal(t, canonicalFee, *result.Response.TransactionFee)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		// Billing metering is populated because this node submitted.
-		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
+		// Billing metering uses this node's submit fee, not the event-derived canonical fee.
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, ownFee)
 	})
 }
 
@@ -704,15 +707,16 @@ func TestWriteReport_Submit(t *testing.T) {
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 		h.expectEventTxHashLookupUnavailable(t)
-		h.expectGetTransactionMaybe(t)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 		defer cancel()
 
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
-		require.Nil(t, result)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
+		require.NotNil(t, result)
+		require.Nil(t, result.Response)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 	})
 
 	t.Run("post-submit shows InvalidReceiver - reply with error message and canonical tx hash", func(t *testing.T) {
@@ -789,15 +793,16 @@ func TestWriteReport_Submit(t *testing.T) {
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(notAttemptedXDR(t)), nil)
 		h.expectEventTxHashLookupUnavailable(t)
-		h.expectGetTransactionMaybe(t)
 
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 		defer cancel()
 
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
-		require.Nil(t, result)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
+		require.NotNil(t, result)
+		require.Nil(t, result.Response)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, 0)
 	})
 
 	t.Run("submit superseded by prior success - post-submit succeeds", func(t *testing.T) {
@@ -1304,15 +1309,16 @@ func TestWriteReport_TxFatalSubmitWithoutCanonicalOutcomeReturnsError(t *testing
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(notAttemptedXDR(t)), nil)
 	h.expectEventTxHashLookupUnavailable(t)
-	h.expectGetTransactionMaybe(t)
 
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(400*time.Millisecond))
 	defer cancel()
 
 	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
-	require.Nil(t, result)
 	require.NotNil(t, capErr)
 	require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
+	require.NotNil(t, result)
+	require.Nil(t, result.Response)
+	validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, 0)
 }
 
 func TestReplyBuilders(t *testing.T) {
@@ -1360,13 +1366,6 @@ func TestReplyBuilders(t *testing.T) {
 		)
 		require.Error(t, buildErr)
 		require.Contains(t, buildErr.Error(), unknownIssueExecutingReceiverContractMessage)
-	})
-
-	t.Run("meteringFromReply nil cases", func(t *testing.T) {
-		t.Parallel()
-		wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
-		require.Empty(t, wr.meteringFromReply(nil).Metering)
-		require.Empty(t, wr.meteringFromReply(&stellarcap.WriteReportReply{}).Metering)
 	})
 }
 
@@ -1611,7 +1610,6 @@ func TestWriteReport_EmitsInvalidTransmissionStateAfterSubmitWithStubForwarder(t
 		},
 		invokeOnReportResp: successSubmitResp(),
 	}
-	h.expectGetTransactionMaybe(t)
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
@@ -1718,7 +1716,6 @@ func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(
 		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
 	h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
 		Return(reportProcessedEventsForFixture(t, rm, req.ContractId, true), nil).Once()
-	h.expectGetTransactionMaybe(t)
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
@@ -1810,7 +1807,6 @@ func TestWriteReport_PostSubmitFailed_EventsUnavailable(t *testing.T) {
 	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 		Return(transmissionResp(failedXDR(t)), nil).Once()
 	h.expectEventTxHashLookupUnavailable(t)
-	h.expectGetTransactionMaybe(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
@@ -1893,49 +1889,29 @@ func TestCheckEstimatedSpendLimit(t *testing.T) {
 	})
 }
 
-func TestMeteringFromSubmitHash(t *testing.T) {
+func TestMeteringFromSubmitResponse(t *testing.T) {
 	t.Parallel()
 
-	t.Run("empty tx hash bills zero", func(t *testing.T) {
+	t.Run("submitted fee bills own fee", func(t *testing.T) {
 		t.Parallel()
-		mockSvc := mocks.NewStellarService(t)
 		wr := &writeReport{
-			service:       mockSvc,
 			lggr:          logger.Sugared(logger.Test(t)),
 			chainSelector: testWRChainSelector,
 		}
-		meta := wr.meteringFromSubmitHash(t.Context(), "")
-		require.Len(t, meta.Metering, 1)
-		require.Equal(t, "0", meta.Metering[0].SpendValue)
+		meta := wr.meteringFromSubmitResponse(successSubmitRespWithFee(7_777))
+		validateWRMetering(t, meta, testWRChainSelector, 7_777)
 	})
 
-	t.Run("lookup fails bills zero", func(t *testing.T) {
+	t.Run("nil fee bills explicit zero", func(t *testing.T) {
 		t.Parallel()
-		mockSvc := mocks.NewStellarService(t)
 		wr := &writeReport{
-			service:       mockSvc,
 			lggr:          logger.Sugared(logger.Test(t)),
 			chainSelector: testWRChainSelector,
 		}
-		mockSvc.EXPECT().GetTransaction(mock.Anything, mock.Anything).
-			Return(stellartypes.GetTransactionResponse{}, errors.New("rpc down")).Maybe()
-		meta := wr.meteringFromSubmitHash(t.Context(), testTxHash)
-		require.Len(t, meta.Metering, 1)
-		require.Equal(t, "0", meta.Metering[0].SpendValue)
-	})
-
-	t.Run("successful lookup bills fee", func(t *testing.T) {
-		t.Parallel()
-		mockSvc := mocks.NewStellarService(t)
-		wr := &writeReport{
-			service:       mockSvc,
-			lggr:          logger.Sugared(logger.Test(t)),
-			chainSelector: testWRChainSelector,
-		}
-		mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
-			Return(stellartypes.GetTransactionResponse{FeeStroops: testFee}, nil).Once()
-		meta := wr.meteringFromSubmitHash(t.Context(), testTxHash)
-		require.Len(t, meta.Metering, 1)
-		require.Equal(t, fmt.Sprintf("%d", testFee), meta.Metering[0].SpendValue)
+		meta := wr.meteringFromSubmitResponse(&stellartypes.SubmitTransactionResponse{
+			TxStatus: stellartypes.TxSuccess,
+			TxHash:   testTxHash,
+		})
+		validateWRMetering(t, meta, testWRChainSelector, 0)
 	})
 }
