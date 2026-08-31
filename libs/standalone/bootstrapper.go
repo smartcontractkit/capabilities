@@ -176,7 +176,7 @@ type instantiator func(index, count int, embed bool) instanceServices
 // single supervising service via services.Engine sub-services, so their health is aggregated the
 // same way the rest of the stack does it (services.Config.NewSubServices + HealthReport). It
 // starts them along with a health checker (registered against the aggregated root service), that
-// instance's shared HTTP server (serving /metrics, /debug/pprof, /healthz + /readyz, and whatever
+// instance's shared HTTP server (serving /metrics, /debug/pprof, /livez + /healthz + /readyz, and whatever
 // routes a service registered) and its shared gRPC server, then blocks until an interrupt and
 // closes everything in reverse.
 func (b *Bootstrapper) run(instantiate instantiator, configured, embedded []contract.BootstrapCommand) error {

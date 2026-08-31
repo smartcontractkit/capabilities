@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,6 +46,9 @@ func startWebServer(ctx context.Context, lggr logger.Logger, port uint16, mux *h
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
+	// /livez and /healthz report the same signal: /livez is the kubernetes liveness name, /healthz
+	// the older combined one kept for anything already probing it.
+	mux.HandleFunc("/livez", healthHandler(checker.IsHealthy))
 	mux.HandleFunc("/healthz", healthHandler(checker.IsHealthy))
 	mux.HandleFunc("/readyz", healthHandler(checker.IsReady))
 
@@ -83,21 +88,62 @@ func (w *webServer) Close() error {
 }
 
 // healthHandler adapts a services.HealthChecker.IsHealthy/IsReady-shaped func into
-// an HTTP handler: 200 with each check's status when ok, 503 and the failing
-// checks' errors otherwise.
+// an HTTP handler: 200 when every check passes, 503 otherwise.
+//
+// The body follows the kubernetes convention. By default it is the failing checks' errors, or
+// "ok" when there are none. With ?verbose it is one "[+]name ok" / "[-]name failed: err" line per
+// check - passing ones included - followed by a summary line, so a probe URL can be pasted into a
+// browser to see what a service actually reports.
 func healthHandler(check func() (bool, map[string]error)) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ok, errs := check()
 		if !ok {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-		for name, err := range errs {
-			if err != nil {
-				fmt.Fprintf(w, "%s: %s\n", name, err)
+
+		if !isVerbose(r) {
+			for name, err := range errs {
+				if err != nil {
+					fmt.Fprintf(w, "%s: %s\n", name, err)
+				}
+			}
+			if ok {
+				fmt.Fprintln(w, "ok")
+			}
+			return
+		}
+
+		// Sorted so repeated polls of the same state produce the same body.
+		names := make([]string, 0, len(errs))
+		for name := range errs {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+
+		for _, name := range names {
+			if err := errs[name]; err != nil {
+				fmt.Fprintf(w, "[-]%s failed: %s\n", name, err)
+			} else {
+				fmt.Fprintf(w, "[+]%s ok\n", name)
 			}
 		}
 		if ok {
-			fmt.Fprintln(w, "ok")
+			fmt.Fprintf(w, "%s check passed\n", strings.TrimPrefix(r.URL.Path, "/"))
+		} else {
+			fmt.Fprintf(w, "%s check failed\n", strings.TrimPrefix(r.URL.Path, "/"))
 		}
 	}
+}
+
+// isVerbose reports whether the request asked for per-check output. A bare ?verbose counts, as it
+// does for kubernetes' own endpoints, and so does any value other than an explicit false/0.
+func isVerbose(r *http.Request) bool {
+	if !r.URL.Query().Has("verbose") {
+		return false
+	}
+	switch strings.ToLower(r.URL.Query().Get("verbose")) {
+	case "false", "0", "no", "off":
+		return false
+	}
+	return true
 }

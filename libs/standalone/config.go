@@ -84,7 +84,7 @@ type PyroscopeConfig struct {
 //
 // Every instance serves its own, so under `embed` instance i listens on Port+i.
 type HTTPConfig struct {
-	Port uint16 `usage:"port serving /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers. Instance i of an embed run listens on this port plus i" validate:"required"`
+	Port uint16 `usage:"port serving /metrics, /debug/pprof, /livez, /healthz, /readyz and any routes a service registers. Instance i of an embed run listens on this port plus i" validate:"required"`
 }
 
 // portFor is the port instance i serves on: the configured port plus i, so instances in one
