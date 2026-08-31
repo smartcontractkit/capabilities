@@ -1844,3 +1844,86 @@ func TestReplyFromTransaction_SkipsTelemetryWhenMonitoringDisabled(t *testing.T)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to get transaction")
 }
+
+func TestCheckEstimatedSpendLimit(t *testing.T) {
+	t.Parallel()
+	wr := &writeReport{
+		lggr:          logger.Sugared(logger.Test(t)),
+		chainSelector: testWRChainSelector,
+	}
+	_, reqMeta, _ := newWRReportFixture(t)
+
+	t.Run("no spend limit set - allows request", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, wr.checkEstimatedSpendLimit(reqMeta, 50_000))
+	})
+
+	t.Run("spend limit exceeds estimate - rejects", func(t *testing.T) {
+		t.Parallel()
+		meta := reqMeta
+		meta.SpendLimits = []capabilities.SpendLimit{{
+			SpendType: capabilities.CapabilitySpendType(fmt.Sprintf(metering.WriteReportSpendUnitFormat, testWRChainSelector)),
+			Limit:     "100",
+		}}
+		err := wr.checkEstimatedSpendLimit(meta, 200)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "insufficient CRE funds")
+	})
+
+	t.Run("spend limit covers estimate - allows", func(t *testing.T) {
+		t.Parallel()
+		meta := reqMeta
+		meta.SpendLimits = []capabilities.SpendLimit{{
+			SpendType: capabilities.CapabilitySpendType(fmt.Sprintf(metering.WriteReportSpendUnitFormat, testWRChainSelector)),
+			Limit:     "100000",
+		}}
+		require.NoError(t, wr.checkEstimatedSpendLimit(meta, 50_000))
+	})
+
+	t.Run("invalid spend limit string - rejects", func(t *testing.T) {
+		t.Parallel()
+		meta := reqMeta
+		meta.SpendLimits = []capabilities.SpendLimit{{
+			SpendType: capabilities.CapabilitySpendType(fmt.Sprintf(metering.WriteReportSpendUnitFormat, testWRChainSelector)),
+			Limit:     "not-a-number",
+		}}
+		err := wr.checkEstimatedSpendLimit(meta, 50_000)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid spend limit")
+	})
+}
+
+func TestMeteringFromSubmitHash(t *testing.T) {
+	t.Parallel()
+	mockSvc := mocks.NewStellarService(t)
+	wr := &writeReport{
+		service:       mockSvc,
+		lggr:          logger.Sugared(logger.Test(t)),
+		chainSelector: testWRChainSelector,
+	}
+
+	t.Run("empty tx hash bills zero", func(t *testing.T) {
+		t.Parallel()
+		meta := wr.meteringFromSubmitHash(t.Context(), "")
+		require.Len(t, meta.Metering, 1)
+		require.Equal(t, "0", meta.Metering[0].SpendValue)
+	})
+
+	t.Run("lookup fails bills zero", func(t *testing.T) {
+		t.Parallel()
+		mockSvc.EXPECT().GetTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.GetTransactionResponse{}, errors.New("rpc down")).Maybe()
+		meta := wr.meteringFromSubmitHash(t.Context(), testTxHash)
+		require.Len(t, meta.Metering, 1)
+		require.Equal(t, "0", meta.Metering[0].SpendValue)
+	})
+
+	t.Run("successful lookup bills fee", func(t *testing.T) {
+		t.Parallel()
+		mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
+			Return(stellartypes.GetTransactionResponse{FeeStroops: testFee}, nil).Once()
+		meta := wr.meteringFromSubmitHash(t.Context(), testTxHash)
+		require.Len(t, meta.Metering, 1)
+		require.Equal(t, fmt.Sprintf("%d", testFee), meta.Metering[0].SpendValue)
+	})
+}
