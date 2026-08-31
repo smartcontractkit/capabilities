@@ -261,6 +261,8 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		h.lggr.Errorw("Request cannot be nil", "gatewayID", gatewayID)
 		return
 	}
+	l := logger.With(h.lggr, "gatewayID", gatewayID, "requestID", req.ID, "method", req.Method)
+	l.Debug("Processing trigger request")
 
 	if req.Params == nil {
 		h.lggr.Errorw("No params in request", "gatewayID", gatewayID, "requestID", req.ID)
@@ -272,8 +274,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		h.lggr.Errorw("Failed to unmarshal HTTP trigger request", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
 		return
 	}
-
-	l := logger.With(h.lggr, "gatewayID", gatewayID, "requestID", req.ID, "method", req.Method)
 
 	workflowMetadata, err := h.resolveWorkflowMetadata(triggerReq.Workflow, l)
 	if err != nil {
@@ -357,12 +357,14 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		l.Errorw("Failed to trigger workflow", "error", err)
 		return
 	}
+	l.Debug("Workflow triggered successfully")
 
 	// Emit TriggerExecutionStarted event
 	if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 		l.Errorw("failed to emit trigger execution started event", "error", emitErr)
 	}
 
+	l.Debug("Sending response to gateway")
 	h.sendResponse(ctx, gatewayID, resp)
 
 	err = h.cacheRequestResponse(ctx, req, workflowMetadata.WorkflowID, workflowExecutionID, resp, l)
