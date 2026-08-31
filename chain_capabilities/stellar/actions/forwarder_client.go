@@ -34,6 +34,7 @@ const (
 	TransmissionStateSucceeded
 	TransmissionStateInvalidReceiver
 	TransmissionStateFailed
+	TransmissionStateUnknown
 )
 
 type TransmissionInfo struct {
@@ -77,6 +78,10 @@ func (t TransmissionID) LogAttrs() []any {
 	}
 }
 
+func (t TransmissionID) idempotencyKey() string {
+	return fmt.Sprintf("report:%s:%s:%s", t.Receiver, t.WorkflowExecutionIDHex(), t.ReportIDHex())
+}
+
 // ScheduleKey returns the SHA-256 key used to seed the transmission schedule permutation.
 func (t TransmissionID) ScheduleKey() ([32]byte, error) {
 	receiverBytes, err := strkey.Decode(strkey.VersionByteContract, t.Receiver)
@@ -96,8 +101,10 @@ func (t TransmissionID) ScheduleKey() ([32]byte, error) {
 
 // CREForwarderClient abstracts interaction with the Stellar CRE forwarder contract.
 type CREForwarderClient interface {
-	// InvokeOnReport resolves the relayer signing account, builds forwarder args, and submits via TXM.
-	InvokeOnReport(ctx context.Context, receiver string, report *sdk.ReportResponse) (*stellartypes.SubmitTransactionResponse, error)
+	ResolveSigningAccount(ctx context.Context) (string, error)
+	InvokeOnReport(ctx context.Context, transmitter, receiver string, report *sdk.ReportResponse, transmissionID TransmissionID, maxResourceFee uint64) (*stellartypes.SubmitTransactionResponse, error)
+	SimulateReport(ctx context.Context, transmitter, receiver string, report *sdk.ReportResponse) (stellartypes.SimulateTransactionResponse, error)
+	ValidateReportSimulation(simResp stellartypes.SimulateTransactionResponse, transmissionID TransmissionID) error
 	// GetTransmissionInfo queries the forwarder for transmission state.
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	GetReportProcessedEventSearchRange(ctx context.Context) (EventSearchRange, error)
@@ -137,16 +144,17 @@ func (fc *forwarderClient) ForwarderAddress() string {
 	return fc.forwarderAddress
 }
 
+func (fc *forwarderClient) ResolveSigningAccount(ctx context.Context) (string, error) {
+	return fc.resolveSigningAccount(ctx)
+}
+
 func (fc *forwarderClient) InvokeOnReport(
 	ctx context.Context,
-	receiver string,
+	transmitter, receiver string,
 	report *sdk.ReportResponse,
+	transmissionID TransmissionID,
+	maxResourceFee uint64,
 ) (*stellartypes.SubmitTransactionResponse, error) {
-	transmitter, err := fc.resolveSigningAccount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve signing account: %w", err)
-	}
-
 	args, err := fc.forwarderCodec.EncodeReport(transmitter, receiver, report)
 	if err != nil {
 		return nil, err
@@ -156,12 +164,57 @@ func (fc *forwarderClient) InvokeOnReport(
 		ContractID:         fc.forwarderAddress,
 		Function:           forwarderReportFunction,
 		Args:               args,
+		FromAddress:        transmitter,
+		IdempotencyKey:     transmissionID.idempotencyKey(),
+		MaxResourceFee:     maxResourceFee,
 		LedgerBoundsOffset: defaultLedgerBoundsOffset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit forwarder report transaction: %w", err)
 	}
 	return submitResp, nil
+}
+
+// SimulateReport simulates the same report() invocation InvokeOnReport submits.
+func (fc *forwarderClient) SimulateReport(
+	ctx context.Context,
+	transmitter, receiver string,
+	report *sdk.ReportResponse,
+) (stellartypes.SimulateTransactionResponse, error) {
+	args, err := fc.forwarderCodec.EncodeReport(transmitter, receiver, report)
+	if err != nil {
+		return stellartypes.SimulateTransactionResponse{}, err
+	}
+
+	resp, err := fc.SimulateTransaction(ctx, stellartypes.SimulateTransactionRequest{
+		ContractID:    fc.forwarderAddress,
+		Function:      forwarderReportFunction,
+		Args:          args,
+		SourceAccount: transmitter,
+	})
+	if err != nil {
+		return stellartypes.SimulateTransactionResponse{}, fmt.Errorf("failed to simulate forwarder report transaction: %w", err)
+	}
+	return resp, nil
+}
+
+// ValidateReportSimulation requires the simulated ReportProcessed event to report success.
+func (fc *forwarderClient) ValidateReportSimulation(simResp stellartypes.SimulateTransactionResponse, transmissionID TransmissionID) error {
+	if len(simResp.EventsXDR) == 0 {
+		return fmt.Errorf("pre-submit report simulation emitted no ReportProcessed event; receiver outcome cannot be confirmed")
+	}
+	for _, eventXDR := range simResp.EventsXDR {
+		success, err := fc.forwarderCodec.DecodeReportProcessedEvent(eventXDR, fc.forwarderAddress, transmissionID)
+		if err != nil {
+			// Not the matching ReportProcessed event.
+			continue
+		}
+		if !success {
+			return fmt.Errorf("pre-submit report simulation indicated receiver cannot accept the report: ReportProcessed(success=false)")
+		}
+		return nil
+	}
+	return fmt.Errorf("pre-submit report simulation emitted no ReportProcessed event matching this transmission; receiver outcome cannot be confirmed")
 }
 
 func (fc *forwarderClient) GetTransmissionInfo(
@@ -185,7 +238,8 @@ func (fc *forwarderClient) GetTransmissionInfo(
 		return TransmissionInfo{}, fmt.Errorf("forwarder simulation failed: %s", resp.Error)
 	}
 	if resp.ReturnValueXDR == "" {
-		return TransmissionInfo{State: TransmissionStateNotAttempted}, nil
+		// Empty state is unknown, not spend-authorizing NotAttempted.
+		return TransmissionInfo{State: TransmissionStateUnknown}, nil
 	}
 
 	return fc.forwarderCodec.DecodeQueryTransmissionInfo(resp.ReturnValueXDR, resp.LedgerSequence)

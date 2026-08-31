@@ -14,25 +14,34 @@ import (
 )
 
 type stubForwarderClient struct {
-	events              []ReportProcessedEvent
-	eventsErr           error
-	eventsFn            func(call int, searchRange EventSearchRange) ([]ReportProcessedEvent, error)
-	eventRange          EventSearchRange
-	eventRangeFn        func(call int) (EventSearchRange, error)
-	eventRangeErr       error
-	eventEndLedgerFn    func(call int) (uint32, error)
-	eventEndLedgerErr   error
-	eventRangeCalls     int
-	eventEndLedgerCalls int
-	eventRanges         []EventSearchRange
-	eventCalls          int
-	transmissionInfoFn  func(call int) (TransmissionInfo, error)
-	invokeOnReportResp  *stellartypes.SubmitTransactionResponse
-	invokeOnReportErr   error
-	transmissionCalls   int
+	events                      []ReportProcessedEvent
+	eventsErr                   error
+	eventsFn                    func(call int, searchRange EventSearchRange) ([]ReportProcessedEvent, error)
+	eventRange                  EventSearchRange
+	eventRangeFn                func(call int) (EventSearchRange, error)
+	eventRangeErr               error
+	eventEndLedgerFn            func(call int) (uint32, error)
+	eventEndLedgerErr           error
+	eventRangeCalls             int
+	eventEndLedgerCalls         int
+	eventRanges                 []EventSearchRange
+	eventCalls                  int
+	transmissionInfoFn          func(call int) (TransmissionInfo, error)
+	invokeOnReportResp          *stellartypes.SubmitTransactionResponse
+	invokeOnReportErr           error
+	transmissionCalls           int
+	simulateReportResp          stellartypes.SimulateTransactionResponse
+	simulateReportSet           bool
+	simulateReportErr           error
+	simulateReportValidationErr error
+	simulateReportCalls         int
 }
 
-func (s *stubForwarderClient) InvokeOnReport(context.Context, string, *sdk.ReportResponse) (*stellartypes.SubmitTransactionResponse, error) {
+func (s *stubForwarderClient) ResolveSigningAccount(context.Context) (string, error) {
+	return testNodeAddress, nil
+}
+
+func (s *stubForwarderClient) InvokeOnReport(context.Context, string, string, *sdk.ReportResponse, TransmissionID, uint64) (*stellartypes.SubmitTransactionResponse, error) {
 	if s.invokeOnReportErr != nil {
 		return nil, s.invokeOnReportErr
 	}
@@ -40,6 +49,23 @@ func (s *stubForwarderClient) InvokeOnReport(context.Context, string, *sdk.Repor
 		return s.invokeOnReportResp, nil
 	}
 	panic("stubForwarderClient.InvokeOnReport not configured")
+}
+
+// SimulateReport defaults to a successful simulation unless configured otherwise.
+func (s *stubForwarderClient) SimulateReport(context.Context, string, string, *sdk.ReportResponse) (stellartypes.SimulateTransactionResponse, error) {
+	s.simulateReportCalls++
+	if s.simulateReportErr != nil {
+		return stellartypes.SimulateTransactionResponse{}, s.simulateReportErr
+	}
+	if s.simulateReportSet {
+		return s.simulateReportResp, nil
+	}
+	return stellartypes.SimulateTransactionResponse{Success: true}, nil
+}
+
+// ValidateReportSimulation can be forced to fail by setting simulateReportValidationErr.
+func (s *stubForwarderClient) ValidateReportSimulation(stellartypes.SimulateTransactionResponse, TransmissionID) error {
+	return s.simulateReportValidationErr
 }
 
 func (s *stubForwarderClient) GetTransmissionInfo(context.Context, TransmissionID) (TransmissionInfo, error) {

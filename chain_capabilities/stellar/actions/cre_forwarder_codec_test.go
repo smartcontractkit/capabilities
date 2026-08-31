@@ -368,3 +368,51 @@ func TestDecodeContractTransmissionInfo_Errors(t *testing.T) {
 		require.Contains(t, err.Error(), "missing state")
 	})
 }
+
+func TestDecodeReportProcessedEvent(t *testing.T) {
+	t.Parallel()
+	codec := NewCREForwarderCodec()
+	var workflowExecutionID [32]byte
+	var reportID [2]byte
+	transmissionID := TransmissionID{
+		Receiver:            testReceiverAddress,
+		WorkflowExecutionID: workflowExecutionID,
+		ReportID:            reportID,
+	}
+
+	t.Run("matching success event returns true", func(t *testing.T) {
+		t.Parallel()
+		success, err := codec.DecodeReportProcessedEvent(
+			reportProcessedEventXDR(t, transmissionID, true), testForwarderAddress, transmissionID)
+		require.NoError(t, err)
+		require.True(t, success)
+	})
+
+	t.Run("matching failure event returns false", func(t *testing.T) {
+		t.Parallel()
+		success, err := codec.DecodeReportProcessedEvent(
+			reportProcessedEventXDR(t, transmissionID, false), testForwarderAddress, transmissionID)
+		require.NoError(t, err)
+		require.False(t, success)
+	})
+
+	t.Run("invalid base64 returns error", func(t *testing.T) {
+		t.Parallel()
+		_, err := codec.DecodeReportProcessedEvent("not-valid-xdr!!!", testForwarderAddress, transmissionID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "decode report processed event")
+	})
+
+	t.Run("non-matching event returns error", func(t *testing.T) {
+		t.Parallel()
+		// Event for a different receiver — should not match.
+		otherTransmissionID := TransmissionID{
+			Receiver:            testForwarderAddress,
+			WorkflowExecutionID: workflowExecutionID,
+		}
+		_, err := codec.DecodeReportProcessedEvent(
+			reportProcessedEventXDR(t, otherTransmissionID, true), testForwarderAddress, transmissionID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "receiver mismatch")
+	})
+}

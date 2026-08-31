@@ -26,6 +26,7 @@ type CREForwarderCodec interface {
 	EncodeQueryTransmissionInputs(transmissionID TransmissionID) ([]stellartypes.ScVal, error)
 	DecodeQueryTransmissionInfo(returnValueXDR string, ledgerSequence uint32) (TransmissionInfo, error)
 	EncodeReportProcessedTopicFilter(transmissionID TransmissionID) (stellartypes.TopicFilter, error)
+	DecodeReportProcessedEvent(eventXDR, forwarderAddress string, transmissionID TransmissionID) (success bool, err error)
 }
 
 type creForwarderCodecImpl struct{}
@@ -246,6 +247,52 @@ func (creForwarderCodecImpl) EncodeReportProcessedTopicFilter(transmissionID Tra
 			{Value: &stellartypes.ScVal{Type: stellartypes.ScValTypeBytes, Bytes: transmissionID.ReportID[:]}},
 		},
 	}, nil
+}
+
+// DecodeReportProcessedEvent returns the success flag from a matching simulated event.
+func (creForwarderCodecImpl) DecodeReportProcessedEvent(eventXDR, forwarderAddress string, transmissionID TransmissionID) (bool, error) {
+	var diag xdr.DiagnosticEvent
+	if err := xdr.SafeUnmarshalBase64(eventXDR, &diag); err != nil {
+		return false, fmt.Errorf("decode report processed event: %w", err)
+	}
+	if diag.Event.Type != xdr.ContractEventTypeContract {
+		return false, fmt.Errorf("decode report processed event: not a contract event (type %d)", diag.Event.Type)
+	}
+	if diag.Event.ContractId == nil {
+		return false, fmt.Errorf("decode report processed event: missing contract id")
+	}
+	forwarderBytes, err := strkey.Decode(strkey.VersionByteContract, forwarderAddress)
+	if err != nil {
+		return false, fmt.Errorf("%s invalid forwarder contract address %q: %w", capcommon.UserError, forwarderAddress, err)
+	}
+	if len(forwarderBytes) != 32 || !bytes.Equal((*diag.Event.ContractId)[:], forwarderBytes) {
+		return false, fmt.Errorf("decode report processed event: contract id mismatch")
+	}
+	v0, ok := diag.Event.Body.GetV0()
+	if !ok {
+		return false, fmt.Errorf("decode report processed event: event body is not V0")
+	}
+	topics := v0.Topics
+	if len(topics) != 4 {
+		return false, fmt.Errorf("decode report processed event: expected 4 topics, got %d", len(topics))
+	}
+	if topics[0].Type != xdr.ScValTypeScvSymbol || topics[0].Sym == nil || string(*topics[0].Sym) != reportProcessedTopicPrefix {
+		return false, fmt.Errorf("decode report processed event: topic 0 is not %q", reportProcessedTopicPrefix)
+	}
+	receiver, ok := addressFromScVal(topics[1])
+	if !ok || receiver != transmissionID.Receiver {
+		return false, fmt.Errorf("decode report processed event: topic 1 receiver mismatch")
+	}
+	if topics[2].Type != xdr.ScValTypeScvBytes || topics[2].Bytes == nil || !bytes.Equal(*topics[2].Bytes, transmissionID.WorkflowExecutionID[:]) {
+		return false, fmt.Errorf("decode report processed event: topic 2 workflowExecutionID mismatch")
+	}
+	if topics[3].Type != xdr.ScValTypeScvBytes || topics[3].Bytes == nil || !bytes.Equal(*topics[3].Bytes, transmissionID.ReportID[:]) {
+		return false, fmt.Errorf("decode report processed event: topic 3 reportID mismatch")
+	}
+	if v0.Data.Type != xdr.ScValTypeScvBool {
+		return false, fmt.Errorf("decode report processed event: data is not a bool (type %d)", v0.Data.Type)
+	}
+	return v0.Data.B != nil && *v0.Data.B, nil
 }
 
 func contractAddressToScVal(contractID string) (stellartypes.ScVal, error) {

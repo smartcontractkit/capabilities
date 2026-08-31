@@ -10,7 +10,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
-	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
 func TestForwarderClient_ForwarderAddress(t *testing.T) {
@@ -35,7 +34,7 @@ func TestForwarderClient_DefaultForwarderLookbackLedgers(t *testing.T) {
 	require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 200}, searchRange)
 }
 
-func TestForwarderClient_InvokeOnReport(t *testing.T) {
+func TestForwarderClient_ResolveSigningAccount(t *testing.T) {
 	t.Parallel()
 	lggr := logger.Test(t)
 
@@ -46,9 +45,9 @@ func TestForwarderClient_InvokeOnReport(t *testing.T) {
 			Return(stellartypes.GetSigningAccountResponse{}, errors.New("no account")).Once()
 		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
 
-		_, err := client.InvokeOnReport(t.Context(), testReceiverAddress, &workflowpb.ReportResponse{Sigs: wrTestSigs()})
+		_, err := client.ResolveSigningAccount(t.Context())
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to resolve signing account")
+		require.Contains(t, err.Error(), "no account")
 	})
 
 	t.Run("empty signing account", func(t *testing.T) {
@@ -58,22 +57,31 @@ func TestForwarderClient_InvokeOnReport(t *testing.T) {
 			Return(stellartypes.GetSigningAccountResponse{}, nil).Once()
 		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
 
-		_, err := client.InvokeOnReport(t.Context(), testReceiverAddress, &workflowpb.ReportResponse{Sigs: wrTestSigs()})
+		_, err := client.ResolveSigningAccount(t.Context())
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty signing account")
 	})
+}
+
+func TestForwarderClient_InvokeOnReport(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
 
 	t.Run("submit error", func(t *testing.T) {
 		t.Parallel()
 		svc := mocks.NewStellarService(t)
-		svc.EXPECT().GetSigningAccount(mock.Anything).
-			Return(signingAccountResp(), nil).Once()
-		svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+		transmissionID := testTransmissionID()
+		const maxResourceFee = uint64(100_000)
+		svc.EXPECT().SubmitTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SubmitTransactionRequest) bool {
+			return req.FromAddress == testNodeAddress &&
+				req.IdempotencyKey == transmissionID.idempotencyKey() &&
+				req.MaxResourceFee == maxResourceFee
+		})).
 			Return(nil, errors.New("txm unavailable")).Once()
 		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
 		_, _, req := newWRReportFixture(t)
 
-		_, err := client.InvokeOnReport(t.Context(), testReceiverAddress, req.Report)
+		_, err := client.InvokeOnReport(t.Context(), testNodeAddress, testReceiverAddress, req.Report, transmissionID, maxResourceFee)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to submit forwarder report transaction")
 	})
