@@ -104,15 +104,6 @@ func (h *writeReportHelper) expectSigningAccount(t *testing.T, reqMeta capabilit
 		Return(reportSimulationResp(t, transmissionID, true), nil).Once()
 }
 
-// expectSimulateReport sets up the report() simulation expectation.
-func (h *writeReportHelper) expectSimulateReport(t *testing.T, resp stellartypes.SimulateTransactionResponse, err error) {
-	t.Helper()
-	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
-		return req.Function == forwarderReportFunction
-	})).
-		Return(resp, err).Once()
-}
-
 // newWRReportFixture generates a self-consistent (metadata, RequestMetadata, WriteReportRequest) triple.
 func newWRReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMetadata, *stellarcap.WriteReportRequest) {
 	t.Helper()
@@ -552,7 +543,6 @@ func TestWriteReport_Validation(t *testing.T) {
 		rm, reqMeta, _ := newWRReportFixture(t)
 		encoded, err2 := rm.Encode()
 		require.NoError(t, err2)
-
 
 		req := &stellarcap.WriteReportRequest{
 			ContractId: testReceiverAddress,
