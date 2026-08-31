@@ -1895,15 +1895,15 @@ func TestCheckEstimatedSpendLimit(t *testing.T) {
 
 func TestMeteringFromSubmitHash(t *testing.T) {
 	t.Parallel()
-	mockSvc := mocks.NewStellarService(t)
-	wr := &writeReport{
-		service:       mockSvc,
-		lggr:          logger.Sugared(logger.Test(t)),
-		chainSelector: testWRChainSelector,
-	}
 
 	t.Run("empty tx hash bills zero", func(t *testing.T) {
 		t.Parallel()
+		mockSvc := mocks.NewStellarService(t)
+		wr := &writeReport{
+			service:       mockSvc,
+			lggr:          logger.Sugared(logger.Test(t)),
+			chainSelector: testWRChainSelector,
+		}
 		meta := wr.meteringFromSubmitHash(t.Context(), "")
 		require.Len(t, meta.Metering, 1)
 		require.Equal(t, "0", meta.Metering[0].SpendValue)
@@ -1911,6 +1911,12 @@ func TestMeteringFromSubmitHash(t *testing.T) {
 
 	t.Run("lookup fails bills zero", func(t *testing.T) {
 		t.Parallel()
+		mockSvc := mocks.NewStellarService(t)
+		wr := &writeReport{
+			service:       mockSvc,
+			lggr:          logger.Sugared(logger.Test(t)),
+			chainSelector: testWRChainSelector,
+		}
 		mockSvc.EXPECT().GetTransaction(mock.Anything, mock.Anything).
 			Return(stellartypes.GetTransactionResponse{}, errors.New("rpc down")).Maybe()
 		meta := wr.meteringFromSubmitHash(t.Context(), testTxHash)
@@ -1920,6 +1926,12 @@ func TestMeteringFromSubmitHash(t *testing.T) {
 
 	t.Run("successful lookup bills fee", func(t *testing.T) {
 		t.Parallel()
+		mockSvc := mocks.NewStellarService(t)
+		wr := &writeReport{
+			service:       mockSvc,
+			lggr:          logger.Sugared(logger.Test(t)),
+			chainSelector: testWRChainSelector,
+		}
 		mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
 			Return(stellartypes.GetTransactionResponse{FeeStroops: testFee}, nil).Once()
 		meta := wr.meteringFromSubmitHash(t.Context(), testTxHash)
