@@ -245,19 +245,9 @@ func (wr *writeReport) execute(
 		return readInfo, nil
 	})
 	if pollErr != nil {
-		// Transmission info may lag even when ReportProcessed events are already indexed (e.g. duplicate
-		// submit where another node's tx succeeded). Prefer the canonical event hash over local TXM data.
-		wr.lggr.Warnw("Failed to poll transmission info after submit, attempting event-based tx hash lookup", "error", pollErr)
-		txHash, lookupErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
-		if lookupErr == nil {
-			reply, buildErr := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
-			return reply, ownMeteringMetadata, buildErr
-		}
-
 		wr.lggr.Errorw(
-			"Failed to determine canonical transmission outcome after submit",
+			"Failed to confirm transmission outcome after submit",
 			"pollError", pollErr,
-			"eventLookupError", lookupErr,
 			"localTxHash", submitResp.TxHash,
 			"localTxStatus", submitResp.TxStatus,
 		)
@@ -267,6 +257,11 @@ func (wr *writeReport) execute(
 
 	switch postInfo.State {
 	case TransmissionStateSucceeded:
+		if submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
+			reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, submitResp.TxHash)
+			return reply, ownMeteringMetadata, err
+		}
+
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if err != nil {
 			// A submit occurred and was paid for; bill the local submit hash even though
@@ -281,6 +276,15 @@ func (wr *writeReport) execute(
 		reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
 		return reply, ownMeteringMetadata, err
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
+		if submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
+			wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", submitResp.TxHash, "transmissionState", postInfo.State)
+			reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, submitResp.TxHash, postInfo, transmissionID)
+			if err != nil {
+				return nil, ownMeteringMetadata, revertReplyBuildError(postInfo, transmissionID, err)
+			}
+			return reply, ownMeteringMetadata, nil
+		}
+
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
 			if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
@@ -557,10 +561,9 @@ func (wr *writeReport) replyFromTransaction(
 		message = new(unknownIssueExecutingReceiverContractMessage)
 	}
 
+	// A ReportProcessed event is only available for a transaction that reached the
+	// forwarder and committed its outcome. Receiver failure is reported separately.
 	txStatus := stellarcap.TxStatus_TX_STATUS_SUCCESS
-	if receiverStatus == stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED {
-		txStatus = stellarcap.TxStatus_TX_STATUS_REVERTED
-	}
 
 	reply := &stellarcap.WriteReportReply{
 		TxHash:                          new(txHash),
