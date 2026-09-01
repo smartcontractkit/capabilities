@@ -579,35 +579,51 @@ button.cre-copy-btn {
 
 /* Said rather than silently ignored: the raw fields keep their previous value,
  * so without this the box would look accepted and the request would not match. */
-.cre-special-input.cre-special-invalid {
+.cre-special-input.cre-special-invalid,
+textarea.cre-bytes-hex.cre-special-invalid {
     outline: 2px solid #b00020;
 }
 
-.cre-special-response {
+/* ---- bytes fields -------------------------------------------------------
+ *
+ * A bytes field is sent as base64, which is not how any of these values are
+ * written anywhere else. The dropdown picks which encoding the box shows; form.js
+ * keeps grpcui's own box - base64, still the value sent - behind it.
+ */
+
+textarea.cre-bytes-hex {
+    font-family: monospace;
+    vertical-align: top;
+}
+
+/* The response as it is shown - numbers for the special messages, and hex for the
+ * bytes fields when the dropdown says so - beneath grpcui's own textarea. */
+.cre-response-view {
     margin-top: 6px;
+}
+
+/* One row, above the form or under the response, holding the dropdown that says
+ * which encoding every bytes field on that side is shown in. */
+.cre-encoding-controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+#cre-bytes-control {
+    margin: 4px 0 8px 0;
+}
+
+.cre-encoding-label {
+    font-size: 0.9em;
+    opacity: 0.8;
 }
 
 .cre-special-response-title {
     font-weight: bold;
     font-size: 0.9em;
     opacity: 0.8;
-}
-
-.cre-special-response-row {
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-    font-size: 0.9em;
-}
-
-.cre-special-path {
-    font-family: monospace;
-    opacity: 0.7;
-}
-
-.cre-special-number {
-    font-family: monospace;
-    font-weight: bold;
 }
 
 /* The response shown as numbers, beneath grpcui's own textarea. The textarea keeps

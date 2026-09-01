@@ -227,6 +227,9 @@ document.addEventListener("DOMContentLoaded", function () {
         if (document.activeElement && typeof document.activeElement.blur === "function") {
             document.activeElement.blur();
         }
+        // The fan-out page's Invoke button is on the parent page, so the flush that
+        // rides on a click here never runs for it.
+        flushBytesWidgets();
 
         var data = $("#grpc-request-form").data("request");
         if (!(data instanceof Array)) {
@@ -730,8 +733,208 @@ document.addEventListener("DOMContentLoaded", function () {
     document.addEventListener("mousedown", function (e) {
         if (e.target && $(e.target).is(".grpc-invoke")) {
             flushSpecialWidgets();
+            flushBytesWidgets();
         }
     }, true);
+
+    // ---- bytes fields --------------------------------------------------------
+    //
+    // grpcui takes a bytes field as base64, which is not how any of these values
+    // are written anywhere else: an address, a hash, a workflow ID or a signature is
+    // hex, in the logs, in the contracts and in everything you would paste from.
+    //
+    // One dropdown over the form picks which encoding every bytes field in it is
+    // typed in, the same way the one over the response picks how they are read. A
+    // dropdown per field meant setting the same thing several times for one request,
+    // and left a form where two fields of the same type disagreed about what the
+    // digits in them meant.
+    //
+    // base64 is still what is sent, and grpcui's own box is still what holds it -
+    // the hex box is a second view onto it - so the file picker and grpcui's own
+    // validation are left exactly as they are.
+
+    // The encoding last picked, which is also what fields built after it open in: a
+    // method change, an added repeated entry or a copy from another request all
+    // build boxes after the choice was made.
+    var bytesEncoding = "base64";
+
+    function rawBytesBox($container) {
+        return $container.children("textarea").not(".cre-bytes-hex").first();
+    }
+
+    function hexBytesBox($container) {
+        return $container.children("textarea.cre-bytes-hex").first();
+    }
+
+    // syncHexFromRaw refills the hex box from the value grpcui holds.
+    function syncHexFromRaw($container) {
+        var hex = VALUES.hexOfBase64(rawBytesBox($container).val());
+        if (hex === null) {
+            // Not base64, so there is nothing to show as hex. Left alone rather than
+            // blanked: grpcui's own box still has whatever was typed into it.
+            return;
+        }
+        hexBytesBox($container).val(hex).removeClass("cre-special-invalid");
+    }
+
+    // writeBytesHex pushes what was typed as hex back into grpcui's box.
+    function writeBytesHex($container) {
+        var $hex = hexBytesBox($container);
+        if (!$hex.length) {
+            return;
+        }
+        var encoded = VALUES.base64OfHex($hex.val());
+        if (encoded === undefined) {
+            // Not hex. Said so, and grpcui's box keeps the value it had.
+            $hex.addClass("cre-special-invalid");
+            return;
+        }
+        $hex.removeClass("cre-special-invalid");
+        commitToGrpcui(rawBytesBox($container)[0], encoded);
+    }
+
+    function applyBytesEncoding($container, encoding) {
+        $container.data("creBytesEncoding", encoding);
+        var $raw = rawBytesBox($container);
+        var $hex = hexBytesBox($container);
+        if (encoding === "hex") {
+            syncHexFromRaw($container);
+            $raw.addClass("cre-visually-hidden");
+            $hex.show();
+            return;
+        }
+        // Committed on the way out, so switching back shows what was just typed
+        // rather than dropping it.
+        writeBytesHex($container);
+        $hex.hide();
+        $raw.removeClass("cre-visually-hidden");
+    }
+
+    function decorateBytesField(container) {
+        var $container = $(container);
+        if ($container.data("creBytes")) {
+            return;
+        }
+        var $raw = rawBytesBox($container);
+        if (!$raw.length) {
+            return;
+        }
+        $container.data("creBytes", true);
+
+        var $hex = $("<textarea>", {
+            "class": "cre-bytes-hex",
+            cols: 40,
+            rows: 1,
+            spellcheck: false,
+            placeholder: "hex, e.g. 0x1a2b3c"
+        });
+        $raw.after($hex);
+        $hex.hide();
+
+        // Committed on change, which fires when the box loses focus, so the caret is
+        // never moved mid-value.
+        $hex.on("change", function () {
+            writeBytesHex($container);
+        });
+
+        applyBytesEncoding($container, bytesEncoding);
+    }
+
+    // refreshBytesField follows a value that changed behind the hex box: the file
+    // picker writes base64 straight into grpcui's box, and so does a copy from
+    // another request.
+    function refreshBytesField(container) {
+        var $container = $(container);
+        if ($container.data("creBytesEncoding") !== "hex") {
+            return;
+        }
+        var $hex = hexBytesBox($container);
+        if (!$hex.length || $hex[0] === document.activeElement) {
+            return;
+        }
+        // Being edited into something that is not hex yet, or typed wrong and left
+        // that way. Either is the user's text, not something to overwrite.
+        if ($hex.hasClass("cre-special-invalid")) {
+            return;
+        }
+        var $raw = rawBytesBox($container);
+        if ($hex.prop("disabled") !== $raw.prop("disabled")) {
+            $hex.prop("disabled", $raw.prop("disabled"));
+        }
+        // Compared as the bytes each side means, so a value the user wrote 0x- or
+        // space-separated - or one grpcui holds in the web-safe alphabet - is not
+        // rewritten out from under them on every poll.
+        var typed = String($hex.val()).replace(/\s+/g, "").replace(/^0[xX]/, "").toLowerCase();
+        if (typed === VALUES.hexOfBase64($raw.val())) {
+            return;
+        }
+        syncHexFromRaw($container);
+    }
+
+    // The bytes fields the dropdown drives.
+    //
+    // A BigInt's magnitude is a bytes field too, but it is driven by that widget and
+    // hidden behind it, so it is left out - two things writing the same field is one
+    // too many.
+    function bytesContainers() {
+        return $("#grpc-request-form div.grpc-bytes-container").filter(function () {
+            return $(this).parents("table").filter(function () {
+                return $(this).hasClass("cre-visually-hidden") || specialKind(this);
+            }).length === 0;
+        });
+    }
+
+    // The one dropdown, above the form, shown only while the method being called has
+    // a bytes field to type into.
+    function ensureBytesControl(present) {
+        var $control = $("#cre-bytes-control");
+        if (!present) {
+            $control.remove();
+            return;
+        }
+        var $form = $("#grpc-request-form");
+        if ($control.length || !$form.length) {
+            return;
+        }
+
+        var $select = $("<select>", {
+            "class": "cre-bytes-encoding",
+            title: "How the bytes fields below are typed. They are sent as bytes either way."
+        });
+        $select.append($("<option>", { value: "base64", text: "base64" }));
+        $select.append($("<option>", { value: "hex", text: "hex" }));
+        $select.val(bytesEncoding);
+        $select.on("change", function () {
+            bytesEncoding = this.value;
+            bytesContainers().each(function () {
+                applyBytesEncoding($(this), bytesEncoding);
+            });
+        });
+
+        $form.before($("<div>", { id: "cre-bytes-control", "class": "cre-encoding-controls" })
+            .append($("<span>", { "class": "cre-encoding-label", text: "Bytes:" }))
+            .append($select));
+    }
+
+    function decorateBytesFields() {
+        var $containers = bytesContainers();
+        $containers.each(function () {
+            decorateBytesField(this);
+            refreshBytesField(this);
+        });
+        ensureBytesControl($containers.length > 0);
+    }
+
+    // Safety net, the same one the special widgets get: flush every hex box before
+    // an RPC goes out, in case one is still focused and has therefore not fired its
+    // change event yet.
+    function flushBytesWidgets() {
+        $("#grpc-request-form div.grpc-bytes-container").each(function () {
+            if ($(this).data("creBytesEncoding") === "hex") {
+                writeBytesHex($(this));
+            }
+        });
+    }
 
     // ---- response side -------------------------------------------------------
 
@@ -744,22 +947,50 @@ document.addEventListener("DOMContentLoaded", function () {
         return "/" + service + "/" + method;
     }
 
+    // The encoding the response is shown in, which the dropdown beneath it picks.
+    // Page-wide rather than per-field: a response is read whole, and hunting for
+    // the one field whose box says hex is not reading it.
+    var responseBytes = "base64";
+
+    // The bytes paths for a method's response, or none if it has no bytes fields -
+    // in which case there is nothing for the dropdown to do and it is not offered.
+    function responseBytesPaths(method) {
+        return (SPECIAL.bytesMethods || {})[method] || [];
+    }
+
+    // shownResponse is the response as it is displayed: special messages as the
+    // numbers they stand for, and - when the dropdown says so - bytes as hex.
+    //
+    // The textarea above it keeps the raw response either way. That is the one
+    // worth copying: it is what the server actually sent, and what a replay
+    // somewhere else has to send back.
+    function shownResponse(response, method) {
+        var shown = VALUES.parsed(response, SPECIAL.methods[method] || [], SPECIAL);
+        if (responseBytes === "hex") {
+            shown = VALUES.hexed(shown, responseBytesPaths(method));
+        }
+        return shown;
+    }
+
     function decorateResponseSpecials() {
         var method = currentMethod();
         var paths = (method && SPECIAL.methods[method]) || [];
+        var bytesPaths = method ? responseBytesPaths(method) : [];
 
         $("#grpc-response-data textarea.grpc-response-textarea").each(function () {
             var $textArea = $(this);
             var raw = $textArea.val();
-            var stamp = method + " " + raw;
+            // The encoding is part of the stamp, so picking one re-renders rather
+            // than being taken as "already shown".
+            var stamp = method + " " + responseBytes + " " + raw;
             if ($textArea.data("creSpecialFor") === stamp) {
                 return;
             }
             $textArea.data("creSpecialFor", stamp);
 
             var $container = $textArea.parent();
-            $container.find(".cre-special-response").remove();
-            if (!paths.length) {
+            $container.find(".cre-response-view").remove();
+            if (!paths.length && !bytesPaths.length) {
                 return;
             }
 
@@ -770,23 +1001,48 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            // A copy with the special messages replaced by their numbers. The
-            // textarea keeps the raw response, because that is the one worth
-            // copying: it is what the server actually sent, and what a replay
-            // somewhere else has to send back.
-            var shown = VALUES.parsed(response, paths, SPECIAL);
-            if (JSON.stringify(shown) === JSON.stringify(response)) {
-                // Nothing special in this particular response, so a second copy of
-                // it would only be noise.
-                return;
+            var $view = $("<div>", { "class": "cre-response-view" });
+
+            // Offered whenever the response has a bytes field in it, whether or not
+            // this particular response filled one in: a dropdown that came and went
+            // with the data would be one you could not reach for in advance.
+            if (bytesPaths.length) {
+                var $select = $("<select>", {
+                    "class": "cre-bytes-encoding",
+                    title: "How the bytes fields below are shown. The raw response above is unchanged."
+                });
+                $select.append($("<option>", { value: "base64", text: "base64" }));
+                $select.append($("<option>", { value: "hex", text: "hex" }));
+                $select.val(responseBytes);
+                $select.on("change", function () {
+                    responseBytes = this.value;
+                    // Every response on the page, not just this one: the setting is
+                    // the page's, and a streaming call has one textarea per message.
+                    $("#grpc-response-data textarea.grpc-response-textarea").removeData("creSpecialFor");
+                    decorateResponseSpecials();
+                    // Re-rendering replaces this very dropdown, so the focus that
+                    // was on it is put back on the one that took its place.
+                    $container.find("select.cre-bytes-encoding").first().focus();
+                });
+                $view.append($("<div>", { "class": "cre-encoding-controls" })
+                    .append($("<span>", { "class": "cre-encoding-label", text: "Bytes:" }))
+                    .append($select));
             }
 
-            $container.append($("<div>", { "class": "cre-special-response" })
-                .append($("<div>", {
+            var shown = shownResponse(response, method);
+            if (JSON.stringify(shown) !== JSON.stringify(response)) {
+                $view.append($("<div>", {
                     "class": "cre-special-response-title",
-                    text: "As numbers (the raw response is above)"
-                }))
-                .append($("<pre>", { "class": "cre-special-json", text: JSON.stringify(shown, null, 2) })));
+                    text: "As shown (the raw response is above)"
+                }));
+                $view.append($("<pre>", { "class": "cre-special-json", text: JSON.stringify(shown, null, 2) }));
+            }
+
+            // A dropdown with nothing under it is still worth having - it is what
+            // asks for the hex view - but a block with neither is not.
+            if ($view.children().length) {
+                $container.append($view);
+            }
         });
     }
 
@@ -816,6 +1072,7 @@ document.addEventListener("DOMContentLoaded", function () {
         syncMetadataRows();
         decorateFieldCopies();
         decorateSpecialTables();
+        decorateBytesFields();
         decorateResponseSpecials();
     }, 100);
 });

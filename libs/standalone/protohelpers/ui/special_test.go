@@ -101,3 +101,65 @@ func TestSpecialConfigSkipsMethodsWithoutAny(t *testing.T) {
 		assert.NotContains(t, method, "RegisterToWorkflow", "%s should not be listed", method)
 	}
 }
+
+// Which strings are bytes comes from the descriptor: base64 and text are the same
+// JSON, so a page that guessed would sooner or later show a name as hex.
+func TestBytesPathsFindsBytesFields(t *testing.T) {
+	paths := bytesPaths((&valuespb.Value{}).ProtoReflect().Descriptor())
+
+	assert.Contains(t, paths, "bytes_value")
+}
+
+// Marked the same way the special paths are, so the browser iterates a repeated
+// field and a map rather than indexing straight in.
+func TestBytesPathsMarksListsAndMaps(t *testing.T) {
+	assert.Contains(t, bytesPaths((&valuespb.Map{}).ProtoReflect().Descriptor()), "fields{}.bytes_value")
+	assert.Contains(t, bytesPaths((&valuespb.List{}).ProtoReflect().Descriptor()), "fields[].bytes_value")
+}
+
+// A BigInt's magnitude is bytes, but the page already shows the whole message as
+// the number it stands for - so offering its magnitude as hex would be offering
+// half of a value that is no longer on screen.
+func TestBytesPathsDoesNotDescendIntoASpecialMessage(t *testing.T) {
+	paths := bytesPaths((&valuespb.Value{}).ProtoReflect().Descriptor())
+
+	for _, p := range paths {
+		assert.NotContains(t, p, "bigint_value.", "a BigInt is shown as a number, not as its fields")
+		assert.NotContains(t, p, "decimal_value.", "a Decimal is shown as a number, not as its fields")
+	}
+}
+
+// A BigInt reached on its own still reports its magnitude, since there it is the
+// whole message being looked at rather than half of a number beside it.
+func TestBytesPathsInsideABigInt(t *testing.T) {
+	assert.Equal(t, []string{"abs_val"}, bytesPaths((&valuespb.BigInt{}).ProtoReflect().Descriptor()))
+}
+
+// The same self-containing message the special walk has to survive.
+func TestBytesPathsTerminatesOnRecursion(t *testing.T) {
+	done := make(chan []string, 1)
+	go func() {
+		done <- bytesPaths((&valuespb.Map{}).ProtoReflect().Descriptor())
+	}()
+
+	select {
+	case paths := <-done:
+		assert.NotEmpty(t, paths)
+	case <-time.After(5 * time.Second):
+		t.Fatal("walking a self-containing message did not terminate")
+	}
+}
+
+// A method whose types hold no bytes is left out, so the page knows not to offer
+// an encoding dropdown for it.
+func TestSpecialConfigListsBytesPathsPerMethod(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	cfg := server.specialConfig()
+	for method, paths := range cfg.BytesMethods {
+		assert.NotEmpty(t, paths, "%s is listed with no paths", method)
+	}
+	for method, paths := range cfg.BytesRequests {
+		assert.NotEmpty(t, paths, "%s is listed with no paths", method)
+	}
+}

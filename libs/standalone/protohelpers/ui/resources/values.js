@@ -15,6 +15,62 @@
 (function () {
     var api = {};
 
+    // ---- bytes ---------------------------------------------------------------
+
+    // decodeBase64 is atob that says null instead of throwing, and that takes the
+    // web-safe alphabet too: grpcui accepts either in a bytes field, and atob only
+    // knows the standard one.
+    function decodeBase64(text) {
+        var encoded = String(text == null ? "" : text).replace(/\s+/g, "");
+        encoded = encoded.replace(/-/g, "+").replace(/_/g, "/");
+        while (encoded.length % 4 !== 0) {
+            encoded += "=";
+        }
+        try {
+            return atob(encoded);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // hexOfBase64 shows the same bytes as lower-case hex, or null if the string was
+    // not base64 to begin with.
+    function hexOfBase64(base64) {
+        var binary = decodeBase64(base64);
+        if (binary === null) {
+            return null;
+        }
+        var hex = "";
+        for (var i = 0; i < binary.length; i++) {
+            var octet = binary.charCodeAt(i) & 0xff;
+            hex += (octet < 16 ? "0" : "") + octet.toString(16);
+        }
+        return hex;
+    }
+
+    // base64OfHex is the inverse: hex - 0x-prefixed or not, spaced however it was
+    // pasted - back to the base64 the field is sent as.
+    //
+    // Returns "" for an empty box, which is the field left at its zero value, and
+    // undefined for something that is not hex, which leaves the field as it was
+    // rather than writing a guess into it. An odd number of digits is not hex: half
+    // a byte could be either half, and guessing which would silently send the wrong
+    // value.
+    function base64OfHex(text) {
+        var digits = String(text == null ? "" : text).replace(/\s+/g, "").replace(/^0[xX]/, "");
+        if (digits === "") {
+            return "";
+        }
+        if (digits.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(digits)) {
+            return undefined;
+        }
+        var binary = "";
+        for (var i = 0; i < digits.length; i += 2) {
+            binary += String.fromCharCode(parseInt(digits.substr(i, 2), 16));
+        }
+        return btoa(binary);
+    }
+
     // base64 of a non-negative BigInt's big-endian bytes, which is what
     // big.Int.Bytes() produces - empty for zero.
     function bytesOf(n) {
@@ -31,10 +87,8 @@
 
     // The inverse: big-endian bytes back to a non-negative BigInt.
     function intOfBytes(base64) {
-        var binary;
-        try {
-            binary = atob(String(base64 || ""));
-        } catch (e) {
+        var binary = decodeBase64(base64);
+        if (binary === null) {
             return null;
         }
         var n = 0n;
@@ -149,7 +203,7 @@
     // request model is keyed by lowerCamelCase. So the caller says which it has and
     // the segments are spelled to match, rather than trying each in turn and
     // accepting something that could never arrive.
-    function resolvePath(root, template, lowerCamel) {
+    function walkPath(root, template, lowerCamel) {
         var found = [{ node: root, parent: null, key: null, label: "" }];
 
         template.split(".").forEach(function (segment) {
@@ -189,8 +243,23 @@
             found = next;
         });
 
-        return found.filter(function (entry) {
+        return found;
+    }
+
+    // resolvePath is walkPath narrowed to the messages a special path names: a hit
+    // has to be an object, because what happens to it is being replaced by the
+    // number its fields stand for.
+    function resolvePath(root, template, lowerCamel) {
+        return walkPath(root, template, lowerCamel).filter(function (entry) {
             return entry.node && typeof entry.node === "object" && !(entry.node instanceof Array);
+        });
+    }
+
+    // resolveBytes is the same for a bytes path, which ends at the base64 string
+    // the field arrived as rather than at a message.
+    function resolveBytes(root, template, lowerCamel) {
+        return walkPath(root, template, lowerCamel).filter(function (entry) {
+            return typeof entry.node === "string" && entry.parent !== null;
         });
     }
 
@@ -270,13 +339,56 @@
         return copy;
     }
 
+    // hexed is a copy of a message with every bytes field shown as hex instead of
+    // the base64 it arrived as.
+    //
+    // A copy, for the same reason parsed is one: base64 is what was sent and what a
+    // replay has to send back, so it is what history keeps and what Save History
+    // writes. This is only what is on screen.
+    //
+    // 0x-prefixed, so a value that is shown as hex is never mistaken for one that
+    // is still base64 - "beef" is both.
+    function hexed(root, paths, lowerCamel) {
+        if (!paths || !paths.length || root === null || root === undefined) {
+            return root;
+        }
+
+        var copy;
+        try {
+            copy = JSON.parse(JSON.stringify(root));
+        } catch (e) {
+            return root;
+        }
+
+        paths.forEach(function (path) {
+            resolveBytes(copy, path, lowerCamel).forEach(function (hit) {
+                if (hit.node === "") {
+                    // No bytes, so there is nothing to show in either encoding.
+                    return;
+                }
+                var hex = hexOfBase64(hit.node);
+                if (hex === null) {
+                    // Not base64. Left as it arrived rather than blanked, since what
+                    // is on screen should be what was sent.
+                    return;
+                }
+                hit.parent[hit.key] = "0x" + hex;
+            });
+        });
+        return copy;
+    }
+
     api.bytesOf = bytesOf;
+    api.hexOfBase64 = hexOfBase64;
+    api.base64OfHex = base64OfHex;
     api.intOfBytes = intOfBytes;
     api.encodeBigInt = encodeBigInt;
     api.decodeBigInt = decodeBigInt;
     api.encodeDecimal = encodeDecimal;
     api.decodeDecimal = decodeDecimal;
     api.resolvePath = resolvePath;
+    api.resolveBytes = resolveBytes;
+    api.hexed = hexed;
     api.camelCase = camelCase;
     api.kindOf = kindOf;
     api.numberOf = numberOf;

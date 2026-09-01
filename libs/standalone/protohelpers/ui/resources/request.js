@@ -34,20 +34,37 @@ $(function () {
     var SPECIAL = CONFIG.special || { bigInt: "", decimal: "", methods: {} };
     var VALUES = window.__CRE_VALUES__;
 
-    // The response paths for a method, as the server named it. The page names a
-    // method "service.method"; the paths are keyed "/service/method".
+    // The response paths for a method. See pathsFor.
     function specialPathsFor(method) {
-        if (!method || !VALUES) {
-            return [];
-        }
-        var dot = method.lastIndexOf(".");
-        if (dot === -1) {
-            return [];
-        }
-        return SPECIAL.methods["/" + method.slice(0, dot) + "/" + method.slice(dot + 1)] || [];
+        return pathsFor(SPECIAL.methods, method);
     }
 
     function specialRequestPathsFor(method) {
+        return pathsFor(SPECIAL.requests, method);
+    }
+
+    // ---- bytes -----------------------------------------------------------------
+    //
+    // A bytes field arrives as base64, which is not how any of these values are
+    // written anywhere else. The dropdown over the response picks which encoding is
+    // shown; history keeps the base64 either way, for the same reason it keeps the
+    // raw messages - a saved history is still what a replay has to send.
+    //
+    // Page-wide rather than per-field: a response is read whole, and hunting for
+    // the one field whose box says hex is not reading it.
+    var bytesEncoding = "base64";
+
+    function bytesPathsFor(method) {
+        return pathsFor(SPECIAL.bytesMethods, method);
+    }
+
+    function bytesRequestPathsFor(method) {
+        return pathsFor(SPECIAL.bytesRequests, method);
+    }
+
+    // The paths for a method, as the server named it. The page names a method
+    // "service.method"; the paths are keyed "/service/method".
+    function pathsFor(paths, method) {
         if (!method || !VALUES) {
             return [];
         }
@@ -55,7 +72,15 @@ $(function () {
         if (dot === -1) {
             return [];
         }
-        return (SPECIAL.requests || {})["/" + method.slice(0, dot) + "/" + method.slice(dot + 1)] || [];
+        return (paths || {})["/" + method.slice(0, dot) + "/" + method.slice(dot + 1)] || [];
+    }
+
+    // Whether a method has anything for the dropdown to act on. Offered whenever the
+    // type has a bytes field in it, whether or not this particular exchange filled
+    // one in: a control that came and went with the data would be one you could not
+    // reach for in advance.
+    function hasBytes(method) {
+        return bytesPathsFor(method).length > 0 || bytesRequestPathsFor(method).length > 0;
     }
 
     // requestAsNumbers is a request body with its special messages replaced.
@@ -63,11 +88,14 @@ $(function () {
     // Keyed lowerCamelCase, because a request body here is grpcui's own model
     // rather than something off the wire.
     function requestAsNumbers(body, method) {
-        var paths = specialRequestPathsFor(method);
-        if (!paths.length || !VALUES) {
+        if (!VALUES) {
             return body;
         }
-        return VALUES.parsed(body, paths, SPECIAL, true);
+        var shown = VALUES.parsed(body, specialRequestPathsFor(method), SPECIAL, true);
+        if (bytesEncoding === "hex") {
+            shown = VALUES.hexed(shown, bytesRequestPathsFor(method), true);
+        }
+        return shown;
     }
 
     // asNumbers is one instance's response with its special messages replaced.
@@ -76,7 +104,8 @@ $(function () {
     // each message inside it rather than from the top.
     function asNumbers(payload, method) {
         var paths = specialPathsFor(method);
-        if (!paths.length || !payload || typeof payload !== "object") {
+        var bytes = bytesEncoding === "hex" ? bytesPathsFor(method) : [];
+        if ((!paths.length && !bytes.length) || !payload || typeof payload !== "object") {
             return payload;
         }
 
@@ -94,6 +123,7 @@ $(function () {
                 return entry;
             }
             entry.message = VALUES.parsed(entry.message, paths, SPECIAL);
+            entry.message = VALUES.hexed(entry.message, bytes);
             return entry;
         });
         return copy;
@@ -703,11 +733,50 @@ $(function () {
         return $cell;
     }
 
-    function renderResults(data) {
+    // The dropdown itself, one per place a response is shown. They share the one
+    // setting, so picking hex in either shows hex in both.
+    function bytesEncodingControl() {
+        var $select = $("<select>", {
+            "class": "cre-bytes-encoding",
+            title: "How bytes fields are shown. History keeps the base64 either way."
+        });
+        $select.append($("<option>", { value: "base64", text: "base64" }));
+        $select.append($("<option>", { value: "hex", text: "hex" }));
+        $select.val(bytesEncoding);
+        $select.on("change", function () {
+            bytesEncoding = this.value;
+            var inHistory = $(this).closest("#grpc-history-list").length > 0;
+            if (lastResults) {
+                // Rendered where it stands: switching encoding from the History tab
+                // should not throw the page back to the Response one.
+                renderResults(lastResults, true);
+            }
+            renderHistory();
+            // Both renders replace this very dropdown, so the focus that was on it
+            // is put back on the one that took its place.
+            $(inHistory ? "#grpc-history-list" : "#cre-response")
+                .find("select.cre-bytes-encoding").first().focus();
+        });
+        return $("<div>", { "class": "cre-encoding-controls" })
+            .append($("<span>", { "class": "cre-encoding-label", text: "Bytes:" }))
+            .append($select);
+    }
+
+    // The last fan-out, kept so the Response tab can be re-rendered in another
+    // encoding without sending it again.
+    var lastResults = null;
+
+    function renderResults(data, keepTab) {
+        lastResults = data;
         var $out = $("#cre-response").empty();
         $out.append($("<div>", { "class": "cre-method", text: data.method }));
+        if (hasBytes(data.method)) {
+            $out.append(bytesEncodingControl());
+        }
         $out.append(resultGrid(data));
-        selectTab(0);
+        if (!keepTab) {
+            selectTab(0);
+        }
     }
 
     function renderError(message) {
@@ -736,6 +805,10 @@ $(function () {
         if (history.length === 0) {
             $list.append($("<div>", { "class": "cre-history-empty", text: "No requests yet." }));
             return;
+        }
+
+        if (history.some(function (item) { return hasBytes(item.method); })) {
+            $list.append(bytesEncodingControl());
         }
 
         var $accordion = $("<div>");
