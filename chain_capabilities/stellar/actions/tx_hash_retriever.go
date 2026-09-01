@@ -98,9 +98,13 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 		return "", 0, fmt.Errorf("no failed transmission found")
 	}
 
-	selected, _ := earliestEvent(details, func(d eventDetails) bool {
+	selected, ok := earliestEvent(details, func(d eventDetails) bool {
 		return !d.isSuccess
 	})
+	if !ok {
+		return "", len(details), fmt.Errorf("no failed transmission found")
+	}
+
 	selectedHash := selected.txHash
 	r.lggr.Debugw("Returning earliest failed transmission",
 		append([]any{
