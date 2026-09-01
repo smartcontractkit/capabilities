@@ -15,9 +15,8 @@ import (
 // signatures, and positional topic slots). Two filters that match exactly the
 // same on-chain logs hash to the same ID regardless of which workflow or
 // trigger registered them, or of the order their addresses/sigs/topics were
-// supplied. It is used as ResourceIdentity.ResourceID and as the
-// RESERVE/RELEASE event identity so identical filters share one billable
-// physical resource (R4).
+// supplied. It is used as the snapshot resource_id and dedup key so identical
+// filters share one billable physical resource (R4).
 //
 // Canonicalization rules (each rule defeats a source of non-determinism):
 //   - addresses and event sigs are lowercased 0x-prefixed hex and sorted

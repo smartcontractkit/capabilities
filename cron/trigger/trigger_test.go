@@ -20,7 +20,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -115,7 +114,7 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 		payload := &crontypedapi.LegacyPayload{} //nolint:staticcheck
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
-		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
+		response.Payload = Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
 		return response
 	}
 

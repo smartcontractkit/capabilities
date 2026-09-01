@@ -18,7 +18,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
@@ -27,7 +26,8 @@ import (
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
-	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
+
+	"github.com/smartcontractkit/capabilities/libs/triggermeter"
 )
 
 const (
@@ -36,12 +36,6 @@ const (
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
-
-// connectorHandler implements resourcemanager.Meterable: it owns the
-// workflowStore and the base metering identity, so it both emits lifecycle
-// edges inline and reports the absolute state of active registrations on the
-// ResourceManager's snapshot tick.
-var _ resourcemanager.Meterable = &connectorHandler{}
 
 type connectorHandler struct {
 	services.StateMachine
@@ -55,24 +49,17 @@ type connectorHandler struct {
 	wg                       sync.WaitGroup
 	stopChan                 services.StopChan
 	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
-	resourceManager          *resourcemanager.ResourceManager
 	multiTriggerFlag         limits.RangeLimiter[config.Timestamp]
-	// baseIdentity is the six-dimension + resource_pool metering identity for
-	// this trigger LOOP, built once at Initialise. Per-workflow billing fields
-	// are carried by Utilization.
-	baseIdentity resourcemanager.ResourceIdentity
-	// unregisterMeterable removes this handler from the ResourceManager's
-	// snapshot registry; set on Start, called on Close.
-	unregisterMeterable func()
+	// meter owns every metering concern: the ResourceManager lifecycle, the
+	// base identity, org resolution, and the snapshot registration over the
+	// workflow store. Nil-receiver-safe; a meter with metering off is a no-op.
+	meter *triggermeter.TriggerMeter
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics,
 	orgResolver orgresolver.OrgResolver, limitsFactory limits.Factory,
-	resourceManager *resourcemanager.ResourceManager, baseIdentity resourcemanager.ResourceIdentity) (*connectorHandler, error) {
-	if resourceManager == nil {
-		resourceManager = resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{})
-	}
+	meter *triggermeter.TriggerMeter) (*connectorHandler, error) {
 	multiTriggerFlag, err := limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureHTTPTriggerNewExecutionIDsActivePeriod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multi-trigger execution ID flag: %w", err)
@@ -87,8 +74,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		metrics:                  metrics,
 		stopChan:                 make(chan struct{}),
 		orgResolver:              orgResolver,
-		resourceManager:          resourceManager,
-		baseIdentity:             baseIdentity,
+		meter:                    meter,
 		multiTriggerFlag:         multiTriggerFlag,
 	}
 	return h, nil
@@ -99,14 +85,10 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	h.wg.Add(1)
 	go h.startRequestCacheCleanup(ctx)
 	return h.StartOnce(HandlerName, func() error {
-		// Start the ResourceManager as a sub-service (it owns the snapshot
-		// tick) and register this handler as the snapshotted Meterable. The RM
-		// is fail-open: a start failure logs and continues (uniform with the
-		// other trigger producers) rather than gating the handler.
-		if err := h.resourceManager.Start(ctx); err != nil {
-			h.lggr.Errorw("failed to start metering ResourceManager; snapshots disabled", "err", err)
-		} else {
-			h.unregisterMeterable = h.resourceManager.Register(h)
+		// Start the meter (fail-open: it owns the ResourceManager lifecycle and
+		// snapshot registration, and a metering failure never gates the handler).
+		if err := h.meter.Start(ctx); err != nil {
+			return err
 		}
 		return h.gatewayConnector.AddHandler(ctx, []string{
 			gateway_common.MethodWorkflowExecute,
@@ -144,14 +126,9 @@ func (h *connectorHandler) Close() error {
 		h.wg.Wait()
 		// No process-lifecycle metering emissions: a graceful shutdown emits
 		// nothing, and billing releases each still-active workflow by its
-		// absence from the next snapshot. Deregister the Meterable from the
-		// ResourceManager FIRST so no snapshot tick can run after teardown,
-		// then close the ResourceManager.
-		if h.unregisterMeterable != nil {
-			h.unregisterMeterable()
-			h.unregisterMeterable = nil
-		}
-		return h.resourceManager.Close()
+		// absence from the next snapshot. The meter deregisters its snapshot
+		// Meterable first, then closes the ResourceManager iff it started it.
+		return h.meter.Close()
 	})
 }
 
@@ -194,125 +171,22 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
 	workflow := newWorkflowWithMetadata(input.WorkflowSelector, authorizedKeys, sendCh, input.Metadata)
-	// upsertWorkflow returns the evicted workflow (if any) atomically under the
-	// store lock, so we never need a separate pre-read (which would be a TOCTOU
-	// race against a concurrent register/unregister).
-	evicted, err := h.workflowStore.upsertWorkflow(workflow)
-	if err != nil {
+	// Resolve the org once at registration and store it on the workflow entry:
+	// the snapshot path (workflowStore.snapshotRows) must be network-free, so
+	// it reads this stored value on every tick.
+	workflow.orgID = h.meter.ResolveOrg(ctx, input.WorkflowSelector.WorkflowOwner)
+	// upsertWorkflow evicts any workflow previously holding this owner/name/tag
+	// reference atomically under the store lock. No MeterRecord deltas are
+	// emitted for registration, version eviction, or unregistration: billing
+	// follows the snapshot level, so a new workflow starts billing when it
+	// appears in the next snapshot and an evicted one is released by its
+	// absence.
+	if _, err := h.workflowStore.upsertWorkflow(workflow); err != nil {
 		return fmt.Errorf("failed to register workflow (ID: %s, Owner: %s, Name: %s): %w",
 			input.WorkflowSelector.WorkflowID, input.WorkflowSelector.WorkflowOwner, input.WorkflowSelector.WorkflowName, err)
 	}
-	newWorkflowID := input.WorkflowSelector.WorkflowID
-	owner := input.WorkflowSelector.WorkflowOwner
-	switch {
-	case evicted == nil:
-		// Brand-new registration: bill +1 for the new durable resource.
-		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, owner)
-	case evicted.workflowSelector.WorkflowID == newWorkflowID:
-		// Same-ID re-register: the durable resource is unchanged, so there is
-		// no level delta to bill. Emit nothing.
-	default:
-		// Version update: the same owner/name/tag reference now resolves to a
-		// new workflow ID. Bill -1 against the evicted workflow's resource_id
-		// and +1 for the new, both derived from the atomically returned
-		// eviction so the old reservation cannot leak.
-		h.emitMeterRecord(ctx, -1, "http-unregister", evicted.workflowSelector.WorkflowID, evicted.workflowSelector.WorkflowOwner)
-		h.emitMeterRecord(ctx, 1, "http-register", newWorkflowID, owner)
-	}
 	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
-}
-
-// emitMeterRecord emits a signed delta MeterRecord (METER_ACTION_UPDATE) for a
-// change to the durable HTTP-workflow-registration level: register bills +1,
-// unregister/version-eviction bills -1. resource_id is the workflow ID (HTTP
-// registrations are workflow-scoped, so there is no shared physical resource).
-// The org is resolved fresh from owner at emit time. Emission is fail-open and
-// never affects the registration outcome.
-//
-// event_id is derived from the action namespace + the workflow ID, which is
-// DON-consistent: the (un)register requests are delivered to every capability
-// node as the mode-aggregated request (see the remote trigger publisher), and a
-// version update changes the workflow ID so its +1/-1 pair is distinct from the
-// prior version. The unregister path passes the same workflowID so its -1 hashes
-// symmetrically with the register +1 it reverses.
-// The record's DON dimension is the capability DON stamped on the base
-// identity at Initialise. If that is not (yet) available the record is still
-// billed — level integrity beats dimension completeness — but with the DON
-// dimension absent rather than another DON's ID substituted.
-func (h *connectorHandler) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID string, owner string) {
-	if _, err := h.donID(); err != nil {
-		h.lggr.Errorw("emitting meter record without DON ID", "err", err, "namespace", namespace, "workflowID", workflowID)
-	}
-	identity := h.baseIdentity
-	var orgID string
-	if h.orgResolver != nil && owner != "" {
-		if resolved, err := h.orgResolver.Get(ctx, owner); err != nil {
-			logger.Sugared(h.lggr).Warnw("failed to resolve org ID for metering", "owner", owner, "err", err)
-		} else {
-			orgID = resolved
-		}
-	}
-	eventID := resourcemanager.EventID(namespace, workflowID)
-	h.resourceManager.EmitDelta(ctx, identity, eventID, delta, resourcemanager.UtilizationFields{
-		ResourceType: meterResourceType,
-		ResourceID:   workflowID,
-		OrgID:        orgID,
-	})
-}
-
-// ErrDonIDNotInitialised is returned by donID before Initialise has delivered
-// a non-zero CapabilityDonID from the host (StandardCapabilitiesDependencies).
-// The consumer workflow's DON ID is a different dimension and is never
-// substituted for it: callers either degrade explicitly at their own call site
-// (event labels, CRE-4409) or proceed with the DON dimension absent (metering).
-var ErrDonIDNotInitialised = errors.New("capability DON ID not initialised: waiting for Initialise to deliver StandardCapabilitiesDependencies.CapabilityDonID")
-
-// donID returns the capability DON identifier that Initialise stamped on the
-// base metering identity (host-injected CapabilityDonID), or
-// ErrDonIDNotInitialised when that value has not (yet) been delivered.
-func (h *connectorHandler) donID() (string, error) {
-	if id := h.baseIdentity.DonID(); id != "" {
-		return id, nil
-	}
-	return "", ErrDonIDNotInitialised
-}
-
-// ResourceIdentity returns the HTTP trigger's base metering identity (six
-// dimensions + resource_pool). Per-workflow billing fields are populated on
-// Utilization in GetUtilization. It implements resourcemanager.Meterable.
-func (h *connectorHandler) ResourceIdentity() resourcemanager.ResourceIdentity {
-	return h.baseIdentity
-}
-
-// GetUtilization returns the absolute state of currently active HTTP workflow
-// registrations, one SnapshotEntry per workflow, for the ResourceManager's
-// snapshot tick. It is a cheap read-snapshot of in-memory state (a read-locked
-// copy from the workflow store) and holds no lock across I/O. It implements
-// resourcemanager.Meterable.
-func (h *connectorHandler) GetUtilization(ctx context.Context) []resourcemanager.SnapshotEntry {
-	workflows := h.workflowStore.getWorkflows()
-	entries := make([]resourcemanager.SnapshotEntry, 0, len(workflows))
-	for _, w := range workflows {
-		workflowID := w.workflowSelector.WorkflowID
-		var orgID string
-		if h.orgResolver != nil && w.workflowSelector.WorkflowOwner != "" {
-			if resolved, err := h.orgResolver.Get(ctx, w.workflowSelector.WorkflowOwner); err == nil {
-				orgID = resolved
-			}
-		}
-		entries = append(entries, resourcemanager.SnapshotEntry{
-			Identity: h.baseIdentity,
-			Utilizations: []*meteringpb.Utilization{
-				resourcemanager.NewUtilizationInt(1, resourcemanager.UtilizationFields{
-					ResourceType: meterResourceType,
-					ResourceID:   workflowID,
-					OrgID:        orgID,
-				}),
-			},
-		})
-	}
-	return entries
 }
 
 func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKey) ([]gateway_common.AuthorizedKey, error) {
@@ -342,19 +216,12 @@ func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKe
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
-	// Snapshot the owner before removal; it resolves org at emit time.
-	var owner string
-	if w, ok := h.workflowStore.getWorkflowByID(workflowID); ok {
-		owner = w.workflowSelector.WorkflowOwner
-	}
+	// No MeterRecord delta: billing releases the workflow by its absence from
+	// the next snapshot (workflowStore.snapshotRows).
 	err := h.workflowStore.removeWorkflow(workflowID)
 	if err != nil {
 		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
 	}
-	// Unregister bills a -1 delta against the workflow's resource_id. It hashes
-	// symmetrically with the register +1 (same workflowID, "http-unregister"
-	// namespace) so the consumer pairs them by workflowID.
-	h.emitMeterRecord(ctx, -1, "http-unregister", workflowID, owner)
 	h.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }
@@ -486,9 +353,9 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	// CRE-4409: event labels prefer the capability DON ID but fall back to the
 	// consumer workflow's DON ID when it is not (yet) initialised — a
 	// best-effort label beats an absent one. Metering deliberately does NOT
-	// share this fallback (see donID): the meter record carries the capability
-	// DON or nothing.
-	donIDForEvent, donIDErr := h.donID()
+	// share this fallback (see triggermeter.TriggerMeter.DonID): snapshots
+	// carry the capability DON or nothing.
+	donIDForEvent, donIDErr := h.meter.DonID()
 	if donIDErr != nil && workflowMetadata.WorkflowDONID != 0 {
 		donIDForEvent = strconv.FormatUint(uint64(workflowMetadata.WorkflowDONID), 10)
 	}

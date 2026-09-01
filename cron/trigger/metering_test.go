@@ -20,9 +20,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
+
+	"github.com/smartcontractkit/capabilities/libs/triggermeter"
 )
 
-// fakeMeterEmitter captures metering records delivered through a real
+// fakeMeterEmitter captures metering emissions delivered through a real
 // ResourceManager, so tests assert on exactly the bytes production would emit.
 // It demultiplexes MeterRecord and MeterSnapshot messages by their beholder
 // entity attribute. A non-nil err simulates delivery failure: nothing is
@@ -101,19 +103,6 @@ var meteredTestDeployment = resourcemanager.DeploymentIdentity{
 	NodeID:          "clp-cre-wf-zone-a-1",
 }
 
-// expectedBaseIdentity is the base identity the Service builds from
-// meteredTestDeps (resource_id left empty; set per trigger).
-var expectedBaseIdentity = resourcemanager.ResourceIdentity{
-	Product:         "cre-mainline",
-	Tenant:          "mainline",
-	NumericTenantID: "42",
-	Environment:     "staging",
-	Zone:            "wf-zone-a",
-	Don:             &resourcemanager.DonIdentity{DonID: "7", NodeID: "clp-cre-wf-zone-a-1"},
-	Service:         "cron-trigger",
-	ResourcePool:    "trigger_registrations",
-}
-
 // newMeteredTriggerService builds an initialised trigger service whose
 // ResourceManager is enabled and wired to emitter, with identity sourced from
 // meteredTestDeps. Snapshots use a fake clock so tests advance the tick
@@ -148,7 +137,14 @@ func newMeteredTriggerService(t *testing.T, clock clockwork.Clock, emitter resou
 	return ts, meters, fakeClock
 }
 
-func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
+// TestCronTrigger_Metering_NoRecords is the core snapshot-only invariant: a
+// full registration lifecycle — register, tick callbacks, failed paths,
+// unregister, re-register (the restart shape) — emits ZERO MeterRecords.
+// Trigger capabilities bill exclusively through snapshots: the level rises
+// when a registration appears in the next snapshot and is released by its
+// absence, so there are no deltas to re-emit on restart and nothing for the
+// billing consumer to dedup.
+func TestCronTrigger_Metering_NoRecords(t *testing.T) {
 	t.Parallel()
 
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -161,109 +157,34 @@ func TestCronTrigger_Metering_RegisterUnregisterDeltas(t *testing.T) {
 	}
 	ch, capErr := ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
 	require.Nil(t, capErr)
+	require.Empty(t, emitter.Records(), "registration must not emit meter records")
 
-	records := emitter.Records()
-	require.Len(t, records, 1, "expected exactly one +1 UPDATE on successful registration")
-	register := records[0]
-	// Producers emit only signed-delta UPDATE records; register is a +1 delta.
-	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, register.GetAction())
-	// The record carries the cll.meter billing domain.
-	assert.Equal(t, "cll.meter", emitter.recordDomains[0])
+	// Failed paths emit nothing either.
+	_, capErr = ts.RegisterTrigger(t.Context(), "bad-schedule", metadata, &crontypedapi.Config{Schedule: "not-a-schedule"})
+	require.NotNil(t, capErr)
+	_, capErr = ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
+	require.NotNil(t, capErr, "duplicate registration fails")
+	require.Nil(t, ts.UnregisterTrigger(t.Context(), "missing", metadata, &crontypedapi.Config{Schedule: everySecond}))
+	require.Empty(t, emitter.Records())
 
-	// Identity is populated from host-injected deps and points at the cron
-	// resource pool. Per-trigger fields are carried on utilization.
-	id := register.GetIdentity()
-	require.NotNil(t, id)
-	assert.Equal(t, "cre-mainline", id.GetProduct())
-	assert.Equal(t, "mainline", id.GetTenant())
-	assert.Equal(t, "42", id.GetNumericTenantId())
-	assert.Equal(t, "staging", id.GetEnvironment())
-	assert.Equal(t, "wf-zone-a", id.GetZone())
-	assert.Equal(t, "7", id.GetDon().GetDonId())
-	assert.Equal(t, "clp-cre-wf-zone-a-1", id.GetDon().GetNodeId())
-	assert.Equal(t, "cron-trigger", id.GetService())
-	assert.Equal(t, "trigger_registrations", id.GetResourcePool())
-	// The metering identity DON is exactly the host-injected capability DON.
-	capDonID, donErr := ts.donID()
-	require.NoError(t, donErr)
-	assert.Equal(t, capDonID, id.GetDon().GetDonId())
-
-	require.Len(t, register.GetUtilizations(), 1)
-	assert.Equal(t, "1", register.GetUtilizations()[0].GetValue())
-	assert.Equal(t, "operations", register.GetUtilizations()[0].GetResourceType())
-	assert.Equal(t, triggerID1, register.GetUtilizations()[0].GetResourceId())
-	// event_id is the deterministic, cross-node-identical id derived from the
-	// DON-aggregated request identity (workflowID + triggerID).
-	wantRegisterID := resourcemanager.EventID("cron-register", workflowID1, triggerID1)
-	assert.Equal(t, wantRegisterID, register.GetUtilizations()[0].GetEventId())
-
-	// Cross-node determinism: a second node fielding the identical register
-	// request derives the identical event_id.
-	emitter2 := &fakeMeterEmitter{}
-	ts2, _, _ := newMeteredTriggerService(t, clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)), emitter2)
-	_, capErr2 := ts2.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
-	require.Nil(t, capErr2)
-	require.Len(t, emitter2.Records(), 1)
-	assert.Equal(t, register.GetUtilizations()[0].GetEventId(), emitter2.Records()[0].GetUtilizations()[0].GetEventId(),
-		"two nodes fielding the same register must emit the identical event_id")
-	require.NoError(t, ts2.Close())
-
-	// Each cron tick re-Writes the trigger to reschedule it; the Write
-	// happens before the channel send, so after receiving the event the
-	// callback path has fully run. It must not emit.
+	// Each cron tick re-Writes the trigger to reschedule it; the Write happens
+	// before the channel send, so after receiving the event the callback path
+	// has fully run. It must not emit.
 	for range 3 {
 		fakeClock.Advance(time.Second)
 		<-ch
 	}
-	require.Len(t, emitter.Records(), 1, "cron tick callbacks must not emit meter records")
+	require.Empty(t, emitter.Records(), "cron tick callbacks must not emit meter records")
 
+	// Unregister then re-register the same trigger — the shape of an engine
+	// restart re-registering its triggers. Still nothing on the record stream.
 	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond}))
-	records = emitter.Records()
-	require.Len(t, records, 2, "expected exactly one -1 UPDATE on unregistration")
-	unregister := records[1]
-	assert.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, unregister.GetAction())
-	assert.Equal(t, register.GetUtilizations()[0].GetResourceId(), unregister.GetUtilizations()[0].GetResourceId())
-	require.Len(t, unregister.GetUtilizations(), 1)
-	assert.Equal(t, "-1", unregister.GetUtilizations()[0].GetValue(), "unregister is a signed -1 delta")
-
-	// event_id: unregister is namespaced distinctly from register (so the paired
-	// +1/-1 deltas never dedup into each other) but is otherwise the same
-	// deterministic derivation over the DON-consistent workflowID+triggerID.
-	wantUnregisterID := resourcemanager.EventID("cron-unregister", workflowID1, triggerID1)
-	assert.Equal(t, wantUnregisterID, unregister.GetUtilizations()[0].GetEventId())
-	assert.NotEqual(t, register.GetUtilizations()[0].GetEventId(), unregister.GetUtilizations()[0].GetEventId(),
-		"register and unregister must have distinct event_ids")
-
-	require.NoError(t, ts.Close())
-}
-
-func TestCronTrigger_Metering_NoEmitOnFailedPaths(t *testing.T) {
-	t.Parallel()
-
-	fakeClock := clockwork.NewFakeClock()
-	emitter := &fakeMeterEmitter{}
-	ts, _, _ := newMeteredTriggerService(t, fakeClock, emitter)
-
-	metadata := capabilities.RequestMetadata{WorkflowID: workflowID1, WorkflowOwner: "owner-1"}
-
-	// Invalid schedule: registration fails before allocation, nothing emitted.
-	_, capErr := ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: "not-a-schedule"})
-	require.NotNil(t, capErr)
-	require.Empty(t, emitter.Records())
-
-	// Unregistering a trigger that was never registered emits no delta.
-	require.Nil(t, ts.UnregisterTrigger(t.Context(), "missing", metadata, &crontypedapi.Config{Schedule: everySecond}))
-	require.Empty(t, emitter.Records())
-
-	// Duplicate registration fails and must not emit a second +1 delta.
 	_, capErr = ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
 	require.Nil(t, capErr)
-	_, capErr = ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
-	require.NotNil(t, capErr)
-	require.Len(t, emitter.Records(), 1)
+	require.Empty(t, emitter.Records(), "restart-shaped re-registration must not emit meter records")
 
-	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond}))
 	require.NoError(t, ts.Close())
+	require.Empty(t, emitter.Records())
 }
 
 func TestCronTrigger_Metering_FailOpen(t *testing.T) {
@@ -288,16 +209,41 @@ func TestCronTrigger_Metering_FailOpen(t *testing.T) {
 	require.NoError(t, ts.Close())
 }
 
-// TestCronTrigger_Metering_Snapshot asserts the Service implements Meterable
-// such that a forced snapshot emits one MeterSnapshot per active trigger, each
-// carrying the full base identity and per-trigger utilization.
+// TestCronTrigger_Metering_NilMeterEquivalence asserts the fail-open
+// equivalence contract: with metering off entirely (nil ResourceManager), the
+// register/fire/unregister lifecycle behaves identically to the metered path.
+func TestCronTrigger_Metering_NilMeterEquivalence(t *testing.T) {
+	t.Parallel()
+
+	fakeClock := clockwork.NewFakeClock()
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{}, nil)
+	require.NoError(t, err)
+
+	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	require.NoError(t, ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{Config: string(config)}))
+
+	metadata := capabilities.RequestMetadata{WorkflowID: workflowID1, WorkflowOwner: "owner-1"}
+	ch, capErr := ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
+	require.Nil(t, capErr)
+
+	fakeClock.Advance(time.Second)
+	<-ch
+
+	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond}))
+	require.NoError(t, ts.Close())
+}
+
+// TestCronTrigger_Metering_Snapshot asserts the snapshot surface end to end: a
+// tick emits one MeterSnapshot per active trigger carrying the full identity
+// and per-trigger utilization, and an unregistered trigger is released by its
+// absence from the following tick.
 func TestCronTrigger_Metering_Snapshot(t *testing.T) {
 	t.Parallel()
 
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
 	emitter := &fakeMeterEmitter{}
-	ts, rm, clock := newMeteredTriggerService(t, fakeClock, emitter)
-	_ = rm
+	ts, _, clock := newMeteredTriggerService(t, fakeClock, emitter)
 
 	metadata1 := capabilities.RequestMetadata{WorkflowID: workflowID1, WorkflowOwner: "0xOwner-1"}
 	_, capErr := ts.RegisterTrigger(t.Context(), triggerID1, metadata1, &crontypedapi.Config{Schedule: everySecond})
@@ -326,20 +272,50 @@ func TestCronTrigger_Metering_Snapshot(t *testing.T) {
 	s1 := byTrigger[triggerID1]
 	require.NotNil(t, s1)
 	assert.Equal(t, "1", s1.GetUtilization()[0].GetValue())
-	assert.Equal(t, "cron-trigger", s1.GetIdentity().GetService())
-	assert.Equal(t, "trigger_registrations", s1.GetIdentity().GetResourcePool())
 	assert.Equal(t, "operations", s1.GetUtilization()[0].GetResourceType())
+
+	// The snapshot identity carries the deployment dimensions from
+	// loop.EnvConfig and the host-injected capability DON.
+	id := s1.GetIdentity()
+	require.NotNil(t, id)
+	assert.Equal(t, "cre-mainline", id.GetProduct())
+	assert.Equal(t, "mainline", id.GetTenant())
+	assert.Equal(t, "42", id.GetNumericTenantId())
+	assert.Equal(t, "staging", id.GetEnvironment())
+	assert.Equal(t, "wf-zone-a", id.GetZone())
+	assert.Equal(t, "7", id.GetDon().GetDonId())
+	assert.Equal(t, "clp-cre-wf-zone-a-1", id.GetDon().GetNodeId())
+	assert.Equal(t, "cron-trigger", id.GetService())
+	assert.Equal(t, "trigger_registrations", id.GetResourcePool())
+	capDonID, donErr := ts.meter.DonID()
+	require.NoError(t, donErr)
+	assert.Equal(t, capDonID, id.GetDon().GetDonId())
 
 	s2 := byTrigger[triggerID2]
 	require.NotNil(t, s2)
 	assert.Equal(t, "1", s2.GetUtilization()[0].GetValue())
 	assert.Equal(t, triggerID2, s2.GetUtilization()[0].GetResourceId())
 
+	// Release-by-absence: after unregistering trigger 2, the next tick
+	// snapshots only trigger 1.
+	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID2, metadata2, &crontypedapi.Config{Schedule: everySecond}))
+	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
+	clock.Advance(time.Minute)
+	require.Eventually(t, func() bool {
+		return len(emitter.Snapshots()) == 3
+	}, time.Second, time.Millisecond)
+	last := emitter.Snapshots()[2]
+	assert.Equal(t, triggerID1, last.GetUtilization()[0].GetResourceId(),
+		"an unregistered trigger is released by its absence from the next snapshot")
+
+	// The snapshot stream is the only metering surface: no records, ever.
+	require.Empty(t, emitter.Records())
+
 	require.NoError(t, ts.Close())
 }
 
 // TestCronTrigger_Metering_NoShutdownEmissions asserts that a graceful Close
-// emits NO meter records. Process-lifecycle emissions are deleted by design:
+// emits NO metering at all. Process-lifecycle emissions are deleted by design:
 // billing releases each still-active registration by its absence from the next
 // snapshot, not by a shutdown drain.
 func TestCronTrigger_Metering_NoShutdownEmissions(t *testing.T) {
@@ -358,20 +334,17 @@ func TestCronTrigger_Metering_NoShutdownEmissions(t *testing.T) {
 	_, capErr = ts.RegisterTrigger(t.Context(), triggerID2, metadata2, &crontypedapi.Config{Schedule: everySecond})
 	require.Nil(t, capErr)
 
-	// Two +1 registration deltas so far.
-	require.Len(t, emitter.Records(), 2)
-
 	require.NoError(t, ts.Close())
 
-	// Close emitted nothing: no shutdown drain.
-	require.Len(t, emitter.Records(), 2, "graceful close must emit no meter records")
+	require.Empty(t, emitter.Records(), "graceful close must emit no meter records")
+	require.Empty(t, emitter.Snapshots(), "no snapshot tick ran; close must not force one")
 }
 
 // TestCronTrigger_Metering_DonIDNotInitialised asserts that when the host has
-// not injected a capability DON ID, the meter record is still billed but with
-// the DON dimension absent — the consumer workflow's DON ID is never
-// substituted — and donID returns ErrDonIDNotInitialised so callers that want
-// a best-effort value (event labels, CRE-4409) degrade explicitly themselves.
+// not injected a capability DON ID, snapshots are still emitted but with the
+// DON dimension absent — the consumer workflow's DON ID is never substituted —
+// and the meter's DonID returns ErrDonIDNotInitialised so callers that want a
+// best-effort value (event labels, CRE-4409) degrade explicitly themselves.
 func TestCronTrigger_Metering_DonIDNotInitialised(t *testing.T) {
 	t.Parallel()
 
@@ -379,8 +352,11 @@ func TestCronTrigger_Metering_DonIDNotInitialised(t *testing.T) {
 	emitter := &fakeMeterEmitter{}
 
 	meters := resourcemanager.NewResourceManager(logger.Nop(), resourcemanager.ResourceManagerConfig{
-		MeterRecordsEnabled: true,
-		Emitter:             emitter,
+		MeterRecordsEnabled:   true,
+		MeterSnapshotsEnabled: true,
+		Emitter:               emitter,
+		SnapshotInterval:      time.Minute,
+		Clock:                 fakeClock,
 	})
 	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{}, meters)
 	require.NoError(t, err)
@@ -391,19 +367,24 @@ func TestCronTrigger_Metering_DonIDNotInitialised(t *testing.T) {
 	// No CapabilityDonID injected (zero) → the DON dimension stays absent.
 	require.NoError(t, ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{Config: string(config)}))
 
-	_, donErr := ts.donID()
-	require.ErrorIs(t, donErr, ErrDonIDNotInitialised)
+	_, donErr := ts.meter.DonID()
+	require.ErrorIs(t, donErr, triggermeter.ErrDonIDNotInitialised)
 
 	metadata := capabilities.RequestMetadata{WorkflowID: workflowID1, WorkflowOwner: "owner-1", WorkflowDonID: 42}
 	_, capErr := ts.RegisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond})
 	require.Nil(t, capErr)
 
-	records := emitter.Records()
-	require.Len(t, records, 1, "the record is still billed when the DON ID is unavailable")
-	assert.Empty(t, records[0].GetIdentity().GetDon().GetDonId(),
+	require.NoError(t, fakeClock.BlockUntilContext(t.Context(), 1))
+	fakeClock.Advance(time.Minute)
+	require.Eventually(t, func() bool {
+		return len(emitter.Snapshots()) == 1
+	}, time.Second, time.Millisecond)
+
+	snapshot := emitter.Snapshots()[0]
+	assert.Empty(t, snapshot.GetIdentity().GetDon().GetDonId(),
 		"the consumer workflow's DON ID must never be substituted for the capability DON")
-	// Product falls back to the cron constant when the host injects none.
-	assert.Equal(t, "cre", records[0].GetIdentity().GetProduct())
+	// Product falls back to the shared trigger default when the host injects none.
+	assert.Equal(t, "cre", snapshot.GetIdentity().GetProduct())
 
 	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID1, metadata, &crontypedapi.Config{Schedule: everySecond}))
 	require.NoError(t, ts.Close())

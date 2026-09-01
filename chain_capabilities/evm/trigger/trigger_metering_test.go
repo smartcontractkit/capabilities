@@ -18,37 +18,32 @@ import (
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
-	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
+
+	"github.com/smartcontractkit/capabilities/libs/triggermeter"
 )
 
 const testChainSelector = "5009297550715157269"
 
-// testBaseIdentity is the producer base identity the metering tests build their
-// LogTriggerService with. It carries every coarse dimension so the tests can
-// assert each one is populated on the emitted records (the host-injected
-// identity contract). DONID is the capability DON; an empty DONID exercises the
-// WorkflowDonID fallback.
-func testBaseIdentity() resourcemanager.ResourceIdentity {
-	return resourcemanager.ResourceIdentity{
-		Product:         "cre",
-		Tenant:          "mainline",
-		NumericTenantID: "42",
-		Environment:     "staging",
-		Zone:            "wf-zone-a",
-		Don:             &resourcemanager.DonIdentity{DonID: "42", NodeID: "csa-pubkey-hex"},
-		Service:         MeteringService,
-		ResourcePool:    MeteringResource,
-	}
+// testDeployment is the deployment/node identity the metering tests build
+// their meter with (production sources it from loop.EnvConfig). It carries
+// every coarse dimension so the tests can assert each one is populated on the
+// emitted snapshots.
+var testDeployment = resourcemanager.DeploymentIdentity{
+	Product:         "cre",
+	Tenant:          "mainline",
+	NumericTenantID: "42",
+	Environment:     "staging",
+	Zone:            "wf-zone-a",
+	NodeID:          "csa-pubkey-hex",
 }
 
 // fakeMeterEmitter captures MeterRecords and MeterSnapshots emitted through the
 // ResourceManager. The two message types are distinguished by the entity
-// attribute the emitter is called with. The manager now emits one MeterSnapshot
-// per active resource (no single Snapshot envelope), so snapshots accumulates
-// one message per resource.
+// attribute the emitter is called with. The manager emits one MeterSnapshot
+// per active resource, so snapshots accumulates one message per resource.
 type fakeMeterEmitter struct {
 	err           error
 	emitCalls     int
@@ -105,17 +100,17 @@ func isSnapshotEmit(attrKVs []any) bool {
 	return false
 }
 
-// newMeteredTriggerObject builds a LogTriggerService whose ResourceManager is
-// enabled and wired to a fake emitter. The poll interval is stretched so the
-// polling goroutine stays quiet; metering happens on the register, unregister,
-// cleanup, snapshot, and close paths only.
+// newMeteredTriggerObject builds a LogTriggerService whose meter wraps an
+// enabled ResourceManager wired to a fake emitter. The poll interval is
+// stretched so the polling goroutine stays quiet; metering happens on the
+// snapshot tick only (the EVM trigger emits no MeterRecord deltas).
 func newMeteredTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTriggerStore) (*LogTriggerService, *fakeMeterEmitter, *clockwork.FakeClock) {
 	t.Helper()
 	lts := createTriggerObject(t, mockEVM, store)
 	lts.logTriggerPollInterval = time.Hour
 	emitter := &fakeMeterEmitter{}
 	clock := clockwork.NewFakeClockAt(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
-	lts.resourceManager = resourcemanager.NewResourceManager(logger.Test(t),
+	rm := resourcemanager.NewResourceManager(logger.Test(t),
 		resourcemanager.ResourceManagerConfig{
 			MeterRecordsEnabled:   true,
 			MeterSnapshotsEnabled: true,
@@ -123,9 +118,18 @@ func newMeteredTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store Lo
 			SnapshotInterval:      time.Minute,
 			Clock:                 clock,
 		})
-	lts.baseIdentity = testBaseIdentity()
+	lts.meter = triggermeter.New(logger.Test(t), rm, testDeployment, 42, meteringConfig, nil, lts.snapshotRows)
 	lts.chainSelector = testChainSelector
 	return lts, emitter, clock
+}
+
+// startMeter starts the meter (RM + snapshot registration) and tears it down
+// on test cleanup, for tests that drive snapshot ticks directly without the
+// full service lifecycle.
+func startMeter(t *testing.T, lts *LogTriggerService) {
+	t.Helper()
+	require.NoError(t, lts.meter.Start(t.Context()))
+	t.Cleanup(func() { require.NoError(t, lts.meter.Close()) })
 }
 
 // meteringTestInput is a registration request with two filter addresses, so
@@ -137,8 +141,9 @@ func meteringTestInput() *evmcappb.FilterLogTriggerRequest {
 	}
 }
 
-// assertBaseIdentity checks the six coarse dimensions + service/resource_pool on the
-// emitted record identity, proving the host-injected identity is carried.
+// assertBaseIdentity checks the six coarse dimensions + service/resource_pool
+// on the emitted snapshot identity, proving the host-injected identity is
+// carried.
 func assertBaseIdentity(t *testing.T, id *meteringpb.ResourceIdentity) {
 	t.Helper()
 	require.NotNil(t, id)
@@ -149,8 +154,8 @@ func assertBaseIdentity(t *testing.T, id *meteringpb.ResourceIdentity) {
 	require.Equal(t, "wf-zone-a", id.GetZone())
 	require.Equal(t, "42", id.GetDon().GetDonId())
 	require.Equal(t, "csa-pubkey-hex", id.GetDon().GetNodeId())
-	require.Equal(t, MeteringService, id.GetService())
-	require.Equal(t, MeteringResource, id.GetResourcePool())
+	require.Equal(t, meteringConfig.Service, id.GetService())
+	require.Equal(t, meteringConfig.ResourcePool, id.GetResourcePool())
 }
 
 // expectedPhysicalFilterID recomputes the physical filter id for the metering
@@ -173,64 +178,40 @@ func expectedPhysicalFilterID(t *testing.T, input *evmcappb.FilterLogTriggerRequ
 	return physicalFilterID(testChainSelector, addrs, sigs, h2, h3, h4)
 }
 
-func TestLogTriggerMetering_RegisterEmitsPositiveDelta(t *testing.T) {
+// TestLogTriggerMetering_NoRecords is the core snapshot-only invariant: the
+// full registration lifecycle — register, shared-filter register, unregister,
+// re-register (the restart shape), failed paths — emits ZERO MeterRecords.
+// EVM log filters bill exclusively through snapshots: the level (addressCount
+// per physical filter) rises when the filter appears in the next snapshot and
+// is released by its absence.
+func TestLogTriggerMetering_NoRecords(t *testing.T) {
 	evmService := initMocks(t)
-	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
-	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Times(3)
+	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Times(3)
+	evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil)
 	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 
 	meta := capabilities.RequestMetadata{WorkflowID: "wf-id", WorkflowOwner: "0xOwner"}
-	_, err := service.RegisterLogTrigger(t.Context(), triggerID, meta, meteringTestInput())
+	_, err := service.RegisterLogTrigger(t.Context(), "trigger-A", meta, meteringTestInput())
 	require.NoError(t, err)
+	require.Empty(t, emitter.records, "registration must not emit meter records")
 
-	require.Len(t, emitter.records, 1)
-	record := emitter.records[0]
-	assertBaseIdentity(t, record.GetIdentity())
-	physID := expectedPhysicalFilterID(t, meteringTestInput())
-	require.Equal(t, physID, record.GetUtilizations()[0].GetResourceId(), "resource_id must be the physical filter content hash")
-	// Producers emit only signed-delta UPDATE records; a fresh registration is
-	// the physical filter's 0->1 activation and bills +addressCount.
-	require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, record.GetAction())
-	require.Len(t, record.GetUtilizations(), 1)
-	require.Equal(t, "2", record.GetUtilizations()[0].GetValue(), "activation delta must equal the filter address count")
-	require.Equal(t, MeteringResourceType, record.GetUtilizations()[0].GetResourceType())
-	require.NotEmpty(t, record.GetUtilizations()[0].GetEventId(), "event_id is stamped per emission")
-	// The record carries the cll.meter billing domain.
-	require.Equal(t, "cll.meter", emitter.recordDomains[0])
-	// The metering identity DON is exactly the host-injected capability DON.
-	capDonID, donErr := service.donID()
-	require.NoError(t, donErr)
-	require.Equal(t, capDonID, record.GetIdentity().GetDon().GetDonId())
+	// A second trigger sharing the identical physical filter.
+	_, err = service.RegisterLogTrigger(t.Context(), "trigger-B",
+		capabilities.RequestMetadata{WorkflowID: "wf-2", WorkflowOwner: "0xOther"}, meteringTestInput())
+	require.NoError(t, err)
+	require.Empty(t, emitter.records)
+
+	// Unregister then re-register — the shape of an engine restart.
+	require.NoError(t, service.UnregisterLogTrigger(t.Context(), "trigger-A", meta, &evmcappb.FilterLogTriggerRequest{}))
+	_, err = service.RegisterLogTrigger(t.Context(), "trigger-A", meta, meteringTestInput())
+	require.NoError(t, err)
+	require.Empty(t, emitter.records, "restart-shaped re-registration must not emit meter records")
+
+	require.Zero(t, emitter.emitCalls, "no metering emission of any kind outside the snapshot tick")
 }
 
-// TestLogTriggerMetering_DonIDNotInitialised asserts that when the host has
-// not injected a capability DON ID, the meter record is still billed but with
-// the DON dimension carrying only the node ID — the consumer workflow's DON ID
-// is never substituted — and donID surfaces ErrDonIDNotInitialised for callers
-// that degrade explicitly (event labels, CRE-4409).
-func TestLogTriggerMetering_DonIDNotInitialised(t *testing.T) {
-	evmService := initMocks(t)
-	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
-	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
-	// Host did not inject a capability DON.
-	service.baseIdentity.Don = &resourcemanager.DonIdentity{NodeID: "csa-pubkey-hex"}
-
-	_, donErr := service.donID()
-	require.ErrorIs(t, donErr, ErrDonIDNotInitialised)
-
-	meta := capabilities.RequestMetadata{WorkflowID: "wf-id", WorkflowOwner: "0xOwner", WorkflowDonID: 7}
-	_, err := service.RegisterLogTrigger(t.Context(), triggerID, meta, meteringTestInput())
-	require.NoError(t, err)
-
-	require.Len(t, emitter.records, 1, "the record is still billed when the DON ID is unavailable")
-	require.Empty(t, emitter.records[0].GetIdentity().GetDon().GetDonId(),
-		"the consumer workflow's DON ID must never be substituted for the capability DON")
-	require.Equal(t, "csa-pubkey-hex", emitter.records[0].GetIdentity().GetDon().GetNodeId(),
-		"the node dimension is preserved even without a DON ID")
-}
-
-func TestLogTriggerMetering_NoReserveOnRegisterFailure(t *testing.T) {
+func TestLogTriggerMetering_NoEmitOnRegisterFailure(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocked register failure")).Once()
@@ -238,78 +219,52 @@ func TestLogTriggerMetering_NoReserveOnRegisterFailure(t *testing.T) {
 
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, meteringTestInput())
 	require.Error(t, err)
-	require.Zero(t, emitter.emitCalls, "no RESERVE may be emitted for a failed registration")
+	require.Zero(t, emitter.emitCalls, "nothing may be emitted for a failed registration")
 }
 
-func TestLogTriggerMetering_ReleaseOnUnregister(t *testing.T) {
-	meta := capabilities.RequestMetadata{WorkflowID: "wf-id", WorkflowOwner: "0xOwner"}
+// TestLogTriggerMetering_DonIDNotInitialised asserts that when the host has
+// not injected a capability DON ID, snapshots are still emitted but with the
+// DON dimension carrying only the node ID — the consumer workflow's DON ID is
+// never substituted — and the meter's DonID surfaces ErrDonIDNotInitialised
+// for callers that degrade explicitly (event labels, CRE-4409).
+func TestLogTriggerMetering_DonIDNotInitialised(t *testing.T) {
+	evmService := initMocks(t)
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
+	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+	service, emitter, clock := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	// Host did not inject a capability DON (0).
+	service.meter = triggermeter.New(logger.Test(t), resourcemanager.NewResourceManager(logger.Test(t),
+		resourcemanager.ResourceManagerConfig{
+			MeterRecordsEnabled:   true,
+			MeterSnapshotsEnabled: true,
+			Emitter:               emitter,
+			SnapshotInterval:      time.Minute,
+			Clock:                 clock,
+		}), testDeployment, 0, meteringConfig, nil, service.snapshotRows)
 
-	registerTrigger := func(t *testing.T, service *LogTriggerService) {
-		t.Helper()
-		_, err := service.RegisterLogTrigger(t.Context(), triggerID, meta, meteringTestInput())
-		require.NoError(t, err)
-		// The trigger state (holding the reserved address count) is written by
-		// the polling goroutine; wait for it before unregistering.
-		require.Eventually(t, func() bool {
-			_, ok := service.triggers.Read(triggerID)
-			return ok
-		}, time.Second, time.Millisecond)
-	}
+	_, donErr := service.meter.DonID()
+	require.ErrorIs(t, donErr, triggermeter.ErrDonIDNotInitialised)
 
-	assertRelease := func(t *testing.T, service *LogTriggerService, record *meteringpb.MeterRecord) {
-		t.Helper()
-		assertBaseIdentity(t, record.GetIdentity())
-		require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, record.GetAction())
-		require.Len(t, record.GetUtilizations(), 1)
-		require.Equal(t, "-2", record.GetUtilizations()[0].GetValue(), "the 1->0 release delta negates the activation value")
-		physID := expectedPhysicalFilterID(t, meteringTestInput())
-		require.Equal(t, physID, record.GetUtilizations()[0].GetResourceId())
-	}
+	meta := capabilities.RequestMetadata{WorkflowID: "wf-id", WorkflowOwner: "0xOwner", WorkflowDonID: 7}
+	_, err := service.RegisterLogTrigger(t.Context(), triggerID, meta, meteringTestInput())
+	require.NoError(t, err)
 
-	t.Run("release negates the activation", func(t *testing.T) {
-		evmService := initMocks(t)
-		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
-		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-		service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	startMeter(t, service)
+	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
+	clock.Advance(time.Minute)
+	require.Eventually(t, func() bool { return len(emitter.snapshots) == 1 }, time.Second, time.Millisecond)
 
-		registerTrigger(t, service)
-		require.NoError(t, service.UnregisterLogTrigger(t.Context(), triggerID, meta, &evmcappb.FilterLogTriggerRequest{}))
-
-		require.Len(t, emitter.records, 2)
-		require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, emitter.records[0].GetAction())
-		require.Equal(t, "2", emitter.records[0].GetUtilizations()[0].GetValue())
-		assertRelease(t, service, emitter.records[1])
-		require.Equal(t, emitter.records[0].GetUtilizations()[0].GetResourceId(), emitter.records[1].GetUtilizations()[0].GetResourceId(),
-			"activation and release must share one physical resource_id")
-		require.NotEqual(t, emitter.records[0].GetUtilizations()[0].GetEventId(), emitter.records[1].GetUtilizations()[0].GetEventId(),
-			"each emission gets a distinct event_id")
-	})
-
-	t.Run("release emitted even when UnregisterLogTracking fails", func(t *testing.T) {
-		evmService := initMocks(t)
-		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
-		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocked unregister failure")).Once()
-		service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
-
-		registerTrigger(t, service)
-		// The -delta is emitted here (from the stashed count) before the
-		// UnregisterLogTracking RPC. If the RPC fails the filter is orphaned at
-		// the log poller; the cleanup thread unregisters it silently, emitting
-		// no further metering record.
-		require.Error(t, service.UnregisterLogTrigger(t.Context(), triggerID, meta, &evmcappb.FilterLogTriggerRequest{}))
-
-		require.Len(t, emitter.records, 2)
-		assertRelease(t, service, emitter.records[1])
-	})
+	require.Empty(t, emitter.snapshots[0].GetIdentity().GetDon().GetDonId(),
+		"the consumer workflow's DON ID must never be substituted for the capability DON")
+	require.Equal(t, "csa-pubkey-hex", emitter.snapshots[0].GetIdentity().GetDon().GetNodeId(),
+		"the node dimension is preserved even without a DON ID")
 }
 
 func TestLogTriggerMetering_OrphanCleanupEmitsNothing(t *testing.T) {
 	// Orphan cleanup is log-poller filter hygiene, never a metering event. A
 	// lost reservation is reconciled by the resource's absence from subsequent
-	// Snapshots (the liveness mechanism), not by a synthetic cleanup RELEASE.
-	t.Run("stale filter cleanup emits no meter record", func(t *testing.T) {
+	// Snapshots (the liveness mechanism), not by a synthetic cleanup emission.
+	t.Run("stale filter cleanup emits no metering", func(t *testing.T) {
 		mockEVM := evmmock.NewEVMService(t)
 		store := NewLogTriggerStore()
 		service, emitter, _ := newMeteredTriggerObject(t, mockEVM, store)
@@ -323,7 +278,7 @@ func TestLogTriggerMetering_OrphanCleanupEmitsNothing(t *testing.T) {
 
 		service.cleanUpStaleFilters(t.Context())
 
-		require.Zero(t, emitter.emitCalls, "orphan cleanup must not emit any MeterRecord")
+		require.Zero(t, emitter.emitCalls, "orphan cleanup must not emit any metering")
 	})
 
 	t.Run("emits nothing when cleanup unregister fails", func(t *testing.T) {
@@ -335,20 +290,28 @@ func TestLogTriggerMetering_OrphanCleanupEmitsNothing(t *testing.T) {
 		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(errors.New("mocked cleanup failure")).Once()
 
 		service.cleanUpStaleFilters(t.Context())
-		require.Zero(t, emitter.emitCalls, "orphan cleanup never emits a meter record")
+		require.Zero(t, emitter.emitCalls, "orphan cleanup never emits metering")
 	})
 }
 
+// TestLogTriggerMetering_FailOpen asserts registration succeeds and snapshot
+// emission failures are swallowed when the emitter errors on every call.
 func TestLogTriggerMetering_FailOpen(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-	service, emitter, _ := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
+	service, emitter, clock := newMeteredTriggerObject(t, evmService, NewLogTriggerStore())
 	emitter.err = errors.New("mocked emitter failure")
 
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, meteringTestInput())
-	require.NoError(t, err, "a metering emit failure must never fail registration")
-	require.Equal(t, 1, emitter.emitCalls, "the emit was attempted and its failure swallowed")
+	require.NoError(t, err, "a metering failure must never fail registration")
+
+	// A snapshot tick attempts the emit and swallows the failure.
+	startMeter(t, service)
+	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
+	clock.Advance(time.Minute)
+	require.Eventually(t, func() bool { return emitter.emitCalls >= 1 }, time.Second, time.Millisecond)
+	require.Empty(t, emitter.snapshots, "failed emissions record nothing")
 }
 
 // TestPhysicalFilterID_Canonicalization proves the content hash is independent
@@ -395,8 +358,7 @@ func TestPhysicalFilterID_Canonicalization(t *testing.T) {
 	t.Run("identical filters from different workflows/triggers share one billed resource", func(t *testing.T) {
 		// physicalFilterID takes only physical criteria; workflow/trigger are not
 		// inputs. Two registrations with identical criteria collide by
-		// construction, so only the first (the 0->1 activation) bills a delta;
-		// the second shares the already-active physical filter and emits nothing.
+		// construction, so the snapshot path dedups them into ONE billed row.
 		evmService := initMocks(t)
 		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Twice()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Twice()
@@ -409,17 +371,17 @@ func TestPhysicalFilterID_Canonicalization(t *testing.T) {
 			capabilities.RequestMetadata{WorkflowID: "wf-2", WorkflowOwner: "0xOther"}, meteringTestInput())
 		require.NoError(t, err)
 
-		require.Len(t, emitter.records, 1, "the shared physical filter is billed once (only the 0->1 activation)")
-		require.Equal(t, expectedPhysicalFilterID(t, meteringTestInput()), emitter.records[0].GetUtilizations()[0].GetResourceId())
+		require.Empty(t, emitter.records, "no deltas, ever")
+		rows := service.snapshotRows(t.Context())
+		require.Len(t, rows, 1, "the shared physical filter is billed as one snapshot resource")
+		require.Equal(t, expectedPhysicalFilterID(t, meteringTestInput()), rows[0].ResourceID)
 	})
 }
 
-// TestLogTriggerMetering_SharedFilterRefcount asserts the derived 0<->1 refcount
-// billing for a physical filter shared by two triggers: the first register bills
-// +addressCount (0->1), the second register bills nothing (1->2), the first
-// unregister bills nothing (2->1), and the last unregister bills -addressCount
-// (1->0).
-func TestLogTriggerMetering_SharedFilterRefcount(t *testing.T) {
+// TestLogTriggerMetering_SharedFilterLevel asserts the snapshot level of a
+// physical filter shared by two triggers: one row at +addressCount while any
+// holder remains, and absence once the last holder unregisters.
+func TestLogTriggerMetering_SharedFilterLevel(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Twice()
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Twice()
@@ -428,32 +390,29 @@ func TestLogTriggerMetering_SharedFilterRefcount(t *testing.T) {
 
 	physID := expectedPhysicalFilterID(t, meteringTestInput())
 
-	// trigger-A: 0->1 activation bills +2.
 	_, err := service.RegisterLogTrigger(t.Context(), "trigger-A",
 		capabilities.RequestMetadata{WorkflowID: "wf-1", WorkflowOwner: "0xOwner"}, meteringTestInput())
 	require.NoError(t, err)
-	require.Len(t, emitter.records, 1)
-	require.Equal(t, "2", emitter.records[0].GetUtilizations()[0].GetValue())
-
-	// trigger-B shares the same physical filter: 1->2, bills nothing.
 	_, err = service.RegisterLogTrigger(t.Context(), "trigger-B",
 		capabilities.RequestMetadata{WorkflowID: "wf-2", WorkflowOwner: "0xOther"}, meteringTestInput())
 	require.NoError(t, err)
-	require.Len(t, emitter.records, 1, "a second holder of the same physical filter bills nothing")
 
-	// Unregister trigger-A: 2->1, still held by trigger-B, bills nothing.
+	rows := service.snapshotRows(t.Context())
+	require.Len(t, rows, 1, "two holders of one physical filter snapshot as one resource")
+	require.Equal(t, physID, rows[0].ResourceID)
+	require.Equal(t, int64(2), rows[0].Value, "the level is the filter's address count, not the holder count")
+
+	// Releasing one of two holders keeps the level.
 	require.NoError(t, service.UnregisterLogTrigger(t.Context(), "trigger-A", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{}))
-	require.Len(t, emitter.records, 1, "releasing one of two holders bills nothing")
+	rows = service.snapshotRows(t.Context())
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(2), rows[0].Value)
 
-	// Unregister trigger-B: 1->0, bills -2.
+	// Releasing the last holder drops the resource: release-by-absence.
 	require.NoError(t, service.UnregisterLogTrigger(t.Context(), "trigger-B", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{}))
-	require.Len(t, emitter.records, 2)
-	require.Equal(t, meteringpb.MeterAction_METER_ACTION_UPDATE, emitter.records[1].GetAction())
-	require.Equal(t, "-2", emitter.records[1].GetUtilizations()[0].GetValue())
-	require.Equal(t, physID, emitter.records[1].GetUtilizations()[0].GetResourceId())
+	require.Empty(t, service.snapshotRows(t.Context()), "the last unregister releases the level by absence from the next snapshot")
 
-	// All emitted event_ids are distinct.
-	require.NotEqual(t, emitter.records[0].GetUtilizations()[0].GetEventId(), emitter.records[1].GetUtilizations()[0].GetEventId())
+	require.Empty(t, emitter.records, "no deltas at any point in the shared-filter lifecycle")
 }
 
 // TestLogTriggerMetering_Snapshot drives one snapshot tick and asserts one
@@ -480,9 +439,7 @@ func TestLogTriggerMetering_Snapshot(t *testing.T) {
 		donID:                "42",
 	}})
 
-	unregister := service.resourceManager.Register(service)
-	t.Cleanup(unregister)
-	servicetest.Run(t, service.resourceManager)
+	startMeter(t, service)
 	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
 	clock.Advance(time.Minute)
 
@@ -501,11 +458,14 @@ func TestLogTriggerMetering_Snapshot(t *testing.T) {
 	a := byResourceID[physA]
 	require.NotNil(t, a)
 	require.Equal(t, "2", a.GetUtilization()[0].GetValue())
-	require.Equal(t, MeteringResourceType, a.GetUtilization()[0].GetResourceType())
+	require.Equal(t, meteringConfig.ResourceType, a.GetUtilization()[0].GetResourceType())
 
 	b := byResourceID["physB"]
 	require.NotNil(t, b)
 	require.Equal(t, "5", b.GetUtilization()[0].GetValue())
+
+	// The snapshot stream is the only metering surface: no records, ever.
+	require.Empty(t, emitter.records)
 }
 
 // TestLogTriggerMetering_Snapshot_NothingActive asserts an empty store emits no
@@ -514,19 +474,17 @@ func TestLogTriggerMetering_Snapshot_NothingActive(t *testing.T) {
 	mockEVM := evmmock.NewEVMService(t)
 	service, emitter, clock := newMeteredTriggerObject(t, mockEVM, NewLogTriggerStore())
 
-	unregister := service.resourceManager.Register(service)
-	t.Cleanup(unregister)
-	servicetest.Run(t, service.resourceManager)
+	startMeter(t, service)
 	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
 	clock.Advance(time.Minute)
 
 	require.Empty(t, emitter.snapshots, "an empty store emits no MeterSnapshot")
 }
 
-// TestLogTriggerMetering_NoShutdownEmissions asserts that a graceful Close emits
-// NO meter records. Process-lifecycle emissions are deleted by design: an active
-// filter is released by its absence from the next snapshot, not by a close-time
-// drain.
+// TestLogTriggerMetering_NoShutdownEmissions asserts that a graceful Close
+// emits NO metering at all. Process-lifecycle emissions are deleted by design:
+// an active filter is released by its absence from the next snapshot, not by a
+// close-time drain.
 func TestLogTriggerMetering_NoShutdownEmissions(t *testing.T) {
 	evmService := initMocks(t)
 	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil).Once()
@@ -538,16 +496,14 @@ func TestLogTriggerMetering_NoShutdownEmissions(t *testing.T) {
 	_, err := service.RegisterLogTrigger(t.Context(), triggerID,
 		capabilities.RequestMetadata{WorkflowID: "wf", WorkflowOwner: "0xOwner"}, meteringTestInput())
 	require.NoError(t, err)
-	require.Len(t, emitter.records, 1, "registration bills a +delta")
 
-	recordsBefore := len(emitter.records)
 	require.NoError(t, service.Close())
-	require.Len(t, emitter.records, recordsBefore, "graceful close must emit no meter records")
+	require.Zero(t, emitter.emitCalls, "graceful close must emit no metering")
 }
 
-// TestLogTriggerMetering_SnapshotDedup asserts GetUtilization emits one entry
-// per DISTINCT physical filter (not per trigger registration): two triggers
-// sharing one physicalFilterID snapshot as a single resource.
+// TestLogTriggerMetering_SnapshotDedup asserts the snapshot source emits one
+// entry per DISTINCT physical filter (not per trigger registration): two
+// triggers sharing one physicalFilterID snapshot as a single resource.
 func TestLogTriggerMetering_SnapshotDedup(t *testing.T) {
 	mockEVM := evmmock.NewEVMService(t)
 	store := NewLogTriggerStore()
@@ -562,9 +518,7 @@ func TestLogTriggerMetering_SnapshotDedup(t *testing.T) {
 		filterID: service.generateFilterID("trigger-B"), physicalFilterID: physShared, reservedAddressCount: 2, donID: "42",
 	}})
 
-	unregister := service.resourceManager.Register(service)
-	t.Cleanup(unregister)
-	servicetest.Run(t, service.resourceManager)
+	startMeter(t, service)
 	require.NoError(t, clock.BlockUntilContext(t.Context(), 1))
 	clock.Advance(time.Minute)
 

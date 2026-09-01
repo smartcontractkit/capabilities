@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,20 +18,20 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+
+	"github.com/smartcontractkit/capabilities/libs/triggermeter"
 )
 
 const ServiceName = "HTTPTriggerCapability"
 
-// Metering identity constants for the HTTP trigger. Service is the stable
-// service constant (it must not encode environment or zone); resource pool and
-// utilization resource_type identify the HTTP workflow-registration pool and
-// its billing
-// unit.
-const (
-	meterService      = "http-trigger"
-	meterResource     = "http_workflows"
-	meterResourceType = "operations"
-)
+// meteringConfig carries the HTTP trigger's metering identity constants: the
+// stable service constant (it must not encode environment or zone), the HTTP
+// workflow-registration pool, and its billing unit.
+var meteringConfig = triggermeter.Config{
+	Service:      "http-trigger",
+	ResourcePool: "http_workflows",
+	ResourceType: "operations",
+}
 
 var _ server.HTTPCapability = &service{}
 
@@ -104,12 +103,13 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	resourceManager := resourcemanager.NewResourceManager(s.lggr, s.metering.ResourceManagerConfig)
-	baseIdentity := resourcemanager.NewBaseIdentity(s.metering.DeploymentIdentity, meterService, meterResource)
-	if dependencies.CapabilityDonID != 0 {
-		baseIdentity = baseIdentity.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
-	}
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory, resourceManager, baseIdentity)
+	// The meter owns every metering concern: the ResourceManager lifecycle, the
+	// base identity (deployment dimensions from loop.EnvConfig, DON dimension
+	// from the host-injected CapabilityDonID), org resolution, and the snapshot
+	// registration over the workflow store's rows.
+	meter := triggermeter.New(s.lggr, resourcemanager.NewResourceManager(s.lggr, s.metering.ResourceManagerConfig),
+		s.metering.DeploymentIdentity, dependencies.CapabilityDonID, meteringConfig, s.orgResolver, workflowStore.snapshotRows)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory, meter)
 	if err != nil {
 		return err
 	}

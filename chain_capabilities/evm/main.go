@@ -140,10 +140,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	//   - job-spec boot path: populated when unambiguous, otherwise 0 (e.g. a node
 	//     that belongs to multiple DONs running this capability, or a core node
 	//     that pre-dates CRE-4409).
-	// When it is 0 the trigger service falls back to the consumer workflow's DON
-	// ID (see trigger.NewLogTriggerService). We deliberately do NOT re-resolve it
-	// from the registry here: that lookup cannot disambiguate multi-DON nodes and
-	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
+	// When it is 0, event labels fall back to the consumer workflow's DON ID at
+	// their own call sites, while metering snapshots carry no DON dimension at
+	// all (the workflow DON is never substituted — see triggermeter.DonID). We
+	// deliberately do NOT re-resolve it from the registry here: that lookup
+	// cannot disambiguate multi-DON nodes and would emit a guess instead of the
+	// safe per-call-site degradation. See CRE-4409.
 	capabilityDonID := dependencies.CapabilityDonID
 
 	var scheduler ts.TransmissionScheduler
@@ -172,19 +174,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
-	// The ResourceManager owns the snapshot tick; the LogTriggerService starts it
-	// as a sub-service and registers itself, so it must be configured with a
-	// snapshot interval here. Identity/snapshots are gated by the same metering
-	// env flag as MeterRecords.
+	// The ResourceManager owns the snapshot tick; the LogTriggerService wraps it
+	// in a triggermeter (which owns its lifecycle, identity, and snapshot
+	// registration), so it must be configured with a snapshot interval here.
 	resourceManager := resourcemanager.NewResourceManager(c.lggr, c.metering.ResourceManagerConfig)
-	baseIdentity := resourcemanager.NewBaseIdentity(c.metering.DeploymentIdentity, trigger.MeteringService, trigger.MeteringResource)
-	if dependencies.CapabilityDonID != 0 {
-		baseIdentity = baseIdentity.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
-	}
 	orgResolver := dependencies.OrgResolver
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
-		orgResolver, dependencies.TriggerEventStore, resourceManager, baseIdentity, c.chainSelector)
+		orgResolver, dependencies.TriggerEventStore, resourceManager, c.metering.DeploymentIdentity, dependencies.CapabilityDonID, c.chainSelector)
 	if err != nil {
 		return fmt.Errorf("error when creating trigger: %w", err)
 	}

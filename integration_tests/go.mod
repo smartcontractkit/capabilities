@@ -438,3 +438,5 @@ require (
 )
 
 tool github.com/smartcontractkit/chainlink/v2/core/store/cmd/preparetest
+
+replace github.com/smartcontractkit/capabilities/libs => ../libs

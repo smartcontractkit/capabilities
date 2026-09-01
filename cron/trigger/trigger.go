@@ -16,20 +16,19 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
-	meteringpb "github.com/smartcontractkit/chainlink-protos/metering/go"
+
+	"github.com/smartcontractkit/capabilities/libs/triggermeter"
 )
 
 const ServiceName = "CronCapabilities"
@@ -42,28 +41,28 @@ var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 	"A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.",
 )
 
-const (
-	// meteringService is the stable service constant for cron trigger
-	// registrations on emitted MeterRecords and Snapshots. It must not encode
-	// deployment environment or zone: those are discrete identity dimensions
-	// delivered via loop.EnvConfig (see Service.Deployment).
-	meteringService = "cron-trigger"
-	// meteringResource is the resource pool cron records apply to.
-	meteringResource = "trigger_registrations"
-	// meteringResourceType is the billing unit for cron registrations.
-	meteringResourceType = "operations"
-	// defaultProduct is the metering product cron falls back to when the host
-	// does not supply one via loop.EnvConfig (Deployment.Product empty).
-	defaultProduct = "cre"
-)
+// meteringConfig carries the cron trigger's metering identity constants:
+// the stable service constant (it must not encode deployment environment or
+// zone — those are discrete identity dimensions delivered via loop.EnvConfig,
+// see Service.Deployment), the resource pool snapshots apply to, and the
+// billing unit per registration.
+var meteringConfig = triggermeter.Config{
+	Service:      "cron-trigger",
+	ResourcePool: "trigger_registrations",
+	ResourceType: "operations",
+}
 
 type Config struct {
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
 }
 
+type Payload struct {
+	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
+}
+
 type Response struct {
 	capabilities.TriggerEvent
-	Payload cron.Payload
+	Payload Payload
 }
 
 type cronTrigger struct {
@@ -88,20 +87,20 @@ type Service struct {
 	triggers                *cronStore
 	labeler                 custmsg.MessageEmitter
 	metrics                 *Metrics
-	meters                  *resourcemanager.ResourceManager
-	// unregisterMeterable removes this Service from the ResourceManager's
-	// snapshot registry; set at start, called at close. Nil until started.
-	unregisterMeterable func()
-	// base is the resourcemanager identity for cron registrations, built from
-	// the deployment/node dimensions (Deployment) and DON dimension at Initialise.
-	base resourcemanager.ResourceIdentity
+	// rm is the ResourceManager handed to NewTriggerService (possibly nil:
+	// metering off); Initialise wraps it in the meter, which owns its
+	// lifecycle from then on.
+	rm *resourcemanager.ResourceManager
+	// meter owns every metering concern (RM lifecycle, identity, org
+	// resolution, snapshot registration). Nil-receiver-safe: it is nil until
+	// Initialise and a no-op when metering is off.
+	meter *triggermeter.TriggerMeter
 	// Deployment carries the static deployment/node identity dimensions
 	// delivered to the plugin process via loop.EnvConfig. It is set once at
 	// startup (by main, before Initialise) and read when building the base
 	// metering identity. The zero value is valid and leaves those dimensions
 	// empty.
-	Deployment  resourcemanager.DeploymentIdentity
-	orgResolver orgresolver.OrgResolver
+	Deployment resourcemanager.DeploymentIdentity
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
@@ -136,20 +135,13 @@ func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string,
 	return s.UnregisterTrigger(ctx, triggerID, metadata, input)
 }
 
-var (
-	_ services.Service          = &Service{}
-	_ resourcemanager.Meterable = &Service{}
-)
+var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
-// the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
-// meters reports trigger registrations for billing; if nil, a disabled no-op manager is used.
+// the system clock will be used.
+// meters reports trigger registrations for billing; nil means metering is off.
 func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory, meters *resourcemanager.ResourceManager) (*Service, error) {
 	lggr := logger.Named(parentLggr, "CRONTrigger")
-
-	if meters == nil {
-		meters = resourcemanager.NewResourceManager(lggr, resourcemanager.ResourceManagerConfig{})
-	}
 
 	metrics, err := NewMetrics()
 	if err != nil {
@@ -187,68 +179,38 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 			"capabilityName", cronTriggerInfo.ID,
 		),
 		metrics: metrics,
-		meters:  meters,
+		rm:      meters,
 	}
 
-	// Adopt services.Engine so the trigger can host the ResourceManager as a
-	// sub-service (the RM owns the snapshot tick) and shut down cleanly. The
-	// scheduler is started/stopped in s.start / s.close.
+	// The scheduler is started/stopped in s.start / s.close; the meter (built
+	// at Initialise) owns the ResourceManager lifecycle from those same hooks.
 	s.Service, s.srvcEng = services.Config{
-		Name:           "CronTrigger",
-		NewSubServices: func(logger.Logger) []services.Service { return []services.Service{meters} },
-		Start:          s.start,
-		Close:          s.close,
+		Name:  "CronTrigger",
+		Start: s.start,
+		Close: s.close,
 	}.NewServiceEngine(lggr)
 
 	return s, nil
 }
 
-// ErrDonIDNotInitialised is returned by donID before Initialise has delivered
-// a non-zero CapabilityDonID from the host (StandardCapabilitiesDependencies).
-// The consumer workflow's DON ID is a different dimension and is never
-// substituted for it: callers either degrade explicitly at their own call site
-// (event labels, CRE-4409) or proceed with the DON dimension absent (metering).
-var ErrDonIDNotInitialised = errors.New("capability DON ID not initialised: waiting for Initialise to deliver StandardCapabilitiesDependencies.CapabilityDonID")
-
-// donID returns the capability DON identifier that Initialise stamped on the
-// base metering identity (host-injected CapabilityDonID), or
-// ErrDonIDNotInitialised when that value has not (yet) been delivered.
-func (s *Service) donID() (string, error) {
-	if id := s.base.DonID(); id != "" {
-		return id, nil
+// snapshotRows reports the absolute state of every currently active cron
+// registration for the meter's snapshot tick: one row per trigger, each at
+// value 1 (a registration is a single reserved unit), with the org that was
+// resolved and stored at registration time. It is a cheap in-memory read of
+// the store snapshot. Cron emits NO MeterRecord deltas: billing follows the
+// snapshot level, and a registration is released by its absence from the next
+// snapshot.
+func (s *Service) snapshotRows(context.Context) []triggermeter.SnapshotRow {
+	triggers := s.triggers.ReadAll()
+	rows := make([]triggermeter.SnapshotRow, 0, len(triggers))
+	for triggerID, trigger := range triggers {
+		rows = append(rows, triggermeter.SnapshotRow{
+			Value:      1,
+			ResourceID: triggerID,
+			OrgID:      trigger.orgID,
+		})
 	}
-	return "", ErrDonIDNotInitialised
-}
-
-// utilizationFields builds the per-trigger billing fields shared by the record
-// and snapshot paths. resource_id is the workflow-scoped trigger_id; org_id is
-// resolved at registration time and stored on the cronTrigger. event_id is
-// intentionally absent from the fields: for records the caller passes it
-// explicitly (a deterministic cross-node id), and for snapshots the
-// ResourceManager derives it from the bucket/resource/node key.
-func (s *Service) utilizationFields(triggerID, orgID string) resourcemanager.UtilizationFields {
-	return resourcemanager.UtilizationFields{
-		ResourceType: meteringResourceType,
-		ResourceID:   triggerID,
-		OrgID:        orgID,
-	}
-}
-
-// emitMeterRecord emits a signed delta MeterRecord (METER_ACTION_UPDATE) for a
-// change to the durable cron-registration level: register bills +1, unregister
-// bills -1. orgID is resolved by the caller before invoking this method.
-// Emission is fail-open and never affects the registration itself.
-//
-// The record's DON dimension is the capability DON stamped on the base
-// identity at Initialise. If that is not (yet) available the record is still
-// billed — level integrity beats dimension completeness — but with the DON
-// dimension absent rather than another DON's ID substituted.
-func (s *Service) emitMeterRecord(ctx context.Context, delta int64, namespace, workflowID, triggerID, orgID string) {
-	if _, err := s.donID(); err != nil {
-		s.lggr.Errorw("emitting meter record without DON ID", "err", err, "namespace", namespace, "workflowID", workflowID, "triggerID", triggerID)
-	}
-	eventID := resourcemanager.EventID(namespace, workflowID, triggerID)
-	s.meters.EmitDelta(ctx, s.base, eventID, delta, s.utilizationFields(triggerID, orgID))
+	return rows
 }
 
 func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
@@ -274,22 +236,13 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 
 	if dependencies.OrgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
-	} else {
-		s.orgResolver = dependencies.OrgResolver
 	}
 
-	// Build the base metering identity. The deployment/node dimensions come from
-	// s.Deployment (delivered via loop.EnvConfig, set by main before Initialise).
-	// Product falls back to defaultProduct rather than NewBaseIdentity's generic
-	// UnsetProduct sentinel, since a cron capability is always a CRE product.
-	deployment := s.Deployment
-	if deployment.Product == "" {
-		deployment.Product = defaultProduct
-	}
-	s.base = resourcemanager.NewBaseIdentity(deployment, meteringService, meteringResource)
-	if dependencies.CapabilityDonID != 0 {
-		s.base = s.base.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
-	}
+	// Build the meter: it owns the ResourceManager lifecycle, the base metering
+	// identity (deployment/node dimensions from s.Deployment via loop.EnvConfig,
+	// DON dimension from the host-injected CapabilityDonID), org resolution, and
+	// the snapshot registration over snapshotRows.
+	s.meter = triggermeter.New(s.lggr, s.rm, s.Deployment, dependencies.CapabilityDonID, meteringConfig, dependencies.OrgResolver, s.snapshotRows)
 
 	err = s.Start(ctx)
 	if err != nil {
@@ -372,29 +325,15 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
 				// Continue with execution even if we can't generate ID or emit event
 			} else {
-				// Try to fetch organization ID if org resolver is available
-				var orgID string
-				if s.orgResolver != nil && metadata.WorkflowOwner != "" {
-					func() {
-						defer func() {
-							if r := recover(); r != nil {
-								s.lggr.Warnw("Panic while fetching organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "panic", r)
-							}
-						}()
-						if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
-							s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
-						} else if fetchedOrgID != "" {
-							orgID = fetchedOrgID
-							s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
-						}
-					}()
-				}
+				// Try to fetch organization ID (fail-open, panic-safe in the meter).
+				orgID := s.meter.ResolveOrg(ctx, metadata.WorkflowOwner)
 
 				// CRE-4409: event labels prefer the capability DON ID but fall
 				// back to the consumer workflow's DON ID when it is not (yet)
 				// initialised — a best-effort label beats an absent one.
-				// Metering deliberately does NOT share this fallback (see donID).
-				donIDLabel, donIDErr := s.donID()
+				// Metering deliberately does NOT share this fallback (see
+				// triggermeter.TriggerMeter.DonID).
+				donIDLabel, donIDErr := s.meter.DonID()
 				if donIDErr != nil && metadata.WorkflowDonID != 0 {
 					donIDLabel = strconv.FormatUint(uint64(metadata.WorkflowDonID), 10)
 				}
@@ -485,14 +424,9 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("RegisterTrigger failed to remove job: %s", err), caperrors.Internal)
 	}
 
-	var orgID string
-	if s.orgResolver != nil && metadata.WorkflowOwner != "" {
-		if resolved, err := s.orgResolver.Get(ctx, metadata.WorkflowOwner); err != nil {
-			logger.Sugared(s.lggr).Warnw("failed to resolve org ID for metering", "owner", metadata.WorkflowOwner, "err", err)
-		} else {
-			orgID = resolved
-		}
-	}
+	// Resolve the org once at registration and store it: the snapshot path
+	// (snapshotRows) must be network-free, so it reads this stored value.
+	orgID := s.meter.ResolveOrg(ctx, metadata.WorkflowOwner)
 
 	s.triggers.Write(triggerID, cronTrigger{
 		job:           job,
@@ -503,8 +437,10 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		close:         closeCh,
 	})
 
-	// Register bills a +1 delta to the durable trigger-registration level.
-	s.emitMeterRecord(ctx, 1, "cron-register", metadata.WorkflowID, triggerID, orgID)
+	// No MeterRecord delta: billing observes the new registration in the next
+	// snapshot (snapshotRows). Trigger capabilities are snapshot-only producers
+	// — see the triggermeter package doc for why deltas are structurally
+	// unsound here.
 
 	s.lggr.Debugw("Trigger registered", "workflowId", metadata.WorkflowID, "triggerId", triggerID, "jobId", job.ID())
 	s.metrics.IncActiveTriggersGauge(ctx)
@@ -554,31 +490,27 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	// Close callback channel
 	trigger.close()
 
-	// Remove from triggers context
+	// Remove from triggers context. No MeterRecord delta: billing releases the
+	// registration by its absence from the next snapshot (snapshotRows).
 	s.triggers.Delete(triggerID)
-
-	// Unregister bills a -1 delta. workflowID and orgID come from the STORED
-	// trigger (not the unregister request's metadata) so the delta reverses the
-	// exact identity the register +1 billed.
-	s.emitMeterRecord(ctx, -1, "cron-unregister", trigger.workflowID, triggerID, trigger.orgID)
 
 	s.lggr.Debugw("UnregisterTrigger", "triggerId", triggerID, "jobId", jobID)
 	s.metrics.DecActiveTriggersGauge(ctx)
 	return nil
 }
 
-// start is the services.Engine start hook. The ResourceManager sub-service has
-// already been started by the engine, so start registers this Service as a
-// Meterable (the RM polls it once per snapshot tick) and starts the scheduler,
-// refreshing next-run times for any registrations that survived a restart.
+// start is the services.Engine start hook. It starts the meter (which owns
+// the ResourceManager lifecycle and snapshot registration; fail-open, so a
+// metering failure never gates the trigger) and the scheduler, refreshing
+// next-run times for any registrations that survived a restart.
 func (s *Service) start(ctx context.Context) error {
 	if s.scheduler == nil {
 		return errors.New("service has shutdown, it must be built again to restart")
 	}
 
-	// Register for snapshots. The RM owns the tick; we only supply state via
-	// the Meterable interface. unregisterMeterable is called in close.
-	s.unregisterMeterable = s.meters.Register(s)
+	if err := s.meter.Start(ctx); err != nil {
+		return err
+	}
 
 	s.scheduler.Start()
 
@@ -604,24 +536,22 @@ func (s *Service) start(ctx context.Context) error {
 // started again; it must be re-built to schedule again. There are NO
 // process-lifecycle metering emissions: a graceful shutdown emits nothing, and
 // billing releases each still-active registration by its absence from the next
-// snapshot. close deregisters the Meterable from the ResourceManager FIRST (so
-// no snapshot can run after the store is torn down), then shuts the scheduler
-// down. The ResourceManager sub-service is closed by the engine afterwards.
+// snapshot. close closes the meter FIRST (deregistering the snapshot Meterable
+// so no tick can observe a half-torn-down service, then closing the
+// ResourceManager), then shuts the scheduler down.
 func (s *Service) close() error {
 	if s.scheduler == nil {
 		return errors.New("service has shutdown, it must be built again to restart")
 	}
 
-	// Deregister from the snapshot registry before anything else so no snapshot
-	// tick can observe a half-torn-down service.
-	if s.unregisterMeterable != nil {
-		s.unregisterMeterable()
-		s.unregisterMeterable = nil
-	}
+	meterErr := s.meter.Close()
 
 	err := s.scheduler.Shutdown()
 	if err != nil {
-		return fmt.Errorf("scheduler shutdown encountered a problem: %s", err)
+		return errors.Join(meterErr, fmt.Errorf("scheduler shutdown encountered a problem: %s", err))
+	}
+	if meterErr != nil {
+		return meterErr
 	}
 
 	// After .Shutdown() the scheduler cannot be started again,
@@ -633,34 +563,4 @@ func (s *Service) close() error {
 
 func (s *Service) Description() string {
 	return "Cron Trigger Capability"
-}
-
-// ResourceIdentity implements resourcemanager.Meterable: it returns the base
-// six-dimension identity (per-resource billing fields are set per active
-// trigger in
-// GetUtilization).
-func (s *Service) ResourceIdentity() resourcemanager.ResourceIdentity {
-	return s.base
-}
-
-// GetUtilization implements resourcemanager.Meterable: it returns the absolute
-// state of every currently active cron registration, one SnapshotEntry per
-// trigger, each at value 1 (a registration is a single reserved unit). It is a
-// cheap in-memory read of the store snapshot and tolerates ctx cancellation.
-func (s *Service) GetUtilization(ctx context.Context) []resourcemanager.SnapshotEntry {
-	if ctx.Err() != nil {
-		return nil
-	}
-	triggers := s.triggers.ReadAll()
-	entries := make([]resourcemanager.SnapshotEntry, 0, len(triggers))
-	for triggerID, trigger := range triggers {
-		// Use stored orgID resolved at registration time.
-		entries = append(entries, resourcemanager.SnapshotEntry{
-			Identity: s.base,
-			Utilizations: []*meteringpb.Utilization{
-				resourcemanager.NewUtilizationInt(1, s.utilizationFields(triggerID, trigger.orgID)),
-			},
-		})
-	}
-	return entries
 }

@@ -10,6 +10,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+
+	"github.com/smartcontractkit/capabilities/libs/triggermeter"
 )
 
 const (
@@ -191,6 +193,26 @@ func (s *workflowStore) getWorkflows() []*workflow {
 	return workflows
 }
 
+// snapshotRows reports the absolute state of every currently registered HTTP
+// workflow for the meter's snapshot tick: one row per workflow at value 1,
+// with the org that was resolved and stored at registration. It is a cheap
+// read-locked copy of in-memory state with no network calls (the Meterable
+// contract). The HTTP trigger emits NO MeterRecord deltas: billing follows
+// the snapshot level, and a workflow is released by its absence from the next
+// snapshot.
+func (s *workflowStore) snapshotRows(context.Context) []triggermeter.SnapshotRow {
+	workflows := s.getWorkflows()
+	rows := make([]triggermeter.SnapshotRow, 0, len(workflows))
+	for _, w := range workflows {
+		rows = append(rows, triggermeter.SnapshotRow{
+			Value:      1,
+			ResourceID: w.workflowSelector.WorkflowID,
+			OrgID:      w.orgID,
+		})
+	}
+	return rows
+}
+
 type workflow struct {
 	mu               sync.Mutex
 	workflowSelector gateway.WorkflowSelector
@@ -198,6 +220,10 @@ type workflow struct {
 	sendCh           chan<- capabilities.TriggerAndId[*http.Payload]
 	closed           bool
 	metadata         WorkflowRegistrationMetadata
+	// orgID is the organization ID resolved from the workflow owner once at
+	// registration (before the entry is published to the store) and read by the
+	// snapshot path, which must be network-free. It is immutable after publish.
+	orgID string
 }
 
 func newWorkflow(workflowSelector gateway.WorkflowSelector, authorizedKeys []gateway.AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) *workflow {
