@@ -614,9 +614,10 @@ func (lts *LogTriggerService) deliverLogReliably(
 // checkLimitsOnLog checks the rate limit and payload size limit for a single log event, it should not error as we
 // want to continue processing other logs even if one fails the limits
 func (lts *LogTriggerService) checkLimitsOnLog(ctx context.Context, telemetryContext monitoring.TelemetryContext, protoLog *evmcappb.Log, triggerID string, eventID string, log *evmtypes.Log) bool {
-	if err := lts.eventRateLimit.AllowErr(ctx); err != nil {
-		summary := fmt.Sprintf("Rate limited, dropping event (triggerID: %s, eventID: %s)", triggerID, eventID)
-		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "err", err)
+	protoLogSize := commoncfg.Size(proto.Size(protoLog))
+	if err := lts.eventPayloadSizeLimiter.Check(ctx, protoLogSize); err != nil {
+		summary := fmt.Sprintf("Size limited, log size is too big (current size %d), dropping event (triggerID: %s, eventID: %s)", protoLogSize, triggerID, eventID)
+		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "protoLogSize", protoLogSize, "err", err)
 		monitoring.LogAndEmitError(
 			ctx,
 			lts.lggr,
@@ -626,10 +627,10 @@ func (lts *LogTriggerService) checkLimitsOnLog(ctx context.Context, telemetryCon
 		return false
 	}
 
-	protoLogSize := commoncfg.Size(proto.Size(protoLog))
-	if err := lts.eventPayloadSizeLimiter.Check(ctx, protoLogSize); err != nil {
-		summary := fmt.Sprintf("Size limited, log size is too big (current size %d), dropping event (triggerID: %s, eventID: %s)", protoLogSize, triggerID, eventID)
-		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "protoLogSize", protoLogSize, "err", err)
+	// Prefer increased delivery time to event dropping
+	if err := lts.eventRateLimit.Wait(ctx); err != nil {
+		summary := fmt.Sprintf("Rate limited, dropping event (triggerID: %s, eventID: %s)", triggerID, eventID)
+		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "err", err)
 		monitoring.LogAndEmitError(
 			ctx,
 			lts.lggr,
