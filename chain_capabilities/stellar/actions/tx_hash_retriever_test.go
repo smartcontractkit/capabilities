@@ -184,6 +184,20 @@ func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 		require.Equal(t, testTxHash, hash)
 	})
 
+	t.Run("returns earliest successful hash by ledger", func(t *testing.T) {
+		t.Parallel()
+		client := &stubForwarderClient{events: []ReportProcessedEvent{
+			{TxHash: "later", Ledger: 200, Success: true},
+			{TxHash: "failed", Ledger: 50, Success: false},
+			{TxHash: testTxHash, Ledger: 100, Success: true},
+		}}
+		retriever := NewTxHashRetriever(client, lggr, transmissionID)
+
+		hash, err := retriever.GetSuccessfulTransmissionHash(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, testTxHash, hash)
+	})
+
 	t.Run("returns error when all events failed", func(t *testing.T) {
 		t.Parallel()
 		client := &stubForwarderClient{events: []ReportProcessedEvent{

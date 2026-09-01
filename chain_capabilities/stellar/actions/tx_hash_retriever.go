@@ -67,10 +67,11 @@ func (r *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (st
 	if err != nil {
 		return "", err
 	}
-	for _, d := range details {
-		if d.isSuccess {
-			return d.txHash, nil
-		}
+	selected, ok := earliestEvent(details, func(d eventDetails) bool {
+		return d.isSuccess
+	})
+	if ok {
+		return selected.txHash, nil
 	}
 	r.lggr.Errorw("No successful transmission found", "txCount", len(details), "transactions", details.String())
 	return "", fmt.Errorf("no successful transmission found. Found %d transactions (all failed): %s",
@@ -97,14 +98,10 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 		return "", 0, fmt.Errorf("no failed transmission found")
 	}
 
-	earliestIdx := 0
-	for i, d := range details {
-		if d.ledger < details[earliestIdx].ledger {
-			earliestIdx = i
-		}
-	}
-
-	selectedHash := details[earliestIdx].txHash
+	selected, _ := earliestEvent(details, func(d eventDetails) bool {
+		return !d.isSuccess
+	})
+	selectedHash := selected.txHash
 	r.lggr.Debugw("Returning earliest failed transmission",
 		append([]any{
 			"txCount", len(details),
@@ -113,6 +110,21 @@ func (r *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Context
 	)
 
 	return selectedHash, len(details), nil
+}
+
+func earliestEvent(details eventDetailsList, match func(eventDetails) bool) (eventDetails, bool) {
+	var selected eventDetails
+	found := false
+	for _, d := range details {
+		if !match(d) {
+			continue
+		}
+		if !found || d.ledger < selected.ledger {
+			selected = d
+			found = true
+		}
+	}
+	return selected, found
 }
 
 func (r *TxHashRetriever) fetchAndParseEvents(ctx context.Context) (eventDetailsList, error) {
