@@ -33,6 +33,117 @@
         }
     }
 
+    // ---- the bytes encoding ---------------------------------------------------
+    //
+    // One setting for the whole page: how a bytes field is typed into and how one
+    // is read back. It was three - the request form's, the response view's and the
+    // fan-out page's - which meant a value typed as hex could be read back as
+    // base64, and meant setting the same thing in three places to look at one
+    // exchange in one encoding.
+    //
+    // Held on the top window rather than in this file, because this file is loaded
+    // once per frame: the fan-out page and the request frames inside it each have
+    // their own copy of everything here, and a setting held per copy is the same
+    // several settings again.
+    var listeners = [];
+
+    // home is where the setting lives - the top window, or this one when there is
+    // no reaching it. Same origin throughout, so the try is for the odd case rather
+    // than the expected one.
+    function home() {
+        try {
+            return window.top || window;
+        } catch (e) {
+            return window;
+        }
+    }
+
+    function bytesEncoding() {
+        try {
+            return home().__CRE_BYTES_ENCODING || "base64";
+        } catch (e) {
+            return "base64";
+        }
+    }
+
+    // setBytesEncoding records the choice and tells every frame that it changed,
+    // including the one that asked: the dropdown is in one of them and the boxes it
+    // acts on are in the others.
+    function setBytesEncoding(encoding) {
+        try {
+            home().__CRE_BYTES_ENCODING = encoding;
+        } catch (e) {
+            return;
+        }
+        eachFrame(function (frame) {
+            var api = frame.__CRE_VALUES__;
+            if (api && typeof api.notifyBytesEncoding === "function") {
+                api.notifyBytesEncoding();
+            }
+        });
+    }
+
+    // eachFrame is the top window and every frame in it. A frame still loading has
+    // no api yet and is skipped; it reads the setting when it builds its own boxes.
+    function eachFrame(fn) {
+        var top = home();
+        var frames = [top];
+        try {
+            for (var i = 0; i < top.frames.length; i++) {
+                frames.push(top.frames[i]);
+            }
+        } catch (e) {
+            // A frame that cannot be reached is one that cannot be told.
+        }
+        frames.forEach(function (frame) {
+            try {
+                fn(frame);
+            } catch (e) {
+                // Still loading, or gone. Neither is worth failing the others for.
+            }
+        });
+    }
+
+    // notifyBytesEncoding runs this frame's own listeners. Called by whichever
+    // frame's dropdown was used, which is why it is on the api rather than local.
+    function notifyBytesEncoding() {
+        var encoding = bytesEncoding();
+        listeners.forEach(function (fn) {
+            try {
+                fn(encoding);
+            } catch (e) {
+                // One view failing to redraw is not a reason to leave the rest in
+                // the old encoding.
+            }
+        });
+    }
+
+    function onBytesEncoding(fn) {
+        listeners.push(fn);
+    }
+
+    // cleanBytes is the text of a bytes box with its whitespace taken out. Neither
+    // encoding has any use for it, and both arrive carrying it: hex pasted from a
+    // log comes spaced or 0x-prefixed, base64 copied out of a terminal comes
+    // wrapped. Taking it out is what makes the box show the value that will be
+    // sent rather than the text it was pasted as.
+    function cleanBytes(text) {
+        return String(text == null ? "" : text).replace(/\s+/g, "");
+    }
+
+    // isBase64 says whether a box holds something a bytes field can be sent as.
+    // Empty counts: that is the field left at its zero value.
+    function isBase64(text) {
+        return decodeBase64(text) !== null;
+    }
+
+    // isHex is the same question for the hex box. Empty counts, for the same
+    // reason; an odd number of digits does not, since half a byte could be either
+    // half of one.
+    function isHex(text) {
+        return base64OfHex(text) !== undefined;
+    }
+
     // hexOfBase64 shows the same bytes as lower-case hex, or null if the string was
     // not base64 to begin with.
     function hexOfBase64(base64) {
@@ -379,6 +490,13 @@
     }
 
     api.bytesOf = bytesOf;
+    api.bytesEncoding = bytesEncoding;
+    api.setBytesEncoding = setBytesEncoding;
+    api.onBytesEncoding = onBytesEncoding;
+    api.notifyBytesEncoding = notifyBytesEncoding;
+    api.cleanBytes = cleanBytes;
+    api.isBase64 = isBase64;
+    api.isHex = isHex;
     api.hexOfBase64 = hexOfBase64;
     api.base64OfHex = base64OfHex;
     api.intOfBytes = intOfBytes;

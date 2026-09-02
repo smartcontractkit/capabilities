@@ -578,10 +578,22 @@ button.cre-copy-btn {
 }
 
 /* Said rather than silently ignored: the raw fields keep their previous value,
- * so without this the box would look accepted and the request would not match. */
+ * so without this the box would look accepted and the request would not match.
+ *
+ * grpcui's own bytes box is marked the same way when base64 is the encoding being
+ * typed in, since then it is the box the value was typed into. */
 .cre-special-input.cre-special-invalid,
-textarea.cre-bytes-hex.cre-special-invalid {
+textarea.cre-bytes-hex.cre-special-invalid,
+div.grpc-bytes-container textarea.cre-special-invalid {
     outline: 2px solid #b00020;
+}
+
+/* Why the request was not sent, beside the dropdown that chose the encoding it is
+ * about. The marked box says where; this says what. */
+.cre-bytes-problem {
+    margin-left: 0.75em;
+    color: #b00020;
+    font-weight: bold;
 }
 
 /* ---- bytes fields -------------------------------------------------------

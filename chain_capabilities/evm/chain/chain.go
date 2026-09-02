@@ -40,11 +40,6 @@ type Config struct {
 	// floor on how quickly a log trigger can fire.
 	LogPollInterval commonconfig.Duration `usage:"how often the log poller reads new blocks, which is the floor on log trigger latency"`
 
-	// FinalityDepth and FinalityTagEnabled decide when this capability calls a block
-	// final, which is what a workflow asking for finalized state is answered from.
-	FinalityTagEnabled bool   `usage:"use the finalized block tag instead of a finality depth"`
-	FinalityDepth      uint32 `usage:"blocks behind the head that count as final, used when --chain.finality-tag-enabled=false"`
-
 	// NoNewHeadsThreshold is how long without a head before the chain is declared
 	// unreachable. Zero leaves chainlink-evm's own answer for this chain.
 	NoNewHeadsThreshold commonconfig.Duration `usage:"how long without a new head before the chain is treated as unreachable; 0 keeps the chain's own default"`
@@ -60,7 +55,6 @@ type Config struct {
 // value here rather than a zero.
 var defaultConfig = Config{
 	LogPollInterval:     *commonconfig.MustNewDuration(time.Second),
-	FinalityTagEnabled:  true,
 	TransactionsEnabled: true,
 }
 
@@ -112,6 +106,15 @@ var _ standalone.BootstrapDependency[legacyevm.Chain] = (*dependency)(nil)
 
 // Namespace groups these under chain.*, apart from the client's evm.* settings:
 // one says where the chain is, the other how this capability follows it.
+//
+// Finality is the exception, and it is the client's: --evm.finality-tag-enabled and
+// --evm.finality-depth. It reads like a "how this capability follows the chain"
+// setting and it was one, until the two layers were set apart and disagreed - the
+// head tracker calling a block final while the client, still on the tag, refused to
+// read at it ("data was requested at block 93 while max available height with
+// confidence level finalized is 64"). They are one answer to one question, so there
+// is one place to give it, and it is the client's because that is where
+// chainlink-evm binds it - a flag this repo cannot unbind.
 func (d *dependency) Namespace() string { return "chain" }
 
 func (d *dependency) Config() any { return d.cfg }
@@ -218,9 +221,18 @@ func (d *dependency) chainTOML(chainID *big.Int) *toml.EVMConfig {
 
 	chain.LogPollInterval = &d.cfg.LogPollInterval
 	chain.Transactions.Enabled = &d.cfg.TransactionsEnabled
-	chain.FinalityTagEnabled = &d.cfg.FinalityTagEnabled
-	if d.cfg.FinalityDepth > 0 {
-		chain.FinalityDepth = &d.cfg.FinalityDepth
+
+	// Finality is the client's setting, read from it rather than asked for again
+	// here. See Namespace: the head tracker this configures and the client both
+	// answer "is this block final", and answering it twice is how they end up
+	// disagreeing. A client that cannot be asked - one wrapped past recognition -
+	// leaves chainlink-evm's own defaults for this chain in place, which is what
+	// this function starts from.
+	if client, ok := d.client.Config().(*evmclient.Config); ok {
+		chain.FinalityTagEnabled = &client.FinalityTagEnabled
+		if client.FinalityDepth > 0 {
+			chain.FinalityDepth = &client.FinalityDepth
+		}
 	}
 	if d.cfg.NoNewHeadsThreshold.Duration() > 0 {
 		chain.NoNewHeadsThreshold = &d.cfg.NoNewHeadsThreshold

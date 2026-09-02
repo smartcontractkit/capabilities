@@ -51,8 +51,9 @@ $(function () {
     // raw messages - a saved history is still what a replay has to send.
     //
     // Page-wide rather than per-field: a response is read whole, and hunting for
-    // the one field whose box says hex is not reading it.
-    var bytesEncoding = "base64";
+    // the one field whose box says hex is not reading it. The setting itself is
+    // VALUES.bytesEncoding, shared with the request frames, so what a value was
+    // typed as is what it is read back as.
 
     function bytesPathsFor(method) {
         return pathsFor(SPECIAL.bytesMethods, method);
@@ -75,14 +76,6 @@ $(function () {
         return (paths || {})["/" + method.slice(0, dot) + "/" + method.slice(dot + 1)] || [];
     }
 
-    // Whether a method has anything for the dropdown to act on. Offered whenever the
-    // type has a bytes field in it, whether or not this particular exchange filled
-    // one in: a control that came and went with the data would be one you could not
-    // reach for in advance.
-    function hasBytes(method) {
-        return bytesPathsFor(method).length > 0 || bytesRequestPathsFor(method).length > 0;
-    }
-
     // requestAsNumbers is a request body with its special messages replaced.
     //
     // Keyed lowerCamelCase, because a request body here is grpcui's own model
@@ -92,7 +85,7 @@ $(function () {
             return body;
         }
         var shown = VALUES.parsed(body, specialRequestPathsFor(method), SPECIAL, true);
-        if (bytesEncoding === "hex") {
+        if (VALUES.bytesEncoding() === "hex") {
             shown = VALUES.hexed(shown, bytesRequestPathsFor(method), true);
         }
         return shown;
@@ -104,7 +97,7 @@ $(function () {
     // each message inside it rather than from the top.
     function asNumbers(payload, method) {
         var paths = specialPathsFor(method);
-        var bytes = bytesEncoding === "hex" ? bytesPathsFor(method) : [];
+        var bytes = VALUES.bytesEncoding() === "hex" ? bytesPathsFor(method) : [];
         if ((!paths.length && !bytes.length) || !payload || typeof payload !== "object") {
             return payload;
         }
@@ -560,6 +553,24 @@ $(function () {
         return win.__creReadRequestBody();
     }
 
+    // What is wrong with a request, as its own form judges it. Raised rather than
+    // sent: a bytes field that will not parse leaves grpcui's box holding whatever
+    // it held before, so sending anyway would carry a value nobody typed - and a
+    // field that never had one would go out empty, which is a call to no address.
+    //
+    // The form marks the offending box at the same time, so the message here says
+    // what is wrong and the page shows where.
+    function checkBody(request, number) {
+        var win = requestEls[request.uid].frame[0].contentWindow;
+        if (!win || typeof win.__creRequestProblems !== "function") {
+            return;
+        }
+        var problems = win.__creRequestProblems();
+        if (problems && problems.length) {
+            throw new Error("Request " + number + " was not sent - " + problems.join("; "));
+        }
+    }
+
     function csrfToken() {
         return document.cookie.replace(
             new RegExp("(?:(?:^|.*;\\s*)" + COOKIE + "\\s*\\=\\s*([^;]*).*$)|^.*$"), "$1");
@@ -578,6 +589,7 @@ $(function () {
                 if (targets.length === 0) {
                     return;
                 }
+                checkBody(request, i + 1);
                 groups.push({ instances: targets, body: readBody(request, i + 1) });
             });
         } catch (e) {
@@ -733,33 +745,53 @@ $(function () {
         return $cell;
     }
 
-    // The dropdown itself, one per place a response is shown. They share the one
-    // setting, so picking hex in either shows hex in both.
-    function bytesEncodingControl() {
+    // The one dropdown, above the requests: how a bytes field is typed into, in
+    // every request frame, and how one is read back, in the responses and in the
+    // history. It was three - one over the form, one under the response, one over
+    // each result table - which is three places to set the same thing and three
+    // ways for an exchange to be half in one encoding.
+    //
+    // History keeps the base64 either way, for the same reason it keeps the raw
+    // messages: a saved history is still what a replay has to send.
+    function ensureBytesControl() {
+        if ($("#cre-bytes-control").length) {
+            return;
+        }
+        var $anchor = $("#cre-requests");
+        if (!$anchor.length) {
+            return;
+        }
+
         var $select = $("<select>", {
             "class": "cre-bytes-encoding",
-            title: "How bytes fields are shown. History keeps the base64 either way."
+            title: "How bytes fields are typed and shown, in the requests below and in their responses. They are sent as bytes either way."
         });
         $select.append($("<option>", { value: "base64", text: "base64" }));
         $select.append($("<option>", { value: "hex", text: "hex" }));
-        $select.val(bytesEncoding);
+        $select.val(VALUES ? VALUES.bytesEncoding() : "base64");
         $select.on("change", function () {
-            bytesEncoding = this.value;
-            var inHistory = $(this).closest("#grpc-history-list").length > 0;
+            if (VALUES) {
+                VALUES.setBytesEncoding(this.value);
+            }
+        });
+
+        $anchor.before($("<div>", { id: "cre-bytes-control", "class": "cre-encoding-controls" })
+            .append($("<span>", { "class": "cre-encoding-label", text: "Bytes:" }))
+            .append($select));
+    }
+
+    // Everything showing a bytes value, redrawn in the encoding just picked. The
+    // request frames redraw their own boxes; this is the parent page's share.
+    if (VALUES) {
+        VALUES.onBytesEncoding(function (encoding) {
+            $("#cre-bytes-control").find("select.cre-bytes-encoding").val(encoding);
             if (lastResults) {
-                // Rendered where it stands: switching encoding from the History tab
-                // should not throw the page back to the Response one.
+                // Rendered where it stands: switching encoding should not throw the
+                // page back to the Response tab from wherever it was.
                 renderResults(lastResults, true);
             }
             renderHistory();
-            // Both renders replace this very dropdown, so the focus that was on it
-            // is put back on the one that took its place.
-            $(inHistory ? "#grpc-history-list" : "#cre-response")
-                .find("select.cre-bytes-encoding").first().focus();
         });
-        return $("<div>", { "class": "cre-encoding-controls" })
-            .append($("<span>", { "class": "cre-encoding-label", text: "Bytes:" }))
-            .append($select);
     }
 
     // The last fan-out, kept so the Response tab can be re-rendered in another
@@ -770,9 +802,6 @@ $(function () {
         lastResults = data;
         var $out = $("#cre-response").empty();
         $out.append($("<div>", { "class": "cre-method", text: data.method }));
-        if (hasBytes(data.method)) {
-            $out.append(bytesEncodingControl());
-        }
         $out.append(resultGrid(data));
         if (!keepTab) {
             selectTab(0);
@@ -805,10 +834,6 @@ $(function () {
         if (history.length === 0) {
             $list.append($("<div>", { "class": "cre-history-empty", text: "No requests yet." }));
             return;
-        }
-
-        if (history.some(function (item) { return hasBytes(item.method); })) {
-            $list.append(bytesEncodingControl());
         }
 
         var $accordion = $("<div>");
@@ -1105,6 +1130,7 @@ $(function () {
         });
         $("#cre-history-save").on("click", saveHistory);
 
+        ensureBytesControl();
         renderMetadata();
         renderMode();
         render();
