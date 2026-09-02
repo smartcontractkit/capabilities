@@ -20,10 +20,6 @@ import (
 )
 
 // defaultHTTPPort is where the shared HTTP server listens unless it is told otherwise.
-//
-// A default rather than a required setting, so that a binary starts with no configuration at all.
-// The cost is that two capability binaries on one machine collide unless one of them is told a
-// different port - which an operator running more than one is choosing anyway.
 const defaultHTTPPort = 8080
 
 // HTTPConfig is the shared HTTP server: /metrics, /debug/pprof, the health endpoints, and whatever
@@ -34,15 +30,6 @@ type HTTPConfig struct {
 }
 
 // newWebServer returns the shared HTTP server as a service.
-//
-// The routes go on the mux here rather than when it starts, so that everything this serves is
-// registered before anything is listening: a request cannot arrive for a route that is about to
-// exist. Listening is what start does, and what close undoes.
-//
-// A mux of its own rather than net/http's DefaultServeMux: the mux panics on a second registration
-// of the same pattern, so a process serving two of these could not give both a /healthz at all. The
-// pprof handlers are registered explicitly for the same reason - importing net/http/pprof only
-// installs them on the default mux.
 func newWebServer(lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, checker *services.HealthChecker) *webService {
 	mux.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
@@ -74,8 +61,12 @@ func newWebServer(lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, checke
 	return w
 }
 
-// webService serves /metrics, /debug/pprof, the health endpoints, and whatever routes a service
-// registered on the mux while it was being built.
+// startWebServer builds the shared HTTP server and starts it - listening is what Start does.
+func startWebServer(ctx context.Context, lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, checker *services.HealthChecker) (*webService, error) {
+	w := newWebServer(lggr, cfg, mux, checker)
+	return w, w.Start(ctx)
+}
+
 type webService struct {
 	services.Service
 
@@ -83,8 +74,6 @@ type webService struct {
 	port   uint16
 	server *http.Server
 
-	// listener is what start bound, and what close gives back. Written by one hook and read by the
-	// other, which the state machine's lock orders.
 	listener net.Listener
 }
 
@@ -108,35 +97,11 @@ func (w *webService) start(ctx context.Context) error {
 }
 
 func (w *webService) close() error {
-	err := w.server.Close()
-
-	// The listener too, and not only through the server: Close closes the listeners the server is
-	// already serving, and the goroutine above may not have got that far. Without this, close can
-	// return while the port is still bound - so a caller that stops one server and starts another
-	// on the same port sometimes fails, depending on scheduling.
-	//
-	// Closing twice is why the error is dropped: whichever of the two got there first has already
-	// done the work, and the second reports the socket it wanted to close is closed.
-	_ = w.listener.Close()
-
-	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
+	// closes the listener too
+	return w.server.Close()
 }
 
 // newHealthChecker returns the health checker as a service.
-//
-// The checker is made here rather than when the service starts, so that it can be handed to the web
-// server that serves its view before either of them is running. Making one polls nothing: it is
-// starting that does, and a checker that was never started has nothing to stop.
-//
-// It reports on its siblings rather than on the service that contains it, and that is what lets it
-// be one of them. Register reads a reporter's health as it registers, and the checker only re-reads
-// on a 15s tick - so registering the parent, which is still starting while its own sub-services
-// run, would seed "not started" and leave /readyz wrong for a quarter of a minute. Registering the
-// services added before it has no such problem: sub-services start in order, so they are already
-// running by the time this one does.
 //
 // client is always a client, never nil: when telemetry is off it is the noop one that is global
 // until something replaces it, so the otel hooks are configured either way and simply record
@@ -158,12 +123,14 @@ func newHealthChecker(lggr logger.Logger, client *beholder.Client, reporters []s
 	return h, nil
 }
 
-// healthService owns a services.HealthChecker, which mirrors its reporters as prometheus metrics
-// ("health", "uptime_seconds", "version") and, when telemetry is configured, as otel metrics
-// through the same beholder client the rest of the process reports over.
-//
-// The checker is wrapped rather than used directly because it is not a services.Service: its Start
-// takes no context, and it reports no health of its own.
+func startHealthChecker(ctx context.Context, lggr logger.Logger, client *beholder.Client, reporters []services.HealthReporter) (*healthService, error) {
+	h, err := newHealthChecker(lggr, client, reporters)
+	if err != nil {
+		return nil, err
+	}
+	return h, h.Start(ctx)
+}
+
 type healthService struct {
 	services.Service
 

@@ -58,6 +58,15 @@ func newRegistry(lggr logger.Logger, cfg capabilityConfig, servers *serverFactor
 	return r, nil
 }
 
+// startRegistry builds the registry and starts it.
+func startRegistry(ctx context.Context, lggr logger.Logger, cfg capabilityConfig, servers *serverFactory) (*registryService, error) {
+	r, err := newRegistry(lggr, cfg, servers)
+	if err != nil {
+		return nil, err
+	}
+	return r, r.Start(ctx)
+}
+
 // registryService is the registry this process holds its own capabilities in and resolves others
 // through, the servers its own are reached on, and the connection to the node's registry - as one
 // service, so that closing it undoes all three in order.
@@ -102,11 +111,10 @@ type hosted struct {
 // where it is made, rather than written somewhere an Add can find it later, so the two cannot
 // disagree.
 //
-// It is called at build time rather than from Start: a capability that cannot be announced fails
-// the run before it is nominally up, and the health checker - which starts inside root.start -
-// only reports ready once this has run. The capability's own Start still runs later, with the
-// rest of the root; the announcement invites nothing that can arrive in that window, since the
-// node only learns the address at the end of it.
+// It is called at build time rather than from a Start of this service's own: a capability that
+// cannot be announced fails the run before it is nominally up, and the health checker - which the
+// run starts after this - only reports ready once this has run. The capability itself is already
+// started by the caller, so traffic the announcement invites lands on something running.
 func (r *registryService) Add(ctx context.Context, c Capability) error {
 	info, err := c.Info(ctx)
 	if err != nil {
@@ -117,9 +125,9 @@ func (r *registryService) Add(ctx context.Context, c Capability) error {
 	if err != nil {
 		return fmt.Errorf("failed to open a server for capability %s: %w", info.ID, err)
 	}
-	// Undone here on any failure below rather than by close: a failure before root.start means
-	// this service never started, and StopOnce would refuse to run close's undo at all.
-	if err := registry.RegisterCapability(r.eng, server.registrar(), c, info.CapabilityType); err != nil {
+	// Undone here on any failure below rather than by close: a failure before the run starts this
+	// service means it never started, and StopOnce would refuse to run close's undo at all.
+	if err := registry.RegisterCapability(r.eng, server.grpcServer(), c, info.CapabilityType); err != nil {
 		_ = server.Close()
 		return fmt.Errorf("failed to serve capability %s: %w", info.ID, err)
 	}

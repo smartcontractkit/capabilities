@@ -21,13 +21,6 @@ type PyroscopeConfig struct {
 
 // newProfiler returns continuous profiling as a service, or nil when no pyroscope server is
 // configured.
-//
-// Nil rather than a service that does nothing, so that a binary not profiling has nothing in its
-// health report about profiling.
-//
-// appName is the binary's name, which profiles are tagged with along with the build version and
-// SHA. One profiler covers the whole process: profiles are per-process by nature, and a second
-// would only sample the same goroutine scheduler twice.
 func newProfiler(lggr logger.Logger, appName string, cfg PyroscopeConfig) *profilerService {
 	if cfg.ServerAddress == "" {
 		return nil
@@ -42,11 +35,15 @@ func newProfiler(lggr logger.Logger, appName string, cfg PyroscopeConfig) *profi
 	return p
 }
 
-// profilerService is the pyroscope profiler, started and stopped with everything else this run
-// supervises.
-//
-// Nothing happens until it starts, which is what makes it reversible without anything having to
-// remember: a profiler that was never started has nothing running to stop.
+func startProfiler(ctx context.Context, lggr logger.Logger, appName string, cfg PyroscopeConfig) (*profilerService, error) {
+	profiler := newProfiler(lggr, appName, cfg)
+	if profiler == nil {
+		return nil, nil
+	}
+
+	return profiler, profiler.Start(ctx)
+}
+
 type profilerService struct {
 	services.Service
 

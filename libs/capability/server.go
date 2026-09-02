@@ -1,18 +1,5 @@
 package capability
 
-// The gRPC servers this process serves its capabilities on, and the factory that makes them.
-//
-// A copy of libs/standalone/grpc's Server and Factory rather than an import, for the same reason
-// the observability helpers are a copy: that package is this one's to replace, and the duplicate
-// resolves by deletion when it has. What is not copied is the configured single-server form,
-// which is crecore's - a capability binary announces its own addresses rather than being told
-// one, so it wants the factory and ephemeral ports.
-//
-// One server per capability, because the registry addresses a capability by the address serving
-// it and most of the RPCs reached through that address carry nothing to tell two capabilities
-// apart - of them, only Execute carries a capability ID. The LOOP transport makes the same
-// arrangement: one grpc.Server per capability behind its own go-plugin broker connection.
-
 import (
 	"context"
 	"errors"
@@ -29,34 +16,17 @@ import (
 )
 
 // defaultHost is where a server binds and is advertised unless told otherwise.
-//
-// localhost rather than every interface: a process reached only by the node that launched it
-// should not be listening publicly. Set the host to whatever this process is reachable at (a
-// container name, a service DNS name, or empty for every interface) when something off-box has to
-// dial it.
 const defaultHost = "localhost"
 
 // grpcConfig is where the gRPC servers this process opens bind and are advertised.
-//
-// One setting is both sides of that on purpose: a service that hands its address to something
-// else can only be reached where the server is actually listening, so keeping them together means
-// the two cannot disagree.
 type grpcConfig struct {
 	AdvertiseHost string `usage:"host the gRPC servers this process opens bind to and are advertised at; empty binds every interface"`
 
 	// StartPort is where the factory's ports begin. Zero, the default, means every server asks
-	// the OS for a free port instead - which is what a process announcing its own addresses wants,
-	// since nothing has to predict them.
+	// the OS for a free port instead.
 	StartPort uint16 `usage:"first port the gRPC servers this process opens bind to, incrementing per server; 0 asks the OS for a free port for each of them"`
 }
 
-// server is one gRPC server: bound when it is created, served for as long as it runs.
-//
-// Binding early is what makes an ephemeral port usable. A server on port 0 has no address until
-// something listens, and a caller that has to announce its address needs it before anything is
-// serving - so the listener is opened by the constructor and only Serve waits for Start. It also
-// means a port already in use fails while the process is still starting up rather than once it is
-// nominally running.
 type server struct {
 	services.Service
 	eng *services.Engine
@@ -88,9 +58,7 @@ func newServer(ctx context.Context, lggr logger.Logger, address string) (*server
 	return s, nil
 }
 
-// registrar is where services register their RPCs. They must all have done so before the server
-// starts: Serve does not accept registrations.
-func (s *server) registrar() grpc.ServiceRegistrar { return s.grpc }
+func (s *server) grpcServer() *grpc.Server { return s.grpc }
 
 // address is the grpc.NewClient target for this server, which is what a caller announcing itself
 // hands out. It is the address as bound, so a server on port 0 reports the port it actually got.

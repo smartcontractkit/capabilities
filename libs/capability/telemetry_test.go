@@ -29,7 +29,7 @@ func settingsRoot(t *testing.T) (*cobra.Command, *config) {
 
 	// The production defaults, so what these read is what a binary gets rather than a zero value.
 	cfg := defaultConfig()
-	require.NoError(t, cfg.register(root))
+	require.NoError(t, cfg.bind(root))
 	return root, cfg
 }
 
@@ -275,13 +275,13 @@ func TestWithOtelViewsReachesTheClient(t *testing.T) {
 		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{Boundaries: []float64{1, 2, 3}}},
 	)
 
-	obs := defaultObservability()
-	obs.telemetry.Endpoint = "otel:4317"
-	WithOtelViews(view)(obs)
+	cfg := defaultConfig()
+	cfg.observability.telemetry.Endpoint = "otel:4317"
+	WithOtelViews(view)(cfg)
 
-	cfg, err := beholderConfig(logger.Test(t), obs)
+	bcfg, err := beholderConfig(logger.Test(t), &cfg.observability)
 	require.NoError(t, err)
-	assert.Len(t, cfg.MetricViews, 1, "the view should be on the config the client is built from")
+	assert.Len(t, bcfg.MetricViews, 1, "the view should be on the config the client is built from")
 }
 
 // TestWithOtelViewsDefaultsToNone covers a binary that passes none: the client keeps whatever

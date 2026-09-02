@@ -1,11 +1,7 @@
 package capability
 
-// The beholder client, and the two services that are configured separately but exported through it:
-// tracing, whose spans go to the telemetry endpoint, and chip ingress, whose emitter is part of the
-// same client. Both are settings on the client's config rather than services of their own, which is
-// why neither has a start of its own to reverse.
-
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -28,8 +24,7 @@ const (
 	envTelemetryAuthHeaderPrefix = "CL_TELEMETRY_AUTH_HEADER_"
 )
 
-// TelemetryConfig is the beholder client's configuration: where telemetry goes and how it
-// authenticates. An empty Endpoint leaves telemetry off, and the global noop client in place, so
+// TelemetryConfig is the beholder client's configuration: an empty Endpoint leaves telemetry off, and the global noop client in place, so
 // instruments created by services record nothing.
 type TelemetryConfig struct {
 	Endpoint           string `usage:"OTLP gRPC endpoint telemetry is exported to; telemetry is disabled when unset"`
@@ -63,24 +58,7 @@ type ChipIngressConfig struct {
 	InsecureConnection bool   `usage:"connect to chip ingress over an insecure connection"`
 }
 
-// newTelemetry builds the beholder client and the service that owns it. It returns the client too,
-// since the health checker mirrors itself through the same meter.
-//
-// It installs the client as the process's, and has to. A capability creates its instruments while
-// it is being constructed, and an OTEL instrument resolves beholder.GetMeter() once, at creation -
-// so a capability built before this became the global would hold a noop meter for the life of the
-// process, recording nothing and reporting no error. Installing when the service starts would be
-// too late: the root does not start until the capability it supervises has been built.
-//
-// It starts nothing. The service it returns is the root's, and the root is what starts and closes
-// it - which is also what puts the global back.
-//
-// When no endpoint is configured it builds no client and returns a service that does nothing. That
-// is not an error: it just means the process falls back to the noop beholder client that is global
-// until something replaces it, so instruments resolve against a meter that records nothing.
-//
-// Tracing and chip ingress are exported through this client, so neither does anything without one
-// either.
+// newTelemetry builds the beholder client and the service that owns it.
 func newTelemetry(lggr logger.Logger, obs *observability) (*telemetryService, error) {
 	if obs.telemetry.Endpoint == "" {
 		return noopTelemetry(lggr), nil
@@ -97,6 +75,15 @@ func newTelemetry(lggr logger.Logger, obs *observability) (*telemetryService, er
 	}
 
 	return newTelemetryService(lggr, client, installGlobally(client)), nil
+}
+
+func startTelemetry(ctx context.Context, lggr logger.Logger, obs *observability) (*telemetryService, error) {
+	telemetry, err := newTelemetry(lggr, obs)
+	if err != nil {
+		return nil, err
+	}
+
+	return telemetry, telemetry.Start(ctx)
 }
 
 // telemetryService is the beholder client and the process-global it is installed as, as one service
@@ -122,10 +109,6 @@ type telemetryService struct {
 
 // noopTelemetry is telemetry nobody configured: nothing to start, nothing to close, and no client
 // behind it. The process keeps the noop beholder client it already had.
-//
-// A service rather than a nil, so that the caller has one thing to hand the root whether or not
-// telemetry is on - and so a nil of this type never reaches rootService.add, where it would arrive
-// as a non-nil services.Service holding a nil pointer.
 func noopTelemetry(lggr logger.Logger) *telemetryService {
 	t := &telemetryService{}
 	t.Service, _ = services.Config{Name: "Telemetry"}.NewServiceEngine(lggr)
@@ -164,10 +147,6 @@ func installGlobally(client *beholder.Client) func() {
 }
 
 // beholderConfig is the telemetry, tracing and chip ingress settings as the one client takes them.
-//
-// Three configs and one client because that is what they are: an export pipeline, and two more
-// kinds of thing exported over it. Registering them separately is what lets an operator turn
-// tracing on without restating where telemetry goes.
 func beholderConfig(lggr logger.Logger, obs *observability) (beholder.Config, error) {
 	cfg := beholder.DefaultConfig()
 	cfg.OtelExporterGRPCEndpoint = obs.telemetry.Endpoint

@@ -33,18 +33,18 @@ profiler        (nil when no pyroscope server configured)
 telemetry       building it installs the process-global beholder client
 registry        grpc.NewClient (lazy) + registry.Local[.WithRemote]; Add serves+announces
 settings        CRE settings from the dumped file, for the limits factory
-constructor     newCapability.call(Dependencies{...})
-reg.Add         serve the capability on its own gRPC server, hold locally, announce to the node
-health checker  registers the services added above it
+startCapability build (newCapability.call) → Start → reg.Add (serve+announce) → debug UI if flagged
+health checker  reports on the services started before it
 web server      /metrics, /debug/pprof, /healthz, /readyz, /reload/settings.txt,
                 /debug/capabilities when --capabilities.http-debug
-→ root.start(ctx)
 → block: plugin.Serve under a go-plugin host, else <-ctx.Done()
-→ defer supervised.Close()
+→ defer MultiCloser(svcs): concurrent — close order is not controlled
 ```
 
-All of it is one `rootService` (`root.go`) — a `services.Engine` whose sub-services start in the
-order added and close concurrently. `run` starts one thing and closes one thing.
+`run` keeps a plain `[]services.Service`: each piece is **started as it is built** (`startX`
+wrappers over `newX`) and appended, and a deferred `services.MultiCloser` at the top closes
+whatever was appended — so a failure at any step unwinds everything before it. There is no
+aggregate root service.
 
 Config is `config` (`config.go`) with `observability`, `capabilities` and `grpc` as siblings. Every
 setting
@@ -67,7 +67,7 @@ Numbered against `libs/standalone/bootstrapper.go` unless noted.
 3. `logger.Sync()` on shutdown — deferred first so it unwinds last
 4. Logger named after the binary
 6. `WithOtelViews` — `Option` on `Run`/`RunErr`
-7. Start the capability — sub-service of the root
+7. Start the capability — an entry in the run's service list
 8. Health checker registration — registers its *siblings*, not the parent
 16. Serve each capability on its own gRPC server — `server.go` + `registryService.Add`.
     `server.go` is a copy of `libs/standalone/grpc` minus the configured single-server form
@@ -101,7 +101,7 @@ Numbered against `libs/standalone/bootstrapper.go` unless noted.
 13. `embed` command + `--instances` (stub at `run.go`)
 14. `ForEmbedding` — per-instance dependency forms
 15. Per-instance identity: logger `instance.N`, prometheus `instance` label (`:342-348`),
-    `portFor(index)`, and an index on the root service name or health metrics collide
+    `portFor(index)`, and distinct service names or health metrics collide between instances
 
 ### Done — capability hosting
 18. Settings reload endpoint — `reloadHandler` in `settings.go`, registered on the run's mux in
@@ -125,9 +125,9 @@ is built after telemetry.
 
 **The health checker cannot be inside the thing it reports on.** `Register` seeds state by calling
 `reporter.Ready()` immediately and only re-reads on a **15s** tick (`services/health.go:63`).
-Registering the parent while the parent is still `Starting` would leave `/readyz` wrong for up to
-15 seconds. It registers its siblings instead — `rootService.reporters()` snapshots what was added
-before it, which is exactly what is already running when it starts.
+Registering a still-starting aggregate would leave `/readyz` wrong for up to 15 seconds. It
+registers its siblings instead — `run` hands it a snapshot of the slice built so far, which is
+exactly what is already running when it starts.
 
 **Constructors ask for individual dependencies, never the `Dependencies` struct.** Taking the struct
 would be a dependency on everything a run has, and adding a field would silently widen what every
@@ -143,20 +143,21 @@ announce-last is control flow rather than convention, and the address never leav
 made it. The `addresses` map `WithRemote` announces from is nil'd out: a shared write between
 whoever serves and whoever announces is exactly the coupling this removes.
 
-**The capability is announced before it is started.** `Add` runs at build time, right after the
-constructor, so a failed announce fails the run before it is nominally up and `/readyz` implies
-announced. The capability's own `Start` runs later, inside `root.start`; an RPC arriving in that
-window would hit an unstarted capability, but the window is the rest of the build and the node
-only learns the address at the end of it.
+**The capability is started before it is announced.** `startCapability` runs the constructor,
+starts the capability, and only then `reg.Add` serves and announces it — traffic the announcement
+invites lands on something already running. Announcing at build time, rather than in a service's
+`Start` of its own, means a failed announce fails the run before it is nominally up, and `/readyz`
+implies announced.
 
 **`grpc.NewClient` does not dial, and does not validate.** The node starts this process and the two
 race, so an eager dial would be a race we lose intermittently. It also accepts `""`, `"!://x"` and
 unknown schemes without error — so a typo in `--capabilities.proxy-url` surfaces as a failed lookup
 much later, not at startup.
 
-**Sub-services start in order and close concurrently** (`services/service.go:254,281` —
-`MultiStart` then `MultiCloser`). Start order is controlled by `rootService.add` order; close order
-is *not* controlled at all.
+**Services start eagerly, in build order, and close concurrently** (`services/multi.go` —
+`MultiCloser`). `run` starts each service as it builds it (`startX` wrappers) and appends it to
+the slice; the deferred `MultiCloser` at the top of `run` closes whatever was appended, which is
+what makes a failure at any step unwind everything before it. Close order is *not* controlled.
 
 **`StopOnce` refuses to run a `Close` hook on a service that never started**
 (`services/state.go:111`, `ErrCannotStopUnstarted`). This is why anything that changes process state
@@ -164,29 +165,19 @@ at build time cannot rely on `Close` alone to undo it.
 
 ## Known gaps and defects
 
-- **Telemetry global leaks on a pre-start failure.** The beholder global is swapped when telemetry
-  is *built*, but the undo lives in the service's `Close`, which `StopOnce` refuses before the root
-  has started it. A failure between building telemetry and `root.start` — the constructor,
-  `newSettings`, the `reg.Add` that serves and announces, or `newHealthChecker` — leaves the global
-  pointing at a client nothing will close. Accepted and documented inline in `run`, because `Run`
-  exits the process straight after. **It must be fixed before `embed`**, where one failed instance
-  would strand the global for the others.
-  Note `TestRunUnwindsWhatStartedBeforeAFailure` passes *vacuously* here — telemetry is off in it.
-- **A failure after `reg.Add` leaks the announcement too.** Same mechanism as the telemetry gap:
-  the server is bound and the node's registry told the address at build time, but the undo lives in
-  the registry's `Close`, which never runs if `root.start` is never reached. The node drops what it
-  cannot dial, so the stale entry is self-healing; the bound port lasts until process exit. Fix
-  alongside the telemetry gap, before `embed`.
+- **~~Telemetry global leaks on a pre-start failure~~ — resolved.** Every service is started as it
+  is built and appended to `svcs`, and the deferred `MultiCloser` at the top of `run` closes
+  whatever was appended, so a failure at any later step — the constructor, `newSettings`,
+  `reg.Add` — unwinds telemetry's global swap along with everything else.
+- **~~A failure after `reg.Add` leaks the announcement~~ — resolved**, same mechanism: the
+  registry is started (so its `Close` runs) and on the slice before `startCapability` is called.
 - **`embed` must not serve the plugin host.** `run` decides for itself via `underPluginHost()`, so
   every instance would try. A host supervises one plugin. `TODO` on `run`.
 - **Close ordering.** The registry's own close is now internally ordered (Remove → stop servers →
   close conn), so the deregistration reliably reaches the node. What remains: the registry and the
-  capability are still closed concurrently by the root, so a draining RPC (servers stop with
+  capability are still closed concurrently (`MultiCloser`), so a draining RPC (servers stop with
   `GracefulStop`) can call into a capability that is already closing. The bootstrapper closed
   dependencies strictly after services (`registerCloser`). Unresolved.
-- **Root service and logger share the binary's name.** Sub-services log as bare `Telemetry` /
-  `HealthChecker` / `WebServer` with no binary prefix, and the root's health metric is labelled with
-  the binary name. The bootstrapper used `Bootstrap` for the service to avoid this. Settle before 15.
 - **Settings constants are a copy.** `settingsDirName`, `settingsFileName`, `reloadPathPrefix` in
   `settings.go` duplicate `libs/standalone/capability/settings.go` because importing it would be a
   cycle. They are a live contract with the node, which writes the file this reads. If they drift,
