@@ -439,11 +439,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 }
 
 // createTestRemainingAccounts builds the account list the on-chain forwarder expects:
-// meta[0] is forwarder_state, meta[1] is forwarder_authority, followed by extra accounts.
+// meta[0] is forwarder_state, followed by extra accounts.
 func createTestRemainingAccounts(forwarderState solana.PublicKey, extra int) []*solcap.AccountMeta {
 	accounts := []*solcap.AccountMeta{
 		{PublicKey: forwarderState.Bytes()},
-		{PublicKey: RandomBytes(solana.PublicKeyLength)},
 	}
 	for range extra {
 		accounts = append(accounts, &solcap.AccountMeta{PublicKey: RandomBytes(solana.PublicKeyLength)})
@@ -455,7 +454,7 @@ func createTestRemainingAccounts(forwarderState solana.PublicKey, extra int) []*
 // are consistent, i.e. one that passes payload validation. It sets up no mocks.
 func buildWriteReportReq(t *testing.T, forwarderState solana.PublicKey, metadata ocrtypes.Metadata, receiver solana.PublicKey) *solcap.WriteReportRequest {
 	t.Helper()
-	accounts := createTestRemainingAccounts(forwarderState, 1)
+	accounts := createTestRemainingAccounts(forwarderState, 2)
 	return &solcap.WriteReportRequest{
 		Receiver:          receiver.Bytes(),
 		RemainingAccounts: accounts,
