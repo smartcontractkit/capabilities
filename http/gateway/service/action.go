@@ -29,53 +29,50 @@ type actions struct {
 	lggr   logger.Logger
 	client *http.Client
 
-	send func(node string, req *jsonrpc.Request[json.RawMessage]) error
-
 	cache *responseCache
 }
 
-func newActions(lggr logger.Logger, client *http.Client, send func(node string, req *jsonrpc.Request[json.RawMessage]) error, ttl time.Duration) *actions {
-	return &actions{lggr: lggr, client: client, send: send, cache: newResponseCache(ttl)}
+func newActions(lggr logger.Logger, client *http.Client, ttl time.Duration) *actions {
+	return &actions{lggr: lggr, client: client, cache: newResponseCache(ttl)}
 }
 
-// Handle performs what a node asked for and sends it back.
+// Answer performs what a node asked for and hands it back on the node's own
+// request: the workflow behind it is waiting, so there is nothing to be gained by
+// telling the node about it later.
 //
 // The request arrives as a JSON-RPC response because that is the shape the node
 // connection carries in that direction; the answer goes back as a request, which
-// is the shape the node's own handler is waiting for. Neither is this package's
-// choice - it is the protocol the capability already speaks.
-func (a *actions) Handle(ctx context.Context, node string, msg *jsonrpc.Response[json.RawMessage]) error {
+// is the shape the capability reads. Neither is this package's choice - it is the
+// protocol the capability already speaks.
+func (a *actions) Answer(ctx context.Context, node string, msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
 	if msg.Result == nil {
-		return fmt.Errorf("node %s sent an outbound request with no payload", node)
+		return nil, fmt.Errorf("node %s sent an outbound request with no payload", node)
 	}
 
 	var request gateway.OutboundHTTPRequest
 	if err := json.Unmarshal(*msg.Result, &request); err != nil {
-		return fmt.Errorf("node %s sent something that is not an outbound HTTP request: %w", node, err)
+		return nil, fmt.Errorf("node %s sent something that is not an outbound HTTP request: %w", node, err)
 	}
 
-	// Answered on its own goroutine: a node's request may take as long as the far
-	// side does, and the connection it arrived on has other things to carry.
-	go func() {
-		response := a.fetch(context.WithoutCancel(ctx), request)
+	// Not the asking node's context to cancel: one fetch answers every node of the
+	// DON that asked for the same thing, and the one that happened to start it
+	// giving up - a workflow timeout, a connection that broke - would otherwise take
+	// the answer away from the rest. What bounds the fetch is the request's own
+	// timeout, which is the workflow's rather than this node's.
+	response := a.fetch(context.WithoutCancel(ctx), request)
 
-		encoded, err := json.Marshal(response)
-		if err != nil {
-			a.lggr.Errorw("Failed to encode an outbound response", "node", node, "err", err)
-			return
-		}
-		params := json.RawMessage(encoded)
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode the response for node %s: %w", node, err)
+	}
+	params := json.RawMessage(encoded)
 
-		if err := a.send(node, &jsonrpc.Request[json.RawMessage]{
-			Version: jsonrpc.JsonRpcVersion,
-			ID:      msg.ID,
-			Method:  gateway.MethodHTTPAction,
-			Params:  &params,
-		}); err != nil {
-			a.lggr.Errorw("Failed to return an outbound response", "node", node, "err", err)
-		}
-	}()
-	return nil
+	return &jsonrpc.Request[json.RawMessage]{
+		Version: jsonrpc.JsonRpcVersion,
+		ID:      msg.ID,
+		Method:  gateway.MethodHTTPAction,
+		Params:  &params,
+	}, nil
 }
 
 // fetch makes the request, through the cache when the workflow asked for that.

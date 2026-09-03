@@ -27,6 +27,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/spf13/cobra"
+	"golang.org/x/net/http2"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -242,6 +243,12 @@ func (l *listener) serve() error {
 	}
 
 	if l.cert != "" {
+		// The cleartext listener gets this from server.Serve, which wraps the mux; a
+		// TLS one negotiates HTTP/2 in the handshake instead, and would otherwise take
+		// net/http's default rather than the limit a node's traffic is sized for.
+		if err := http2.ConfigureServer(l.server, &http2.Server{MaxConcurrentStreams: server.MaxConcurrentStreams}); err != nil {
+			return fmt.Errorf("failed to configure HTTP/2 on the %s listener: %w", l.name, err)
+		}
 		return l.server.ListenAndServeTLS(l.cert, l.key)
 	}
 	return l.server.ListenAndServe()

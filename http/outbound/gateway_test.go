@@ -133,15 +133,11 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 }
 
 // Helper for setting up proxy and mockConnector for SendRequest tests
-func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
-	readyCh := make(chan string, 1)
+func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConnector) {
 	mockConnector := &mockGatewayConnector{
 		SourceDonID: "don1",
 		Gateways: []mockGatewayEntry{
 			{ID: "gateway1"},
-		},
-		OnSend: func(id string) {
-			readyCh <- id
 		},
 	}
 	lggr := logger.Test(t)
@@ -152,7 +148,7 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 		testLimits(t),
 	)
 	require.NoError(t, err)
-	return proxy, mockConnector, readyCh
+	return proxy, mockConnector
 }
 
 func newMetrics(t *testing.T) *common.Metrics {
@@ -162,7 +158,7 @@ func newMetrics(t *testing.T) *common.Metrics {
 }
 
 func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
-	proxy, _, readyCh := setupSendRequestTest(t)
+	proxy, _ := setupSendRequestTest(t)
 
 	metadata := capabilities.RequestMetadata{
 		WorkflowID:          "wf1",
@@ -178,12 +174,6 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		CacheSettings: &protos.CacheSettings{Store: true},
 	}
 
-	// Prepare a goroutine to receive gateway response
-	go func() {
-		id := <-readyCh
-		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
-	}()
-
 	output, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 	require.NoError(t, err)
 	require.NotNil(t, output)
@@ -192,7 +182,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 }
 
 func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
-	proxy, _, readyCh := setupSendRequestTest(t)
+	proxy, mockConnector := setupSendRequestTest(t)
 
 	metadata := capabilities.RequestMetadata{
 		WorkflowID:          "wf1",
@@ -211,18 +201,16 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 		},
 	}
 
-	// Prepare a goroutine to receive gateway response
-	go func() {
-		id := <-readyCh
-		simulateGatewayMessage(t, proxy, id, 200, "ok", "", false)
-	}()
+	// An answer with nothing in it is not an answer, and is refused rather than
+	// read as an empty response.
+	mockConnector.Answer = answering(gateway_common.OutboundHTTPResponse{StatusCode: 200}, false)
 
 	_, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 	require.Error(t, err)
 }
 
 func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
-	proxy, _, readyCh := setupSendRequestTest(t)
+	proxy, mockConnector := setupSendRequestTest(t)
 
 	metadata := capabilities.RequestMetadata{
 		WorkflowID:          "wf1",
@@ -238,10 +226,11 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		CacheSettings: &protos.CacheSettings{Store: true},
 	}
 
-	go func() {
-		id := <-readyCh
-		simulateGatewayMessage(t, proxy, id, 500, "ok", "some error", true)
-	}()
+	mockConnector.Answer = answering(gateway_common.OutboundHTTPResponse{
+		StatusCode:   500,
+		Body:         []byte("ok"),
+		ErrorMessage: "some error",
+	}, true)
 
 	_, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 	require.Error(t, err)
@@ -252,7 +241,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 
 func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 	t.Run("external endpoint error returns UserError", func(t *testing.T) {
-		proxy, _, readyCh := setupSendRequestTest(t)
+		proxy, mockConnector := setupSendRequestTest(t)
 
 		metadata := capabilities.RequestMetadata{
 			WorkflowID:          "wf1",
@@ -268,10 +257,11 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 			CacheSettings: &protos.CacheSettings{Store: true},
 		}
 
-		go func() {
-			id := <-readyCh
-			simulateGatewayMessageWithFlags(t, proxy, id, 500, "", "endpoint failed", true, true, false)
-		}()
+		mockConnector.Answer = answering(gateway_common.OutboundHTTPResponse{
+			StatusCode:              500,
+			ErrorMessage:            "endpoint failed",
+			IsExternalEndpointError: true,
+		}, true)
 
 		_, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 		require.Error(t, err)
@@ -282,7 +272,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 	})
 
 	t.Run("validation error returns UserError", func(t *testing.T) {
-		proxy, _, readyCh := setupSendRequestTest(t)
+		proxy, mockConnector := setupSendRequestTest(t)
 
 		metadata := capabilities.RequestMetadata{
 			WorkflowID:          "wf1",
@@ -298,11 +288,11 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 			CacheSettings: &protos.CacheSettings{Store: true},
 		}
 
-		go func() {
-			id := <-readyCh
-			// Simulate validation error
-			simulateGatewayMessageWithFlags(t, proxy, id, 400, "", "invalid request format", true, false, true)
-		}()
+		mockConnector.Answer = answering(gateway_common.OutboundHTTPResponse{
+			StatusCode:        400,
+			ErrorMessage:      "invalid request format",
+			IsValidationError: true,
+		}, true)
 
 		_, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 		require.Error(t, err)
@@ -315,7 +305,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 	// Ensure that canceling the SendRequest context before a gateway response
 	// is a UserError.
 	t.Run("gateway response timeout returns UserError", func(t *testing.T) {
-		proxy, _, readyCh := setupSendRequestTest(t)
+		proxy, mockConnector := setupSendRequestTest(t)
 
 		metadata := capabilities.RequestMetadata{
 			WorkflowID:          "wf1",
@@ -335,6 +325,15 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 			CacheSettings: &protos.CacheSettings{Store: true},
 		}
 
+		// A gateway that is still fetching: the request is held open until the caller
+		// gives up on it, which is what a workflow's timeout does.
+		asked := make(chan struct{})
+		mockConnector.Answer = func(ctx context.Context, _ *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+			close(asked)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 
@@ -346,8 +345,8 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 			errCh <- err
 		}()
 
-		// cancel after SendToGateway ran
-		<-readyCh
+		// cancel once the gateway has the request
+		<-asked
 		cancel()
 
 		err := <-errCh
@@ -361,38 +360,28 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 	})
 }
 
-func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool) {
-	simulateGatewayMessageWithFlags(t, proxy, id, statusCode, body, errorMessage, includeBody, false, false)
-}
-
-func simulateGatewayMessageWithFlags(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool, isExternalError bool, isValidationError bool) {
-	simulateGatewayMessageWithMultiHeaders(t, proxy, id, statusCode, body, errorMessage, includeBody, isExternalError, isValidationError, nil, nil)
-}
-
-func simulateGatewayMessageWithMultiHeaders(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool, isExternalError bool, isValidationError bool, headers map[string]string, multiHeaders map[string][]string) {
-	req := jsonrpc.Request[json.RawMessage]{
-		ID:      id,
-		Method:  gateway_common.MethodHTTPAction,
-		Version: "2.0",
+// answering is a gateway that hands back a response of its own: the same message
+// it would once have pushed at the node, on the request the node asked with.
+//
+// withResponse says whether the answer carries one at all, which is how a gateway
+// answering with nothing is tested.
+func answering(resp gateway_common.OutboundHTTPResponse, withResponse bool) gatewayAnswer {
+	return func(_ context.Context, asked *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+		answer := &jsonrpc.Request[json.RawMessage]{
+			ID:      asked.ID,
+			Method:  gateway_common.MethodHTTPAction,
+			Version: "2.0",
+		}
+		if withResponse {
+			payload, err := json.Marshal(resp)
+			if err != nil {
+				return nil, err
+			}
+			params := json.RawMessage(payload)
+			answer.Params = &params
+		}
+		return answer, nil
 	}
-	resp := gateway_common.OutboundHTTPResponse{
-		StatusCode:              statusCode,
-		Body:                    []byte(body),
-		ErrorMessage:            errorMessage,
-		IsExternalEndpointError: isExternalError,
-		IsValidationError:       isValidationError,
-		Headers:                 headers, //nolint:staticcheck // Headers deprecated, gateway may send
-		MultiHeaders:            multiHeaders,
-	}
-	if includeBody {
-		payload, err := json.Marshal(resp)
-		require.NoError(t, err)
-		rj := json.RawMessage(payload)
-		req.Params = &rj
-	}
-
-	err := proxy.HandleGatewayMessage(t.Context(), "gateway1", &req)
-	require.NoError(t, err)
 }
 
 type mockGatewayEntry struct {
@@ -414,6 +403,9 @@ type mockGatewayConnector struct {
 	OnSend        func(id string)
 	// CaptureSendPayload, if set, is called with the full response sent to the gateway (Result = marshalled OutboundHTTPRequest).
 	CaptureSendPayload func(*jsonrpc.Response[json.RawMessage])
+	// Answer is what this gateway answers a request with. Nil answers what an
+	// ordinary fetch would: 200, with a body.
+	Answer gatewayAnswer
 
 	// For tracking calls in tests
 	awaitCalls []string
@@ -470,6 +462,25 @@ func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string
 		m.CaptureSendPayload(resp)
 	}
 	return m.SendErr
+}
+
+// gatewayAnswer is a gateway's end of a request a node is waiting on.
+type gatewayAnswer func(context.Context, *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error)
+
+func (m *mockGatewayConnector) Request(ctx context.Context, gateway string, resp *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+	if m.OnSend != nil {
+		m.OnSend(gateway)
+	}
+	if m.CaptureSendPayload != nil {
+		m.CaptureSendPayload(resp)
+	}
+	if m.SendErr != nil {
+		return nil, m.SendErr
+	}
+	if m.Answer != nil {
+		return m.Answer(ctx, resp)
+	}
+	return answering(gateway_common.OutboundHTTPResponse{StatusCode: 200, Body: []byte("ok")}, true)(ctx, resp)
 }
 
 func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gateway string) error {
@@ -554,10 +565,8 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 	// captureOutgoingRequest returns the OutboundHTTPRequest that was sent to the gateway.
 	captureOutgoingRequest := func(t *testing.T, input *protos.Request) *gateway_common.OutboundHTTPRequest {
 		capturedCh := make(chan *gateway_common.OutboundHTTPRequest, 1)
-		readyCh := make(chan string, 1)
 		mockConnector := &mockGatewayConnector{
 			Gateways: []mockGatewayEntry{{ID: "gateway1"}},
-			OnSend:   func(id string) { readyCh <- id },
 			CaptureSendPayload: func(resp *jsonrpc.Response[json.RawMessage]) {
 				if resp.Result == nil {
 					capturedCh <- nil
@@ -572,10 +581,6 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		lggr := logger.Test(t)
 		proxy, err := NewGatewayOutboundProxy(mockConnector, common.GatewayConnectionConfig{}, lggr, testLimits(t))
 		require.NoError(t, err)
-		go func() {
-			id := <-readyCh
-			simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
-		}()
 		_, err = proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 		require.NoError(t, err)
 		req := <-capturedCh
@@ -634,7 +639,7 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 	// --- Incoming response (gateway → cap) ---
 
 	t.Run("incoming: MultiHeaders preserved and Headers comma-joined", func(t *testing.T) {
-		proxy, _, readyCh := setupSendRequestTest(t)
+		proxy, mockConnector := setupSendRequestTest(t)
 		input := &protos.Request{
 			Url:           "http://example.com",
 			Method:        "GET",
@@ -651,10 +656,12 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		}
 		gatewayHeaders := map[string]string{"Set-Cookie": "sessionid=abc123; Path=/; HttpOnly"}
 
-		go func() {
-			id := <-readyCh
-			simulateGatewayMessageWithMultiHeaders(t, proxy, id, 200, "ok", "", true, false, false, gatewayHeaders, gatewayMultiHeaders)
-		}()
+		mockConnector.Answer = answering(gateway_common.OutboundHTTPResponse{
+			StatusCode:   200,
+			Body:         []byte("ok"),
+			Headers:      gatewayHeaders, //nolint:staticcheck // Headers deprecated, gateway may send
+			MultiHeaders: gatewayMultiHeaders,
+		}, true)
 
 		output, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 		require.NoError(t, err)
@@ -664,7 +671,7 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 	})
 
 	t.Run("incoming: response always has both Headers and MultiHeaders; gateway sent only Headers", func(t *testing.T) {
-		proxy, _, readyCh := setupSendRequestTest(t)
+		proxy, mockConnector := setupSendRequestTest(t)
 		input := &protos.Request{
 			Url:           "http://example.com",
 			Method:        "GET",
@@ -674,10 +681,11 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		}
 		gatewayHeaders := map[string]string{"Content-Type": "application/json"}
 
-		go func() {
-			id := <-readyCh
-			simulateGatewayMessageWithMultiHeaders(t, proxy, id, 200, "ok", "", true, false, false, gatewayHeaders, nil)
-		}()
+		mockConnector.Answer = answering(gateway_common.OutboundHTTPResponse{
+			StatusCode: 200,
+			Body:       []byte("ok"),
+			Headers:    gatewayHeaders, //nolint:staticcheck // Headers deprecated, gateway may send
+		}, true)
 
 		output, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 		require.NoError(t, err)
@@ -698,10 +706,8 @@ func TestGatewayOutboundProxy_SendRequest_Mtls(t *testing.T) {
 
 	captureOutgoingRequest := func(t *testing.T, input *protos.Request) *gateway_common.OutboundHTTPRequest {
 		capturedCh := make(chan *gateway_common.OutboundHTTPRequest, 1)
-		readyCh := make(chan string, 1)
 		mockConnector := &mockGatewayConnector{
 			Gateways: []mockGatewayEntry{{ID: "gateway1"}},
-			OnSend:   func(id string) { readyCh <- id },
 			CaptureSendPayload: func(resp *jsonrpc.Response[json.RawMessage]) {
 				if resp.Result == nil {
 					capturedCh <- nil
@@ -716,10 +722,6 @@ func TestGatewayOutboundProxy_SendRequest_Mtls(t *testing.T) {
 		lggr := logger.Test(t)
 		proxy, err := NewGatewayOutboundProxy(mockConnector, common.GatewayConnectionConfig{}, lggr, testLimits(t))
 		require.NoError(t, err)
-		go func() {
-			id := <-readyCh
-			simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
-		}()
 		_, err = proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 		require.NoError(t, err)
 		req := <-capturedCh
@@ -851,13 +853,10 @@ func TestResponseHeadersFromGateway(t *testing.T) {
 func TestGatewayOutboundProxy_SendRequest_GatewayProxyDonIDRouting(t *testing.T) {
 	t.Parallel()
 
-	readyCh := make(chan string, 1)
-
 	mockConnector := &mockGatewayConnector{
 		Gateways: []mockGatewayEntry{
 			{ID: "gateway_eu", DonID: "gateway_don_eu"},
 		},
-		OnSend:    func(id string) { readyCh <- id },
 		AwaitErrs: []error{nil},
 	}
 
@@ -881,11 +880,6 @@ func TestGatewayOutboundProxy_SendRequest_GatewayProxyDonIDRouting(t *testing.T)
 		CacheSettings: &protos.CacheSettings{Store: true},
 	}
 
-	go func() {
-		id := <-readyCh
-		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
-	}()
-
 	// The settings are per-workflow, so which DON they name is resolved for the
 	// workflow the request is on behalf of - which is what the context carries.
 	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "test-org", Owner: "owner1", Workflow: "wf1"})
@@ -899,14 +893,11 @@ func TestGatewayOutboundProxy_SendRequest_GatewayProxyDonIDRouting(t *testing.T)
 func TestGatewayOutboundProxy_SendRequest_emptyDonIDUsesAllGateways(t *testing.T) {
 	t.Parallel()
 
-	readyCh := make(chan string, 1)
-
 	mockConnector := &mockGatewayConnector{
 		Gateways: []mockGatewayEntry{
 			{ID: "gateway_a"},
 			{ID: "gateway_b"},
 		},
-		OnSend:    func(id string) { readyCh <- id },
 		AwaitErrs: []error{nil},
 	}
 
@@ -929,11 +920,6 @@ func TestGatewayOutboundProxy_SendRequest_emptyDonIDUsesAllGateways(t *testing.T
 		Timeout:       testTimeout,
 		CacheSettings: &protos.CacheSettings{Store: true},
 	}
-
-	go func() {
-		id := <-readyCh
-		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
-	}()
 
 	output, err := proxy.SendRequest(t.Context(), common.OutboundRequest(metadata, input))
 	require.NoError(t, err)

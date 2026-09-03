@@ -120,22 +120,23 @@ func TestCachedRequestGoesThroughTheGateway(t *testing.T) {
 		assert.Fail(t, "a cached request is fetched by the gateway, not by this node")
 	})
 
-	sent := make(chan string, 1)
+	asked := make(chan string, 1)
 	gateway, ok := proxy.gateway.(*mockGatewayConnector)
 	require.True(t, ok)
-	gateway.OnSend = func(request string) { sent <- request }
+	gateway.OnSend = func(gatewayID string) { asked <- gatewayID }
 
-	// The gateway never answers, so this ends in the wait for one - after the request
-	// has gone to it, which is what is being checked.
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 
-	_, err := proxy.SendRequest(ctx, common.OutboundRequest(tunnelMetadata(), tunnelRequest(origin.URL+"/cached", &protos.CacheSettings{Store: true})))
-	require.Error(t, err)
+	// The gateway fetches and answers on the request itself, so what comes back is
+	// its answer rather than anything this node went and got.
+	response, err := proxy.SendRequest(ctx, common.OutboundRequest(tunnelMetadata(), tunnelRequest(origin.URL+"/cached", &protos.CacheSettings{Store: true})))
+	require.NoError(t, err)
+	assert.Equal(t, 200, response.StatusCode)
 
 	select {
-	case request := <-sent:
-		assert.NotEmpty(t, request, "the gateway should have been asked to fetch")
+	case gatewayID := <-asked:
+		assert.NotEmpty(t, gatewayID, "the gateway should have been asked to fetch")
 	default:
 		assert.Fail(t, "the request should have been sent to the gateway to fetch")
 	}

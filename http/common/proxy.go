@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/doyensec/safeurl"
 
+	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -217,6 +219,12 @@ func (h *direct) Ready() error {
 // is the client's decision to make rather than something to be configured.
 type Gateway interface {
 	core.GatewayConnector
+
+	// Request asks the gateway for something this node is waiting on - a URL to
+	// fetch - and returns what it answered. The answer is the same message the
+	// gateway would otherwise have pushed back, so what a caller reads is unchanged;
+	// what it no longer has to do is recognise it among everything else arriving.
+	Request(ctx context.Context, gatewayID string, msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error)
 
 	// Tunnel opens a connection to address through gatewayID, for a request the
 	// gateway is not to see.

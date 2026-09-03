@@ -40,6 +40,10 @@ type Handler interface {
 	// The node is the authenticated one, and the message is passed through as it was
 	// signed.
 	HandleNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) error
+
+	// AnswerNodeMessage is the same, for a node that is waiting: what it returns
+	// goes back on the request the node sent, rather than to its mailbox.
+	AnswerNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error)
 }
 
 type Transport struct {
@@ -136,6 +140,18 @@ func NewTransport(lggr logger.Logger, cfg Config, verifier auth.Verifier, handle
 	}, nil
 }
 
+// MaxConcurrentStreams is how many requests a node may have in flight on its one
+// connection.
+//
+// It has to be generous, because a node's requests are held open for as long as
+// the far side takes: a fetch the gateway is making occupies a stream until it
+// answers, and so does the long poll. The cost of the limit being reached is not
+// an error but a stall - the node's transport queues the next request rather than
+// opening a second connection, which its session would not be honoured on - so
+// what this really sets is how much of a DON's traffic one gateway is willing to
+// have outstanding at once.
+const MaxConcurrentStreams = 4096
+
 // Serve wraps a mux so that a plaintext listener speaks HTTP/2, which it has to:
 // a session is pinned to one connection, and a node's long-poll would otherwise
 // hold a whole HTTP/1.1 connection while the answers to it went out on another.
@@ -146,7 +162,7 @@ func NewTransport(lggr logger.Logger, cfg Config, verifier auth.Verifier, handle
 // and a node that can reach one can reach the other, so two addresses to
 // configure would be two things to get wrong.
 func Serve(mux http.Handler, connect http.Handler) http.Handler {
-	served := h2c.NewHandler(mux, &http2.Server{})
+	served := h2c.NewHandler(mux, &http2.Server{MaxConcurrentStreams: MaxConcurrentStreams})
 	if connect == nil {
 		return served
 	}
@@ -173,6 +189,7 @@ func (t *Transport) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+wire.PathFinish, t.finish)
 	mux.HandleFunc("GET "+wire.PathReceive, t.receive)
 	mux.HandleFunc("POST "+wire.PathSend, t.send)
+	mux.HandleFunc("POST "+wire.PathRequest, t.request)
 }
 
 // ConnContext records which connection a request arrived on, which is what a
@@ -301,22 +318,67 @@ func (t *Transport) receive(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t *Transport) send(w http.ResponseWriter, r *http.Request) {
+	s, message, handler, ok := t.from(w, r)
+	if !ok {
+		return
+	}
+
+	if err := handler.HandleNodeMessage(r.Context(), s.donID, s.node, message); err != nil {
+		t.lggr.Warnw("Handler rejected a node message", "node", s.node, "err", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// request is send for a node that is waiting: the answer goes back here rather
+// than to the node's mailbox, so nothing has to be matched up on either side.
+//
+// The stream stays open for as long as the answer takes, which is what the
+// gateway's HTTP/2 is for: a node's other traffic - its poll, its other requests -
+// travels the same connection meanwhile. See MaxConcurrentStreams.
+func (t *Transport) request(w http.ResponseWriter, r *http.Request) {
+	s, message, handler, ok := t.from(w, r)
+	if !ok {
+		return
+	}
+
+	answer, err := handler.AnswerNodeMessage(r.Context(), s.donID, s.node, message)
+	if err != nil {
+		t.lggr.Warnw("Handler rejected a node request", "node", s.node, "err", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	write(w, wire.Envelope{GatewayID: t.gatewayID, Message: encoded})
+}
+
+// from is what the two node-to-gateway paths have in common: who sent this, what
+// they said, and who here is to deal with it. It answers the request itself when
+// any of the three is missing, and reports whether the caller has anything left
+// to do.
+func (t *Transport) from(w http.ResponseWriter, r *http.Request) (*session, *jsonrpc.Response[json.RawMessage], Handler, bool) {
 	s, err := t.authenticated(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
+		return nil, nil, nil, false
 	}
 
 	var envelope wire.Envelope
 	if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
 		http.Error(w, "body is not an envelope", http.StatusBadRequest)
-		return
+		return nil, nil, nil, false
 	}
 
 	var message jsonrpc.Response[json.RawMessage]
 	if err := json.Unmarshal(envelope.Message, &message); err != nil {
 		http.Error(w, "envelope does not carry a JSON-RPC response", http.StatusBadRequest)
-		return
+		return nil, nil, nil, false
 	}
 
 	t.mu.Lock()
@@ -324,15 +386,10 @@ func (t *Transport) send(w http.ResponseWriter, r *http.Request) {
 	t.mu.Unlock()
 	if handler == nil {
 		http.Error(w, "this gateway is not ready to take messages yet", http.StatusServiceUnavailable)
-		return
+		return nil, nil, nil, false
 	}
 
-	if err := handler.HandleNodeMessage(r.Context(), s.donID, s.node, &message); err != nil {
-		t.lggr.Warnw("Handler rejected a node message", "node", s.node, "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	return s, &message, handler, true
 }
 
 // Send does not wait for the node to take the message: what a caller wants to

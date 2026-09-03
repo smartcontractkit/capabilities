@@ -2,11 +2,14 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"sync"
+
+	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/standalone"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -23,6 +26,10 @@ import (
 type Connection interface {
 	core.MultiGatewayConnector
 	services.Service
+
+	// And somewhere to ask, for what they are waiting on rather than getting on
+	// without: the answer comes back on the request itself.
+	Request(ctx context.Context, gatewayID string, msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error)
 
 	// The same connection in its other role: a node tunnels through the gateway it is
 	// already talking to, on the same address, for a request it is not to see.

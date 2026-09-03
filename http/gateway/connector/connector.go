@@ -312,6 +312,41 @@ func (c *Connector) SendToGateway(ctx context.Context, gatewayID string, resp *j
 	return c.post(ctx, gatewayID, wire.PathSend, token, wire.Envelope{GatewayID: gatewayID, Message: message}, nil)
 }
 
+// Request is SendToGateway for something this node is waiting on: the answer
+// comes back on this request rather than on the next poll.
+//
+// The same message in both directions as the pushed shape - what the node says is
+// a JSON-RPC response, what the gateway answers with is a request - so a caller
+// reads the answer exactly as it would have read a pushed one. What it is spared
+// is having to recognise it: there is one exchange, and the answer to it is the
+// return value.
+//
+// The caller's context is what bounds the wait, and cancelling it releases this
+// node. It does not necessarily stop the gateway, which may be doing the work on
+// behalf of the rest of the DON as well.
+func (c *Connector) Request(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+	token, err := c.token(ctx, gatewayID)
+	if err != nil {
+		return nil, err
+	}
+
+	message, err := json.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode the message: %w", err)
+	}
+
+	var envelope wire.Envelope
+	if err := c.post(ctx, gatewayID, wire.PathRequest, token, wire.Envelope{GatewayID: gatewayID, Message: message}, &envelope); err != nil {
+		return nil, err
+	}
+
+	var answer jsonrpc.Request[json.RawMessage]
+	if err := json.Unmarshal(envelope.Message, &answer); err != nil {
+		return nil, fmt.Errorf("gateway %s answered with something that is not a JSON-RPC request: %w", gatewayID, err)
+	}
+	return &answer, nil
+}
+
 // SignMessage is for a capability that has something of its own to sign.
 func (c *Connector) SignMessage(ctx context.Context, msg []byte) ([]byte, error) {
 	return c.signer.Sign(ctx, auth.Hash(msg))
@@ -438,8 +473,14 @@ func transport() http.RoundTripper {
 		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, network, addr)
 		},
+		// Waiting for a stream on the connection this node authenticated on, rather
+		// than opening a second one: the gateway pins the session to a connection, so a
+		// request that went out on another would be refused. What the default does -
+		// dial again when a connection is at its stream limit - would turn a busy
+		// moment into a handful of 401s.
+		StrictMaxConcurrentStreams: true,
 	}
-	return &schemeTransport{plaintext: plaintext, encrypted: &http2.Transport{}}
+	return &schemeTransport{plaintext: plaintext, encrypted: &http2.Transport{StrictMaxConcurrentStreams: true}}
 }
 
 // https gets TLS and the protocol negotiated in it, http gets prior-knowledge

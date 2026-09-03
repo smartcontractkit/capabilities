@@ -94,7 +94,7 @@ func New(lggr logger.Logger, cfg Config, nodes Nodes) (*Gateway, error) {
 	g.triggers = newTriggers(logger.Named(lggr, "Triggers"), g.metadata, nodes.Send,
 		func() []string { return nodes.Connected(cfg.DonID) },
 		agreement, cfg.RequestTimeout, cfg.ReplayWindow)
-	g.actions = newActions(logger.Named(lggr, "Actions"), &http.Client{}, nodes.Send, cfg.CacheTTL)
+	g.actions = newActions(logger.Named(lggr, "Actions"), &http.Client{}, cfg.CacheTTL)
 
 	g.Service, g.eng = services.Config{
 		Name:  "Gateway",
@@ -167,15 +167,30 @@ func (g *Gateway) pull(context.Context) {
 
 // Nothing here trusts the message about who sent it: the connection established
 // that.
-func (g *Gateway) HandleNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) error {
+func (g *Gateway) HandleNodeMessage(_ context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) error {
 	switch msg.Method {
 	case gateway.MethodHTTPAction:
-		return g.actions.Handle(ctx, node, msg)
+		// The workflow that made it is waiting, so it is asked for rather than told
+		// about: see AnswerNodeMessage.
+		return fmt.Errorf("node %s sent an outbound HTTP request on the path for messages it is not waiting for", node)
 	case gateway.MethodPushWorkflowMetadata, gateway.MethodPullWorkflowMetadata:
 		return g.recordMetadata(node, msg)
 	default:
 		// An answer to something this gateway asked for, which today is only a trigger.
 		return g.triggers.Answer(node, msg)
+	}
+}
+
+// AnswerNodeMessage is for what a node is waiting on, which today is only an
+// outbound HTTP request: it is answered here rather than pushed back at the node,
+// because the fetch is what the node asked for and there is nothing else for it
+// to be getting on with meanwhile.
+func (g *Gateway) AnswerNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+	switch msg.Method {
+	case gateway.MethodHTTPAction:
+		return g.actions.Answer(ctx, node, msg)
+	default:
+		return nil, fmt.Errorf("node %s waits on %q, which is not something this gateway answers", node, msg.Method)
 	}
 }
 

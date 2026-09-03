@@ -21,6 +21,15 @@ const (
 	PathFinish  = "/node/connect/finish"
 	PathReceive = "/node/receive"
 	PathSend    = "/node/send"
+
+	// PathRequest is for what a node cannot get on with without: it asks, and the
+	// answer comes back on the request it asked with rather than on its next poll.
+	//
+	// Send and receive are the other shape - a node says something and hears about
+	// the consequence later - and they stay that shape because they are what a
+	// gateway pushing triggers at a node needs. An outbound HTTP request is not that:
+	// the workflow that made it is waiting, so the exchange is one request, and
+	// nothing has to match an answer to a question it has forgotten.
 	PathRequest = "/node/request"
 
 	// The path the gateway serves today, unchanged: what changed is behind it.

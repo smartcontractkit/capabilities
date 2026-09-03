@@ -8,7 +8,6 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"stathat.com/c/consistent"
@@ -33,10 +32,7 @@ const (
 	defaultGatewayConnectionMultiplier        = 2.0
 )
 
-var (
-	_ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
-	_ common.Outbound              = &gatewayOutboundProxy{}
-)
+var _ common.Outbound = &gatewayOutboundProxy{}
 
 // routingGatewayConnector is the subset of MultiGatewayConnector used for outbound routing.
 type routingGatewayConnector interface {
@@ -51,7 +47,6 @@ type gatewayOutboundProxy struct {
 	// for this node to fetch itself. See tunnel.go.
 	gateway                 common.Gateway
 	lggr                    logger.Logger
-	responses               *responses
 	gatewayConnectionConfig common.GatewayConnectionConfig
 	metrics                 *common.Metrics
 
@@ -137,7 +132,6 @@ func NewGatewayOutboundProxy(gateway common.Gateway, config common.GatewayConnec
 
 	return &gatewayOutboundProxy{
 		gateway:                 gateway,
-		responses:               newResponses(),
 		lggr:                    logger.Named(lggr, "Gateway"),
 		gatewayConnectionConfig: applyDefaults(config),
 		metrics:                 metrics,
@@ -191,13 +185,6 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, request gc.Outbo
 		return gc.OutboundHTTPResponse{}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	responseCh, err := p.responses.new(requestID)
-	if err != nil {
-		p.metrics.IncrementExecutionError(ctx, lggr)
-		return gc.OutboundHTTPResponse{}, fmt.Errorf("duplicate request ID %s: %w", requestID, err)
-	}
-	defer p.responses.cleanup(requestID)
-
 	rawRes := json.RawMessage(payload)
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
@@ -210,39 +197,69 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, request gc.Outbo
 
 	started := time.Now()
 	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
-	if err := p.gateway.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
+
+	// The answer comes back on this request: the gateway fetches while it is held
+	// open, so there is nothing to correlate at either end, and a connection that
+	// breaks is this request failing rather than an answer that never arrives.
+	answer, err := p.gateway.Request(ctx, selectedGateway, &gatewayResp)
+	if err != nil {
+		// The wait ending is the workflow's own timeout, and is its own to be told
+		// about: what the gateway is doing about the request may well outlive it, since
+		// the fetch is on behalf of the whole DON.
+		if ctx.Err() != nil {
+			p.metrics.IncrementExecutionTimeout(ctx, lggr)
+			elapsedMs := time.Since(started).Milliseconds()
+			cause := context.Cause(ctx)
+			lggr.Debugw(ErrMsgGatewayResponseWait, "elapsedMs", elapsedMs, "timeoutMs", timeout.Milliseconds(), "cause", cause)
+			return gc.OutboundHTTPResponse{}, common.NewUserError(
+				fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseWait, elapsedMs, timeout.Milliseconds(), cause),
+			)
+		}
+
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return gc.OutboundHTTPResponse{}, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
-	select {
-	case resp := <-responseCh:
-		lggr.Debugw("received response from gateway")
-		if resp.ErrorMessage == "" {
-			return resp, nil
-		}
-
-		lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
-		switch {
-		case resp.IsExternalEndpointError:
-			p.metrics.IncrementExternalEndpointError(ctx, lggr)
-			return resp, common.NewUserError(errors.New(resp.ErrorMessage))
-		case resp.IsValidationError:
-			p.metrics.IncrementInputValidationFailures(ctx, lggr)
-			return resp, common.NewUserError(errors.New(resp.ErrorMessage))
-		default:
-			p.metrics.IncrementExecutionError(ctx, lggr)
-			return resp, fmt.Errorf("gateway returned error: %s", resp.ErrorMessage)
-		}
-	case <-ctx.Done():
-		p.metrics.IncrementExecutionTimeout(ctx, lggr)
-		elapsedMs := time.Since(started).Milliseconds()
-		cause := context.Cause(ctx)
-		lggr.Debugw(ErrMsgGatewayResponseWait, "elapsedMs", elapsedMs, "timeoutMs", timeout.Milliseconds(), "cause", cause)
-		return gc.OutboundHTTPResponse{}, common.NewUserError(
-			fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseWait, elapsedMs, timeout.Milliseconds(), cause),
-		)
+	resp, err := outboundResponse(answer)
+	if err != nil {
+		p.metrics.IncrementExecutionError(ctx, lggr)
+		return gc.OutboundHTTPResponse{}, err
 	}
+
+	lggr.Debugw("received response from gateway")
+	if resp.ErrorMessage == "" {
+		return resp, nil
+	}
+
+	lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
+	switch {
+	case resp.IsExternalEndpointError:
+		p.metrics.IncrementExternalEndpointError(ctx, lggr)
+		return resp, common.NewUserError(errors.New(resp.ErrorMessage))
+	case resp.IsValidationError:
+		p.metrics.IncrementInputValidationFailures(ctx, lggr)
+		return resp, common.NewUserError(errors.New(resp.ErrorMessage))
+	default:
+		p.metrics.IncrementExecutionError(ctx, lggr)
+		return resp, fmt.Errorf("gateway returned error: %s", resp.ErrorMessage)
+	}
+}
+
+// outboundResponse reads what the gateway answered with, which is a JSON-RPC
+// request because that is the shape it would have pushed at this node.
+func outboundResponse(answer *jsonrpc.Request[json.RawMessage]) (gc.OutboundHTTPResponse, error) {
+	if answer == nil || answer.Params == nil {
+		return gc.OutboundHTTPResponse{}, errors.New("the gateway answered the request with no response in it")
+	}
+	if answer.Method != gc.MethodHTTPAction {
+		return gc.OutboundHTTPResponse{}, fmt.Errorf("the gateway answered an outbound request with %q", answer.Method)
+	}
+
+	var response gc.OutboundHTTPResponse
+	if err := json.Unmarshal(*answer.Params, &response); err != nil {
+		return gc.OutboundHTTPResponse{}, fmt.Errorf("the gateway answered with something that is not an outbound HTTP response: %w", err)
+	}
+	return response, nil
 }
 
 // donID is the gateway DON this workflow's requests go to, which a workflow may
@@ -335,42 +352,6 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 	return nil
 }
 
-// HandleGatewayMessage processes incoming messages from the Gateway,
-// which are in response to a HandleSingleNodeRequest call.
-func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
-	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "requestID", req.ID)
-	l.Debugw("handling incomming gateway message")
-	if req.Params == nil {
-		req.Params = &json.RawMessage{}
-	}
-
-	var msg gc.OutboundHTTPResponse
-	err := json.Unmarshal(*req.Params, &msg)
-	if err != nil {
-		l.Errorw("failed to unmarshal request params", "error", err)
-		return nil
-	}
-
-	ch, ok := p.responses.get(req.ID)
-	if !ok {
-		l.Warnw("no response channel found; this may indicate that the node timed out the request")
-		return nil
-	}
-
-	switch req.Method {
-	case gc.MethodHTTPAction:
-		select {
-		case ch <- msg:
-			return nil
-		case <-ctx.Done():
-			return nil
-		}
-	default:
-		l.Errorw("unsupported method")
-	}
-	return nil
-}
-
 func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
 	return p.Name(), nil
 }
@@ -378,7 +359,9 @@ func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
 func (p *gatewayOutboundProxy) Start(ctx context.Context) error {
 	p.lggr.Debug("Starting GatewayOutboundProxy...")
 	return p.StartOnce("GatewayOutboundProxy", func() error {
-		return p.gateway.AddHandler(ctx, []string{gc.MethodHTTPAction}, p)
+		// Nothing to register: what this asks the gateway for comes back on the request
+		// it asked with, rather than as a message this node has to be listening for.
+		return nil
 	})
 }
 
@@ -396,52 +379,12 @@ func (p *gatewayOutboundProxy) Name() string {
 	return p.lggr.Name()
 }
 
-func newResponses() *responses {
-	return &responses{
-		chs: map[string]chan gc.OutboundHTTPResponse{},
-	}
-}
-
 // nextBackoff calculates the next backoff duration using the configured multiplier and max elapsed time.
 func (p *gatewayOutboundProxy) nextBackoff(backoff time.Duration) time.Duration {
 	backoffMs := float64(backoff.Milliseconds())
 	backoffMs = backoffMs * p.gatewayConnectionConfig.Multiplier
 	backoffMs = math.Min(backoffMs, float64(p.gatewayConnectionConfig.MaxElapsedTimeMs))
 	return time.Duration(backoffMs) * time.Millisecond
-}
-
-type responses struct {
-	chs map[string]chan gc.OutboundHTTPResponse
-	mu  sync.RWMutex
-}
-
-func (r *responses) new(id string) (chan gc.OutboundHTTPResponse, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	_, ok := r.chs[id]
-	if ok {
-		return nil, fmt.Errorf("already have response for id: %s", id)
-	}
-
-	// Buffered so we don't wait if sending
-	ch := make(chan gc.OutboundHTTPResponse, 1)
-	r.chs[id] = ch
-	return ch, nil
-}
-
-func (r *responses) cleanup(id string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	delete(r.chs, id)
-}
-
-func (r *responses) get(id string) (chan gc.OutboundHTTPResponse, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	ch, ok := r.chs[id]
-	return ch, ok
 }
 
 // setupRing initializes a consistent hash ring with the provided nodes.

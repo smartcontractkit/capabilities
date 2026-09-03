@@ -24,7 +24,7 @@ const (
 	gatewayDonEU = "gateway_don_eu"
 )
 
-func multiDonGatewayConnector(t *testing.T, onSend func(gatewayID string)) *mockGatewayConnector {
+func multiDonGatewayConnector(t *testing.T) *mockGatewayConnector {
 	t.Helper()
 	return &mockGatewayConnector{
 		Gateways: []mockGatewayEntry{
@@ -33,7 +33,6 @@ func multiDonGatewayConnector(t *testing.T, onSend func(gatewayID string)) *mock
 			{ID: "gateway_eu_1", DonID: gatewayDonEU},
 			{ID: "gateway_eu_2", DonID: gatewayDonEU},
 		},
-		OnSend:    onSend,
 		AwaitErrs: []error{nil},
 	}
 }
@@ -102,8 +101,7 @@ func TestGatewayOutboundProxy_SendRequest_routesToResolvedDonGateway(t *testing.
 				Workflow: "test-workflow",
 			})
 
-			readyCh := make(chan string, 1)
-			mockConnector := multiDonGatewayConnector(t, func(id string) { readyCh <- id })
+			mockConnector := multiDonGatewayConnector(t)
 
 			resolvedDonID := tt.resolvedDonID
 
@@ -131,11 +129,6 @@ func TestGatewayOutboundProxy_SendRequest_routesToResolvedDonGateway(t *testing.
 				Timeout:       durationpb.New(5000 * time.Millisecond),
 				CacheSettings: &protos.CacheSettings{Store: true},
 			}
-
-			go func() {
-				selectedGateway := <-readyCh
-				simulateGatewayMessage(t, proxy, selectedGateway, 200, "ok", "", true)
-			}()
 
 			output, err := proxy.SendRequest(ctx, common.OutboundRequest(metadata, input))
 			require.NoError(t, err)

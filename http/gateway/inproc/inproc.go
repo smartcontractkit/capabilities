@@ -37,6 +37,9 @@ import (
 // gateway is.
 type Gateway interface {
 	HandleNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) error
+
+	// And somewhere to ask, for what a node waits on rather than hears about later.
+	AnswerNodeMessage(ctx context.Context, donID, node string, msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error)
 }
 
 // Nodes satisfies the same interface the HTTP transport does, so the gateway
@@ -154,6 +157,13 @@ func (c *Connector) RemoveHandler(_ context.Context, methods []string) error {
 // there is nobody else it could be.
 func (c *Connector) SendToGateway(ctx context.Context, _ string, resp *jsonrpc.Response[json.RawMessage]) error {
 	return c.gateway.HandleNodeMessage(ctx, c.donID, c.node, resp)
+}
+
+// Request is the same call with the answer returned rather than delivered, which
+// in one process is what it always was: over the network it is a request the node
+// holds open, and here it is the call the caller is already inside.
+func (c *Connector) Request(ctx context.Context, _ string, resp *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+	return c.gateway.AnswerNodeMessage(ctx, c.donID, c.node, resp)
 }
 
 // SignMessage refuses: a signature is how a message is attributed across a

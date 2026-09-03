@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -66,8 +67,11 @@ func (n node) Sign(_ context.Context, hash []byte) ([]byte, error) {
 	return append(signature, compact[0]-27), nil
 }
 
-// collector is a gateway that remembers what nodes said to it.
+// collector is a gateway that remembers what nodes said to it, and answers what
+// they waited on with whatever answer it was given.
 type collector struct {
+	answer func(msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error)
+
 	mu       sync.Mutex
 	messages []string
 	nodes    []string
@@ -80,6 +84,18 @@ func (c *collector) HandleNodeMessage(_ context.Context, _, node string, msg *js
 	c.messages = append(c.messages, string(*msg.Result))
 	c.nodes = append(c.nodes, node)
 	return nil
+}
+
+func (c *collector) AnswerNodeMessage(_ context.Context, _, node string, msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+	c.mu.Lock()
+	c.messages = append(c.messages, string(*msg.Result))
+	c.nodes = append(c.nodes, node)
+	c.mu.Unlock()
+
+	if c.answer == nil {
+		return nil, errors.New("this gateway answers nothing")
+	}
+	return c.answer(msg)
 }
 
 func (c *collector) seen() ([]string, []string) {
@@ -200,6 +216,58 @@ func TestConnection(t *testing.T) {
 		assert.Equal(t, `{"answered":true}`, messages[0])
 		assert.Equal(t, n.address, nodes[0], "the gateway must attribute the message to the node that authenticated")
 	})
+}
+
+// TestRequestIsAnsweredOnTheRequest is the other shape the connection carries: a
+// node that is waiting gets its answer back on the request it asked with, rather
+// than on its next poll.
+func TestRequestIsAnsweredOnTheRequest(t *testing.T) {
+	n := newNode(t)
+	gateway := &collector{
+		answer: func(msg *jsonrpc.Response[json.RawMessage]) (*jsonrpc.Request[json.RawMessage], error) {
+			params := json.RawMessage(`{"fetched":true}`)
+			return &jsonrpc.Request[json.RawMessage]{Version: "2.0", ID: msg.ID, Method: "fetch", Params: &params}, nil
+		},
+	}
+	url, _ := serve(t, gateway, n)
+
+	c := connect(t, url, n)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, c.AwaitConnection(ctx, gatewayID))
+
+	asked := json.RawMessage(`{"url":"http://example.com"}`)
+	answer, err := c.Request(ctx, gatewayID, &jsonrpc.Response[json.RawMessage]{
+		Version: "2.0", ID: "1", Method: "fetch", Result: &asked,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "1", answer.ID, "the answer is to the request that was asked")
+	assert.Equal(t, `{"fetched":true}`, string(*answer.Params))
+
+	messages, nodes := gateway.seen()
+	require.Len(t, messages, 1)
+	assert.Equal(t, `{"url":"http://example.com"}`, messages[0])
+	assert.Equal(t, n.address, nodes[0], "the gateway must attribute the request to the node that authenticated")
+}
+
+// TestRefusedRequestIsAnError is what a node is told when the gateway will not
+// answer: the request fails rather than hanging until the workflow gives up.
+func TestRefusedRequestIsAnError(t *testing.T) {
+	n := newNode(t)
+	url, _ := serve(t, &collector{}, n)
+
+	c := connect(t, url, n)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, c.AwaitConnection(ctx, gatewayID))
+
+	asked := json.RawMessage(`{}`)
+	_, err := c.Request(ctx, gatewayID, &jsonrpc.Response[json.RawMessage]{
+		Version: "2.0", ID: "1", Method: "fetch", Result: &asked,
+	})
+	require.ErrorContains(t, err, "this gateway answers nothing")
 }
 
 // TestUnknownNodeIsRefused is the membership check: a well-formed handshake from
