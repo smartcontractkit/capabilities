@@ -353,7 +353,9 @@ func (s *Solana) validateWriteReportPayload(ctx context.Context, receiver []byte
 	acc, err = capcommon.WithQuickRetry(ctx, s.lggr, func(ctx context.Context) (*soltypes.GetAccountInfoReply, error) {
 		acc, err := s.SolanaService.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
 			Account: soltypes.PublicKey(receiver),
-			Opts:    &soltypes.GetAccountInfoOpts{},
+			Opts: &soltypes.GetAccountInfoOpts{
+				Commitment: soltypes.CommitmentProcessed,
+			},
 		})
 		if errors.Is(err, rpc.ErrNotFound) {
 			// We handle nil account later, no need to retry if acc is missing
