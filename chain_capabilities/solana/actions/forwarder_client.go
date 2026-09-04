@@ -48,9 +48,6 @@ func newForwarderClient(solService types.SolanaService, lggr logger.Logger, forw
 
 func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.PublicKey, meta []*solcap.AccountMeta,
 	report *sdk.ReportResponse, gasConfig *solcap.ComputeConfig) (*soltypes.SubmitTransactionReply, error) {
-	if len(meta) < 2 {
-		return nil, fmt.Errorf("expected accounts meta length > 2, got: %d", len(meta))
-	}
 	reportMetadata, _, err := ocr3types.Decode(report.RawReport)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode report metadata: %w", err)
@@ -163,11 +160,11 @@ func (fc *forwarderClient) getOracleConfigPDA(ctx context.Context, workflowDonID
 		},
 	})
 	if err != nil {
-		return oracleConfigPDA, fmt.Errorf("error fetching cache state account %v; err: %w", oracleConfigPDA, err)
+		return oracleConfigPDA, fmt.Errorf("error fetching config PDA account %v; err: %w", oracleConfigPDA, err)
 	}
 
 	if oracleConfigAccount.Value == nil {
-		return oracleConfigPDA, fmt.Errorf("cache state account does not exist %v", oracleConfigPDA)
+		return oracleConfigPDA, fmt.Errorf("config PDA account does not exist %v", oracleConfigPDA)
 	}
 
 	return oracleConfigPDA, nil

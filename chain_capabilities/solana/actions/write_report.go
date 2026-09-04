@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -77,10 +78,16 @@ func (s *Solana) WriteReport(
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 	// 1. Validate inputs
-	err := s.validateInputsAndReportMetadata(metadata, input)
+	err := s.validateInputsAndReportMetadata(ctx, metadata, input)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", err.Error(), true))
-		return nil, NewUserError(err)
+		// Since we check if the receiver is executable during inputs validation, it's possible we failed the rpc call to get receiver's account info
+		if !errors.Is(err, ErrRPC) {
+			return nil, NewUserError(err)
+		}
+
+		return nil, GetError(err, false)
+
 	}
 
 	report, billingMetadata, err := s.executeWriteReport(ctx, input, metadata, telemetryContext)
@@ -248,7 +255,7 @@ func (s *Solana) isUserErrorWriteReport(err error) bool {
 	return strings.HasPrefix(err.Error(), capcommon.UserError)
 }
 
-func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *solcap.WriteReportRequest) error {
+func (s *Solana) validateInputsAndReportMetadata(ctx context.Context, requestMetadata capabilities.RequestMetadata, request *solcap.WriteReportRequest) error {
 	if request == nil {
 		return errors.New("nil WriteReportRequest")
 	}
@@ -260,9 +267,6 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 	}
 	if key := solana.PublicKey(request.Receiver); key.IsZero() {
 		return fmt.Errorf("receiver public key is empty")
-	}
-	if err := validateRemainingAccountMetas(request.GetRemainingAccounts()); err != nil {
-		return err
 	}
 	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("no signatures provided")
@@ -311,9 +315,65 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
-	err = validateRemainingAccountsHash(request.RemainingAccounts, request.Report.RawReport)
+	err = s.validateWriteReportPayload(ctx, request.Receiver, request.RemainingAccounts, request.Report.RawReport)
+	if err != nil {
+		return fmt.Errorf("report payload is invalid: %w", err)
+	}
+	return nil
+}
+
+// ErrRPC marks a validation failure caused by an unreachable RPC rather than by the request itself.
+var ErrRPC = errors.New("rpc call failed")
+
+// validateReportPayload performs most of onchain
+// 1. validates that remaining accounts hash matches
+// 2. validates that there is enough remainings accounts
+// 3. validates that passed  forwarderState aligned with capability config
+// 4. validates that the receiver is valid address, exists and is executable solana program
+func (s *Solana) validateWriteReportPayload(ctx context.Context, receiver []byte, remainings []*solcap.AccountMeta, rawReport []byte) error {
+	err := validateRemainingAccountsHash(remainings, rawReport)
 	if err != nil {
 		return fmt.Errorf("failed to validate remaining account hash: %w", err)
+	}
+	if len(remainings) < 2 {
+		return fmt.Errorf("expected accounts meta length > 2, got: %d", len(remainings))
+	}
+	if err := validateRemainingAccountMetas(remainings); err != nil {
+		return err
+	}
+	forwarderState := solana.PublicKey(remainings[0].GetPublicKey())
+	if !forwarderState.Equals(s.forwarderState) {
+		return fmt.Errorf("forwarder state from remainings accounts list %s doesn't match configured forwarder state %s", forwarderState, s.forwarderState)
+	}
+	if len(receiver) != solana.PublicKeyLength {
+		return fmt.Errorf("received public key is not 32 bytes long. key in hex: %s", hex.EncodeToString(receiver))
+	}
+
+	var acc *soltypes.GetAccountInfoReply
+	acc, err = capcommon.WithQuickRetry(ctx, s.lggr, func(ctx context.Context) (*soltypes.GetAccountInfoReply, error) {
+		acc, err := s.SolanaService.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
+			Account: soltypes.PublicKey(receiver),
+			Opts: &soltypes.GetAccountInfoOpts{
+				Commitment: soltypes.CommitmentProcessed,
+			},
+		})
+		if errors.Is(err, rpc.ErrNotFound) {
+			// We handle nil account later, no need to retry if acc is missing
+			return nil, nil
+		}
+		return acc, err
+	})
+
+	if err != nil {
+		return fmt.Errorf("%w: failed to get receiver's account: %w", ErrRPC, err)
+	}
+
+	if acc == nil || acc.Value == nil {
+		return errors.New("receiver account does not exist")
+	}
+
+	if !acc.Value.Executable {
+		return errors.New("receiver account is non-executable")
 	}
 
 	return nil

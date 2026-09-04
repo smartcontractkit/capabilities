@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,12 +13,14 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -38,6 +41,25 @@ type testHelper struct {
 	transmissionInfoProvider *TransmissionInfoProvider_mock
 	creForwarderClient       *CREForwarderClient_mock
 	solana                   *Solana
+	forwarderState           solana.PublicKey
+}
+
+// expectReceiverIsProgram mocks the receiver account lookup that input validation performs,
+// returning an existing, executable account.
+func (h *testHelper) expectReceiverIsProgram(receiver solana.PublicKey) {
+	h.solanaService.On("GetAccountInfoWithOpts", mock.Anything, mock.MatchedBy(func(req soltypes.GetAccountInfoRequest) bool {
+		return req.Account == soltypes.PublicKey(receiver)
+	})).Return(&soltypes.GetAccountInfoReply{Value: &soltypes.Account{Executable: true}}, nil)
+}
+
+// validWriteReportReq builds a request that passes every input check and mocks the
+// receiver lookup accordingly.
+func (h *testHelper) validWriteReportReq(t *testing.T, metadata ocrtypes.Metadata) *solcap.WriteReportRequest {
+	t.Helper()
+	key, err := solana.NewRandomPrivateKey()
+	require.NoError(t, err)
+	h.expectReceiverIsProgram(key.PublicKey())
+	return buildWriteReportReq(t, h.forwarderState, metadata, key.PublicKey())
 }
 
 func TestWriteReport_InputValidation(t *testing.T) {
@@ -54,6 +76,14 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "received public key is not 32 bytes long. key in hex: ")
+	})
+	t.Run("Zero receiver address", func(t *testing.T) {
+		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
+			Receiver: solana.PublicKey{}.Bytes(),
+			Report:   &workflowpb.ReportResponse{},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "receiver public key is empty")
 	})
 	t.Run("Invalid report metadata", func(t *testing.T) {
 		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
@@ -189,25 +219,23 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		require.NoError(t, encErr)
 		// Request and report use the same unpadded WorkflowName on metadata; validation pads
 		// the request name the same way as metadata encoding (ASCII "0" to 20 chars).
+		req := helper.validWriteReportReq(t, reportMetadata)
+		require.Equal(t, encodedReportMetadata, req.Report.RawReport[:ocrtypes.MetadataLen])
 		err := helper.solana.validateInputsAndReportMetadata(
+			ctx,
 			createTestRequestMetadata(reportMetadata),
-			&solcap.WriteReportRequest{
-				Receiver: key.PublicKey().Bytes(),
-				Report: &workflowpb.ReportResponse{
-					RawReport:     encodedReportMetadata,
-					ReportContext: RandomBytes(reportContextLen),
-					Sigs:          generateRandomSignatures(),
-				},
-			},
+			req,
 		)
 		require.NoError(t, err)
 	})
 	t.Run("Invalid remaining account public key length", func(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
-		req := createTestWriteReportReq(reportMetadata)
+		req := buildWriteReportReq(t, helper.forwarderState, reportMetadata, key.PublicKey())
 		req.RemainingAccounts = []*solcap.AccountMeta{
 			{PublicKey: []byte{1, 2, 3}, IsWritable: false},
+			{PublicKey: helper.forwarderState.Bytes()},
 		}
+		req.Report.RawReport = buildRawReport(t, reportMetadata, computeAccountHash(req.RemainingAccounts), nil)
 		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), req)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "remaining account 0")
@@ -216,14 +244,130 @@ func TestWriteReport_InputValidation(t *testing.T) {
 	})
 	t.Run("Nil remaining account meta", func(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
-		req := createTestWriteReportReq(reportMetadata)
-		req.RemainingAccounts = []*solcap.AccountMeta{nil}
+		req := buildWriteReportReq(t, helper.forwarderState, reportMetadata, key.PublicKey())
+		req.RemainingAccounts = []*solcap.AccountMeta{nil, {PublicKey: helper.forwarderState.Bytes()}}
+		req.Report.RawReport = buildRawReport(t, reportMetadata, computeAccountHash(req.RemainingAccounts), nil)
 		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), req)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "remaining account 0: nil account meta")
 		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }
+
+// TestWriteReport_PayloadValidation covers the checks that mirror the on-chain forwarder:
+// the account hash, the shape of the remaining accounts list, and the receiver account itself.
+func TestWriteReport_PayloadValidation(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(t *testing.T, helper *testHelper) (ocrtypes.Metadata, solana.PublicKey, *solcap.WriteReportRequest) {
+		t.Helper()
+		receiverKey, err := solana.NewRandomPrivateKey()
+		require.NoError(t, err)
+		reportMetadata := createTestReportMetadata()
+		return reportMetadata, receiverKey.PublicKey(), buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverKey.PublicKey())
+	}
+
+	t.Run("Remaining accounts hash mismatch", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+		reportMetadata, _, req := newRequest(t, helper)
+		// Swap in a different trailing account without updating the hash in the raw report.
+		req.RemainingAccounts[2] = &solcap.AccountMeta{PublicKey: RandomBytes(solana.PublicKeyLength)}
+
+		_, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "remaining account hash mismatch")
+		require.Equal(t, caperrors.OriginUser, err.Origin())
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("Too few remaining accounts", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+		reportMetadata, _, req := newRequest(t, helper)
+		// forwarder_state alone: the forwarder always needs forwarder_authority as well.
+		req.RemainingAccounts = req.RemainingAccounts[:1]
+		req.Report.RawReport = buildRawReport(t, reportMetadata, computeAccountHash(req.RemainingAccounts), nil)
+
+		_, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "expected accounts meta length > 2, got: 1")
+		require.Equal(t, caperrors.OriginUser, err.Origin())
+	})
+
+	t.Run("Forwarder state does not match configuration", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+		reportMetadata, _, req := newRequest(t, helper)
+		otherState := solana.PublicKey(RandomBytes(solana.PublicKeyLength))
+		req.RemainingAccounts[0] = &solcap.AccountMeta{PublicKey: otherState.Bytes()}
+		req.Report.RawReport = buildRawReport(t, reportMetadata, computeAccountHash(req.RemainingAccounts), nil)
+
+		_, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), fmt.Sprintf("forwarder state from remainings accounts list %s doesn't match configured forwarder state %s", otherState, helper.forwarderState))
+		require.Equal(t, caperrors.OriginUser, err.Origin())
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("Receiver account does not exist", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+		reportMetadata, _, req := newRequest(t, helper)
+		helper.solanaService.On("GetAccountInfoWithOpts", mock.Anything, mock.Anything).
+			Return(&soltypes.GetAccountInfoReply{Value: nil}, nil)
+
+		_, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "receiver account does not exist")
+		require.Equal(t, caperrors.OriginUser, err.Origin())
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("Receiver account is not executable", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+		reportMetadata, receiver, req := newRequest(t, helper)
+		helper.solanaService.On("GetAccountInfoWithOpts", mock.Anything, mock.MatchedBy(func(r soltypes.GetAccountInfoRequest) bool {
+			return r.Account == soltypes.PublicKey(receiver)
+		})).Return(&soltypes.GetAccountInfoReply{Value: &soltypes.Account{Executable: false}}, nil)
+
+		_, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "receiver account is non-executable")
+		require.Equal(t, caperrors.OriginUser, err.Origin())
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("Receiver account not found is a user error", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+		reportMetadata, _, req := newRequest(t, helper)
+		helper.solanaService.On("GetAccountInfoWithOpts", mock.Anything, mock.Anything).
+			Return((*soltypes.GetAccountInfoReply)(nil), rpc.ErrNotFound)
+
+		_, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "receiver account does not exist")
+		require.Equal(t, caperrors.OriginUser, err.Origin())
+	})
+
+	t.Run("Receiver account lookup failure is a system error", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+		reportMetadata, _, req := newRequest(t, helper)
+		helper.solanaService.On("GetAccountInfoWithOpts", mock.Anything, mock.Anything).
+			Return((*soltypes.GetAccountInfoReply)(nil), errors.New("rpc unavailable"))
+
+		_, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "rpc unavailable")
+		// An unreachable RPC is not the caller's fault, so it must not be reported as a user error.
+		require.Equal(t, caperrors.OriginSystem, err.Origin())
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	t.Parallel()
 
@@ -235,16 +379,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		helper := createMocksAndCapability(t, lggr)
 		expectedError := "some error"
 		reportMetadata := createTestReportMetadata()
-		encodedReportMetadata, _ := reportMetadata.Encode()
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{}, errors.New(expectedError))
-		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &solcap.WriteReportRequest{
-			Receiver: key.PublicKey().Bytes(),
-			Report: &workflowpb.ReportResponse{
-				RawReport:     encodedReportMetadata,
-				ReportContext: RandomBytes(reportContextLen),
-				Sigs:          generateRandomSignatures(),
-			},
-		})
+		helper.expectReceiverIsProgram(key.PublicKey())
+		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata),
+			buildWriteReportReq(t, helper.forwarderState, reportMetadata, key.PublicKey()))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedError)
 	})
@@ -260,7 +398,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 
-		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), createTestWriteReportReq(reportMetadata))
+		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), helper.validWriteReportReq(t, reportMetadata))
 		require.NoError(t, err)
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
@@ -271,17 +409,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		receiverAddress := key.PublicKey()
 		reportMetadata := createTestReportMetadata()
-		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		signedReport := &workflowpb.ReportResponse{
-			RawReport:     encodedReportMetadata,
-			ReportContext: RandomBytes(reportContextLen),
-			Sigs:          generateRandomSignatures(),
-		}
-		writeReportRequest := &solcap.WriteReportRequest{
-			Receiver: receiverAddress.Bytes(),
-			Report:   signedReport,
-		}
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		signedReport := writeReportRequest.Report
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
@@ -306,23 +437,74 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
 	})
 }
-func createTestWriteReportReq(metadata ocrtypes.Metadata) *solcap.WriteReportRequest {
-	encodedReportMetadata, _ := metadata.Encode()
 
-	key, _ := solana.NewRandomPrivateKey()
+// createTestRemainingAccounts builds the account list the on-chain forwarder expects:
+// meta[0] is forwarder_state, followed by extra accounts.
+func createTestRemainingAccounts(forwarderState solana.PublicKey, extra int) []*solcap.AccountMeta {
+	accounts := []*solcap.AccountMeta{
+		{PublicKey: forwarderState.Bytes()},
+	}
+	for range extra {
+		accounts = append(accounts, &solcap.AccountMeta{PublicKey: RandomBytes(solana.PublicKeyLength)})
+	}
+	return accounts
+}
+
+// buildWriteReportReq builds a request whose remaining accounts and embedded account hash
+// are consistent, i.e. one that passes payload validation. It sets up no mocks.
+func buildWriteReportReq(t *testing.T, forwarderState solana.PublicKey, metadata ocrtypes.Metadata, receiver solana.PublicKey) *solcap.WriteReportRequest {
+	t.Helper()
+	accounts := createTestRemainingAccounts(forwarderState, 2)
 	return &solcap.WriteReportRequest{
-		Receiver: key.PublicKey().Bytes(),
+		Receiver:          receiver.Bytes(),
+		RemainingAccounts: accounts,
 		Report: &workflowpb.ReportResponse{
-			RawReport:     encodedReportMetadata,
+			RawReport:     buildRawReport(t, metadata, computeAccountHash(accounts), []byte("some payload")),
 			ReportContext: RandomBytes(reportContextLen),
 			Sigs:          generateRandomSignatures(),
 		},
 	}
 }
+
+// buildRawReport mirrors the on-chain report layout:
+//
+//	[109 bytes OCR3 metadata][32 bytes account_hash][4 bytes LE payload_len][payload...]
+//
+// This is how the keystone-forwarder deserializes ForwarderReport from rawReport[METADATA_LENGTH..].
+func buildRawReport(t *testing.T, metadata ocrtypes.Metadata, accountHash [32]byte, payload []byte) []byte {
+	t.Helper()
+	header, err := metadata.Encode()
+	require.NoError(t, err)
+	require.Len(t, header, ocrtypes.MetadataLen)
+
+	// Borsh-encode ForwarderReport: fixed [u8;32] hash + Vec<u8> payload (4-byte LE length prefix)
+	payloadLen := make([]byte, 4)
+	binary.LittleEndian.PutUint32(payloadLen, uint32(len(payload))) //nolint:gosec // G115: test payload length is always small
+
+	raw := make([]byte, 0, len(header)+32+4+len(payload))
+	raw = append(raw, header...)
+	raw = append(raw, accountHash[:]...)
+	raw = append(raw, payloadLen...)
+	raw = append(raw, payload...)
+	return raw
+}
+
+// computeAccountHash mirrors calculateHash from the workflow WASM binary and the
+// on-chain forwarder: SHA-256 over concatenated 32-byte public keys.
+func computeAccountHash(accounts []*solcap.AccountMeta) [32]byte {
+	var buf []byte
+	for _, acc := range accounts {
+		buf = append(buf, acc.GetPublicKey()...)
+	}
+	return sha256.Sum256(buf)
+}
 func createMocksAndCapability(t *testing.T, lggr logger.Logger) *testHelper {
 	mockSolanaService := mocks.NewSolanaService(t)
 	mockTrInfo := NewTransmissionInfoProvider_mock(t)
 	mockClient := NewCREForwarderClient_mock(t)
+	forwarderStateKey, err := solana.NewRandomPrivateKey()
+	require.NoError(t, err)
+	forwarderState := forwarderStateKey.PublicKey()
 	service := &Solana{
 		SolanaService:            mocks.WrapSolanaService(mockSolanaService),
 		forwarderClient:          mockClient,
@@ -331,10 +513,11 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) *testHelper {
 		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		chainSelector:            1,
 		lggr:                     logger.Sugared(lggr),
+		forwarderState:           forwarderState,
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
 	require.NotNil(t, service.txComputeLimit)
-	return &testHelper{mockSolanaService, mockTrInfo, mockClient, service}
+	return &testHelper{mockSolanaService, mockTrInfo, mockClient, service, forwarderState}
 }
 
 type NopBeholderProcessor struct{}
@@ -402,17 +585,10 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		receiverAddress := key.PublicKey()
 		reportMetadata := createTestReportMetadata()
-		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		signedReport := &workflowpb.ReportResponse{
-			RawReport:     encodedReportMetadata,
-			ReportContext: RandomBytes(reportContextLen),
-			Sigs:          generateRandomSignatures(),
-		}
-		writeReportRequest := &solcap.WriteReportRequest{
-			Receiver: receiverAddress.Bytes(),
-			Report:   signedReport,
-		}
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		signedReport := writeReportRequest.Report
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
@@ -446,17 +622,10 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		receiverAddress := key.PublicKey()
 		reportMetadata := createTestReportMetadata()
-		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		signedReport := &workflowpb.ReportResponse{
-			RawReport:     encodedReportMetadata,
-			ReportContext: RandomBytes(reportContextLen),
-			Sigs:          generateRandomSignatures(),
-		}
-		writeReportRequest := &solcap.WriteReportRequest{
-			Receiver: receiverAddress.Bytes(),
-			Report:   signedReport,
-		}
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		signedReport := writeReportRequest.Report
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
@@ -492,17 +661,10 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		receiverAddress := key.PublicKey()
 		reportMetadata := createTestReportMetadata()
-		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		signedReport := &workflowpb.ReportResponse{
-			RawReport:     encodedReportMetadata,
-			ReportContext: RandomBytes(reportContextLen),
-			Sigs:          generateRandomSignatures(),
-		}
-		writeReportRequest := &solcap.WriteReportRequest{
-			Receiver: receiverAddress.Bytes(),
-			Report:   signedReport,
-		}
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		signedReport := writeReportRequest.Report
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
@@ -535,17 +697,10 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		receiverAddress := key.PublicKey()
 		reportMetadata := createTestReportMetadata()
-		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		signedReport := &workflowpb.ReportResponse{
-			RawReport:     encodedReportMetadata,
-			ReportContext: RandomBytes(reportContextLen),
-			Sigs:          generateRandomSignatures(),
-		}
-		writeReportRequest := &solcap.WriteReportRequest{
-			Receiver: receiverAddress.Bytes(),
-			Report:   signedReport,
-		}
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		signedReport := writeReportRequest.Report
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
@@ -580,7 +735,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 
-		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), createTestWriteReportReq(reportMetadata))
+		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), helper.validWriteReportReq(t, reportMetadata))
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -672,40 +827,6 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 
 func TestValidateRemainingAccountHash(t *testing.T) {
 	t.Parallel()
-
-	// buildRawReport mirrors the on-chain report layout:
-	//   [109 bytes OCR3 metadata][32 bytes account_hash][4 bytes LE payload_len][payload...]
-	// This is how the keystone-forwarder deserializes ForwarderReport from rawReport[METADATA_LENGTH..].
-	buildRawReport := func(t *testing.T, metadata ocrtypes.Metadata, accountHash [32]byte, payload []byte) []byte {
-		t.Helper()
-		header, err := metadata.Encode()
-		require.NoError(t, err)
-		require.Len(t, header, ocrtypes.MetadataLen)
-
-		// Borsh-encode ForwarderReport: fixed [u8;32] hash + Vec<u8> payload (4-byte LE length prefix)
-		payloadLen := make([]byte, 4)
-		payloadLen[0] = byte(len(payload))       //nolint:gosec // G115: test payload length is always small
-		payloadLen[1] = byte(len(payload) >> 8)  //nolint:gosec // G115: test payload length is always small
-		payloadLen[2] = byte(len(payload) >> 16) //nolint:gosec // G115: test payload length is always small
-		payloadLen[3] = byte(len(payload) >> 24) //nolint:gosec // G115: test payload length is always small
-
-		raw := make([]byte, 0, len(header)+32+4+len(payload))
-		raw = append(raw, header...)
-		raw = append(raw, accountHash[:]...)
-		raw = append(raw, payloadLen...)
-		raw = append(raw, payload...)
-		return raw
-	}
-
-	// computeAccountHash mirrors calculateHash from the workflow WASM binary and the
-	// on-chain forwarder: SHA-256 over concatenated 32-byte public keys.
-	computeAccountHash := func(accounts []*solcap.AccountMeta) [32]byte {
-		var buf []byte
-		for _, acc := range accounts {
-			buf = append(buf, acc.GetPublicKey()...)
-		}
-		return sha256.Sum256(buf)
-	}
 
 	makeAccounts := func(n int) []*solcap.AccountMeta {
 		accs := make([]*solcap.AccountMeta, n)
