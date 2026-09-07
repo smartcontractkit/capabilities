@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/report"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -21,6 +23,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	libocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
@@ -359,6 +363,21 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 	}
 	if reportMetadata.WorkflowID != metadata.WorkflowID {
 		return fmt.Errorf("%s report workflowID does not match request metadata", capcommon.UserError)
+	}
+	return validateReportContext(request.Report)
+}
+
+// validateReportContext checks that the report context the forwarder verifies signatures
+// against is the one consensus derived from this report's config digest and sequence number,
+// rather than caller-chosen bytes.
+func validateReportContext(signedReport *sdk.ReportResponse) error {
+	var configDigest libocrtypes.ConfigDigest
+	if len(signedReport.ConfigDigest) != len(configDigest) {
+		return fmt.Errorf("%s config digest has invalid length: got %d, want %d", capcommon.UserError, len(signedReport.ConfigDigest), len(configDigest))
+	}
+	copy(configDigest[:], signedReport.ConfigDigest)
+	if !bytes.Equal(signedReport.ReportContext, report.GenerateReportContext(signedReport.SeqNr, configDigest)) {
+		return fmt.Errorf("%s report context does not match config digest and sequence number", capcommon.UserError)
 	}
 	return nil
 }
