@@ -311,6 +311,7 @@ func reportProcessedEventsForFixture(t *testing.T, rm ocrtypes.Metadata, receive
 
 	return stellartypes.GetEventsResponse{
 		Events: []stellartypes.EventInfo{{
+			EventType:       stellartypes.EventTypeContract,
 			Ledger:          100,
 			ContractID:      testForwarderAddress,
 			TransactionHash: testTxHash,

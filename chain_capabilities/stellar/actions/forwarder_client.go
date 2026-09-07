@@ -291,6 +291,11 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 		}
 
 		for i, e := range resp.Events {
+			if reason := reportProcessedEventMismatch(e, fc.forwarderAddress, searchRange); reason != "" {
+				fc.lggr.Warnw("Ignoring ReportProcessed event that does not match the query",
+					append([]any{"reason", reason, "txHash", e.TransactionHash, "ledger", e.Ledger, "contractID", e.ContractID, "eventType", e.EventType}, transmissionID.LogAttrs()...)...)
+				continue
+			}
 			if e.TransactionHash == "" {
 				return nil, fmt.Errorf("empty tx hash at event index %d", i)
 			}
@@ -311,6 +316,20 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 	}
 
 	return nil, fmt.Errorf("too many ReportProcessed event pages for range %d-%d", searchRange.StartLedger, searchRange.EndLedger)
+}
+
+// reportProcessedEventMismatch returns why an event does not belong to the query, or "" when it does.
+func reportProcessedEventMismatch(e stellartypes.EventInfo, forwarderAddress string, searchRange EventSearchRange) string {
+	if e.EventType != stellartypes.EventTypeContract {
+		return "not a contract event"
+	}
+	if e.ContractID != forwarderAddress {
+		return "contract id does not match forwarder"
+	}
+	if e.Ledger < searchRange.StartLedger || e.Ledger > searchRange.EndLedger {
+		return "ledger is outside the search range"
+	}
+	return ""
 }
 
 func (fc *forwarderClient) GetReportProcessedEventSearchRange(ctx context.Context) (EventSearchRange, error) {
