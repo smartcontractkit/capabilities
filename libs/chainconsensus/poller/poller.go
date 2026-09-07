@@ -2,6 +2,7 @@ package poller
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -12,6 +13,17 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
+
+const (
+	// DefaultMaxQueuedRequests bounds how many requests a Poller tracks at once across its input and retry queues.
+	DefaultMaxQueuedRequests = 1000
+	// DefaultObservationTimeout bounds a single CaptureObservation attempt. A slow attempt is abandoned and retried
+	// on the next poll instead of holding a worker indefinitely.
+	DefaultObservationTimeout = 30 * time.Second
+)
+
+// ErrQueueFull is returned by Enqueue when the poller already tracks its maximum number of requests.
+var ErrQueueFull = errors.New("poller queue is full")
 
 type requestToPoll struct {
 	types.ObservableRequest
@@ -24,37 +36,63 @@ type requestToRetry struct {
 	LastAttemptAt time.Time
 }
 
+// Option configures a Poller.
+type Option func(*Poller)
+
+// WithMaxQueuedRequests sets how many requests the poller tracks at once. Enqueue returns ErrQueueFull beyond it.
+func WithMaxQueuedRequests(n int) Option {
+	return func(p *Poller) { p.maxQueuedRequests = n }
+}
+
+// WithObservationTimeout sets the deadline applied to each CaptureObservation attempt.
+func WithObservationTimeout(d time.Duration) Option {
+	return func(p *Poller) { p.observationTimeout = d }
+}
+
 // Poller - maintains queue of requestToPoll and periodically refreshes our observations by calling CaptureObservation.
 // A request remains in the queue until its context is canceled to ensure that in case of reorg or errors we eventually capture
 // valid observation. Example: CallContract should be polled until quorum of nodes has reached requested block.
 // Request polls after initial, occur with a delay defined by pollPeriod.
+//
+// The number of tracked requests is bounded by maxQueuedRequests; canceled requests are dropped at the next hop and
+// release their slot, so a caller that gives up frees capacity within one poll period.
 type Poller struct {
 	// service state management
 	services.Service
 	engine *services.Engine
 
-	lggr       logger.SugaredLogger
-	maxWorkers uint
-	pollPeriod time.Duration
-	metrics    metrics.ConsensusMetrics
+	lggr               logger.SugaredLogger
+	maxWorkers         uint
+	pollPeriod         time.Duration
+	maxQueuedRequests  int
+	observationTimeout time.Duration
+	metrics            metrics.ConsensusMetrics
 
 	mutex       sync.Mutex
 	inputNotify chan struct{}
 	requests    *list.List[requestToPoll]
 	requestsCh  chan requestToPoll
 	retryQueue  *list.List[requestToRetry]
+	// tracked counts every admitted request that has not yet been dropped, wherever it currently sits
+	// (input queue, requestsCh, a worker, or the retry queue).
+	tracked int
 }
 
-func NewPoller(lggr logger.Logger, metrics metrics.ConsensusMetrics, maxWorkers uint, pollPeriod time.Duration) *Poller {
+func NewPoller(lggr logger.Logger, metrics metrics.ConsensusMetrics, maxWorkers uint, pollPeriod time.Duration, opts ...Option) *Poller {
 	p := &Poller{
-		maxWorkers: maxWorkers,
-		pollPeriod: pollPeriod,
-		metrics:    metrics,
+		maxWorkers:         maxWorkers,
+		pollPeriod:         pollPeriod,
+		maxQueuedRequests:  DefaultMaxQueuedRequests,
+		observationTimeout: DefaultObservationTimeout,
+		metrics:            metrics,
 
 		inputNotify: make(chan struct{}, 1),
 		requests:    list.New[requestToPoll](),
 		requestsCh:  make(chan requestToPoll, maxWorkers),
 		retryQueue:  list.New[requestToRetry](),
+	}
+	for _, opt := range opts {
+		opt(p)
 	}
 
 	p.Service, p.engine = services.Config{
@@ -67,13 +105,30 @@ func NewPoller(lggr logger.Logger, metrics metrics.ConsensusMetrics, maxWorkers 
 	return p
 }
 
-func (p *Poller) Enqueue(ctx context.Context, request types.ObservableRequest) {
+// Enqueue admits request for polling until ctx is canceled. It returns ErrQueueFull when the poller already tracks
+// maxQueuedRequests, so the caller can fail the request instead of queueing unbounded work.
+func (p *Poller) Enqueue(ctx context.Context, request types.ObservableRequest) error {
 	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if p.tracked >= p.maxQueuedRequests {
+		p.metrics.IncQueueRejected(ctx)
+		p.lggr.Warnw("rejecting request, poller queue is full", "requestID", request.ID(), "tracked", p.tracked, "maxQueuedRequests", p.maxQueuedRequests)
+		return ErrQueueFull
+	}
+	p.tracked++
 	p.enqueueUnsafe(ctx, requestToPoll{
 		ObservableRequest: request,
 		Ctx:               ctx,
 	})
+	return nil
+}
+
+// drop releases the slot held by a request whose context is done.
+func (p *Poller) drop(request requestToPoll) {
+	p.mutex.Lock()
+	p.tracked--
 	p.mutex.Unlock()
+	p.lggr.Debugw("request was canceled - removing from queue", "requestID", request.ID())
 }
 
 func (p *Poller) popFirst(ctx context.Context) *requestToPoll {
@@ -116,16 +171,16 @@ func (p *Poller) processRequest(request requestToPoll) {
 	ctx, cancel := p.engine.Ctx(request.Ctx)
 	defer cancel()
 	if ctx.Err() != nil {
-		p.lggr.Debugw("request was canceled - removing from queue", "requestID", request.ID())
+		p.drop(request)
 		return
 	}
 
-	err := request.CaptureObservation(ctx)
-	if err != nil {
-		p.lggr.Warnw("failed to capture observation", "err", err, "requestID", request.ID())
-	} else {
-		// TODO: some requests might need only one successful read (finalized data)
-		p.lggr.Debugw("captured observation", "requestID", request.ID())
+	p.captureObservation(ctx, request)
+
+	// The request may have completed while we were observing; do not hold a slot for it until the next tick.
+	if request.Ctx.Err() != nil {
+		p.drop(request)
+		return
 	}
 
 	p.mutex.Lock()
@@ -135,6 +190,19 @@ func (p *Poller) processRequest(request requestToPoll) {
 	})
 	p.metrics.RecordRetryQueueSize(ctx, p.retryQueue.Len())
 	p.mutex.Unlock()
+}
+
+func (p *Poller) captureObservation(ctx context.Context, request requestToPoll) {
+	ctx, cancel := context.WithTimeout(ctx, p.observationTimeout)
+	defer cancel()
+
+	err := request.CaptureObservation(ctx)
+	if err != nil {
+		p.lggr.Warnw("failed to capture observation", "err", err, "requestID", request.ID())
+	} else {
+		// TODO: some requests might need only one successful read (finalized data)
+		p.lggr.Debugw("captured observation", "requestID", request.ID())
+	}
 }
 
 func (p *Poller) processRequests(ctx context.Context) {
@@ -192,6 +260,13 @@ func (p *Poller) scheduleReadyForReprocessing(ctx context.Context, now time.Time
 
 		p.retryQueue.Remove(request)
 		p.metrics.RecordRetryQueueSize(ctx, p.retryQueue.Len())
+
+		// Canceled requests leave here instead of taking another trip through the workers.
+		if request.Value.Ctx.Err() != nil {
+			p.tracked--
+			p.lggr.Debugw("request was canceled - removing from queue", "requestID", request.Value.ID())
+			continue
+		}
 
 		p.enqueueUnsafe(ctx, request.Value.requestToPoll)
 	}

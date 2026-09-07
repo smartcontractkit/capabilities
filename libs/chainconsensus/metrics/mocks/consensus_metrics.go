@@ -159,6 +159,39 @@ func (_c *ConsensusMetrics_RecordRequestObservationSize_Call) RunAndReturn(run f
 	return _c
 }
 
+// IncQueueRejected provides a mock function with given fields: ctx
+func (_m *ConsensusMetrics) IncQueueRejected(ctx context.Context) {
+	_m.Called(ctx)
+}
+
+// ConsensusMetrics_IncQueueRejected_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IncQueueRejected'
+type ConsensusMetrics_IncQueueRejected_Call struct {
+	*mock.Call
+}
+
+// IncQueueRejected is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *ConsensusMetrics_Expecter) IncQueueRejected(ctx interface{}) *ConsensusMetrics_IncQueueRejected_Call {
+	return &ConsensusMetrics_IncQueueRejected_Call{Call: _e.mock.On("IncQueueRejected", ctx)}
+}
+
+func (_c *ConsensusMetrics_IncQueueRejected_Call) Run(run func(ctx context.Context)) *ConsensusMetrics_IncQueueRejected_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context))
+	})
+	return _c
+}
+
+func (_c *ConsensusMetrics_IncQueueRejected_Call) Return() *ConsensusMetrics_IncQueueRejected_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *ConsensusMetrics_IncQueueRejected_Call) RunAndReturn(run func(context.Context)) *ConsensusMetrics_IncQueueRejected_Call {
+	_c.Run(run)
+	return _c
+}
+
 // RecordRetryQueueSize provides a mock function with given fields: ctx, size
 func (_m *ConsensusMetrics) RecordRetryQueueSize(ctx context.Context, size int) {
 	_m.Called(ctx, size)

@@ -23,8 +23,21 @@ func (_m *Poller) EXPECT() *Poller_Expecter {
 }
 
 // Enqueue provides a mock function with given fields: ctx, request
-func (_m *Poller) Enqueue(ctx context.Context, request types.ObservableRequest) {
-	_m.Called(ctx, request)
+func (_m *Poller) Enqueue(ctx context.Context, request types.ObservableRequest) error {
+	ret := _m.Called(ctx, request)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Enqueue")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, types.ObservableRequest) error); ok {
+		r0 = rf(ctx, request)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
 }
 
 // Poller_Enqueue_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Enqueue'
@@ -46,13 +59,13 @@ func (_c *Poller_Enqueue_Call) Run(run func(ctx context.Context, request types.O
 	return _c
 }
 
-func (_c *Poller_Enqueue_Call) Return() *Poller_Enqueue_Call {
-	_c.Call.Return()
+func (_c *Poller_Enqueue_Call) Return(_a0 error) *Poller_Enqueue_Call {
+	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *Poller_Enqueue_Call) RunAndReturn(run func(context.Context, types.ObservableRequest)) *Poller_Enqueue_Call {
-	_c.Run(run)
+func (_c *Poller_Enqueue_Call) RunAndReturn(run func(context.Context, types.ObservableRequest) error) *Poller_Enqueue_Call {
+	_c.Call.Return(run)
 	return _c
 }
 

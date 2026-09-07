@@ -21,6 +21,7 @@ type ConsensusMetrics interface {
 	// metrics for consensus' poller
 	RecordQueueSize(ctx context.Context, size int)
 	RecordRetryQueueSize(ctx context.Context, size int)
+	IncQueueRejected(ctx context.Context)
 
 	// metrics for consensus' handler
 	SetRequestCount(requestCount int)

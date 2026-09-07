@@ -17,7 +17,9 @@ import (
 )
 
 type Poller interface {
-	Enqueue(ctx context.Context, request types.ObservableRequest)
+	// Enqueue schedules request for polling until ctx is canceled. It returns an error when the poller cannot
+	// accept more work, in which case the request must be failed rather than left waiting.
+	Enqueue(ctx context.Context, request types.ObservableRequest) error
 }
 
 type RequestHandler interface {
@@ -260,7 +262,11 @@ func (s *handler) addRequestCtx(requestCtx *requestCtx) error {
 		return fmt.Errorf("failed to add request %s: %w", requestCtx.ID(), err)
 	}
 	if observable, ok := requestCtx.Request.(types.ObservableRequest); ok {
-		s.poller.Enqueue(requestCtx.Ctx, observable)
+		if err := s.poller.Enqueue(requestCtx.Ctx, observable); err != nil {
+			s.requests.Evict(requestCtx.ID())
+			requestCtx.Cancel()
+			return fmt.Errorf("failed to enqueue request %s for polling: %w", requestCtx.ID(), err)
+		}
 	}
 
 	return nil

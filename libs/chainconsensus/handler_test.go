@@ -25,7 +25,7 @@ import (
 
 func TestGetRequestIDs(t *testing.T) {
 	poller := mocks.NewPoller(t)
-	poller.EXPECT().Enqueue(mock.Anything, mock.Anything)
+	poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Return(nil)
 	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second)
 	addRequestToHandler := func(t *testing.T, ctx context.Context, id string) {
 		request := types.NewEventuallyConsistentRequest(id, nil)
@@ -71,7 +71,7 @@ func TestGetRequestIDs(t *testing.T) {
 
 func TestGetRequest(t *testing.T) {
 	poller := mocks.NewPoller(t)
-	poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Maybe()
+	poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Return(nil).Maybe()
 	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second)
 	addRequestToHandler := func(t *testing.T, ctx context.Context, id string) {
 		request := types.NewAggregatableRequest(id, nil)
@@ -123,7 +123,7 @@ func TestCompleteRequest(t *testing.T) {
 			var ch <-chan types.Reply
 			var err error
 			if requestAddedBeforeCompletion {
-				poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once()
+				poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Return(nil).Once()
 				ch, err = handler.Handle(t.Context(), tc.Request)
 				require.NoError(t, err)
 			}
@@ -242,7 +242,7 @@ func TestCompleteRequest(t *testing.T) {
 	})
 	t.Run("Lockable Request: emits log if request is of a wrong type", func(t *testing.T) {
 		poller := mocks.NewPoller(t)
-		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once() // one call during setup
+		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Return(nil).Once() // one call during setup
 		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
 		handler := newHandler(t, lggr, poller)
 
@@ -259,7 +259,7 @@ func TestCompleteRequest(t *testing.T) {
 	t.Run("Lockable Request is converted to eventually consistent and added to the poller", func(t *testing.T) {
 		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
 		poller := mocks.NewPoller(t)
-		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once() // one during conversion
+		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Return(nil).Once() // one during conversion
 		handler := newHandler(t, lggr, poller)
 
 		request := types.NewLockableToBlockRequest("req-1", nil)
@@ -284,13 +284,13 @@ func TestHandle(t *testing.T) {
 
 	t.Run("Eventually consistent request is added to poller", func(t *testing.T) {
 		r := types.NewEventuallyConsistentRequest("eventually_consistent", nil)
-		poller.EXPECT().Enqueue(mock.Anything, r).Once()
+		poller.EXPECT().Enqueue(mock.Anything, r).Return(nil).Once()
 		_, err := handler.Handle(t.Context(), r)
 		require.NoError(t, err)
 	})
 	t.Run("Aggregatable request is added to poller", func(t *testing.T) {
 		r := types.NewAggregatableRequest("aggr_request", nil)
-		poller.EXPECT().Enqueue(mock.Anything, r).Once()
+		poller.EXPECT().Enqueue(mock.Anything, r).Return(nil).Once()
 		_, err := handler.Handle(t.Context(), r)
 		require.NoError(t, err)
 	})
@@ -308,4 +308,21 @@ func mustMarshalProto(t *testing.T, msg proto.Message) []byte {
 	data, err := proto.Marshal(msg)
 	require.NoError(t, err)
 	return data
+}
+
+func TestHandle_PollerRejectsRequest(t *testing.T) {
+	poller := mocks.NewPoller(t)
+	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second)
+
+	r := types.NewEventuallyConsistentRequest("rejected", nil)
+	poller.EXPECT().Enqueue(mock.Anything, r).Return(assert.AnError).Once()
+	_, err := handler.Handle(t.Context(), r)
+	require.ErrorIs(t, err, assert.AnError)
+
+	_, ok := handler.GetRequest(r.ID())
+	require.False(t, ok, "a request the poller refused must not stay in the store")
+
+	poller.EXPECT().Enqueue(mock.Anything, r).Return(nil).Once()
+	_, err = handler.Handle(t.Context(), r)
+	require.NoError(t, err, "the same request can be retried once there is capacity")
 }

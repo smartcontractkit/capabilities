@@ -26,6 +26,7 @@ type consensusMetrics struct {
 	identicalResponseCount      metric.Int64Histogram
 	queueSize                   metric.Int64Gauge
 	retryQueueSize              metric.Int64Gauge
+	queueRejected               metric.Int64Counter
 	requestCount                metric.Int64Gauge
 }
 
@@ -108,6 +109,14 @@ func (m *consensusMetrics) init() error {
 		return fmt.Errorf("failed to create retry queue size gauge: %w", err)
 	}
 
+	m.queueRejected, err = meter.Int64Counter(
+		m.prefix+"capability_consensus_queue_rejected",
+		metric.WithDescription("Number of requests rejected because the poller queue was full"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create queue rejected counter: %w", err)
+	}
+
 	m.requestCount, err = meter.Int64Gauge(
 		m.prefix+"capability_consensus_request_count",
 		metric.WithDescription("Handler request count"),
@@ -160,6 +169,10 @@ func (m *consensusMetrics) RecordQueueSize(ctx context.Context, size int) {
 
 func (m *consensusMetrics) RecordRetryQueueSize(ctx context.Context, size int) {
 	m.retryQueueSize.Record(ctx, int64(size), m.chainAttributes())
+}
+
+func (m *consensusMetrics) IncQueueRejected(ctx context.Context) {
+	m.queueRejected.Add(ctx, 1, m.chainAttributes())
 }
 
 func (m *consensusMetrics) SetRequestCount(requestCount int) {

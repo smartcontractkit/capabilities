@@ -54,7 +54,7 @@ func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
 	})
 
 	// Handle the request
-	poller.Enqueue(requestCtx, request)
+	require.NoError(t, poller.Enqueue(requestCtx, request))
 
 	tests.AssertLogEventually(t, observedLogs, "request was canceled - removing from queue")
 }
@@ -91,4 +91,91 @@ func TestPoller_RecordRetryQueueSizeAfterProcessing(t *testing.T) {
 	require.Equal(t, 1, poller.retryQueue.Len())
 	require.Equal(t, 2, poller.requests.Len(),
 		"requests queue size must differ from retry queue size for this assertion to be meaningful")
+}
+
+func TestPoller_EnqueueRejectsWhenFull(t *testing.T) {
+	metricsMock := mocks.NewConsensusMetrics(t)
+	metricsMock.EXPECT().RecordQueueSize(mock.Anything, mock.Anything).Maybe()
+	metricsMock.EXPECT().IncQueueRejected(mock.Anything).Once()
+
+	// Not started: everything stays in the input queue, so the cap is exercised directly.
+	poller := NewPoller(logger.Test(t), metricsMock, 1, time.Hour, WithMaxQueuedRequests(2))
+	newRequest := func(id string) *types.EventuallyConsistentRequest {
+		return types.NewEventuallyConsistentRequest(id, func(context.Context) ([]byte, error) { return nil, nil })
+	}
+
+	require.NoError(t, poller.Enqueue(t.Context(), newRequest("1")))
+	require.NoError(t, poller.Enqueue(t.Context(), newRequest("2")))
+	require.ErrorIs(t, poller.Enqueue(t.Context(), newRequest("3")), ErrQueueFull)
+	require.Equal(t, 2, poller.requests.Len())
+}
+
+func TestPoller_CanceledRequestsReleaseCapacity(t *testing.T) {
+	metricsMock := mocks.NewConsensusMetrics(t)
+	metricsMock.EXPECT().RecordQueueSize(mock.Anything, mock.Anything).Maybe()
+	metricsMock.EXPECT().IncQueueRejected(mock.Anything).Maybe()
+	metricsMock.EXPECT().RecordRetryQueueSize(mock.Anything, mock.Anything).Maybe()
+
+	poller := NewPoller(logger.Test(t), metricsMock, 1, time.Hour, WithMaxQueuedRequests(1))
+	observe := func(context.Context) ([]byte, error) { return []byte("observation"), nil }
+
+	t.Run("canceled before a worker picks it up", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		require.NoError(t, poller.Enqueue(ctx, types.NewEventuallyConsistentRequest("a", observe)))
+		require.ErrorIs(t, poller.Enqueue(t.Context(), types.NewEventuallyConsistentRequest("b", observe)), ErrQueueFull)
+
+		cancel()
+		request := poller.popFirst(t.Context())
+		require.NotNil(t, request)
+		poller.processRequest(*request)
+
+		require.Equal(t, 0, poller.retryQueue.Len(), "canceled request must not be scheduled for retry")
+		require.NoError(t, poller.Enqueue(t.Context(), types.NewEventuallyConsistentRequest("b", observe)), "slot is free again")
+		require.NotNil(t, poller.popFirst(t.Context()))
+		poller.mutex.Lock()
+		poller.tracked = 0
+		poller.mutex.Unlock()
+	})
+
+	t.Run("canceled while waiting in the retry queue", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		require.NoError(t, poller.Enqueue(ctx, types.NewEventuallyConsistentRequest("c", observe)))
+		request := poller.popFirst(t.Context())
+		require.NotNil(t, request)
+		poller.processRequest(*request)
+		require.Equal(t, 1, poller.retryQueue.Len())
+
+		cancel()
+		poller.scheduleReadyForReprocessing(t.Context(), time.Now().Add(2*time.Hour))
+
+		require.Equal(t, 0, poller.retryQueue.Len())
+		require.Equal(t, 0, poller.requests.Len(), "canceled request must not be re-enqueued")
+		require.NoError(t, poller.Enqueue(t.Context(), types.NewEventuallyConsistentRequest("d", observe)), "slot is free again")
+	})
+}
+
+func TestPoller_ObservationAttemptHasDeadline(t *testing.T) {
+	metricsMock := mocks.NewConsensusMetrics(t)
+	metricsMock.EXPECT().RecordRetryQueueSize(mock.Anything, mock.Anything).Once()
+
+	poller := NewPoller(logger.Test(t), metricsMock, 1, time.Hour, WithObservationTimeout(10*time.Millisecond))
+	var observed context.Context
+	request := types.NewEventuallyConsistentRequest("slow", func(ctx context.Context) ([]byte, error) {
+		observed = ctx
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		poller.processRequest(requestToPoll{ObservableRequest: request, Ctx: t.Context()})
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "observation attempt was not bounded by the observation timeout")
+	}
+	require.ErrorIs(t, observed.Err(), context.DeadlineExceeded)
+	require.Equal(t, 1, poller.retryQueue.Len(), "a timed-out attempt is retried on the next poll")
 }

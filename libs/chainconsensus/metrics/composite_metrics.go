@@ -50,6 +50,12 @@ func (m compositeMetrics) RecordRetryQueueSize(ctx context.Context, size int) {
 	}
 }
 
+func (m compositeMetrics) IncQueueRejected(ctx context.Context) {
+	for _, metric := range m.metrics {
+		metric.IncQueueRejected(ctx)
+	}
+}
+
 func (m compositeMetrics) SetRequestCount(requestCount int) {
 	for _, metric := range m.metrics {
 		metric.SetRequestCount(requestCount)
