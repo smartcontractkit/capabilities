@@ -284,6 +284,10 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 			return nil, response.Err
 		}
 
+		if err := validateRawReportHasPayload(response.RawReport); err != nil {
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("invalid report for request %s: %w", consensusRequestMetaData.RequestID(), err), caperrors.Internal)
+		}
+
 		// Remove the metadata prefix from the raw report to get the serialised value
 		serialisedValue := response.RawReport[plugin.ReportMetaDataPrependLength:]
 
@@ -374,6 +378,10 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 	case response := <-callbackChan:
 		if response.Err != nil {
 			return nil, response.Err
+		}
+
+		if err := validateRawReportHasPayload(response.RawReport); err != nil {
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("invalid report for request %s: %w", consensusRequestMetaData.RequestID(), err), caperrors.Internal)
 		}
 
 		var sigs []*sdk.AttributedSignature
@@ -612,6 +620,16 @@ func decodeObservationType(lggr logger.Logger, input *sdk.SimpleConsensusInputs)
 		} else {
 			lggr.Debugw("neither value, error or default is set in the observation input for request")
 		}
+	}
+	return nil
+}
+
+// validateRawReportHasPayload checks that a signed report carries a payload after the metadata prefix. Without this check
+// a report consisting of only the prefix would be sliced into an empty payload, which unmarshals into a zero value that
+// cannot be told apart from a genuine result.
+func validateRawReportHasPayload(rawReport []byte) error {
+	if len(rawReport) <= plugin.ReportMetaDataPrependLength {
+		return fmt.Errorf("report of %d bytes has no payload after the %d byte metadata prefix", len(rawReport), plugin.ReportMetaDataPrependLength)
 	}
 	return nil
 }

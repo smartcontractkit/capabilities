@@ -126,6 +126,16 @@ func extractSingleFailureMessage(t *testing.T, outcomeBytes ocr3types.Outcome) s
 	return failure.FailureMessage
 }
 
+func extractSingleSuccessOutcome(t *testing.T, outcomeBytes ocr3types.Outcome) *oracletypes.ConsensusSuccessOutcome {
+	t.Helper()
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Len(t, outcome.Outcomes, 1, "expected exactly one consensus outcome")
+	success := outcome.Outcomes[0].GetSuccess()
+	require.NotNil(t, success, "expected a successful consensus outcome, got a failure")
+	return success
+}
+
 func extractSingleFailureCode(t *testing.T, outcomeBytes ocr3types.Outcome) oracletypes.ConsensusFailureCode {
 	t.Helper()
 	outcome := &oracletypes.Outcome{}
@@ -275,6 +285,108 @@ func Test_Outcome_RemoveLibUseInFailureMessageFormatting(t *testing.T) {
 			expectedMetadataString,
 		)
 		assert.Equal(t, want, msg)
+	})
+}
+
+// makeTimestampedOutcomeTestObs builds a single AttributedObservation with the given receivedAt time for direct Outcome()
+// timestamp tests. Every observation carries a default value so that a request which receives f+1 errors still produces
+// a successful outcome.
+func makeTimestampedOutcomeTestObs(
+	t *testing.T,
+	reqID string,
+	md oracle.ConsensusRequestMetadata,
+	observerID uint8,
+	isError bool,
+	receivedAt time.Time,
+	includeErrorObservationTimestampsFlag bool,
+) libocrtypes.AttributedObservation {
+	t.Helper()
+
+	simpleInputs := &sdk.SimpleConsensusInputs{
+		Descriptors: &sdk.ConsensusDescriptor{
+			Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN},
+		},
+		Default: values.Proto(values.NewInt64(20)),
+	}
+	if isError {
+		simpleInputs.Observation = &sdk.SimpleConsensusInputs_Error{Error: fmt.Sprintf("error from observer %d", observerID)}
+	} else {
+		simpleInputs.Observation = &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(int64(observerID) * 10))}
+	}
+
+	ro := &oracletypes.RequestObservation{
+		Metadata:   plugin.ToRequestMetaData(md),
+		Input:      simpleInputs,
+		ReceivedAt: timestamppb.New(receivedAt),
+		RemoveLibUseInFailureMessageFormattingFlag: true,
+		UpdateErrorHandlingFlag:                    true,
+		IncludeErrorObservationTimestampsFlag:      includeErrorObservationTimestampsFlag,
+	}
+
+	obsProto := &oracletypes.Observation{
+		Observations: map[string]*oracletypes.RequestObservation{reqID: ro},
+	}
+	b, err := proto.Marshal(obsProto)
+	require.NoError(t, err)
+
+	return libocrtypes.AttributedObservation{
+		Observation: b,
+		Observer:    commontypes.OracleID(observerID),
+	}
+}
+
+// Test_Outcome_IncludeErrorObservationTimestamps documents how the outcome timestamp is calculated depending on
+// RequestObservation.include_error_observation_timestamps_flag when f+1 errors are received and the default value is used.
+func Test_Outcome_IncludeErrorObservationTimestamps(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	now := time.Now().Truncate(time.Second)
+	receivedAt := func(offset int) time.Time {
+		return now.Add(time.Duration(offset) * time.Second)
+	}
+
+	// 2f+1 = 5 observations: f+1 errors received first followed by two values, so the outcome is the default value
+	newObservations := func(flag bool) []libocrtypes.AttributedObservation {
+		return []libocrtypes.AttributedObservation{
+			makeTimestampedOutcomeTestObs(t, reqID, md, 0, true, receivedAt(1), flag),
+			makeTimestampedOutcomeTestObs(t, reqID, md, 1, true, receivedAt(2), flag),
+			makeTimestampedOutcomeTestObs(t, reqID, md, 2, true, receivedAt(3), flag),
+			makeTimestampedOutcomeTestObs(t, reqID, md, 3, false, receivedAt(4), flag),
+			makeTimestampedOutcomeTestObs(t, reqID, md, 4, false, receivedAt(5), flag),
+		}
+	}
+
+	t.Run("flag_set_on_all_observations", func(t *testing.T) {
+		outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, newObservations(true))
+		require.NoError(t, err)
+
+		// The timestamp is the median of all five observations
+		success := extractSingleSuccessOutcome(t, outcomeBytes)
+		assert.Equal(t, receivedAt(3).Unix(), success.Timestamp.AsTime().Unix())
+	})
+
+	t.Run("flag_not_set_on_one_observation", func(t *testing.T) {
+		attributed := newObservations(true)
+		attributed[4] = makeTimestampedOutcomeTestObs(t, reqID, md, 4, false, receivedAt(5), false)
+
+		outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+		require.NoError(t, err)
+
+		// The timestamp is the median of the two value observations only, as calculated by nodes without the flag
+		success := extractSingleSuccessOutcome(t, outcomeBytes)
+		assert.Equal(t, receivedAt(4).Unix(), success.Timestamp.AsTime().Unix())
 	})
 }
 
