@@ -27,8 +27,12 @@ MOCKERY_VERSION := 2.53.5
 mockery: ## Install mockery at the version specified in .tool-versions
 	go install github.com/vektra/mockery/v2@v$(MOCKERY_VERSION)
 
+.PHONY: mockgen
+mockgen: ## Run mockery for all .mockery.yaml files.
+	find . -type f -name .mockery.yaml -not -path "./node_modules/*" -execdir mockery \;
+
 .PHONY: generate
-generate: protoc mockery gomods ## Execute all go:generate commands (including proto generation).
+generate: protoc mockery gomods mockgen ## Execute all go:generate commands (including proto generation).
 	## Updating PATH makes sure that go:generate uses the version of protoc installed by the protoc make command.
 	export PATH="$(HOME)/.local/bin:$(PATH)"; gomods -w go generate -x ./...
 

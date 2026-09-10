@@ -6,6 +6,7 @@ This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detect
 
 - With the exception of `libs`, each package in the root folder creates a binary that instantiates a **capability set** when added to the node through a `type="standardcapabilities"` job spec (**capability spec**). A capability set contains one or more capabilities that are centered around some functionality or shared resource, e.g., EVM chain, CRON, etc.
 - `libs` folder contains packages that are shared across capabilities. You should only create a package there if two or more capability sets need to share a dependency.
+- `libs/capabilities` is the core capabilities library: the base capability types (`Node`, `DON`, `CapabilityInfo`, ...), the `CapabilitiesRegistry` interfaces, the base registry implementation (`registry/`), error types (`errors/`) and mocks (`mocks/`). This code was migrated from `chainlink-common/pkg/capabilities` and `chainlink-common/pkg/types/core`; it depends on chainlink-common only for foundation packages (logger, contexts, settings, beholder).
 
 ## Generating SDKs
 
