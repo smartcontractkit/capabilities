@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -365,8 +366,9 @@ func validateWRMetering(t *testing.T, meta capabilities.ResponseMetadata, chainS
 	t.Helper()
 	require.Len(t, meta.Metering, 1)
 	m := meta.Metering[0]
+	expectedXLM := new(big.Float).Quo(new(big.Float).SetUint64(expectedStroops), big.NewFloat(1e7)).Text('f', -1)
 	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), m.SpendUnit)
-	require.Equal(t, fmt.Sprintf("%d", expectedStroops), m.SpendValue)
+	require.Equal(t, expectedXLM, m.SpendValue)
 	require.Equal(t, fmt.Sprintf("%d", expectedStroops), m.SpendValueInGasUnits)
 	require.Empty(t, m.Peer2PeerID)
 }
