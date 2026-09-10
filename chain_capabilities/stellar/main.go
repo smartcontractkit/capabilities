@@ -146,8 +146,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to get stellar service: %w", err)
 	}
-	if _, err = stellarService.GetSigningAccount(ctx); err != nil {
+	signingAccount, err := stellarService.GetSigningAccount(ctx)
+	if err != nil {
 		return fmt.Errorf("stellar relayer has no signing account: %w", err)
+	}
+	if err = actions.ValidateSigningAccountAddress(signingAccount.AccountAddress); err != nil {
+		return fmt.Errorf("stellar relayer has invalid signing account: %w", err)
 	}
 
 	if err = c.setSelector(cfg); err != nil {

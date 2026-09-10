@@ -148,6 +148,22 @@ func (fc *forwarderClient) ResolveSigningAccount(ctx context.Context) (string, e
 	return fc.resolveSigningAccount(ctx)
 }
 
+// ValidateSigningAccountAddress verifies the relayer signer is a plain Stellar account
+// address suitable for both the forwarder transmitter argument and SubmitTransaction.FromAddress.
+func ValidateSigningAccountAddress(accountAddress string) error {
+	if accountAddress == "" {
+		return errors.New("relayer returned empty signing account")
+	}
+	accountBytes, err := strkey.Decode(strkey.VersionByteAccountID, accountAddress)
+	if err != nil {
+		return fmt.Errorf("relayer returned invalid signing account %q: %w", accountAddress, err)
+	}
+	if len(accountBytes) != 32 {
+		return fmt.Errorf("relayer signing account must decode to 32 bytes, got %d", len(accountBytes))
+	}
+	return nil
+}
+
 func (fc *forwarderClient) InvokeOnReport(
 	ctx context.Context,
 	transmitter, receiver string,
@@ -341,8 +357,8 @@ func (fc *forwarderClient) resolveSigningAccount(ctx context.Context) (string, e
 	if err != nil {
 		return "", err
 	}
-	if resp.AccountAddress == "" {
-		return "", errors.New("relayer returned empty signing account")
+	if err := ValidateSigningAccountAddress(resp.AccountAddress); err != nil {
+		return "", err
 	}
 	return resp.AccountAddress, nil
 }
