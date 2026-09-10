@@ -398,18 +398,12 @@ func (wr *writeReport) pollTransmissionInfo(
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	deltaStagePassed := false
 	hadSuccessfulPoll := false
 	// Guard so an unexpected state that persists across multiple poll iterations only
 	// emits one InvalidTransmissionState metric, not one per poll tick.
 	invalidStateEmitted := false
 	defer func() {
 		stageTimer.Stop()
-		if wr.monitoringEnabled() && !deltaStagePassed && hadSuccessfulPoll {
-			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
-				wr.lggr, wr.beholderProcessor,
-				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
-		}
 	}()
 
 	for {
@@ -420,6 +414,11 @@ func (wr *writeReport) pollTransmissionInfo(
 			lastValidInfo = info
 			switch lastValidInfo.State {
 			case TransmissionStateSucceeded, TransmissionStateInvalidReceiver, TransmissionStateFailed:
+				if wr.monitoringEnabled() {
+					monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
+						wr.lggr, wr.beholderProcessor,
+						wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
+				}
 				return lastValidInfo, nil
 			case TransmissionStateNotAttempted, TransmissionStateUnknown:
 				// Not yet visible or unreadable; keep polling until the delta stage window
@@ -442,7 +441,6 @@ func (wr *writeReport) pollTransmissionInfo(
 		case <-ctx.Done():
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			deltaStagePassed = true
 			if lastValidInfo.State == TransmissionStateNotAttempted {
 				if finalInfo, finalErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); finalErr == nil {
 					hadSuccessfulPoll = true
