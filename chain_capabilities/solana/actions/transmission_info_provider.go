@@ -27,9 +27,13 @@ const eventReportInProgress = "ReportInProgress"
 // transmissionLogSubkeyPath indexes ReportInProgress by transmission_id.
 var transmissionLogSubkeyPath = []string{"TransmissionId"}
 
+// forwarderStateSubkeyPath  indexes ReportInProgress by forwarder_state.
+var stateSubkeyPath = []string{"State"}
+
 type logReader struct {
 	types.SolanaService
 	forwarderProgramID solana.PublicKey
+	forwarderState     solana.PublicKey
 	sigInProgress      soltypes.EventSignature
 }
 
@@ -46,9 +50,13 @@ func newOnChainTransmissionInfoProvider(ctx context.Context, programID, forwarde
 	lr := &logReader{
 		SolanaService:      s,
 		forwarderProgramID: programID,
+		forwarderState:     forwarderState,
 	}
 	if err := lr.registerInProgressFilter(ctx); err != nil {
 		return nil, fmt.Errorf("failed to register ReportInProgress log filter: %w", err)
+	}
+	if err := lr.unregisterLegacyInProgressFilter(ctx); err != nil {
+		return nil, fmt.Errorf("failed to unregister legacy ReportInProgress log filter: %w", err)
 	}
 	return &OnChainTransmissionInfoProvider{
 		SolanaService:      s,
@@ -168,16 +176,22 @@ func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signatu
 	return solana.Signature(log.TxHash), nil
 }
 
+// Legacy LogTracking doesn't validate against forwarder state used in Event.
+// Unregistering non-existing filter is no-op
+func (lr *logReader) unregisterLegacyInProgressFilter(ctx context.Context) error {
+	return lr.UnregisterLogTracking(ctx, eventReportInProgress+"_"+lr.forwarderProgramID.String())
+}
+
 func (lr *logReader) registerInProgressFilter(ctx context.Context) error {
 	idlJSON := []byte(contracts.FetchForwarderIDL())
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(eventReportInProgress))
 	err := lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
-		Name:            eventReportInProgress + "_" + lr.forwarderProgramID.String(),
+		Name:            eventReportInProgress + "_" + lr.forwarderProgramID.String() + "_v2",
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       eventReportInProgress,
 		EventSig:        sigInProgress,
 		ContractIdlJSON: idlJSON,
-		SubkeyPaths:     [][]string{transmissionLogSubkeyPath},
+		SubkeyPaths:     [][]string{transmissionLogSubkeyPath, stateSubkeyPath},
 		IncludeReverted: true,
 	})
 	if err != nil {
@@ -195,6 +209,9 @@ func (lr *logReader) queryInProgress(ctx context.Context, transmissionID [32]byt
 		solprimitives.NewAddressFilter(soltypes.PublicKey(lr.forwarderProgramID)),
 		solprimitives.NewEventBySubkeyFilter(0, []solprimitives.IndexedValueComparator{
 			{Value: transmissionID[:], Operator: primitives.Eq},
+		}),
+		solprimitives.NewEventBySubkeyFilter(1, []solprimitives.IndexedValueComparator{
+			{Value: lr.forwarderState.Bytes(), Operator: primitives.Eq},
 		}),
 	}
 
