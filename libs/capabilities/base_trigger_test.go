@@ -1097,7 +1097,7 @@ func TestBaseTrigger_SendToInbox_NoInboxRegistered(t *testing.T) {
 func TestBaseTrigger_SendToInbox_InboxFull(t *testing.T) {
 	store := NewMemEventStore()
 	// Capacity-0 channel is always full from the sender's perspective.
-	fullCh := make(chan TriggerAndId[*wrapperspb.BytesValue], 0)
+	fullCh := make(chan TriggerAndId[*wrapperspb.BytesValue])
 	b := newBaseWithRetransmit(t, store, 0)
 
 	b.RegisterTrigger("trig", fullCh)

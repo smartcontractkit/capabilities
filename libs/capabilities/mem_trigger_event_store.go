@@ -31,46 +31,46 @@ func (m *MemEventStore) Insert(ctx context.Context, r PendingEvent) error {
 	return nil
 }
 
-func (m *MemEventStore) UpdateDelivery(ctx context.Context, triggerId string, eventId string, lastSentAt time.Time, attempts int) error {
+func (m *MemEventStore) UpdateDelivery(ctx context.Context, triggerID string, eventID string, lastSentAt time.Time, attempts int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	eventsForTrigger := m.recs[triggerId]
+	eventsForTrigger := m.recs[triggerID]
 	if eventsForTrigger == nil {
-		return fmt.Errorf("event not found trigger=%s event=%s", triggerId, eventId)
+		return fmt.Errorf("event not found trigger=%s event=%s", triggerID, eventID)
 	}
 
-	rec, ok := eventsForTrigger[eventId]
+	rec, ok := eventsForTrigger[eventID]
 	if !ok {
-		return fmt.Errorf("event not found trigger=%s event=%s", triggerId, eventId)
+		return fmt.Errorf("event not found trigger=%s event=%s", triggerID, eventID)
 	}
 
 	rec.Attempts = attempts
 	rec.LastSentAt = lastSentAt
-	eventsForTrigger[eventId] = rec
+	eventsForTrigger[eventID] = rec
 	return nil
 }
 
-func (m *MemEventStore) DeleteEvent(ctx context.Context, triggerId, eventId string) error {
+func (m *MemEventStore) DeleteEvent(ctx context.Context, triggerID, eventID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	eventsForTrigger := m.recs[triggerId]
+	eventsForTrigger := m.recs[triggerID]
 	if eventsForTrigger == nil {
 		return nil
 	}
-	delete(eventsForTrigger, eventId)
+	delete(eventsForTrigger, eventID)
 	if len(eventsForTrigger) == 0 {
-		delete(m.recs, triggerId)
+		delete(m.recs, triggerID)
 	}
 	return nil
 }
 
-func (m *MemEventStore) DeleteEventsForTrigger(ctx context.Context, triggerId string) error {
+func (m *MemEventStore) DeleteEventsForTrigger(ctx context.Context, triggerID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	delete(m.recs, triggerId)
+	delete(m.recs, triggerID)
 	return nil
 }
 

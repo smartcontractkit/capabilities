@@ -14,9 +14,10 @@ import (
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+
 	"github.com/smartcontractkit/capabilities/libs/capabilities"
 	caperrors "github.com/smartcontractkit/capabilities/libs/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 )
 
 func TestFromValueOrAny(t *testing.T) {
@@ -425,9 +426,8 @@ func TestRegisterTrigger(t *testing.T) {
 				assert.Equal(t, "reg", r.Value)
 				if ctx.Err() != nil {
 					return nil, caperrors.NewPublicSystemError(ctx.Err(), caperrors.Internal)
-				} else {
-					return eventCh, nil
 				}
+				return eventCh, nil
 			},
 		)
 		require.NoError(t, err)

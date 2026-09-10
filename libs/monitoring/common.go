@@ -3,6 +3,7 @@ package monitoring
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -101,6 +102,14 @@ func NewMetricsCapBasic(info MetricsInfoCapBasic) (MetricsCapBasic, error) {
 	return set, nil
 }
 
+// safeUint64ToInt64 converts a uint64 to int64, clamping to the int64 range to avoid overflow.
+func safeUint64ToInt64(v uint64) int64 {
+	if v > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(v)
+}
+
 func (m *MetricsCapBasic) RecordEmit(ctx context.Context, start, emit uint64, attrKVs ...attribute.KeyValue) {
 	// Define attributes
 	attrs := metric.WithAttributes(attrKVs...)
@@ -109,9 +118,15 @@ func (m *MetricsCapBasic) RecordEmit(ctx context.Context, start, emit uint64, at
 	m.count.Add(ctx, 1, attrs)
 
 	// Timestamp events
-	m.capTimestampStart.Record(ctx, int64(start), attrs)
-	m.capTimestampEmit.Record(ctx, int64(emit), attrs)
-	m.capDuration.Record(ctx, int64(emit-start), attrs)
+	startMs := safeUint64ToInt64(start)
+	emitMs := safeUint64ToInt64(emit)
+	m.capTimestampStart.Record(ctx, startMs, attrs)
+	m.capTimestampEmit.Record(ctx, emitMs, attrs)
+	duration := emitMs - startMs
+	if duration < 0 {
+		duration = 0
+	}
+	m.capDuration.Record(ctx, duration, attrs)
 }
 
 func RequestID(workflowExecutionID, reference string) string {

@@ -100,6 +100,7 @@ type CapabilityResponse struct {
 
 type ResponseMetadata struct {
 	Metering []MeteringNodeDetail
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
 	CapDON_N uint32
 }
 
@@ -235,7 +236,8 @@ type CapabilityRequest struct {
 	ConfigPayload *anypb.Any
 
 	// The method to call for no DAG workflows
-	Method       string
+	Method string
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
 	CapabilityId string
 }
 
@@ -283,10 +285,9 @@ func ChainSelectorLabel(labels iter.Seq2[string, string]) (*uint64, error) {
 					return nil, fmt.Errorf("invalid chain selector: %s", v)
 				}
 				return &cs, nil
-			} else {
-				// empty value means it will be in the next key
-				next = true
 			}
+			// empty value means it will be in the next key
+			next = true
 		}
 	}
 	return nil, nil
@@ -355,7 +356,7 @@ type TriggerEvent struct {
 type TriggerExecutable interface {
 	RegisterTrigger(ctx context.Context, request TriggerRegistrationRequest) (<-chan TriggerResponse, error)
 	UnregisterTrigger(ctx context.Context, request TriggerRegistrationRequest) error
-	AckEvent(ctx context.Context, triggerId string, eventId string, method string) error
+	AckEvent(ctx context.Context, triggerID string, eventID string, method string) error
 }
 
 // TriggerCapability interface needs to be implemented by all trigger capabilities.
@@ -642,13 +643,19 @@ type TransmissionSchedule int
 type RequestHasherType int
 
 const (
-	AggregatorType_Mode         AggregatorType = 0
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
+	AggregatorType_Mode AggregatorType = 0
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
 	AggregatorType_SignedReport AggregatorType = 1
 
-	Schedule_AllAtOnce  TransmissionSchedule = 0
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
+	Schedule_AllAtOnce TransmissionSchedule = 0
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
 	Schedule_OneAtATime TransmissionSchedule = 1
 
-	RequestHasherType_Simple                       RequestHasherType = 0
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
+	RequestHasherType_Simple RequestHasherType = 0
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
 	RequestHasherType_WriteReportExcludeSignatures RequestHasherType = 1
 )
 

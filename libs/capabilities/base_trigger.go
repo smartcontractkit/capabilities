@@ -42,7 +42,9 @@ type triggerReg[T proto.Message] struct {
 }
 
 type PendingEvent struct {
-	TriggerId  string
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
+	TriggerId string
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
 	EventId    string
 	AnyTypeURL string // Payload type
 	Payload    []byte
@@ -55,9 +57,9 @@ type PendingEvent struct {
 
 type EventStore interface {
 	Insert(ctx context.Context, rec PendingEvent) error
-	UpdateDelivery(ctx context.Context, triggerId string, eventId string, lastSentAt time.Time, attempts int) error
+	UpdateDelivery(ctx context.Context, triggerID string, eventID string, lastSentAt time.Time, attempts int) error
 	List(ctx context.Context) ([]PendingEvent, error)
-	DeleteEvent(ctx context.Context, triggerId string, eventId string) error
+	DeleteEvent(ctx context.Context, triggerID string, eventID string) error
 	DeleteEventsForTrigger(ctx context.Context, triggerID string) error
 }
 
@@ -86,7 +88,7 @@ type BaseTriggerCapability[T proto.Message] struct {
 	store        EventStore
 	newMsg       func() T // factory to allocate a new T for unmarshalling
 	lggr         logger.Logger
-	capabilityId string
+	capabilityID string
 	// settings provides live CRE settings (PerOrg.BaseTriggerRetransmitEnabled, BaseTriggerRetryInterval, ...).
 	// When nil, tRetransmit > 0 enables persistence/retry with fixed spacing.
 	settings settings.Getter
@@ -94,6 +96,7 @@ type BaseTriggerCapability[T proto.Message] struct {
 	mu        sync.Mutex
 	byTrigger map[string]*triggerReg[T] // triggerID -> registration state
 
+	//nolint:containedctx // lifecycle context for the retransmit/prune loops; cancelled via Stop()
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -105,12 +108,13 @@ func NewBaseTriggerCapability[T proto.Message](
 	store EventStore,
 	newMsg func() T,
 	lggr logger.Logger,
-	capabilityId string,
+	capabilityID string,
 	tRetransmit time.Duration,
 	settings settings.Getter,
 ) *BaseTriggerCapability[T] {
+	//nolint:gosec // cancel is stored on the struct and invoked from Stop()
 	ctx, cancel := context.WithCancel(context.Background())
-	metrics, err := NewBaseTriggerBeholderMetrics(capabilityId)
+	metrics, err := NewBaseTriggerBeholderMetrics(capabilityID)
 	if err != nil {
 		lggr.Warnw("failed to initialize base trigger beholder metrics; continuing with metrics disabled", "err", err)
 		metrics = &noopBaseTriggerMetrics{}
@@ -120,7 +124,7 @@ func NewBaseTriggerCapability[T proto.Message](
 		store:        store,
 		newMsg:       newMsg,
 		lggr:         lggr,
-		capabilityId: capabilityId,
+		capabilityID: capabilityID,
 		tRetransmit:  tRetransmit,
 		settings:     settings,
 		metrics:      metrics,
@@ -330,7 +334,7 @@ func (b *BaseTriggerCapability[T]) DeliverEvent(
 			delete(reg.preAcked, te.ID)
 			b.mu.Unlock()
 			b.lggr.Infow("base trigger DeliverEvent skipped: event was already ACKed (pre-ACK)",
-				"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID)
+				"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID)
 			b.metrics.IncAckMemoryOutcome(ackMemoryOutcomePreAckDeliverySkipped)
 			return nil
 		}
@@ -338,7 +342,7 @@ func (b *BaseTriggerCapability[T]) DeliverEvent(
 		if _, exists := reg.pending[te.ID]; exists {
 			b.mu.Unlock()
 			b.lggr.Debugw("base trigger DeliverEvent skipped: event already pending",
-				"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID)
+				"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID)
 			return nil
 		}
 	}
@@ -356,15 +360,15 @@ func (b *BaseTriggerCapability[T]) DeliverEvent(
 	if err := b.store.Insert(ctx, rec); err != nil {
 		if isDuplicateKeyError(err) {
 			b.lggr.Debugw("base trigger DeliverEvent: event already in store (re-delivery after give-up), skipping",
-				"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID)
+				"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID)
 			return nil
 		}
 		b.lggr.Errorw("base trigger failed to persist pending event",
-			"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID, "err", err)
+			"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID, "err", err)
 		return err
 	}
 	b.lggr.Infow("base trigger persisted pending event for ACK tracking",
-		"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID)
+		"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID)
 
 	// Double-check preAcked under the same lock as adding to pending.
 	// An ACK may have arrived during the store.Insert call above. Without
@@ -376,11 +380,11 @@ func (b *BaseTriggerCapability[T]) DeliverEvent(
 		delete(reg.preAcked, te.ID)
 		b.mu.Unlock()
 		b.lggr.Infow("base trigger DeliverEvent skipped after persist: event was ACKed during store write (pre-ACK double-check)",
-			"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID)
+			"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID)
 		b.metrics.IncAckMemoryOutcome(ackMemoryOutcomePreAckDeliverySkipped)
 		if err := b.store.DeleteEvent(ctx, triggerID, te.ID); err != nil {
 			b.lggr.Errorw("base trigger failed to delete pre-ACKed event from store",
-				"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID, "err", err)
+				"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID, "err", err)
 		}
 		return nil
 	}
@@ -395,7 +399,7 @@ func (b *BaseTriggerCapability[T]) DeliverEvent(
 	// retransmission won't happen until the full retry interval elapses (~30s).
 	if err := b.sendToInbox(triggerID, te.ID, te.Payload.GetValue()); err != nil {
 		b.lggr.Debugw("base trigger DeliverEvent: immediate send failed, will retry via scanPending",
-			"capabilityID", b.capabilityId, "triggerID", triggerID, "eventID", te.ID, "err", err)
+			"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", te.ID, "err", err)
 	}
 	return nil
 }
@@ -427,12 +431,12 @@ func (b *BaseTriggerCapability[T]) sendToInbox(triggerID, eventID string, payloa
 	}
 
 	b.lggr.Infof("event dispatched: capability=%s trigger=%s event=%s",
-		b.capabilityId, triggerID, eventID)
+		b.capabilityID, triggerID, eventID)
 	return nil
 }
 
-func (b *BaseTriggerCapability[T]) AckEvent(ctx context.Context, triggerId string, eventId string) error {
-	b.lggr.Infow("Event ACK", "triggerID", triggerId, "eventID", eventId)
+func (b *BaseTriggerCapability[T]) AckEvent(ctx context.Context, triggerID string, eventID string) error {
+	b.lggr.Infow("Event ACK", "triggerID", triggerID, "eventID", eventID)
 
 	var (
 		attempts            int
@@ -444,16 +448,16 @@ func (b *BaseTriggerCapability[T]) AckEvent(ctx context.Context, triggerId strin
 	)
 
 	b.mu.Lock()
-	reg := b.byTrigger[triggerId]
+	reg := b.byTrigger[triggerID]
 	eventWasInPending := false
 	if reg != nil {
-		_, eventWasInPending = reg.pending[eventId]
+		_, eventWasInPending = reg.pending[eventID]
 	}
 	hadTriggerBucket = reg != nil
 
 	if reg != nil {
 		eventsForTrigger := reg.pending
-		rec, recOk := eventsForTrigger[eventId]
+		rec, recOk := eventsForTrigger[eventID]
 		hadEventKey = recOk
 		switch {
 		case recOk && rec != nil:
@@ -471,7 +475,7 @@ func (b *BaseTriggerCapability[T]) AckEvent(ctx context.Context, triggerId strin
 			}
 		}
 
-		delete(eventsForTrigger, eventId)
+		delete(eventsForTrigger, eventID)
 	} else {
 		b.metrics.IncAckMemoryOutcome(ackMemoryOutcomeMissNoTriggerBucket)
 	}
@@ -489,36 +493,36 @@ func (b *BaseTriggerCapability[T]) AckEvent(ctx context.Context, triggerId strin
 	// an ACK to all nodes before this node has registered the trigger.  We still
 	// create a record so that the subsequent DeliverEvent skips the event.
 	if reg == nil {
-		reg = b.getOrCreateRegLocked(triggerId)
+		reg = b.getOrCreateRegLocked(triggerID)
 	}
-	reg.preAcked[eventId] = time.Now()
+	reg.preAcked[eventID] = time.Now()
 
 	b.mu.Unlock()
 
 	if found {
 		b.lggr.Infow("base trigger ACK matched in-memory pending event",
-			"capabilityID", b.capabilityId, "triggerID", triggerId, "eventID", eventId,
+			"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", eventID,
 			"attempts", attempts, "firstAt", firstAt)
 		b.metrics.IncAckMemoryOutcome(ackMemoryOutcomeHit)
-		b.metrics.IncAck(triggerId)
-		b.metrics.ObserveTimeToAck(triggerId, time.Since(firstAt), attempts)
+		b.metrics.IncAck(triggerID)
+		b.metrics.ObserveTimeToAck(triggerID, time.Since(firstAt), attempts)
 		b.metrics.AddPendingEvents(-1)
 	} else {
 		b.lggr.Infow("base trigger ACK: event not found in memory (reconciling store)",
-			"capabilityID", b.capabilityId, "triggerID", triggerId, "eventID", eventId,
+			"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", eventID,
 			"hadTriggerBucket", hadTriggerBucket, "hadEventKey", hadEventKey,
 			"hadNilPendingRecord", hadNilPendingRecord)
 	}
 
-	if err := b.store.DeleteEvent(ctx, triggerId, eventId); err != nil {
+	if err := b.store.DeleteEvent(ctx, triggerID, eventID); err != nil {
 		b.lggr.Errorw("base trigger ACK failed to delete event from store",
-			"capabilityID", b.capabilityId, "triggerID", triggerId, "eventID", eventId,
+			"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", eventID,
 			"foundInMemory", found, "err", err)
 		b.metrics.IncAckError("store_delete_failed")
 		return err
 	}
 	b.lggr.Debugw("base trigger ACK store delete succeeded",
-		"capabilityID", b.capabilityId, "triggerID", triggerId, "eventID", eventId,
+		"capabilityID", b.capabilityID, "triggerID", triggerID, "eventID", eventID,
 		"foundInMemory", found)
 	return nil
 }
@@ -613,7 +617,7 @@ func (b *BaseTriggerCapability[T]) scanPending() {
 	sendCap := b.maxSendsPerTick(ctx)
 	if len(toResend) > sendCap {
 		b.lggr.Warnw("base trigger capping sends per tick",
-			"capabilityID", b.capabilityId,
+			"capabilityID", b.capabilityID,
 			"eligible", len(toResend), "sendCap", sendCap)
 		toResend = toResend[:sendCap]
 	}
@@ -680,7 +684,7 @@ func (b *BaseTriggerCapability[T]) collectResendCandidate(
 // giving operators time to investigate unrecoverable payloads (e.g. HTTP triggers).
 func (b *BaseTriggerCapability[T]) emitStoppedResending(ev stoppedResendingEvent, maxRetries int) {
 	b.lggr.Errorw("base trigger stopped resending event after max retries",
-		"capabilityID", b.capabilityId, "triggerID", ev.triggerID, "eventID", ev.eventID,
+		"capabilityID", b.capabilityID, "triggerID", ev.triggerID, "eventID", ev.eventID,
 		"attempts", ev.attempts, "maxRetries", maxRetries,
 		"reason", "max_retries_exhausted")
 	b.metrics.IncStoppedResending(ev.triggerID, ev.attempts)
@@ -722,7 +726,7 @@ func (b *BaseTriggerCapability[T]) pruneStaleEvents() {
 
 	recs, err := b.store.List(b.ctx)
 	if err != nil {
-		b.lggr.Errorw("prune: failed to list events from store", "capabilityID", b.capabilityId, "err", err)
+		b.lggr.Errorw("prune: failed to list events from store", "capabilityID", b.capabilityID, "err", err)
 		return
 	}
 
@@ -744,11 +748,11 @@ func (b *BaseTriggerCapability[T]) pruneStaleEvents() {
 		b.mu.Unlock()
 
 		b.lggr.Infow("prune: removing stale event from store",
-			"capabilityID", b.capabilityId, "triggerID", rec.TriggerId, "eventID", rec.EventId,
+			"capabilityID", b.capabilityID, "triggerID", rec.TriggerId, "eventID", rec.EventId,
 			"firstAt", rec.FirstAt, "lastSentAt", rec.LastSentAt, "attempts", rec.Attempts, "pruneAge", age)
 		if err := b.store.DeleteEvent(b.ctx, rec.TriggerId, rec.EventId); err != nil {
 			b.lggr.Errorw("prune: failed to delete stale event",
-				"capabilityID", b.capabilityId, "triggerID", rec.TriggerId, "eventID", rec.EventId, "err", err)
+				"capabilityID", b.capabilityID, "triggerID", rec.TriggerId, "eventID", rec.EventId, "err", err)
 		}
 	}
 }

@@ -7,11 +7,13 @@ import (
 	"github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
+//nolint:revive // Exported API: stuttering name kept for compatibility with consumers of the published module
 type CapabilitiesRegistry interface {
 	CapabilitiesRegistryBase
 	CapabilitiesRegistryMetadata
 }
 
+//nolint:revive // Exported API: stuttering name kept for compatibility with consumers of the published module
 type CapabilitiesRegistryMetadata interface {
 	LocalNode(ctx context.Context) (Node, error)
 	NodeByPeerID(ctx context.Context, peerID types.PeerID) (Node, error)
@@ -24,6 +26,7 @@ type CapabilitiesRegistryMetadata interface {
 	DONByID(ctx context.Context, donID uint32) (DON, error)
 }
 
+//nolint:revive // Exported API: stuttering name kept for compatibility with consumers of the published module
 type CapabilitiesRegistryBase interface {
 	GetTrigger(ctx context.Context, ID string) (TriggerCapability, error)
 	Get(ctx context.Context, ID string) (BaseCapability, error)

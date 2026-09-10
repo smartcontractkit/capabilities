@@ -13,9 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/connectivity"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
 	"github.com/smartcontractkit/capabilities/libs/capabilities"
 	"github.com/smartcontractkit/capabilities/libs/capabilities/registry"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 type mockCapability struct {

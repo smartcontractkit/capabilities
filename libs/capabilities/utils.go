@@ -8,8 +8,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	caperrors "github.com/smartcontractkit/capabilities/libs/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+
+	caperrors "github.com/smartcontractkit/capabilities/libs/capabilities/errors"
 )
 
 var ErrNeitherValueNorAny = errors.New("neither value nor any provided")
@@ -61,9 +62,9 @@ func SetResponse(response *CapabilityResponse, migrated bool, value proto.Messag
 }
 
 // FromValueOrAny extracts the value from either a values.Value or an anypb.Any, returning true if the value was migrated to use pbany.Any.
-func FromValueOrAny(value values.Value, any *anypb.Any, into proto.Message) (bool, error) {
+func FromValueOrAny(value values.Value, anyValue *anypb.Any, into proto.Message) (bool, error) {
 	var migrated bool
-	if any == nil {
+	if anyValue == nil {
 		// Check if the underlying concrete value is nil
 		if v, ok := value.(*values.Map); ok && v == nil {
 			return migrated, ErrNeitherValueNorAny
@@ -78,7 +79,7 @@ func FromValueOrAny(value values.Value, any *anypb.Any, into proto.Message) (boo
 	}
 
 	migrated = true
-	if err := any.UnmarshalTo(into); err != nil {
+	if err := anyValue.UnmarshalTo(into); err != nil {
 		return migrated, fmt.Errorf("failed to transform any to proto: %w", err)
 	}
 
@@ -112,9 +113,11 @@ func Execute[I, C, O proto.Message](
 	return response, nil
 }
 
+//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
 type TriggerAndId[T proto.Message] struct {
 	Trigger T
-	Id      string
+	//nolint:revive // Exported API: name kept for compatibility with consumers of the published module
+	Id string
 }
 
 // RegisterTrigger is a helper function for capabilities that allows them to use their native types for input, config, and response
