@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -16,12 +17,14 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	libocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/report"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -132,13 +135,24 @@ func newWRReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMe
 	}
 	req := &stellarcap.WriteReportRequest{
 		ContractId: testReceiverAddress,
-		Report: &workflowpb.ReportResponse{
-			RawReport:     encoded,
-			ReportContext: make([]byte, ocrReportContextLen),
-			Sigs:          wrTestSigs(),
-		},
+		Report:     wrSignedReport(encoded),
 	}
 	return rm, reqMeta, req
+}
+
+// wrSignedReport wraps rawReport with a config digest, sequence number and the report
+// context consensus derives from them, plus test signatures.
+func wrSignedReport(rawReport []byte) *workflowpb.ReportResponse {
+	var configDigest libocrtypes.ConfigDigest
+	copy(configDigest[:], commontest.RandomBytes(32))
+	seqNr := uint64(42)
+	return &workflowpb.ReportResponse{
+		RawReport:     rawReport,
+		ConfigDigest:  configDigest[:],
+		SeqNr:         seqNr,
+		ReportContext: report.GenerateReportContext(seqNr, configDigest),
+		Sigs:          wrTestSigs(),
+	}
 }
 
 func wrTestSigs() []*workflowpb.AttributedSignature {
@@ -298,7 +312,9 @@ func reportProcessedEventsForFixture(t *testing.T, rm ocrtypes.Metadata, receive
 
 	return stellartypes.GetEventsResponse{
 		Events: []stellartypes.EventInfo{{
+			EventType:       stellartypes.EventTypeContract,
 			Ledger:          100,
+			ContractID:      testForwarderAddress,
 			TransactionHash: testTxHash,
 			Topics: []stellartypes.ScVal{
 				{Type: stellartypes.ScValTypeSymbol, Symbol: &eventName},
@@ -480,11 +496,7 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, reqMeta, _ := newWRReportFixture(t)
 		req := &stellarcap.WriteReportRequest{
 			ContractId: testReceiverAddress,
-			Report: &workflowpb.ReportResponse{
-				RawReport:     []byte("garbage"),
-				ReportContext: make([]byte, ocrReportContextLen),
-				Sigs:          wrTestSigs(),
-			},
+			Report:     wrSignedReport([]byte("garbage")),
 		}
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
@@ -536,6 +548,39 @@ func TestWriteReport_Validation(t *testing.T) {
 		require.Contains(t, err.Error(), "workflowID does not match")
 	})
 
+	t.Run("report context not derived from config digest and seqNr", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		req.Report.ReportContext = bytes.Repeat([]byte{0xFF}, ocrReportContextLen)
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "report context does not match config digest and sequence number")
+	})
+
+	t.Run("report context from a different seqNr", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		req.Report.SeqNr++
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "report context does not match config digest and sequence number")
+	})
+
+	t.Run("invalid config digest length", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		req.Report.ConfigDigest = nil
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "config digest has invalid length")
+	})
+
 	t.Run("report size exceeds limit", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
@@ -545,11 +590,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		req := &stellarcap.WriteReportRequest{
 			ContractId: testReceiverAddress,
-			Report: &workflowpb.ReportResponse{
-				RawReport:     append(encoded, make([]byte, 20_000)...),
-				ReportContext: make([]byte, ocrReportContextLen),
-				Sigs:          wrTestSigs(),
-			},
+			Report:     wrSignedReport(append(encoded, make([]byte, 20_000)...)),
 		}
 
 		_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)

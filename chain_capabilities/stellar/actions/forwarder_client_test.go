@@ -87,6 +87,25 @@ func TestForwarderClient_InvokeOnReport(t *testing.T) {
 	})
 }
 
+// reportProcessedEvent builds an EventInfo as the forwarder emits it for transmissionID.
+func reportProcessedEvent(t *testing.T, transmissionID TransmissionID, txHash string, ledger uint32, success bool) stellartypes.EventInfo {
+	t.Helper()
+	filter, err := NewCREForwarderCodec().EncodeReportProcessedTopicFilter(transmissionID)
+	require.NoError(t, err)
+	topics := make([]stellartypes.ScVal, len(filter.Segments))
+	for i, segment := range filter.Segments {
+		topics[i] = *segment.Value
+	}
+	return stellartypes.EventInfo{
+		EventType:       stellartypes.EventTypeContract,
+		Ledger:          ledger,
+		ContractID:      testForwarderAddress,
+		TransactionHash: txHash,
+		Topics:          topics,
+		Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
+	}
+}
+
 func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 	t.Parallel()
 	lggr := logger.Test(t)
@@ -95,10 +114,17 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 	require.NoError(t, err)
 	searchRange := EventSearchRange{StartLedger: 100, EndLedger: 200}
 
+	expectEvents := func(t *testing.T, events ...stellartypes.EventInfo) CREForwarderClient {
+		t.Helper()
+		svc := mocks.NewStellarService(t)
+		svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
+			Return(stellartypes.GetEventsResponse{Events: events}, nil).Once()
+		return newForwarderClient(svc, lggr, testForwarderAddress, 100)
+	}
+
 	t.Run("happy path", func(t *testing.T) {
 		t.Parallel()
 		svc := mocks.NewStellarService(t)
-		success := true
 		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
 			return req.StartLedger == searchRange.StartLedger &&
 				req.EndLedger == searchRange.EndLedger &&
@@ -106,11 +132,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 				req.Pagination.Limit == reportProcessedEventPageLimit
 		})).
 			Return(stellartypes.GetEventsResponse{
-				Events: []stellartypes.EventInfo{{
-					TransactionHash: testTxHash,
-					Ledger:          150,
-					Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
-				}},
+				Events: []stellartypes.EventInfo{reportProcessedEvent(t, transmissionID, testTxHash, 150, true)},
 			}, nil).Once()
 		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
 
@@ -118,7 +140,49 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, events, 1)
 		require.Equal(t, testTxHash, events[0].TxHash)
+		require.Equal(t, uint32(150), events[0].Ledger)
 		require.True(t, events[0].Success)
+	})
+
+	t.Run("skips diagnostic and system events", func(t *testing.T) {
+		t.Parallel()
+		system := reportProcessedEvent(t, transmissionID, "system", 150, true)
+		system.EventType = stellartypes.EventTypeSystem
+		diagnostic := reportProcessedEvent(t, transmissionID, "diagnostic-copy", 151, true)
+		diagnostic.EventType = stellartypes.EventType(99)
+		client := expectEvents(t, system, diagnostic, reportProcessedEvent(t, transmissionID, testTxHash, 152, false))
+
+		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
+		require.NoError(t, err)
+		require.Len(t, events, 1)
+		require.Equal(t, testTxHash, events[0].TxHash)
+		require.False(t, events[0].Success)
+	})
+
+	t.Run("skips events from another contract", func(t *testing.T) {
+		t.Parallel()
+		foreign := reportProcessedEvent(t, transmissionID, "other-contract", 150, true)
+		foreign.ContractID = testReceiverAddress
+		client := expectEvents(t, foreign)
+
+		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
+		require.NoError(t, err)
+		require.Empty(t, events)
+	})
+
+	t.Run("skips events outside the search range", func(t *testing.T) {
+		t.Parallel()
+		client := expectEvents(t,
+			reportProcessedEvent(t, transmissionID, "ledger-zero", 0, false),
+			reportProcessedEvent(t, transmissionID, "too-old", 99, false),
+			reportProcessedEvent(t, transmissionID, "too-new", 201, false),
+			reportProcessedEvent(t, transmissionID, testTxHash, 100, false),
+		)
+
+		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
+		require.NoError(t, err)
+		require.Len(t, events, 1)
+		require.Equal(t, testTxHash, events[0].TxHash)
 	})
 
 	t.Run("search range clamps to ledger 1 when history is short", func(t *testing.T) {
@@ -136,16 +200,10 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 	t.Run("drains paginated results", func(t *testing.T) {
 		t.Parallel()
 		svc := mocks.NewStellarService(t)
-		failed := false
-		success := true
 		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
 			return req.Pagination != nil && req.Pagination.Cursor == ""
 		})).Return(stellartypes.GetEventsResponse{
-			Events: []stellartypes.EventInfo{{
-				TransactionHash: "failed",
-				Ledger:          150,
-				Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &failed},
-			}},
+			Events: []stellartypes.EventInfo{reportProcessedEvent(t, transmissionID, "failed", 150, false)},
 			Cursor: "next",
 		}, nil).Once()
 		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
@@ -154,11 +212,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 				req.Pagination != nil &&
 				req.Pagination.Cursor == "next"
 		})).Return(stellartypes.GetEventsResponse{
-			Events: []stellartypes.EventInfo{{
-				TransactionHash: testTxHash,
-				Ledger:          151,
-				Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
-			}},
+			Events: []stellartypes.EventInfo{reportProcessedEvent(t, transmissionID, testTxHash, 151, true)},
 		}, nil).Once()
 		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
 
@@ -184,16 +238,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 
 	t.Run("empty tx hash in event", func(t *testing.T) {
 		t.Parallel()
-		svc := mocks.NewStellarService(t)
-		success := true
-		svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
-			Return(stellartypes.GetEventsResponse{
-				Events: []stellartypes.EventInfo{{
-					TransactionHash: "",
-					Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
-				}},
-			}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := expectEvents(t, reportProcessedEvent(t, transmissionID, "", 150, true))
 
 		_, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.Error(t, err)
@@ -202,15 +247,9 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 
 	t.Run("non-bool event value", func(t *testing.T) {
 		t.Parallel()
-		svc := mocks.NewStellarService(t)
-		svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
-			Return(stellartypes.GetEventsResponse{
-				Events: []stellartypes.EventInfo{{
-					TransactionHash: testTxHash,
-					Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeU32},
-				}},
-			}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		event := reportProcessedEvent(t, transmissionID, testTxHash, 150, true)
+		event.Value = stellartypes.ScVal{Type: stellartypes.ScValTypeU32}
+		client := expectEvents(t, event)
 
 		_, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.Error(t, err)
