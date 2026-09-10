@@ -172,8 +172,11 @@ func (m *Metrics) IncrementExecutionError(ctx context.Context, proxyMode ProxyMo
 }
 
 func (m *Metrics) IncrementExecutionTimeout(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
+	// NOTE: timeouts are user errors (the user's configured request Timeout expired, or the
+	// external endpoint was too slow for it). They are tracked separately via
+	// http_action_execution_timeout_count and must NOT be counted as execution errors,
+	// otherwise the "Execution Errors in More than F nodes" alert fires on user errors.
 	m.executionTimeout.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
-	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
 }
 
 func (m *Metrics) IncrementExternalEndpointError(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
