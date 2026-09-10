@@ -95,6 +95,9 @@ const (
 	// Indicates an error in the workflow logic, such that the workflow is not producing a consistent value type for the
 	// same request across observers.
 	ConsensusFailureCode_NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS ConsensusFailureCode = 7
+	// The successful outcome could not be turned into a report to sign, e.g. it has an empty report payload, a missing or
+	// out of range timestamp, an unknown request type or metadata that cannot be encoded. Only the affected request fails.
+	ConsensusFailureCode_INVALID_OUTCOME ConsensusFailureCode = 8
 )
 
 // Enum value maps for ConsensusFailureCode.
@@ -108,6 +111,7 @@ var (
 		5: "MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS",
 		6: "NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS",
 		7: "NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS",
+		8: "INVALID_OUTCOME",
 	}
 	ConsensusFailureCode_value = map[string]int32{
 		"CONSENSUS_CALCULATION_FAILED":                            0,
@@ -118,6 +122,7 @@ var (
 		"MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS":     5,
 		"NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS":  6,
 		"NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS": 7,
+		"INVALID_OUTCOME":                                         8,
 	}
 )
 
@@ -323,6 +328,7 @@ type RequestObservation struct {
 	ReceivedAt                                 *timestamppb.Timestamp     `protobuf:"bytes,3,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
 	RemoveLibUseInFailureMessageFormattingFlag bool                       `protobuf:"varint,4,opt,name=remove_lib_use_in_failure_message_formatting_flag,json=removeLibUseInFailureMessageFormattingFlag,proto3" json:"remove_lib_use_in_failure_message_formatting_flag,omitempty"` // remove use of libraries in failure message formatting; flag to be removed after rollout
 	UpdateErrorHandlingFlag                    bool                       `protobuf:"varint,5,opt,name=update_error_handling_flag,json=updateErrorHandlingFlag,proto3" json:"update_error_handling_flag,omitempty"`                                                                  // migrate system errors to user errors; flag to be removed after rollout
+	IncludeErrorObservationTimestampsFlag      bool                       `protobuf:"varint,6,opt,name=include_error_observation_timestamps_flag,json=includeErrorObservationTimestampsFlag,proto3" json:"include_error_observation_timestamps_flag,omitempty"`                      // include error observations in the median outcome timestamp; flag to be removed after rollout
 	unknownFields                              protoimpl.UnknownFields
 	sizeCache                                  protoimpl.SizeCache
 }
@@ -388,6 +394,13 @@ func (x *RequestObservation) GetRemoveLibUseInFailureMessageFormattingFlag() boo
 func (x *RequestObservation) GetUpdateErrorHandlingFlag() bool {
 	if x != nil {
 		return x.UpdateErrorHandlingFlag
+	}
+	return false
+}
+
+func (x *RequestObservation) GetIncludeErrorObservationTimestampsFlag() bool {
+	if x != nil {
+		return x.IncludeErrorObservationTimestampsFlag
 	}
 	return false
 }
@@ -828,14 +841,15 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05Query\x12\x1e\n" +
 	"\n" +
 	"requestIDs\x18\x01 \x03(\tR\n" +
-	"requestIDs\"\xf3\x02\n" +
+	"requestIDs\"\xcd\x03\n" +
 	"\x12RequestObservation\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x128\n" +
 	"\x05input\x18\x02 \x01(\v2\".sdk.v1alpha.SimpleConsensusInputsR\x05input\x12;\n" +
 	"\vreceived_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"receivedAt\x12e\n" +
 	"1remove_lib_use_in_failure_message_formatting_flag\x18\x04 \x01(\bR*removeLibUseInFailureMessageFormattingFlag\x12;\n" +
-	"\x1aupdate_error_handling_flag\x18\x05 \x01(\bR\x17updateErrorHandlingFlag\"\xd3\x01\n" +
+	"\x1aupdate_error_handling_flag\x18\x05 \x01(\bR\x17updateErrorHandlingFlag\x12X\n" +
+	")include_error_observation_timestamps_flag\x18\x06 \x01(\bR%includeErrorObservationTimestampsFlag\"\xd3\x01\n" +
 	"\vObservation\x12X\n" +
 	"\fobservations\x18\x01 \x03(\v24.value_consensus_types.Observation.ObservationsEntryR\fobservations\x1aj\n" +
 	"\x11ObservationsEntry\x12\x10\n" +
@@ -868,7 +882,7 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value*9\n" +
 	"\vRequestType\x12\x13\n" +
 	"\x0fVALUE_CONSENSUS\x10\x00\x12\x15\n" +
-	"\x11REPORT_GENERATION\x10\x01*\xda\x02\n" +
+	"\x11REPORT_GENERATION\x10\x01*\xef\x02\n" +
 	"\x14ConsensusFailureCode\x12 \n" +
 	"\x1cCONSENSUS_CALCULATION_FAILED\x10\x00\x12%\n" +
 	"!FAILED_TO_CALCULATE_CONSENSUS_MDD\x10\x01\x12\x1a\n" +
@@ -877,7 +891,8 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x10REPORT_TOO_LARGE\x10\x04\x127\n" +
 	"3MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS\x10\x05\x12:\n" +
 	"6NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS\x10\x06\x12;\n" +
-	"7NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS\x10\aB\x18Z\x16consensus/oracle/typesb\x06proto3"
+	"7NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS\x10\a\x12\x13\n" +
+	"\x0fINVALID_OUTCOME\x10\bB\x18Z\x16consensus/oracle/typesb\x06proto3"
 
 var (
 	file_value_consensus_types_proto_rawDescOnce sync.Once
