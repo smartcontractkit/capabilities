@@ -1700,6 +1700,42 @@ func TestPollTransmissionInfo_EmitsInvalidTransmissionStateOnlyOnce(t *testing.T
 	require.Equal(t, 1, invalidStateCount, "InvalidTransmissionState should fire exactly once even across multiple poll iterations with a persistent unexpected state")
 }
 
+func TestPollTransmissionInfo_ContextTimeoutAfterNonterminalPollEmitsNoEarlyReturn(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	processor := &recordingWriteReportProcessor{}
+	scheduler := ts.NewTransmissionScheduler(
+		p2ptypes.PeerID{2},
+		[]p2ptypes.PeerID{{1}, {2}, {3}},
+		5*time.Second,
+		0,
+		lggr,
+	)
+	stub := &stubForwarderClient{
+		transmissionInfoFn: func(int) (TransmissionInfo, error) {
+			return TransmissionInfo{State: TransmissionStateNotAttempted}, nil
+		},
+	}
+	wr := &writeReport{
+		forwarderClient:       stub,
+		lggr:                  logger.Sugared(lggr),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     processor,
+	}
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 75*time.Millisecond)
+	defer cancel()
+
+	_, err = wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "timed out waiting for transmission info")
+	require.False(t, hasTelemetryMessage[*monitoring.WriteReportSuccessfulEarlyReturn](processor.messages))
+}
+
 func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
