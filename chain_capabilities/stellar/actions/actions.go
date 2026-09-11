@@ -36,16 +36,15 @@ import (
 // Stellar implements the CRE capability actions for the Stellar chain.
 type Stellar struct {
 	types.StellarService
-	handler                  chainconsensus.RequestHandler
-	lggr                     logger.SugaredLogger
-	messageBuilder           *monitoring.MessageBuilder
-	beholderProcessor        beholder.ProtoProcessor
-	chainSelector            uint64
-	forwarderClient          CREForwarderClient
-	forwarderLookbackLedgers int64
-	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
-	maxResourceFeeLimit      limits.BoundLimiter[uint64]
-	transmissionScheduler    ts.TransmissionScheduler
+	handler               chainconsensus.RequestHandler
+	lggr                  logger.SugaredLogger
+	messageBuilder        *monitoring.MessageBuilder
+	beholderProcessor     beholder.ProtoProcessor
+	chainSelector         uint64
+	forwarderClient       CREForwarderClient
+	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
+	maxResourceFeeLimit   limits.BoundLimiter[uint64]
+	transmissionScheduler ts.TransmissionScheduler
 }
 
 func NewStellar(
@@ -63,17 +62,22 @@ func NewStellar(
 	if service == nil {
 		return nil, fmt.Errorf("stellar service is required")
 	}
+	if forwarderLookbackLedgers < 0 {
+		return nil, fmt.Errorf("forwarder lookback ledgers must be non-negative")
+	}
+	if forwarderLookbackLedgers == 0 {
+		forwarderLookbackLedgers = DefaultForwarderLookbackLedgers
+	}
 
 	st := &Stellar{
-		StellarService:           service,
-		handler:                  handler,
-		lggr:                     logger.Sugared(lggr),
-		messageBuilder:           messageBuilder,
-		beholderProcessor:        beholderProcessor,
-		chainSelector:            chainSelector,
-		forwarderClient:          newForwarderClient(service, lggr, forwarderAddress, forwarderLookbackLedgers),
-		forwarderLookbackLedgers: forwarderLookbackLedgers,
-		transmissionScheduler:    transmissionScheduler,
+		StellarService:        service,
+		handler:               handler,
+		lggr:                  logger.Sugared(lggr),
+		messageBuilder:        messageBuilder,
+		beholderProcessor:     beholderProcessor,
+		chainSelector:         chainSelector,
+		forwarderClient:       newForwarderClient(service, lggr, forwarderAddress, forwarderLookbackLedgers),
+		transmissionScheduler: transmissionScheduler,
 	}
 	return st, st.initLimiters(limitsFactory)
 }
