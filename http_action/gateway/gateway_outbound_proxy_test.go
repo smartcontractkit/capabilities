@@ -131,6 +131,10 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 
 // Helper for setting up proxy and mockConnector for SendRequest tests
 func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
+	return setupSendRequestTestWithConfig(t, common.ServiceConfig{})
+}
+
+func setupSendRequestTestWithConfig(t *testing.T, cfg common.ServiceConfig) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
 	readyCh := make(chan string, 1)
 	mockConnector := &mockGatewayConnector{
 		SourceDonID: "don1",
@@ -144,7 +148,7 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 	lggr := logger.Test(t)
 	proxy, err := NewGatewayOutboundProxy(
 		mockConnector,
-		common.ServiceConfig{},
+		cfg,
 		lggr,
 		newMetrics(t),
 		newTestValidator(t),
@@ -342,9 +346,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 		assert.True(t, errors.As(err, &userErr))
 	})
 
-	// Ensure that canceling the SendRequest context before a gateway response
-	// is a UserError.
-	t.Run("gateway response timeout returns UserError", func(t *testing.T) {
+	t.Run("caller cancellation returns CanceledError", func(t *testing.T) {
 		proxy, _, readyCh := setupSendRequestTest(t)
 
 		metadata := capabilities.RequestMetadata{
@@ -386,8 +388,85 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 		assert.Contains(t, err.Error(), ErrMsgGatewayResponseWait)
 		assert.Contains(t, err.Error(), "context canceled")
 
+		var canceledErr CanceledError
+		assert.True(t, errors.As(err, &canceledErr))
 		var userErr UserError
-		assert.True(t, errors.As(err, &userErr))
+		assert.False(t, errors.As(err, &userErr))
+		var timeoutErr TimeoutError
+		assert.False(t, errors.As(err, &timeoutErr))
+	})
+
+	t.Run("no gateway response returns TimeoutError", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTestWithConfig(t, common.ServiceConfig{
+			GatewayConnectionConfig: common.GatewayConnectionConfig{ResponseGraceMs: 100},
+		})
+
+		metadata := capabilities.RequestMetadata{
+			WorkflowID:          "wf1",
+			WorkflowExecutionID: "exec1",
+			WorkflowOwner:       "owner1",
+		}
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Body:          []byte("test"),
+			Timeout:       durationpb.New(200 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		// Never respond on behalf of the gateway; readyCh is buffered so the send does not block.
+		_ = readyCh
+
+		output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.Error(t, err)
+		require.Nil(t, output)
+		assert.Contains(t, err.Error(), ErrMsgGatewayResponseTimeout)
+
+		var timeoutErr TimeoutError
+		assert.True(t, errors.As(err, &timeoutErr))
+		var userErr UserError
+		assert.False(t, errors.As(err, &userErr))
+	})
+
+	// The regression the grace period exists for: a classified response necessarily lands after the
+	// request timeout, and must still be honored rather than reported as a platform timeout.
+	t.Run("gateway response after request timeout is still classified", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTestWithConfig(t, common.ServiceConfig{
+			GatewayConnectionConfig: common.GatewayConnectionConfig{ResponseGraceMs: 5_000},
+		})
+
+		metadata := capabilities.RequestMetadata{
+			WorkflowID:          "wf1",
+			WorkflowExecutionID: "exec1",
+			WorkflowOwner:       "owner1",
+		}
+		requestTimeout := 200 * time.Millisecond
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Body:          []byte("test"),
+			Timeout:       durationpb.New(requestTimeout),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		go func() {
+			id := <-readyCh
+			// The delay is the subject of the test, not a synchronization device.
+			time.Sleep(2 * requestTimeout)
+			simulateGatewayMessageWithFlags(t, proxy, id, 0, "", "endpoint timed out", true, true, false)
+		}()
+
+		output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.Error(t, err)
+		require.Nil(t, output)
+		assert.Contains(t, err.Error(), "endpoint timed out")
+		assert.NotContains(t, err.Error(), ErrMsgGatewayResponseWait)
+		assert.NotContains(t, err.Error(), ErrMsgGatewayResponseTimeout)
+
+		var userErr UserError
+		assert.True(t, errors.As(err, &userErr), "late gateway response must be classified, not timed out")
+		var timeoutErr TimeoutError
+		assert.False(t, errors.As(err, &timeoutErr))
 	})
 }
 
