@@ -18,7 +18,44 @@ const (
 	reportProcessedTopicPrefix = "forwarder_ReportProcessed"
 	ocrReportContextLen        = 96
 	ed25519OCRSigLen           = ed25519.PublicKeySize + ed25519.SignatureSize
+	// maxOCRSignatures is the libocr oracle-count ceiling; a signed report can never
+	// legitimately carry more distinct signers than that.
+	maxOCRSignatures = 31
 )
+
+// validateSignatureSet is the single rule set for a signed report's signature list.
+// It is applied at the WriteReport entry point and again inside EncodeReport so both
+// gates reject the same inputs with the same messages: nonempty, at least minSigs,
+// at most maxOCRSignatures, every entry ed25519OCRSigLen bytes, and no signer public
+// key repeated.
+func validateSignatureSet(sigs []*sdk.AttributedSignature, minSigs int) error {
+	if len(sigs) == 0 {
+		return fmt.Errorf("signed report must contain at least one signature")
+	}
+	if len(sigs) < minSigs {
+		return fmt.Errorf("signed report contains too few signatures: got %d, want at least %d", len(sigs), minSigs)
+	}
+	if len(sigs) > maxOCRSignatures {
+		return fmt.Errorf("signed report contains too many signatures: got %d, want at most %d", len(sigs), maxOCRSignatures)
+	}
+	seen := make(map[[ed25519.PublicKeySize]byte]struct{}, len(sigs))
+	for i, attributedSig := range sigs {
+		sig := attributedSig.GetSignature()
+		if len(sig) != ed25519OCRSigLen {
+			return fmt.Errorf(
+				"signature %d has invalid length: expected %d bytes (%d-byte public key || %d-byte signature), got %d",
+				i, ed25519OCRSigLen, ed25519.PublicKeySize, ed25519.SignatureSize, len(sig),
+			)
+		}
+		var signer [ed25519.PublicKeySize]byte
+		copy(signer[:], sig[:ed25519.PublicKeySize])
+		if _, dup := seen[signer]; dup {
+			return fmt.Errorf("signature %d: duplicate signer public key", i)
+		}
+		seen[signer] = struct{}{}
+	}
+	return nil
+}
 
 // CREForwarderCodec encodes and decodes Stellar CRE forwarder contract calls.
 type CREForwarderCodec interface {
@@ -61,36 +98,16 @@ func (creForwarderCodecImpl) EncodeReport(transmitter string, receiver string, r
 	}
 
 	signatures := report.GetSigs()
-	if len(signatures) == 0 {
-		return nil, fmt.Errorf("report contains no signatures")
+	if err := validateSignatureSet(signatures, 1); err != nil {
+		return nil, err
 	}
 
 	rawSignatures := make([][]byte, len(signatures))
 	for i, attributedSig := range signatures {
-		sig := attributedSig.GetSignature()
-		if len(sig) != ed25519OCRSigLen {
-			return nil, fmt.Errorf(
-				"signature %d: expected %d bytes (%d-byte public key || %d-byte signature), got %d",
-				i,
-				ed25519OCRSigLen,
-				ed25519.PublicKeySize,
-				ed25519.SignatureSize,
-				len(sig),
-			)
-		}
-		rawSignatures[i] = sig
+		rawSignatures[i] = attributedSig.GetSignature()
 	}
 
 	slices.SortFunc(rawSignatures, func(a, b []byte) int { return bytes.Compare(a[:ed25519.PublicKeySize], b[:ed25519.PublicKeySize]) })
-
-	for i := 1; i < len(rawSignatures); i++ {
-		previous := rawSignatures[i-1][:ed25519.PublicKeySize]
-		current := rawSignatures[i][:ed25519.PublicKeySize]
-
-		if bytes.Equal(previous, current) {
-			return nil, fmt.Errorf("signature %d: duplicate signer public key", i)
-		}
-	}
 
 	signatureVals := make([]*stellartypes.ScVal, len(rawSignatures))
 	for i, sig := range rawSignatures {

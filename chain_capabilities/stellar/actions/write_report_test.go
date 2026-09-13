@@ -471,7 +471,40 @@ func TestWriteReport_Validation(t *testing.T) {
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
 		require.Contains(t, err.Error(), "signature 0 has invalid length")
-		require.Contains(t, err.Error(), "want 96")
+		require.Contains(t, err.Error(), "expected 96 bytes")
+	})
+
+	t.Run("duplicate signer rejected before any forwarder read", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		dup := make([]byte, ed25519OCRSigLen)
+		copy(dup, req.Report.Sigs[0].GetSignature())
+		dup[ed25519OCRSigLen-1] ^= 0xff // same signer public key, different signature bytes
+		req.Report.Sigs = append(req.Report.Sigs, &workflowpb.AttributedSignature{Signature: dup})
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "duplicate signer public key")
+		h.svc.AssertNotCalled(t, "SimulateTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("more signatures than any DON can produce", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		sigs := make([]*workflowpb.AttributedSignature, maxOCRSignatures+1)
+		for i := range sigs {
+			sig := make([]byte, ed25519OCRSigLen)
+			sig[0] = byte(i) // distinct signer public keys
+			sigs[i] = &workflowpb.AttributedSignature{Signature: sig}
+		}
+		req.Report.Sigs = sigs
+
+		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "too many signatures")
+		require.Contains(t, err.Error(), "want at most 31")
 	})
 
 	t.Run("report metadata cannot be decoded", func(t *testing.T) {
@@ -711,8 +744,9 @@ func TestWriteReport_Submit(t *testing.T) {
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
+		require.Contains(t, capErr.Error(), testTxHash, "the workflow receives only the error, so it must name the transaction")
 		require.NotNil(t, result)
-		require.Nil(t, result.Response)
+		requireUnconfirmedSubmitReply(t, result.Response, stellarcap.TxStatus_TX_STATUS_SUCCESS)
 		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 	})
@@ -799,7 +833,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 		require.NotNil(t, result)
-		require.Nil(t, result.Response)
+		requireUnconfirmedSubmitReply(t, result.Response, stellarcap.TxStatus_TX_STATUS_REVERTED)
 		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, 0)
 		h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 	})
@@ -1315,7 +1349,7 @@ func TestWriteReport_TxFatalSubmitWithoutCanonicalOutcomeReturnsError(t *testing
 	require.NotNil(t, capErr)
 	require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 	require.NotNil(t, result)
-	require.Nil(t, result.Response)
+	requireUnconfirmedSubmitReply(t, result.Response, stellarcap.TxStatus_TX_STATUS_FATAL)
 	validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, 0)
 	h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 }
@@ -1337,10 +1371,28 @@ func TestReplyBuilders(t *testing.T) {
 				LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
 			}, nil).Once()
 
-		reply, err := wr.buildSuccessReply(t.Context(), req, monitoring.TelemetryContext{}, testTxHash)
-		require.NoError(t, err)
+		reply := wr.buildSuccessReply(t.Context(), req, monitoring.TelemetryContext{}, testTxHash)
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
 		require.Equal(t, testTxHash, *reply.TxHash)
+		require.NotNil(t, reply.BlockTimestamp)
+		require.Equal(t, testBlockTimestamp, *reply.BlockTimestamp)
+	})
+
+	t.Run("buildSuccessReply drops an overflowing ledger close time", func(t *testing.T) {
+		t.Parallel()
+		mockSvc := mocks.NewStellarService(t)
+		wr := &writeReport{service: mockSvc, lggr: logger.Sugared(logger.Test(t))}
+		mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
+			Return(stellartypes.GetTransactionResponse{
+				FeeStroops:      testFee,
+				LedgerSequence:  100,
+				LedgerCloseTime: maxLedgerCloseTimeSeconds + 1,
+			}, nil).Once()
+
+		reply := wr.buildSuccessReply(t.Context(), req, monitoring.TelemetryContext{}, testTxHash)
+		require.Nil(t, reply.BlockTimestamp)
+		require.NotNil(t, reply.TransactionFee)
+		require.NotNil(t, reply.LedgerSequence)
 	})
 
 	t.Run("buildRevertReplyFromTx invalid receiver", func(t *testing.T) {
@@ -1350,25 +1402,15 @@ func TestReplyBuilders(t *testing.T) {
 		mockSvc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
 			Return(stellartypes.GetTransactionResponse{FeeStroops: testFee}, nil).Once()
 
-		reply, err := wr.buildRevertReplyFromTx(t.Context(), req, monitoring.TelemetryContext{}, testTxHash, TransmissionInfo{State: TransmissionStateInvalidReceiver}, transmissionID)
-		require.NoError(t, err)
+		reply := wr.buildRevertReplyFromTx(t.Context(), req, monitoring.TelemetryContext{}, testTxHash, TransmissionInfo{State: TransmissionStateInvalidReceiver}, transmissionID)
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
 		require.Contains(t, *reply.ErrorMessage, "not a Wasm contract")
 	})
-
-	t.Run("revertReplyBuildError", func(t *testing.T) {
-		t.Parallel()
-		buildErr := revertReplyBuildError(
-			TransmissionInfo{State: TransmissionStateFailed},
-			transmissionID,
-			errors.New("rpc down"),
-		)
-		require.Error(t, buildErr)
-		require.Contains(t, buildErr.Error(), unknownIssueExecutingReceiverContractMessage)
-	})
 }
 
-func TestWriteReport_ObservedRevertReplyBuildError(t *testing.T) {
+// A prior transmission's outcome is known from the forwarder; a failing GetTransaction
+// lookup must not turn that known outcome into an error.
+func TestWriteReport_ObservedRevertReplyWithoutTxDetails(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
 	rm, reqMeta, req := newWRReportFixture(t)
@@ -1385,9 +1427,16 @@ func TestWriteReport_ObservedRevertReplyBuildError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
-	_, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
-	require.NotNil(t, capErr)
-	require.Contains(t, capErr.Error(), unknownIssueExecutingReceiverContractMessage)
+	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
+	require.Nil(t, capErr)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Response)
+	require.Equal(t, testTxHash, *result.Response.TxHash)
+	require.Equal(t, stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
+	require.Contains(t, *result.Response.ErrorMessage, unknownIssueExecutingReceiverContractMessage)
+	require.Nil(t, result.Response.TransactionFee)
+	require.Nil(t, result.Response.LedgerSequence)
+	require.Nil(t, result.Response.BlockTimestamp)
 }
 
 func TestWriteReport_PostSubmitPollFailureDoesNotRecoverFromEvents(t *testing.T) {
@@ -1410,7 +1459,7 @@ func TestWriteReport_PostSubmitPollFailureDoesNotRecoverFromEvents(t *testing.T)
 	require.NotNil(t, capErr)
 	require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
 	require.NotNil(t, result)
-	require.Nil(t, result.Response)
+	requireUnconfirmedSubmitReply(t, result.Response, stellarcap.TxStatus_TX_STATUS_SUCCESS)
 	validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 	h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 }
@@ -1494,8 +1543,9 @@ func TestWriteReport_EmitsTxInfoRetrievalErrorTelemetry(t *testing.T) {
 	h.svc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: testTxHash}).
 		Return(stellartypes.GetTransactionResponse{}, errors.New("rpc down")).Maybe()
 
-	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
-	require.NotNil(t, capErr)
+	result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+	require.Nil(t, capErr)
+	require.NotNil(t, result.Response)
 	require.True(t, hasTelemetryMessage[*monitoring.WriteReportTxInfoRetrievalError](processor.messages))
 }
 
@@ -1844,7 +1894,7 @@ func TestReplyFromTransaction_SkipsTelemetryWhenMonitoringDisabled(t *testing.T)
 		lggr:           logger.Sugared(logger.Test(t)),
 		messageBuilder: monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
-	_, err := wr.replyFromTransaction(
+	reply := wr.replyFromTransaction(
 		t.Context(),
 		req,
 		monitoring.TelemetryContext{},
@@ -1852,8 +1902,113 @@ func TestReplyFromTransaction_SkipsTelemetryWhenMonitoringDisabled(t *testing.T)
 		stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
 		nil,
 	)
+	require.NotNil(t, reply)
+	require.Equal(t, testTxHash, *reply.TxHash)
+	require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
+	require.Equal(t, stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, *reply.ReceiverContractExecutionStatus)
+	require.Nil(t, reply.TransactionFee)
+	require.Nil(t, reply.LedgerSequence)
+	require.Nil(t, reply.BlockTimestamp)
+}
+
+func requireUnconfirmedSubmitReply(t *testing.T, reply *stellarcap.WriteReportReply, status stellarcap.TxStatus) {
+	t.Helper()
+	require.NotNil(t, reply, "a paid submit must surface its tx hash even when the outcome is unconfirmed")
+	require.NotNil(t, reply.TxHash)
+	require.Equal(t, testTxHash, *reply.TxHash)
+	require.Equal(t, status, reply.TxStatus)
+	require.Nil(t, reply.ReceiverContractExecutionStatus, "receiver outcome is unknown and must not be asserted")
+	require.NotNil(t, reply.ErrorMessage)
+	require.Contains(t, *reply.ErrorMessage, "could not be confirmed")
+	require.Contains(t, *reply.ErrorMessage, testTxHash)
+}
+
+func TestUnconfirmedSubmitReply(t *testing.T) {
+	t.Parallel()
+	wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
+
+	require.Nil(t, wr.unconfirmedSubmitReply(nil))
+	require.Nil(t, wr.unconfirmedSubmitReply(&stellartypes.SubmitTransactionResponse{TxStatus: stellartypes.TxFatal}), "no hash means nothing to reconcile")
+
+	reply := wr.unconfirmedSubmitReply(successSubmitResp())
+	requireUnconfirmedSubmitReply(t, reply, stellarcap.TxStatus_TX_STATUS_SUCCESS)
+	require.NotNil(t, reply.TransactionFee)
+	require.Equal(t, testFee, *reply.TransactionFee)
+	require.NotNil(t, reply.BlockTimestamp)
+	require.Equal(t, testBlockTimestamp, *reply.BlockTimestamp)
+
+	failed := wr.unconfirmedSubmitReply(&stellartypes.SubmitTransactionResponse{TxStatus: stellartypes.TxFailed, TxHash: testTxHash})
+	require.Equal(t, stellarcap.TxStatus_TX_STATUS_REVERTED, failed.TxStatus)
+	fatal := wr.unconfirmedSubmitReply(&stellartypes.SubmitTransactionResponse{TxStatus: stellartypes.TxFatal, TxHash: testTxHash})
+	require.Equal(t, stellarcap.TxStatus_TX_STATUS_FATAL, fatal.TxStatus)
+
+	// The error text is the only channel that reaches the workflow on failure, so it must
+	// carry the hash when one exists and stay generic when none does.
+	require.EqualError(t, unconfirmedSubmitError(nil), "failed to retrieve transmission outcome after report submission")
+	require.EqualError(t, unconfirmedSubmitError(&stellartypes.SubmitTransactionResponse{}), "failed to retrieve transmission outcome after report submission")
+	withHash := unconfirmedSubmitError(successSubmitResp())
+	require.Contains(t, withHash.Error(), "failed to retrieve transmission outcome after report submission")
+	require.Contains(t, withHash.Error(), testTxHash)
+}
+
+// The early-return signal claims a peer's terminal state was seen before this node's
+// slot. A request that times out after only NotAttempted polls, with nothing
+// transmitted, must not emit it.
+func TestPollTransmissionInfo_NoEarlyReturnTelemetryOnTimeout(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	mockSvc := mocks.NewStellarService(t)
+	processor := &recordingWriteReportProcessor{}
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	mockSvc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(notAttemptedXDR(t)), nil)
+
+	wr := &writeReport{
+		forwarderClient: newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		lggr:            logger.Sugared(lggr),
+		transmissionScheduler: ts.NewTransmissionScheduler(
+			p2ptypes.PeerID{2}, []p2ptypes.PeerID{{1}, {2}, {3}}, 30*time.Second, 0, lggr),
+		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor: processor,
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	_, err = wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 1)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get transaction")
+	require.Contains(t, err.Error(), "timed out waiting for transmission info")
+	require.False(t, hasTelemetryMessage[*monitoring.WriteReportSuccessfulEarlyReturn](processor.messages),
+		"success metric emitted for a request that timed out with nothing transmitted")
+}
+
+func TestPollTransmissionInfo_EarlyReturnTelemetryOnTerminalStateBeforeSlot(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	mockSvc := mocks.NewStellarService(t)
+	processor := &recordingWriteReportProcessor{}
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	mockSvc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+		Return(transmissionResp(succeededXDR(t)), nil).Once()
+
+	wr := &writeReport{
+		forwarderClient: newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		lggr:            logger.Sugared(lggr),
+		transmissionScheduler: ts.NewTransmissionScheduler(
+			p2ptypes.PeerID{2}, []p2ptypes.PeerID{{1}, {2}, {3}}, 30*time.Second, 0, lggr),
+		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor: processor,
+	}
+
+	info, err := wr.pollTransmissionInfo(t.Context(), req, monitoring.TelemetryContext{}, transmissionID, 1)
+	require.NoError(t, err)
+	require.Equal(t, TransmissionStateSucceeded, info.State)
+	require.True(t, hasTelemetryMessage[*monitoring.WriteReportSuccessfulEarlyReturn](processor.messages))
 }
 
 func TestCheckEstimatedSpendLimit(t *testing.T) {

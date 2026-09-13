@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"time"
@@ -123,10 +124,6 @@ func (wr *writeReport) execute(
 	if err := wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
-	requiredSigs := int(wr.transmissionScheduler.F) + 1
-	if len(request.Report.Sigs) < requiredSigs {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s signed report contains too few signatures: got %d, want at least %d", capcommon.UserError, len(request.Report.Sigs), requiredSigs)
-	}
 
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
@@ -155,8 +152,7 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("Returning without a transmission attempt - prior transmission succeeded, but failed to retrieve its tx hash", "error", hashErr)
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
-		reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
-		return reply, capabilities.ResponseMetadata{}, err
+		return wr.buildSuccessReply(ctx, request, telemetryContext, txHash), capabilities.ResponseMetadata{}, nil
 	case TransmissionStateInvalidReceiver:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -167,11 +163,7 @@ func (wr *writeReport) execute(
 			}
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
-		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID)
-		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
-		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		return wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID), capabilities.ResponseMetadata{}, nil
 	case TransmissionStateFailed:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -182,11 +174,7 @@ func (wr *writeReport) execute(
 			}
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
-		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID)
-		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
-		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		return wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID), capabilities.ResponseMetadata{}, nil
 	case TransmissionStateNotAttempted:
 	case TransmissionStateUnknown:
 		// Unknown state must not authorize spend.
@@ -251,15 +239,18 @@ func (wr *writeReport) execute(
 			"localTxHash", submitResp.TxHash,
 			"localTxStatus", submitResp.TxStatus,
 		)
-
-		return nil, ownMeteringMetadata, errors.New("failed to retrieve transmission outcome after report submission")
+		// The node paid for a submit whose outcome it could not confirm. Hand the caller
+		// what is known (this node's tx hash, local status and fee) so the transaction can
+		// be reconciled later instead of retried blind. The hash is repeated in the error
+		// text because the transport delivers only the error to the workflow when one is
+		// present; the reply and metering ride along for hosts that forward them.
+		return wr.unconfirmedSubmitReply(submitResp), ownMeteringMetadata, unconfirmedSubmitError(submitResp)
 	}
 
 	switch postInfo.State {
 	case TransmissionStateSucceeded:
 		if submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
-			reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, submitResp.TxHash)
-			return reply, ownMeteringMetadata, err
+			return wr.buildSuccessReply(ctx, request, telemetryContext, submitResp.TxHash), ownMeteringMetadata, nil
 		}
 
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
@@ -273,16 +264,11 @@ func (wr *writeReport) execute(
 				wr.lggr, wr.beholderProcessor,
 				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, submitResp.TxHash, txHash))
 		}
-		reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
-		return reply, ownMeteringMetadata, err
+		return wr.buildSuccessReply(ctx, request, telemetryContext, txHash), ownMeteringMetadata, nil
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		if submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
 			wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", submitResp.TxHash, "transmissionState", postInfo.State)
-			reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, submitResp.TxHash, postInfo, transmissionID)
-			if err != nil {
-				return nil, ownMeteringMetadata, revertReplyBuildError(postInfo, transmissionID, err)
-			}
-			return reply, ownMeteringMetadata, nil
+			return wr.buildRevertReplyFromTx(ctx, request, telemetryContext, submitResp.TxHash, postInfo, transmissionID), ownMeteringMetadata, nil
 		}
 
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
@@ -300,11 +286,7 @@ func (wr *writeReport) execute(
 				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, submitResp.TxHash, txHash))
 		}
 		wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", txHash, "transmissionState", postInfo.State)
-		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, postInfo, transmissionID)
-		if err != nil {
-			return nil, ownMeteringMetadata, revertReplyBuildError(postInfo, transmissionID, err)
-		}
-		return reply, ownMeteringMetadata, nil
+		return wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, postInfo, transmissionID), ownMeteringMetadata, nil
 	default:
 		wr.lggr.Errorw("Invalid transmission state after submit", "state", postInfo.State, "localTxStatus", submitResp.TxStatus)
 		wr.emitInvalidTransmissionState(ctx, request, telemetryContext, postInfo, transmissionID, "WriteReport invalid transmission state after submit", invalidTransmissionStateError(postInfo.State).Error())
@@ -328,13 +310,8 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 	if len(request.Report.ReportContext) != ocrReportContextLen {
 		return fmt.Errorf("%s report context has invalid length: got %d, want %d", capcommon.UserError, len(request.Report.ReportContext), ocrReportContextLen)
 	}
-	if len(request.Report.Sigs) == 0 {
-		return fmt.Errorf("%s signed report must contain at least one signature", capcommon.UserError)
-	}
-	for i, sig := range request.Report.Sigs {
-		if len(sig.GetSignature()) != ed25519OCRSigLen {
-			return fmt.Errorf("%s signature %d has invalid length: got %d, want %d", capcommon.UserError, i, len(sig.GetSignature()), ed25519OCRSigLen)
-		}
+	if err := validateSignatureSet(request.Report.Sigs, int(s.transmissionScheduler.F)+1); err != nil {
+		return fmt.Errorf("%s %w", capcommon.UserError, err)
 	}
 
 	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
@@ -398,19 +375,11 @@ func (wr *writeReport) pollTransmissionInfo(
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	deltaStagePassed := false
+	defer stageTimer.Stop()
 	hadSuccessfulPoll := false
 	// Guard so an unexpected state that persists across multiple poll iterations only
 	// emits one InvalidTransmissionState metric, not one per poll tick.
 	invalidStateEmitted := false
-	defer func() {
-		stageTimer.Stop()
-		if wr.monitoringEnabled() && !deltaStagePassed && hadSuccessfulPoll {
-			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
-				wr.lggr, wr.beholderProcessor,
-				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
-		}
-	}()
 
 	for {
 		if info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); infoErr != nil {
@@ -420,6 +389,14 @@ func (wr *writeReport) pollTransmissionInfo(
 			lastValidInfo = info
 			switch lastValidInfo.State {
 			case TransmissionStateSucceeded, TransmissionStateInvalidReceiver, TransmissionStateFailed:
+				// The early-return signal means exactly this: a peer's terminal state was
+				// observed before this node's slot opened, so no fee will be spent here.
+				// It is emitted only on this path, never on timeout or error exits.
+				if wr.monitoringEnabled() {
+					monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
+						wr.lggr, wr.beholderProcessor,
+						wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
+				}
 				return lastValidInfo, nil
 			case TransmissionStateNotAttempted, TransmissionStateUnknown:
 				// Not yet visible or unreadable; keep polling until the delta stage window
@@ -442,7 +419,6 @@ func (wr *writeReport) pollTransmissionInfo(
 		case <-ctx.Done():
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			deltaStagePassed = true
 			if lastValidInfo.State == TransmissionStateNotAttempted {
 				if finalInfo, finalErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); finalErr == nil {
 					hadSuccessfulPoll = true
@@ -510,7 +486,7 @@ func (wr *writeReport) buildSuccessReply(
 	request *stellarcap.WriteReportRequest,
 	telemetryContext monitoring.TelemetryContext,
 	txHash string,
-) (*stellarcap.WriteReportReply, error) {
+) *stellarcap.WriteReportReply {
 	return wr.replyFromTransaction(ctx, request, telemetryContext, txHash, stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 }
 
@@ -521,7 +497,7 @@ func (wr *writeReport) buildRevertReplyFromTx(
 	txHash string,
 	transmissionInfo TransmissionInfo,
 	transmissionID TransmissionID,
-) (*stellarcap.WriteReportReply, error) {
+) *stellarcap.WriteReportReply {
 	errorMessage := revertReason(transmissionInfo, transmissionID)
 	return wr.replyFromTransaction(ctx, request, telemetryContext, txHash, stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, &errorMessage)
 }
@@ -533,10 +509,14 @@ func revertReason(transmissionInfo TransmissionInfo, transmissionID Transmission
 	return unknownIssueExecutingReceiverContractMessage
 }
 
-func revertReplyBuildError(transmissionInfo TransmissionInfo, transmissionID TransmissionID, err error) error {
-	return fmt.Errorf("%s %s: this is the root cause, but an additional error occurred while fetching more info: %w", capcommon.UserError, revertReason(transmissionInfo, transmissionID), err)
-}
+// maxLedgerCloseTimeSeconds is the largest close time that can be converted to
+// microseconds without wrapping a uint64.
+const maxLedgerCloseTimeSeconds = int64(math.MaxUint64 / 1_000_000)
 
+// replyFromTransaction builds the reply for a transaction whose forwarder outcome is
+// already known. The outcome (hash and receiver status) is authoritative and never
+// depends on the GetTransaction lookup; that lookup only enriches the reply with fee,
+// ledger and close time, and when it fails those fields are left unset.
 func (wr *writeReport) replyFromTransaction(
 	ctx context.Context,
 	request *stellarcap.WriteReportRequest,
@@ -544,18 +524,7 @@ func (wr *writeReport) replyFromTransaction(
 	txHash string,
 	receiverStatus stellarcap.ReceiverContractExecutionStatus,
 	errorMessage *string,
-) (*stellarcap.WriteReportReply, error) {
-	txResp, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (stellartypes.GetTransactionResponse, error) {
-		return wr.service.GetTransaction(ctx, stellartypes.GetTransactionRequest{TxHash: txHash})
-	})
-	if err != nil {
-		if wr.monitoringEnabled() {
-			monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
-				wr.messageBuilder.BuildWriteReportTxInfoRetrievalError(telemetryContext, request, txHash, err.Error()))
-		}
-		return nil, fmt.Errorf("failed to get transaction for tx hash %s: %w", txHash, err)
-	}
-
+) *stellarcap.WriteReportReply {
 	message := errorMessage
 	if receiverStatus == stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
 		message = new(unknownIssueExecutingReceiverContractMessage)
@@ -571,10 +540,31 @@ func (wr *writeReport) replyFromTransaction(
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
 	}
+
+	txResp, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (stellartypes.GetTransactionResponse, error) {
+		return wr.service.GetTransaction(ctx, stellartypes.GetTransactionRequest{TxHash: txHash})
+	})
+	if err != nil {
+		if wr.monitoringEnabled() {
+			monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportTxInfoRetrievalError(telemetryContext, request, txHash, err.Error()))
+		}
+		wr.lggr.Warnw("Returning reply without transaction details; enrichment lookup failed",
+			"txHash", txHash, "receiverStatus", receiverStatus, "error", err)
+		return reply
+	}
+
+	// A zero fee from the lookup means the fee is unknown, not that the transaction was
+	// free; it is left unset so nothing downstream reads zero as a real charge. Billing
+	// uses this node's own submit response, never this field.
 	if txResp.FeeStroops > 0 {
 		reply.TransactionFee = new(txResp.FeeStroops)
 	}
-	if txResp.LedgerCloseTime > 0 {
+	switch {
+	case txResp.LedgerCloseTime <= 0:
+	case txResp.LedgerCloseTime > maxLedgerCloseTimeSeconds:
+		wr.lggr.Errorw("Ignoring out-of-range ledger close time", "txHash", txHash, "ledgerCloseTime", txResp.LedgerCloseTime)
+	default:
 		reply.BlockTimestamp = new(uint64(txResp.LedgerCloseTime) * 1_000_000)
 	}
 	if txResp.LedgerSequence > 0 {
@@ -598,7 +588,45 @@ func (wr *writeReport) replyFromTransaction(
 	}
 	wr.lggr.Infow("Successfully fetched transaction", logAttrs...)
 
-	return reply, nil
+	return reply
+}
+
+// unconfirmedSubmitReply describes this node's own submit when the forwarder never
+// confirmed the transmission outcome. The receiver status is deliberately left unset:
+// nothing is known about it. The tx hash, local status, fee and close time are what the
+// relayer reported for the submit, so the caller can reconcile the transaction later.
+func (wr *writeReport) unconfirmedSubmitReply(submitResp *stellartypes.SubmitTransactionResponse) *stellarcap.WriteReportReply {
+	if submitResp == nil || submitResp.TxHash == "" {
+		return nil
+	}
+	reply := &stellarcap.WriteReportReply{
+		TxHash:         new(submitResp.TxHash),
+		TxStatus:       localTxStatusToProto(submitResp.TxStatus),
+		TransactionFee: submitResp.TransactionFee,
+		BlockTimestamp: submitResp.BlockTimestamp,
+		ErrorMessage:   new(fmt.Sprintf("transmission outcome could not be confirmed after submitting tx %s; the transaction may still be included", submitResp.TxHash)),
+	}
+	return reply
+}
+
+// unconfirmedSubmitError names the submitted transaction in the error text so a caller
+// that receives only the error can still locate and reconcile the transaction.
+func unconfirmedSubmitError(submitResp *stellartypes.SubmitTransactionResponse) error {
+	if submitResp == nil || submitResp.TxHash == "" {
+		return errors.New("failed to retrieve transmission outcome after report submission")
+	}
+	return fmt.Errorf("failed to retrieve transmission outcome after report submission (tx %s, local status %d)", submitResp.TxHash, submitResp.TxStatus)
+}
+
+func localTxStatusToProto(status stellartypes.TransactionStatus) stellarcap.TxStatus {
+	switch status {
+	case stellartypes.TxSuccess:
+		return stellarcap.TxStatus_TX_STATUS_SUCCESS
+	case stellartypes.TxFailed:
+		return stellarcap.TxStatus_TX_STATUS_REVERTED
+	default:
+		return stellarcap.TxStatus_TX_STATUS_FATAL
+	}
 }
 
 func transmissionDebugID(id TransmissionID) string {
