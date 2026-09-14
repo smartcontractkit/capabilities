@@ -35,16 +35,15 @@ const (
 )
 
 type writeReport struct {
-	service                  types.StellarService
-	forwarderClient          CREForwarderClient
-	lggr                     logger.SugaredLogger
-	forwarderLookbackLedgers int64
-	chainSelector            uint64
-	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
-	maxResourceFeeLimit      limits.BoundLimiter[uint64]
-	transmissionScheduler    ts.TransmissionScheduler
-	messageBuilder           *monitoring.MessageBuilder
-	beholderProcessor        beholder.ProtoProcessor
+	service               types.StellarService
+	forwarderClient       CREForwarderClient
+	lggr                  logger.SugaredLogger
+	chainSelector         uint64
+	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
+	maxResourceFeeLimit   limits.BoundLimiter[uint64]
+	transmissionScheduler ts.TransmissionScheduler
+	messageBuilder        *monitoring.MessageBuilder
+	beholderProcessor     beholder.ProtoProcessor
 }
 
 func (s *Stellar) WriteReport(
@@ -95,16 +94,15 @@ func (s *Stellar) executeWriteReport(
 	telemetryContext monitoring.TelemetryContext,
 ) (*stellarcap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr := &writeReport{
-		service:                  s.StellarService,
-		forwarderClient:          s.forwarderClient,
-		lggr:                     s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
-		forwarderLookbackLedgers: s.forwarderLookbackLedgers,
-		chainSelector:            s.chainSelector,
-		reportSizeLimit:          s.reportSizeLimit,
-		maxResourceFeeLimit:      s.maxResourceFeeLimit,
-		transmissionScheduler:    s.transmissionScheduler,
-		messageBuilder:           s.messageBuilder,
-		beholderProcessor:        s.beholderProcessor,
+		service:               s.StellarService,
+		forwarderClient:       s.forwarderClient,
+		lggr:                  s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		chainSelector:         s.chainSelector,
+		reportSizeLimit:       s.reportSizeLimit,
+		maxResourceFeeLimit:   s.maxResourceFeeLimit,
+		transmissionScheduler: s.transmissionScheduler,
+		messageBuilder:        s.messageBuilder,
+		beholderProcessor:     s.beholderProcessor,
 	}
 	return wr.execute(ctx, request, metadata, telemetryContext)
 }

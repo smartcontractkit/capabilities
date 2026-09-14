@@ -74,15 +74,14 @@ func newWriteReportHelper(t *testing.T) *writeReportHelper {
 		myPeerID, []p2ptypes.PeerID{myPeerID}, 100*time.Millisecond, 0, lggr)
 
 	s := &Stellar{
-		StellarService:           mockSvc,
-		lggr:                     logger.Sugared(lggr),
-		chainSelector:            testWRChainSelector,
-		forwarderClient:          newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
-		forwarderLookbackLedgers: 100,
-		transmissionScheduler:    scheduler,
-		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		beholderProcessor:        nopBeholderProcessor{},
-		handler:                  testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:        mockSvc,
+		lggr:                  logger.Sugared(lggr),
+		chainSelector:         testWRChainSelector,
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     nopBeholderProcessor{},
+		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))
 	return &writeReportHelper{svc: mockSvc, stellar: s}
@@ -1433,15 +1432,14 @@ func newQueuedWriteReportHelper(t *testing.T) *writeReportHelper {
 		lggr,
 	)
 	s := &Stellar{
-		StellarService:           mockSvc,
-		lggr:                     logger.Sugared(lggr),
-		chainSelector:            testWRChainSelector,
-		forwarderClient:          newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
-		forwarderLookbackLedgers: 100,
-		transmissionScheduler:    scheduler,
-		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		beholderProcessor:        nopBeholderProcessor{},
-		handler:                  testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:        mockSvc,
+		lggr:                  logger.Sugared(lggr),
+		chainSelector:         testWRChainSelector,
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     nopBeholderProcessor{},
+		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))
 	return &writeReportHelper{svc: mockSvc, stellar: s}
