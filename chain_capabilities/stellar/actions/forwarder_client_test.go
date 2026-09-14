@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -61,6 +62,18 @@ func TestForwarderClient_ResolveSigningAccount(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty signing account")
 	})
+
+	t.Run("invalid signing account type", func(t *testing.T) {
+		t.Parallel()
+		svc := mocks.NewStellarService(t)
+		svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(stellartypes.GetSigningAccountResponse{AccountAddress: testReceiverAddress}, nil).Once()
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+
+		_, err := client.ResolveSigningAccount(t.Context())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid signing account")
+	})
 }
 
 func TestForwarderClient_InvokeOnReport(t *testing.T) {
@@ -73,7 +86,13 @@ func TestForwarderClient_InvokeOnReport(t *testing.T) {
 		transmissionID := testTransmissionID()
 		const maxResourceFee = uint64(100_000)
 		svc.EXPECT().SubmitTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SubmitTransactionRequest) bool {
-			return req.FromAddress == testNodeAddress &&
+			if len(req.Args) == 0 || req.Args[0].Address == nil || req.Args[0].Address.AccountID == nil {
+				return false
+			}
+			transmitter, err := strkey.Encode(strkey.VersionByteAccountID, req.Args[0].Address.AccountID)
+			return err == nil &&
+				transmitter == testNodeAddress &&
+				req.FromAddress == transmitter &&
 				req.IdempotencyKey == transmissionID.idempotencyKey() &&
 				req.MaxResourceFee == maxResourceFee
 		})).
