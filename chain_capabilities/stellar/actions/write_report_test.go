@@ -488,7 +488,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "failed to decode report metadata")
+		require.Contains(t, err.Error(), "metadata: raw too short")
 	})
 
 	t.Run("WorkflowExecutionID mismatch", func(t *testing.T) {
@@ -499,7 +499,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowExecutionID does not match")
+		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata")
 	})
 
 	t.Run("WorkflowOwner mismatch", func(t *testing.T) {
@@ -510,7 +510,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowOwner does not match")
+		require.Contains(t, err.Error(), "workflowOwner in the report does not match WorkflowOwner in the request metadata")
 	})
 
 	t.Run("WorkflowName mismatch", func(t *testing.T) {
@@ -521,7 +521,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowName does not match")
+		require.Contains(t, err.Error(), "workflowName in the report does not match WorkflowName in the request metadata")
 	})
 
 	t.Run("WorkflowID mismatch", func(t *testing.T) {
@@ -532,7 +532,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowID does not match")
+		require.Contains(t, err.Error(), "workflowID in the report does not match WorkflowID in the request metadata")
 	})
 
 	t.Run("report size exceeds limit", func(t *testing.T) {
@@ -1068,7 +1068,7 @@ func TestWriteReport_UnsupportedReportMetadataVersion(t *testing.T) {
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
-	require.Contains(t, capErr.Error(), "unsupported report metadata version")
+	require.Contains(t, capErr.Error(), "unsupported report version")
 }
 
 func TestGetTransmissionInfo(t *testing.T) {
