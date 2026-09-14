@@ -337,7 +337,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
-		require.Contains(t, capErr.Error(), "workflowID mismatch")
+		require.Contains(t, capErr.Error(), "workflowID in the report does not match WorkflowID in the request metadata")
 	})
 	t.Run("WorkflowID name", func(t *testing.T) {
 		h := newTestHelper(t)
