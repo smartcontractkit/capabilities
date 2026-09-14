@@ -648,6 +648,7 @@ func TestOutcome(t *testing.T) {
 	testCases := []struct {
 		name              string
 		requestIDs        []string
+		previousOutcome   *types.Outcome
 		nodesObservations []types.Observation
 		expectedError     string
 		expectedOutcome   *types.Outcome
@@ -760,6 +761,55 @@ func TestOutcome(t *testing.T) {
 			},
 		},
 		{
+			// This reproduces the recovery path added in Observation() via addObservationsOfPrevMissingRequests:
+			// a request that was flagged as missing in the previous round's Outcome is not present in this
+			// round's leader query, but a quorum of nodes still supplied observations for it (because they
+			// proactively re-added it). Outcome() should aggregate it into outcome.Outcomes instead of just
+			// re-flagging it as missing forever.
+			name:       "recovers observations for previously missing requests not in current query",
+			requestIDs: []string{"request_in_query"},
+			previousOutcome: &types.Outcome{
+				ChainHeight:       chainHeight,
+				MissingRequestIDs: []string{"request_missing"},
+			},
+			nodesObservations: []types.Observation{
+				{
+					// node1
+					Observations: map[string]*types.RequestObservation{
+						"request_in_query": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"request_missing":  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("recovered")}},
+					},
+				},
+				{
+					// node2
+					Observations: map[string]*types.RequestObservation{
+						"request_in_query": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"request_missing":  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("recovered")}},
+					},
+				},
+				{
+					// node3
+					Observations: map[string]*types.RequestObservation{
+						"request_in_query": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"request_missing":  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("recovered")}},
+					},
+				},
+			},
+			expectedOutcome: &types.Outcome{
+				ChainHeight: chainHeight,
+				Outcomes: []*types.RequestOutcome{
+					{
+						RequestID: "request_in_query",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value1")},
+					},
+					{
+						RequestID: "request_missing",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("recovered")},
+					},
+				},
+			},
+		},
+		{
 			name:       "F+1 nodes agree on request value and F observed error",
 			requestIDs: []string{"request"},
 			nodesObservations: []types.Observation{
@@ -867,7 +917,11 @@ func TestOutcome(t *testing.T) {
 				require.NoError(t, err)
 				rawAOs = append(rawAOs, ocrtypes.AttributedObservation{Observation: rawObservation})
 			}
-			rawOutcome, err := plugin.Outcome(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, tc.requestIDs), rawAOs)
+			var outcomeContext ocr3types.OutcomeContext
+			if tc.previousOutcome != nil {
+				outcomeContext.PreviousOutcome = mustMarshalProto(tc.previousOutcome)
+			}
+			rawOutcome, err := plugin.Outcome(t.Context(), outcomeContext, mustQuery(t, tc.requestIDs), rawAOs)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				var outcome types.Outcome

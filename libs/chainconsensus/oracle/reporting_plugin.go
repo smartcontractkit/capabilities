@@ -773,7 +773,26 @@ func (rp *reportingPlugin) Outcome(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	for _, requestID := range query.RequestIDs {
+	requestIDs := query.RequestIDs
+	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil {
+		seen := make(map[string]struct{}, len(query.RequestIDs))
+		for _, requestID := range query.RequestIDs {
+			seen[requestID] = struct{}{}
+		}
+
+		// Requests that the leader's query omitted but that a quorum of nodes still supplied
+		// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
+		// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
+		for _, requestID := range prevOutcome.MissingRequestIDs {
+			if _, ok := seen[requestID]; ok {
+				continue
+			}
+			seen[requestID] = struct{}{}
+			requestIDs = append(requestIDs, requestID)
+		}
+	}
+
+	for _, requestID := range requestIDs {
 		observationType, err := rp.agreeOnObservationType(requestID, aos)
 		if err != nil {
 			rp.logger.Infow("Could not determine observation type", "requestID", requestID, "err", err)
