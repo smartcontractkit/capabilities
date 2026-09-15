@@ -12,6 +12,10 @@ import (
 // be fetched or no RemoteExecutableConfig.RequestTimeout values are found, it
 // returns fallback.
 func AverageRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration) time.Duration {
+	if registry == nil {
+		return fallback
+	}
+
 	cfg, err := registry.ConfigForCapability(ctx, capabilityID, donID)
 	if err != nil {
 		return fallback
