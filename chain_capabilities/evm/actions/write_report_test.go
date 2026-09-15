@@ -107,6 +107,156 @@ func expectSuccessfulTransmissionEvent(t *testing.T, mockForwarderClient *mocks.
 		Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 }
 
+// TestAssessFailedTransmission_TxGasCheck guards the tx-gas check fix (report 91254). When
+// the gas limit is user-provided, the retry decision compares the prior tx's actual onchain
+// gas limit against the requested gas limit — both trustless — instead of the forwarder-
+// recorded budget against our offchain estimate. A retry delivers more receiver gas iff the
+// prior tx used less gas than the request, since the forwarder overhead is identical between
+// attempts. The estimate comparison remains for node-derived gas and as fallback when the
+// prior tx cannot be fetched.
+func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
+	t.Parallel()
+
+	overhead := contracts.ForwarderGasOverhead(0)
+
+	newWriteReport := func() *WriteReport {
+		return &WriteReport{
+			ReceiverGasMinimum:   ConfiguredReceiverGasMinimum,
+			forwarderGasOverhead: overhead,
+			lggr:                 logger.Sugared(logger.Test(t)),
+			beholderProcessor:    test.NopBeholderProcessor{},
+			messageBuilder:       monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		}
+	}
+	// writeReport + retriever whose prior failed tx carried priorTxGas; tx fetch never fails.
+	newWriteReportWithPriorTxGas := func(t *testing.T, priorTxGas uint64) (*WriteReport, TxHashRetriever) {
+		t.Helper()
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+		priorTxHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: priorTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
+		mockEVMService := mocks2.NewEVMService(t)
+		mockEVMService.EXPECT().
+			GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: priorTxHash, IsExternal: false}).
+			Return(&evmtypes.Transaction{Gas: priorTxGas}, nil)
+		wr := newWriteReport()
+		wr.EVMService = mockEVMService
+		return wr, NewTxHashRetriever(mockForwarderClient, logger.Test(t), newWriteReportTestFixture(t).transmissionID)
+	}
+	// writeReport + retriever whose prior failed tx exists but its gas cannot be fetched.
+	newWriteReportWithUnfetchableTxGas := func(t *testing.T) (*WriteReport, TxHashRetriever) {
+		t.Helper()
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+		priorTxHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: priorTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
+		mockEVMService := mocks2.NewEVMService(t)
+		mockEVMService.EXPECT().
+			GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: priorTxHash, IsExternal: false}).
+			Return(nil, errors.New("tx not found"))
+		wr := newWriteReport()
+		wr.EVMService = mockEVMService
+		return wr, NewTxHashRetriever(mockForwarderClient, logger.Test(t), newWriteReportTestFixture(t).transmissionID)
+	}
+
+	t.Run("prior tx used less gas than requested => retry (attack case)", func(t *testing.T) {
+		t.Parallel()
+
+		requestedGasLimit := uint64(500_000)
+		wr, retriever := newWriteReportWithPriorTxGas(t, 380_000)
+		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
+		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
+			State:    contracts.TransmissionStateFailed,
+			GasLimit: big.NewInt(309_432), // attacker's tx recorded budget
+		}, retriever, monitoring.TelemetryContext{}, true)
+		require.NoError(t, err)
+		require.True(t, decision.retry)
+		require.Equal(t, requestedGasLimit-overhead, decision.receiverGasBudget)
+	})
+
+	t.Run("prior tx used exactly the requested gas => no retry (genuine revert)", func(t *testing.T) {
+		t.Parallel()
+
+		requestedGasLimit := uint64(500_000)
+		wr, retriever := newWriteReportWithPriorTxGas(t, requestedGasLimit)
+		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
+		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
+			State:    contracts.TransmissionStateFailed,
+			GasLimit: big.NewInt(int64(requestedGasLimit - 50_000)),
+		}, retriever, monitoring.TelemetryContext{}, true)
+		require.NoError(t, err)
+		require.False(t, decision.retry)
+	})
+
+	t.Run("prior tx used more than requested => no retry (retry would deliver less)", func(t *testing.T) {
+		t.Parallel()
+
+		requestedGasLimit := uint64(500_000)
+		wr, retriever := newWriteReportWithPriorTxGas(t, requestedGasLimit+100_000)
+		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
+		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
+			State:    contracts.TransmissionStateFailed,
+			GasLimit: big.NewInt(int64(requestedGasLimit)),
+		}, retriever, monitoring.TelemetryContext{}, true)
+		require.NoError(t, err)
+		require.False(t, decision.retry)
+	})
+
+	t.Run("tx gas fetch fails => falls back to estimate comparison", func(t *testing.T) {
+		t.Parallel()
+
+		requestedGasLimit := uint64(500_000)
+		wr, retriever := newWriteReportWithUnfetchableTxGas(t)
+		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
+		// Recorded budget (450k) > estimate (requested - overhead) => enough gas, no retry.
+		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
+			State:    contracts.TransmissionStateFailed,
+			GasLimit: big.NewInt(450_000),
+		}, retriever, monitoring.TelemetryContext{}, true)
+		require.NoError(t, err)
+		require.False(t, decision.retry)
+		require.Equal(t, requestedGasLimit-overhead, decision.receiverGasBudget)
+	})
+
+	t.Run("node-derived gas => estimate comparison as before", func(t *testing.T) {
+		t.Parallel()
+
+		requestedGasLimit := uint64(500_000)
+		wr := newWriteReport()
+		// Prior failed tx exists (hash is resolved) but its gas is never fetched for
+		// node-derived gas — the estimate comparison decides.
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+		priorTxHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: priorTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
+		retriever := NewTxHashRetriever(mockForwarderClient, logger.Test(t), newWriteReportTestFixture(t).transmissionID)
+		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
+		// Recorded budget (450k) > estimate => enough gas, no retry — unchanged behavior.
+		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
+			State:    contracts.TransmissionStateFailed,
+			GasLimit: big.NewInt(450_000),
+		}, retriever, monitoring.TelemetryContext{}, false)
+		require.NoError(t, err)
+		require.False(t, decision.retry)
+	})
+
+	t.Run("nil recorded gas limit but tx carried requested gas => no retry", func(t *testing.T) {
+		t.Parallel()
+
+		requestedGasLimit := uint64(500_000)
+		wr, retriever := newWriteReportWithPriorTxGas(t, requestedGasLimit)
+		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
+		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
+			State: contracts.TransmissionStateFailed,
+		}, retriever, monitoring.TelemetryContext{}, true)
+		require.NoError(t, err)
+		require.False(t, decision.retry)
+	})
+}
+
 func expectReceiptFetchFailure(t *testing.T, evmServiceMock *mocks2.EVMService, txHash evmtypes.Hash) error {
 	t.Helper()
 
@@ -460,7 +610,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		belowMinimum := ConfiguredReceiverGasMinimum + contracts.ForwarderContractLogicGasCost - 1
+		belowMinimum := ConfiguredReceiverGasMinimum + contracts.ForwarderGasOverhead(0) - 1
 
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
@@ -750,7 +900,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		// Make request gas big enough so code uses:
 		//   txGasLimit = requestGasLimit - overhead
 		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-		writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
+		writeReportGasLimit := contracts.ForwarderGasOverhead(0) + desiredReceiverGas
 		fixture.request.GasConfig = &evm.GasConfig{GasLimit: writeReportGasLimit}
 
 		// We want to hit:
@@ -797,7 +947,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		// so executeWriteReport uses:
 		//   txGasLimit = requestGasLimit - overhead
 		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-		writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
+		writeReportGasLimit := contracts.ForwarderGasOverhead(0) + desiredReceiverGas
 		fixture.request.GasConfig = &evm.GasConfig{GasLimit: writeReportGasLimit}
 
 		// Previously attempted and failed, but transmission recorded gasLimit is strictly greater than
@@ -816,6 +966,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		expectFailedTransmissionEvent(t, mockForwarderClient, txHash)
+
+		// Prior tx carried exactly the requested gas limit => genuine revert, no retry.
+		evmServiceMock.EXPECT().
+			GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: txHash, IsExternal: false}).
+			Return(&evmtypes.Transaction{Gas: writeReportGasLimit}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(contracts.TransmissionStateSucceeded),
@@ -886,7 +1041,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				)
 
 				desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-				writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
+				writeReportGasLimit := contracts.ForwarderGasOverhead(0) + desiredReceiverGas
 
 				mockForwarderClient.
 					On("GetTransmissionInfo", mock.Anything, transmissionID).
@@ -902,6 +1057,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				mockForwarderClient.EXPECT().
 					GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 					Return([]*evmtypes.Log{{TxHash: txHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
+
+				// Prior tx carried exactly the requested gas limit => genuine revert, no retry.
+				evmServiceMock.EXPECT().
+					GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: txHash, IsExternal: false}).
+					Return(&evmtypes.Transaction{Gas: writeReportGasLimit}, nil)
 
 				receipt := evmtypes.Receipt{
 					Status:            1,
@@ -957,7 +1117,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		// Also make request gas large enough that code uses:
 		//   txGasLimit = requestGasLimit - overhead
 		desiredReceiverGasMin := uint64(EnoughReceiverGas * 100)
-		writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGasMin
+		writeReportGasLimit := contracts.ForwarderGasOverhead(0) + desiredReceiverGasMin
 		fixture.request.GasConfig = &evm.GasConfig{GasLimit: writeReportGasLimit}
 
 		// Previously attempted and failed with too-low transmission gas => should retry.
@@ -971,6 +1131,17 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				GasLimit:        big.NewInt(NotEnoughReceiverGas),
 			}, nil).
 			Once()
+
+		// The prior failed tx used less gas than requested => retry path. One-shot: the
+		// post-retry success lookup must fall through to the success event expectation below.
+		priorFailedTxHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: priorFailedTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil).
+			Times(1)
+		evmServiceMock.EXPECT().
+			GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: priorFailedTxHash, IsExternal: false}).
+			Return(&evmtypes.Transaction{Gas: writeReportGasLimit - 1}, nil)
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.
@@ -1266,7 +1437,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		equalWriteReportReply(t, &evm.WriteReportReply{
 			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:                          receipt.TxHash[:], // MUST be the log hash
+			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(txFee)),
 		}, txResult.Response)
@@ -1431,14 +1602,14 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				receiverAddress := testutils.NewAddress()
 				signedReport, capabilitiesMetadata, transmissionID := createReportAndMetadataForQueuePosition(
 					t,
-					&service.transmissionScheduler,
+					&scheduler,
 					receiverAddress.Bytes(),
 					queuePosition,
 				)
 
 				// Make request gas large enough so we compute txGasLimit = requestGasLimit - overhead
 				desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-				writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
+				writeReportGasLimit := contracts.ForwarderGasOverhead(0) + desiredReceiverGas
 
 				writeReportRequest := &evm.WriteReportRequest{
 					Receiver: receiverAddress.Bytes(),
@@ -1482,11 +1653,20 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 					Once()
 
 				var receiptTxHash evmtypes.Hash
+				// Earliest failed log is the prior attempt's tx; the tx-gas check fetches it.
+				var priorFailedTxHash evmtypes.Hash
 				if queuePosition == 0 {
 					receiptTxHash = latestTxHash
+					priorFailedTxHash = latestTxHash
+					mockForwarderClient.EXPECT().
+						GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+						Return([]*evmtypes.Log{
+							{TxHash: latestTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)},
+						}, nil)
 				} else {
 					originalFailedTxHash := evmtypes.Hash(test.RandomBytes(32))
 					receiptTxHash = originalFailedTxHash
+					priorFailedTxHash = originalFailedTxHash
 					mockForwarderClient.EXPECT().
 						GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 						Return([]*evmtypes.Log{
@@ -1494,6 +1674,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 							{TxHash: originalFailedTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)},
 						}, nil)
 				}
+
+				// Prior tx used less gas than requested => retry path.
+				evmServiceMock.EXPECT().
+					GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: priorFailedTxHash, IsExternal: false}).
+					Return(&evmtypes.Transaction{Gas: writeReportGasLimit - 1}, nil)
 
 				receipt := evmtypes.Receipt{
 					Status:            1,
@@ -1519,10 +1704,6 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				require.NotNil(t, txResult.Response.ReceiverContractExecutionStatus)
 				require.Equal(t, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(), txResult.Response.ReceiverContractExecutionStatus.Enum())
 				evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003", "300")
-
-				if queuePosition == 0 {
-					mockForwarderClient.AssertNotCalled(t, "GetReportProcessedEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-				}
 			})
 		}
 	})
@@ -1654,7 +1835,7 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 
 				desiredReceiverGas := uint64(EnoughReceiverGas * 100)
 				request.GasConfig = &evm.GasConfig{
-					GasLimit: contracts.ForwarderContractLogicGasCost + desiredReceiverGas,
+					GasLimit: contracts.ForwarderGasOverhead(0) + desiredReceiverGas,
 				}
 
 				mockForwarderClient.
@@ -1685,7 +1866,7 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 
 		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
 		request.GasConfig = &evm.GasConfig{
-			GasLimit: contracts.ForwarderContractLogicGasCost + desiredReceiverGas,
+			GasLimit: contracts.ForwarderGasOverhead(0) + desiredReceiverGas,
 		}
 
 		failedInfo := contracts.TransmissionInfo{
@@ -1722,7 +1903,7 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 
 		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
 		request.GasConfig = &evm.GasConfig{
-			GasLimit: contracts.ForwarderContractLogicGasCost + desiredReceiverGas,
+			GasLimit: contracts.ForwarderGasOverhead(0) + desiredReceiverGas,
 		}
 
 		mockForwarderClient.
@@ -2188,7 +2369,8 @@ func TestWriteReport_RevertReceiptFetchFailsReturnsUserError(t *testing.T) {
 				t.Helper()
 
 				desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-				fixture.request.GasConfig = &evm.GasConfig{GasLimit: contracts.ForwarderContractLogicGasCost + desiredReceiverGas}
+				writeReportGasLimit := contracts.ForwarderGasOverhead(0) + desiredReceiverGas
+				fixture.request.GasConfig = &evm.GasConfig{GasLimit: writeReportGasLimit}
 				mockForwarderClient.
 					On("GetTransmissionInfo", mock.Anything, mock.Anything).
 					Return(contracts.TransmissionInfo{
@@ -2199,6 +2381,10 @@ func TestWriteReport_RevertReceiptFetchFailsReturnsUserError(t *testing.T) {
 					}, nil).
 					Once()
 				expectFailedTransmissionEvent(t, mockForwarderClient, txHash)
+				// Prior tx carried exactly the requested gas limit => genuine revert, no retry.
+				evmServiceMock.EXPECT().
+					GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: txHash, IsExternal: false}).
+					Return(&evmtypes.Transaction{Gas: writeReportGasLimit}, nil)
 				return expectReceiptFetchFailure(t, evmServiceMock, txHash)
 			},
 			run:            writeReportCall,
@@ -2307,6 +2493,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		lggr:                     logger.Sugared(lggr),
 		EVMService:               mockEVMService,
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		forwarderGasOverhead:     contracts.ForwarderGasOverhead(0),
 		chainSelector:            1,
 		beholderProcessor:        test.NopBeholderProcessor{},
 		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -2333,6 +2520,7 @@ func createMocksAndCapabilityWithScheduler(
 		lggr:                     logger.Sugared(lggr),
 		EVMService:               evmService,
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		forwarderGasOverhead:     contracts.ForwarderGasOverhead(0),
 		chainSelector:            1,
 		beholderProcessor:        test.NopBeholderProcessor{},
 		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -2445,6 +2633,7 @@ func setupPollTransmissionInfoForQueuePosition(
 	wr := &WriteReport{
 		forwarderClient:       mockForwarderClient,
 		ReceiverGasMinimum:    ConfiguredReceiverGasMinimum,
+		forwarderGasOverhead:  contracts.ForwarderGasOverhead(0),
 		lggr:                  logger.Sugared(testLogger),
 		beholderProcessor:     test.NopBeholderProcessor{},
 		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),

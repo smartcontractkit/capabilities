@@ -11,7 +11,13 @@ type Config struct {
 	CREForwarderAddress             string        `json:"creForwarderAddress"`
 	ForwarderLookbackBlocks         int64         `json:"forwarderLookbackBlocks"` // defines how many blocks back to search for the ReportProcessed event (default 100).
 	// The minimum amount of gas that the receiver contract must get to process the forwarder report. This is the default value used when the user doesn't specify a gas limit when invoking WriteReport.
-	ReceiverGasMinimum            uint64        `json:"receiverGasMinimum"`
+	ReceiverGasMinimum uint64 `json:"receiverGasMinimum"`
+	// Safety margin, in gas, added on top of the forwarder contract's internal gas reservation
+	// when deriving the receiver gas budget offchain. It covers pre-route consumption not visible
+	// in the contract constants (tx intrinsic cost, calldata, ecrecover per signature, storage).
+	// 0 means "use the default" (see contracts.DefaultForwarderGasOverheadMargin). Set per chain
+	// when the chain's gas metering or report/signature sizes differ materially from mainnet.
+	ForwarderGasOverheadMargin    uint64        `json:"forwarderGasOverheadMargin"`
 	NodeAddress                   string        `json:"nodeAddress"`
 	ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
 	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`

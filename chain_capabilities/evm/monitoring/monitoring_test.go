@@ -85,6 +85,7 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 		{"CallContractSuccess", &monitoring.CallContractSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportSuccess", &monitoring.WriteReportSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportInsufficientGasRetry", &monitoring.WriteReportInsufficientGasRetry{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"WriteReportGasMismatch", &monitoring.WriteReportGasMismatch{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerSuccess", &monitoring.LogTriggerSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsSuccess", &monitoring.FilterLogsSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtSuccess", &monitoring.BalanceAtSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},

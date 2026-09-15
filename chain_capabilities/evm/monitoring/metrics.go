@@ -101,6 +101,9 @@ type Metrics struct {
 	WriteReportInsufficientGasRetry struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportGasMismatch struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	LogTriggerSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -216,6 +219,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportInsufficientGasRetry.basic, err = commoncapbeholder.NewMetricsCapBasic(wrInsufficientGasRetry)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report insufficient gas retry metric: %w", err)
+	}
+	wrGasMismatch := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_gas_mismatch"), commonbeholder.ToSchemaFullName(&WriteReportGasMismatch{}))
+	m.WriteReportGasMismatch.basic, err = commoncapbeholder.NewMetricsCapBasic(wrGasMismatch)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report gas mismatch metric: %w", err)
 	}
 
 	// -- LogTrigger --
@@ -381,6 +389,12 @@ func (m *Metrics) OnWriteReportDuplicateTx(ctx context.Context, msg *WriteReport
 func (m *Metrics) OnWriteReportInsufficientGasRetry(ctx context.Context, msg *WriteReportInsufficientGasRetry) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportInsufficientGasRetry.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportGasMismatch(ctx context.Context, msg *WriteReportGasMismatch) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportGasMismatch.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -655,6 +669,19 @@ func (r *WriteReportInsufficientGasRetry) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportInsufficientGasRetry) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportGasMismatch) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("tx_hash", r.GetTxHash()),
+		attribute.Int64("expected_tx_gas_limit", int64(r.GetExpectedTxGasLimit())), //nolint:gosec // G115: EVM gas fits int64 for logging
+		attribute.Int64("actual_tx_gas_limit", int64(r.GetActualTxGasLimit())),     //nolint:gosec // G115: EVM gas fits int64 for logging
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportGasMismatch) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
