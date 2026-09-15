@@ -38,11 +38,12 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	MaxBatchSize            int // max number of requests that this node will try to process in a single round
-	MaxObservationLength    int // max length of observation in bytes
-	MaxReportLengthBytes    int // max length of report in bytes
-	MaxReportCount          int // max number of reports in a single round
-	MinResponsesToAggregate int // minimum responses to aggregate to accept a read value; 0 means use F+1
+	MaxBatchSize                 int  // max number of requests that this node will try to process in a single round
+	MaxObservationLength         int  // max length of observation in bytes
+	MaxReportLengthBytes         int  // max length of report in bytes
+	MaxReportCount               int  // max number of reports in a single round
+	MinResponsesToAggregate      int  // minimum responses to aggregate to accept a read value; 0 means use F+1
+	EnableMissingRequestRecovery bool // whether to enable missing request recovery
 }
 
 // matchingThreshold returns the minimum number of nodes that must report identical
@@ -773,7 +774,28 @@ func (rp *reportingPlugin) Outcome(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	for _, requestID := range query.RequestIDs {
+	requestIDs := query.RequestIDs
+	if rp.config.EnableMissingRequestRecovery {
+		if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil {
+			seen := make(map[string]struct{}, len(query.RequestIDs))
+			for _, requestID := range query.RequestIDs {
+				seen[requestID] = struct{}{}
+			}
+
+			// Requests that the leader's query omitted but that a quorum of nodes still supplied
+			// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
+			// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
+			for _, requestID := range prevOutcome.MissingRequestIDs {
+				if _, ok := seen[requestID]; ok {
+					continue
+				}
+				seen[requestID] = struct{}{}
+				requestIDs = append(requestIDs, requestID)
+			}
+		}
+	}
+
+	for _, requestID := range requestIDs {
 		observationType, err := rp.agreeOnObservationType(requestID, aos)
 		if err != nil {
 			rp.logger.Infow("Could not determine observation type", "requestID", requestID, "err", err)
