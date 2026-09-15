@@ -138,6 +138,20 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
 				common.UserErrorCode(err))
 		}
+		var canceledErr gateway.CanceledError
+		if errors.As(err, &canceledErr) {
+			return nil, caperrors.NewPublicSystemError(
+				fmt.Errorf("request canceled for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
+					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
+				caperrors.Canceled)
+		}
+		var gatewayTimeoutErr gateway.TimeoutError
+		if errors.As(err, &gatewayTimeoutErr) {
+			return nil, caperrors.NewPublicSystemError(
+				fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
+					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
+				caperrors.DeadlineExceeded)
+		}
 		return nil, caperrors.NewPublicSystemError(
 			fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
 				metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err), caperrors.Internal)
