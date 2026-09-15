@@ -197,6 +197,24 @@ func TestRegisterLogTrigger(t *testing.T) {
 		mockSolana.AssertExpectations(t)
 	})
 
+	t.Run("too many subkeys", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+		request := createTestRequest()
+		request.Subkeys = []*solanacappb.SubkeyConfig{
+			{Path: []string{"f1"}},
+			{Path: []string{"f2"}},
+			{Path: []string{"f3"}},
+			{Path: []string{"f4"}},
+			{Path: []string{"f5"}},
+		}
+
+		_, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
+
+		require.NotNil(t, err)
+		assert.Contains(t, err.Error(), "maximum supported is 4")
+		mockSolana.AssertExpectations(t)
+	})
+
 	t.Run("register log tracking fails", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
