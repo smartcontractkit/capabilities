@@ -657,7 +657,6 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 		return err
 	}
 
-
 	if request.GasConfig != nil && request.GasConfig.GasLimit != 0 && request.GasConfig.GasLimit < e.ReceiverGasMinimum+e.forwarderGasOverhead {
 		return fmt.Errorf("gas limit is %d, which is lower than minimum gas limit of: %d, for unbounded gas leave the gas limit as nil or 0", request.GasConfig.GasLimit, e.ReceiverGasMinimum+e.forwarderGasOverhead)
 	}
