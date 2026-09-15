@@ -211,6 +211,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			return fmt.Errorf("failed to create solana consensus metrics: %w", err)
 		}
 		c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+		// TODO(CRE-4409 follow-up): once CapabilityDonID is wired here, derive
+		// unknownRequestTTL via chainconsensus.AverageRequestTimeout like evm/main.go does.
 		c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 		c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 			LocalConfig: ocrtypes.LocalConfig{
