@@ -186,6 +186,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create stellar consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+	// TODO(CRE-4409 follow-up): once CapabilityDonID is wired here, derive
+	// unknownRequestTTL via chainconsensus.AverageRequestTimeout like evm/main.go does.
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 	c.blocksProvider, err = height.NewProvider(c.lggr, cfg.ObservationPollPeriod, stellarService)
 	if err != nil {
