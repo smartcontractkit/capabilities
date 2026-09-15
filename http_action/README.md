@@ -40,6 +40,9 @@ The HTTP Action Capability enables Chainlink Runtime Environment (CRE) workflows
 #### 2.1.4 Gateway Mode Client
 - **Purpose**: Gateway-proxied HTTP request execution
 - **Features**: Rate limiting, request deduplication via consistent hashing, exponential backoff retry
+- **Deadlines**: `timeoutMs` bounds delivery to a gateway. The response wait is `timeoutMs +
+  responseGraceMs`, started after the send, so the gateway (which applies `timeoutMs` to the endpoint
+  call itself) always reports back before we give up. Exhausting the grace means the gateway went silent.
 
 ---
 
@@ -96,6 +99,30 @@ type Response struct {
 - `maxAgeMs`: Must be non-negative and not exceed configured `maxCacheAgeMs`.
 - `store`: Can be true or false;
 
+### 3.4 Error Classification
+
+Failures are attributed to the party responsible for them. Only platform faults reach
+`http_action_execution_error_count`, which is what the "Execution Errors in More than F Nodes" alert
+reads. A slow or failing customer endpoint must never page us.
+
+| Condition | Error type | Capability error | Counters (`http_action_` prefix) |
+|---|---|---|---|
+| Input validation failed | `UserError` | user, `InvalidArgument` / `LimitExceeded` | `validation_failure_count` |
+| Gateway reports endpoint send/read failure | `UserError` | user, `InvalidArgument` | `external_endpoint_error_count` |
+| Gateway reports a blocked request | `UserError` | user, `InvalidArgument` | `validation_failure_count` |
+| Response exceeds the size limit | `UserError` | user, `LimitExceeded` | `external_endpoint_error_count` |
+| No gateway reachable | plain error | system, `Internal` | `capability_gateway_send_error_count`, `execution_error_count` |
+| Gateway returned an unclassified error | plain error | system, `Internal` | `execution_error_count` |
+| Gateway silent past the response deadline | `TimeoutError` | system, `DeadlineExceeded` | `execution_timeout_count`, `execution_error_count` |
+| Caller canceled before a response arrived | `CanceledError` | system, `Canceled` | `request_canceled_count` |
+
+Direct mode returns `InputValidationError` rather than `UserError` for the first row; both map to the
+same capability error.
+
+Cancellation is not the user's fault, but `caperrors.Origin` has only `System` and `User`, so it is
+reported as a system error carrying `Canceled`. Alerts over capability failures should exclude that
+code rather than treat it as a platform fault.
+
 ---
 
 ## 4. Configuration Specification
@@ -144,8 +171,12 @@ type GatewayConnectionConfig struct {
     InitialIntervalMs uint32  `json:"initialIntervalMs"` // Initial retry interval
     MaxElapsedTimeMs  uint32  `json:"maxElapsedTimeMs"`  // Maximum retry duration
     Multiplier        float64 `json:"multiplier"`        // Backoff multiplier
+    ResponseGraceMs   uint32  `json:"responseGraceMs"`   // Extra wait for a gateway response beyond timeoutMs
 }
 ```
+
+`responseGraceMs` defaults to 5000, mirroring the gateway's own budget for delivering a response back
+to the node. It is optional: omitting it keeps the default, so existing deployments need no change.
 
 ### 4.6 Configuration Examples
 
@@ -157,7 +188,8 @@ type GatewayConnectionConfig struct {
   "gatewayConnection": {
     "initialIntervalMs": 100,
     "maxElapsedTimeMs": 30000,
-    "multiplier": 2.0
+    "multiplier": 2.0,
+    "responseGraceMs": 5000
   }
 }
 ```
