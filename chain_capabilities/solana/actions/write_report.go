@@ -283,40 +283,11 @@ func (s *Solana) validateInputsAndReportMetadata(ctx context.Context, requestMet
 		return fmt.Errorf("report context has invalid length: got %d, want %d", len(request.Report.ReportContext), reportContextLen)
 	}
 
-	// TODO: PLEX-3107 move validation to common
-	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
-	if err != nil {
+	if err := capcommon.ValidateReportMetadata(requestMetadata, request.Report.RawReport); err != nil {
 		return err
 	}
 
-	if reportMetadata.Version != 1 {
-		return fmt.Errorf("unsupported report version: %d", reportMetadata.Version)
-	}
-
-	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
-		return fmt.Errorf("workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %s, request WorkflowExecutionID: %s", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
-	}
-
-	// case-insensitive verification of the owner address (so that a check-summed address matches its non-checksummed version).
-	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
-		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %s, request WorkflowOwner: %s", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
-	}
-
-	//	workflowNames are padded to 10 bytes (20 hex chars)
-	reqName := requestMetadata.WorkflowName
-	if len(reqName) < 20 {
-		reqName += strings.Repeat("0", 20-len(reqName))
-	}
-	if reportMetadata.WorkflowName != reqName {
-		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, reqName)
-	}
-
-	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
-		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
-	}
-
-	err = s.validateWriteReportPayload(ctx, request.Receiver, request.RemainingAccounts, request.Report.RawReport)
-	if err != nil {
+	if err := s.validateWriteReportPayload(ctx, request.Receiver, request.RemainingAccounts, request.Report.RawReport); err != nil {
 		return fmt.Errorf("report payload is invalid: %w", err)
 	}
 	return nil
