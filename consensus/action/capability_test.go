@@ -23,6 +23,7 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
@@ -489,4 +490,12 @@ func generateRandomHexString(byteLength int) string {
 		panic(fmt.Sprintf("failed to generate random bytes: %v", err))
 	}
 	return hex.EncodeToString(randomBytes)
+}
+
+func Test_validateRawReportHasPayload(t *testing.T) {
+	metadataPrefix := make([]byte, plugin.ReportMetaDataPrependLength)
+
+	require.Error(t, validateRawReportHasPayload(nil))
+	require.Error(t, validateRawReportHasPayload(metadataPrefix), "a report consisting of only the metadata prefix has no payload")
+	require.NoError(t, validateRawReportHasPayload(append(metadataPrefix, 0x01)))
 }

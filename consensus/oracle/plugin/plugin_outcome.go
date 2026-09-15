@@ -108,9 +108,11 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	var obsErrors []string
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
+	var errorObsTimestamps []*timestamppb.Timestamp
 
 	removeLibUseInErrorFormattingFlag := true
 	updateErrorHandlingFlag := true
+	includeErrorObservationTimestampsFlag := true
 	for _, obs := range observations {
 		if !obs.RemoveLibUseInFailureMessageFormattingFlag { // enable only when all nodes are updated
 			removeLibUseInErrorFormattingFlag = false
@@ -118,6 +120,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 
 		if !obs.UpdateErrorHandlingFlag {
 			updateErrorHandlingFlag = false
+		}
+
+		if !obs.IncludeErrorObservationTimestampsFlag {
+			includeErrorObservationTimestampsFlag = false
 		}
 
 		// Does the observation have a valid input?
@@ -145,7 +151,14 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 			timestamps = append(timestamps, obs.ReceivedAt)
 		case *sdk.SimpleConsensusInputs_Error:
 			obsErrors = append(obsErrors, inputObservation.Error)
+			errorObsTimestamps = append(errorObsTimestamps, obs.ReceivedAt)
 		}
+	}
+
+	// Error observations are included in the median timestamp so that an outcome which falls back to the default value
+	// after f+1 errors is timestamped with when the DON observed the request rather than with the zero time
+	if includeErrorObservationTimestampsFlag {
+		timestamps = append(timestamps, errorObsTimestamps...)
 	}
 
 	timestamp := &timestamppb.Timestamp{}
