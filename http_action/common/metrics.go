@@ -29,6 +29,7 @@ type Metrics struct {
 	successfulResponse              metric.Int64Counter
 	executionError                  metric.Int64Counter
 	executionTimeout                metric.Int64Counter
+	requestCanceled                 metric.Int64Counter
 	externalEndpointError           metric.Int64Counter
 	requestLatency                  metric.Int64Histogram
 	requestLatencyExcludingExternal metric.Int64Histogram
@@ -99,10 +100,18 @@ func (m *Metrics) init() error {
 
 	m.executionTimeout, err = meter.Int64Counter(
 		"http_action_execution_timeout_count",
-		metric.WithDescription("Number of HTTP action execution timeouts"),
+		metric.WithDescription("Number of HTTP action requests where the gateway did not respond before the response deadline"),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create execution timeout metric: %w", err)
+	}
+
+	m.requestCanceled, err = meter.Int64Counter(
+		"http_action_request_canceled_count",
+		metric.WithDescription("Number of HTTP action requests canceled by the caller before a gateway response arrived"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create request canceled metric: %w", err)
 	}
 
 	m.externalEndpointError, err = meter.Int64Counter(
@@ -171,9 +180,15 @@ func (m *Metrics) IncrementExecutionError(ctx context.Context, proxyMode ProxyMo
 	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
 }
 
+// Gateway silence is a platform fault, so it also counts as an execution error.
 func (m *Metrics) IncrementExecutionTimeout(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
 	m.executionTimeout.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
 	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
+}
+
+// Caller cancellation is nobody's fault, so it is deliberately not an execution error.
+func (m *Metrics) IncrementRequestCanceled(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
+	m.requestCanceled.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
 }
 
 func (m *Metrics) IncrementExternalEndpointError(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {

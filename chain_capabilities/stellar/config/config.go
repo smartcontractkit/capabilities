@@ -39,6 +39,9 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	if err := validateContractStrKey(cfg.CREForwarderAddress); err != nil {
 		return fmt.Errorf("creForwarderAddress: %w", err)
 	}
+	if cfg.ForwarderLookbackLedgers < 0 {
+		return fmt.Errorf("forwarderLookbackLedgers must be non-negative")
+	}
 	*c = Config(cfg)
 	return nil
 }

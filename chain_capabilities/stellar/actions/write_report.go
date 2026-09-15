@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/stellar/go-stellar-sdk/strkey"
@@ -35,16 +34,15 @@ const (
 )
 
 type writeReport struct {
-	service                  types.StellarService
-	forwarderClient          CREForwarderClient
-	lggr                     logger.SugaredLogger
-	forwarderLookbackLedgers int64
-	chainSelector            uint64
-	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
-	maxResourceFeeLimit      limits.BoundLimiter[uint64]
-	transmissionScheduler    ts.TransmissionScheduler
-	messageBuilder           *monitoring.MessageBuilder
-	beholderProcessor        beholder.ProtoProcessor
+	service               types.StellarService
+	forwarderClient       CREForwarderClient
+	lggr                  logger.SugaredLogger
+	chainSelector         uint64
+	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
+	maxResourceFeeLimit   limits.BoundLimiter[uint64]
+	transmissionScheduler ts.TransmissionScheduler
+	messageBuilder        *monitoring.MessageBuilder
+	beholderProcessor     beholder.ProtoProcessor
 }
 
 func (s *Stellar) WriteReport(
@@ -95,16 +93,15 @@ func (s *Stellar) executeWriteReport(
 	telemetryContext monitoring.TelemetryContext,
 ) (*stellarcap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr := &writeReport{
-		service:                  s.StellarService,
-		forwarderClient:          s.forwarderClient,
-		lggr:                     s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
-		forwarderLookbackLedgers: s.forwarderLookbackLedgers,
-		chainSelector:            s.chainSelector,
-		reportSizeLimit:          s.reportSizeLimit,
-		maxResourceFeeLimit:      s.maxResourceFeeLimit,
-		transmissionScheduler:    s.transmissionScheduler,
-		messageBuilder:           s.messageBuilder,
-		beholderProcessor:        s.beholderProcessor,
+		service:               s.StellarService,
+		forwarderClient:       s.forwarderClient,
+		lggr:                  s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		chainSelector:         s.chainSelector,
+		reportSizeLimit:       s.reportSizeLimit,
+		maxResourceFeeLimit:   s.maxResourceFeeLimit,
+		transmissionScheduler: s.transmissionScheduler,
+		messageBuilder:        s.messageBuilder,
+		beholderProcessor:     s.beholderProcessor,
 	}
 	return wr.execute(ctx, request, metadata, telemetryContext)
 }
@@ -337,30 +334,7 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 		}
 	}
 
-	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
-	if err != nil {
-		return fmt.Errorf("%s failed to decode report metadata: %w", capcommon.UserError, err)
-	}
-	if reportMetadata.Version != 1 {
-		return fmt.Errorf("%s unsupported report metadata version: %d", capcommon.UserError, reportMetadata.Version)
-	}
-	if reportMetadata.ExecutionID != metadata.WorkflowExecutionID {
-		return fmt.Errorf("%s report workflowExecutionID does not match request metadata", capcommon.UserError)
-	}
-	if !strings.EqualFold(reportMetadata.WorkflowOwner, metadata.WorkflowOwner) {
-		return fmt.Errorf("%s report workflowOwner does not match request metadata", capcommon.UserError)
-	}
-	expectedWorkflowName := metadata.WorkflowName
-	if len(expectedWorkflowName) < 20 {
-		expectedWorkflowName += strings.Repeat("0", 20-len(expectedWorkflowName))
-	}
-	if !strings.EqualFold(reportMetadata.WorkflowName, expectedWorkflowName) {
-		return fmt.Errorf("%s report workflowName does not match request metadata", capcommon.UserError)
-	}
-	if reportMetadata.WorkflowID != metadata.WorkflowID {
-		return fmt.Errorf("%s report workflowID does not match request metadata", capcommon.UserError)
-	}
-	return nil
+	return capcommon.ValidateReportMetadataWithPrefix(capcommon.UserError, metadata, request.Report.RawReport)
 }
 
 func getTransmissionID(workflowExecutionID string, request *stellarcap.WriteReportRequest) (TransmissionID, error) {
@@ -398,18 +372,12 @@ func (wr *writeReport) pollTransmissionInfo(
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	deltaStagePassed := false
 	hadSuccessfulPoll := false
 	// Guard so an unexpected state that persists across multiple poll iterations only
 	// emits one InvalidTransmissionState metric, not one per poll tick.
 	invalidStateEmitted := false
 	defer func() {
 		stageTimer.Stop()
-		if wr.monitoringEnabled() && !deltaStagePassed && hadSuccessfulPoll {
-			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
-				wr.lggr, wr.beholderProcessor,
-				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
-		}
 	}()
 
 	for {
@@ -420,6 +388,11 @@ func (wr *writeReport) pollTransmissionInfo(
 			lastValidInfo = info
 			switch lastValidInfo.State {
 			case TransmissionStateSucceeded, TransmissionStateInvalidReceiver, TransmissionStateFailed:
+				if wr.monitoringEnabled() {
+					monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
+						wr.lggr, wr.beholderProcessor,
+						wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
+				}
 				return lastValidInfo, nil
 			case TransmissionStateNotAttempted, TransmissionStateUnknown:
 				// Not yet visible or unreadable; keep polling until the delta stage window
@@ -442,7 +415,6 @@ func (wr *writeReport) pollTransmissionInfo(
 		case <-ctx.Done():
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			deltaStagePassed = true
 			if lastValidInfo.State == TransmissionStateNotAttempted {
 				if finalInfo, finalErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); finalErr == nil {
 					hadSuccessfulPoll = true

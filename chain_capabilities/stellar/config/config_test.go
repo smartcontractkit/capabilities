@@ -102,4 +102,18 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(input), &cfg))
 		assert.EqualValues(t, 250, cfg.ForwarderLookbackLedgers)
 	})
+
+	t.Run("negative forwarderLookbackLedgers", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"chainId":"stellar-testnet",
+			"network":"stellar",
+			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"forwarderLookbackLedgers":-1
+		}`
+		var cfg Config
+		err := json.Unmarshal([]byte(input), &cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "forwarderLookbackLedgers must be non-negative")
+	})
 }

@@ -74,15 +74,14 @@ func newWriteReportHelper(t *testing.T) *writeReportHelper {
 		myPeerID, []p2ptypes.PeerID{myPeerID}, 100*time.Millisecond, 0, lggr)
 
 	s := &Stellar{
-		StellarService:           mockSvc,
-		lggr:                     logger.Sugared(lggr),
-		chainSelector:            testWRChainSelector,
-		forwarderClient:          newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
-		forwarderLookbackLedgers: 100,
-		transmissionScheduler:    scheduler,
-		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		beholderProcessor:        nopBeholderProcessor{},
-		handler:                  testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:        mockSvc,
+		lggr:                  logger.Sugared(lggr),
+		chainSelector:         testWRChainSelector,
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     nopBeholderProcessor{},
+		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))
 	return &writeReportHelper{svc: mockSvc, stellar: s}
@@ -489,7 +488,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "failed to decode report metadata")
+		require.Contains(t, err.Error(), "metadata: raw too short")
 	})
 
 	t.Run("WorkflowExecutionID mismatch", func(t *testing.T) {
@@ -500,7 +499,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowExecutionID does not match")
+		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata")
 	})
 
 	t.Run("WorkflowOwner mismatch", func(t *testing.T) {
@@ -511,7 +510,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowOwner does not match")
+		require.Contains(t, err.Error(), "workflowOwner in the report does not match WorkflowOwner in the request metadata")
 	})
 
 	t.Run("WorkflowName mismatch", func(t *testing.T) {
@@ -522,7 +521,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowName does not match")
+		require.Contains(t, err.Error(), "workflowName in the report does not match WorkflowName in the request metadata")
 	})
 
 	t.Run("WorkflowID mismatch", func(t *testing.T) {
@@ -533,7 +532,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowID does not match")
+		require.Contains(t, err.Error(), "workflowID in the report does not match WorkflowID in the request metadata")
 	})
 
 	t.Run("report size exceeds limit", func(t *testing.T) {
@@ -1069,7 +1068,7 @@ func TestWriteReport_UnsupportedReportMetadataVersion(t *testing.T) {
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
-	require.Contains(t, capErr.Error(), "unsupported report metadata version")
+	require.Contains(t, capErr.Error(), "unsupported report version")
 }
 
 func TestGetTransmissionInfo(t *testing.T) {
@@ -1433,15 +1432,14 @@ func newQueuedWriteReportHelper(t *testing.T) *writeReportHelper {
 		lggr,
 	)
 	s := &Stellar{
-		StellarService:           mockSvc,
-		lggr:                     logger.Sugared(lggr),
-		chainSelector:            testWRChainSelector,
-		forwarderClient:          newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
-		forwarderLookbackLedgers: 100,
-		transmissionScheduler:    scheduler,
-		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		beholderProcessor:        nopBeholderProcessor{},
-		handler:                  testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:        mockSvc,
+		lggr:                  logger.Sugared(lggr),
+		chainSelector:         testWRChainSelector,
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     nopBeholderProcessor{},
+		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))
 	return &writeReportHelper{svc: mockSvc, stellar: s}
@@ -1698,6 +1696,42 @@ func TestPollTransmissionInfo_EmitsInvalidTransmissionStateOnlyOnce(t *testing.T
 		}
 	}
 	require.Equal(t, 1, invalidStateCount, "InvalidTransmissionState should fire exactly once even across multiple poll iterations with a persistent unexpected state")
+}
+
+func TestPollTransmissionInfo_ContextTimeoutAfterNonterminalPollEmitsNoEarlyReturn(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	processor := &recordingWriteReportProcessor{}
+	scheduler := ts.NewTransmissionScheduler(
+		p2ptypes.PeerID{2},
+		[]p2ptypes.PeerID{{1}, {2}, {3}},
+		5*time.Second,
+		0,
+		lggr,
+	)
+	stub := &stubForwarderClient{
+		transmissionInfoFn: func(int) (TransmissionInfo, error) {
+			return TransmissionInfo{State: TransmissionStateNotAttempted}, nil
+		},
+	}
+	wr := &writeReport{
+		forwarderClient:       stub,
+		lggr:                  logger.Sugared(lggr),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     processor,
+	}
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 75*time.Millisecond)
+	defer cancel()
+
+	_, err = wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "timed out waiting for transmission info")
+	require.False(t, hasTelemetryMessage[*monitoring.WriteReportSuccessfulEarlyReturn](processor.messages))
 }
 
 func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(t *testing.T) {

@@ -389,4 +389,46 @@ func TestSendRequest_ErrorHandling(t *testing.T) {
 		assert.Equal(t, caperrors.Internal, capErr.Code())
 		assert.Equal(t, caperrors.VisibilityPublic, capErr.Visibility())
 	})
+
+	t.Run("client returns TimeoutError and service returns DeadlineExceeded system error", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
+		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "GET",
+			Timeout:       durationpb.New(1000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		setup.mockClient.Err = gateway.NewTimeoutError(errors.New("gateway did not respond before deadline"))
+
+		_, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
+		require.Error(t, err)
+
+		var capErr caperrors.Error
+		assert.True(t, errors.As(err, &capErr))
+		assert.Equal(t, caperrors.DeadlineExceeded, capErr.Code())
+		assert.Equal(t, caperrors.OriginSystem, capErr.Origin())
+	})
+
+	t.Run("client returns CanceledError and service returns Canceled system error", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
+		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "GET",
+			Timeout:       durationpb.New(1000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		setup.mockClient.Err = gateway.NewCanceledError(context.Canceled)
+
+		_, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
+		require.Error(t, err)
+
+		var capErr caperrors.Error
+		assert.True(t, errors.As(err, &capErr))
+		assert.Equal(t, caperrors.Canceled, capErr.Code())
+		assert.Equal(t, caperrors.OriginSystem, capErr.Origin())
+	})
 }
