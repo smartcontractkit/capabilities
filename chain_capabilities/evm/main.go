@@ -44,11 +44,12 @@ const (
 	CapabilityVersion = "1.0.0"
 
 	// Default values for optional EVM consensus/read settings when not provided in config.
-	defaultObservationWorkers          = 10
-	defaultObservationPollPeriod       = 2 * time.Second
-	defaultUnknownRequestsTTL          = 10 * time.Second
-	defaultMaxUnknownRequestsCacheSize = 1000
-	defaultChainHeightPollPeriod       = time.Second
+	defaultObservationWorkers                   = 10
+	defaultObservationPollPeriod                = 2 * time.Second
+	defaultUnknownRequestsTTL                   = 10 * time.Second
+	defaultMaxUnknownRequestsCacheSize          = 1000
+	defaultChainHeightPollPeriod                = time.Second
+	defaultRequestTimeoutToUnknownTTLMultiplier = 2
 )
 
 type capabilityGRPCService struct {
@@ -143,11 +144,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
 	capabilityDonID := dependencies.CapabilityDonID
 
-	unknownRequestTTL := capcommon.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
-	if unknownRequestTTL != cfg.UnknownRequestsTTL {
-		c.lggr.Infow("Derived unknownRequestTTL from capability RequestTimeout config", "unknownRequestTTL", unknownRequestTTL)
-	}
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, unknownRequestTTL, cfg.MaxUnknownRequestsCacheSize)
+	averageRequestTimeout := capcommon.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
+	derivedUnknownTTL := averageRequestTimeout * 2
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
