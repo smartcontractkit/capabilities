@@ -14,6 +14,7 @@ import (
 
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 
@@ -127,7 +128,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	// capabilityDonID is the on-chain DON ID of the capability DON this plugin
 	// process serves, used to label emitted trigger events with the *sending*
@@ -142,6 +142,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	// from the registry here: that lookup cannot disambiguate multi-DON nodes and
 	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
 	capabilityDonID := dependencies.CapabilityDonID
+
+	unknownRequestTTL := capcommon.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
+	if unknownRequestTTL != cfg.UnknownRequestsTTL {
+		c.lggr.Infow("Derived unknownRequestTTL from capability RequestTimeout config", "unknownRequestTTL", unknownRequestTTL)
+	}
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, unknownRequestTTL, cfg.MaxUnknownRequestsCacheSize)
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
