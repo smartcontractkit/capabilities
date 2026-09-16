@@ -38,7 +38,17 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const CapabilityName = "evm"
+const (
+	CapabilityName    = "evm"
+	CapabilityVersion = "1.0.0"
+
+	// Default values for optional EVM consensus/read settings when not provided in config.
+	defaultObservationWorkers          = 10
+	defaultObservationPollPeriod       = 2 * time.Second
+	defaultUnknownRequestsTTL          = 10 * time.Second
+	defaultMaxUnknownRequestsCacheSize = 1000
+	defaultChainHeightPollPeriod       = time.Second
+)
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
@@ -216,23 +226,28 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	}
 
 	if cfg.ObservationPollerWorkersCount == 0 {
-		cfg.ObservationPollerWorkersCount = 10
+		cfg.ObservationPollerWorkersCount = defaultObservationWorkers
 		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
 	}
 
 	if cfg.ObservationPollPeriod == 0 {
-		cfg.ObservationPollPeriod = 2 * time.Second
+		cfg.ObservationPollPeriod = defaultObservationPollPeriod
 		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
 	}
 
 	if cfg.ChainHeightPollPeriod == 0 {
-		cfg.ChainHeightPollPeriod = time.Second
+		cfg.ChainHeightPollPeriod = defaultChainHeightPollPeriod
 		c.lggr.Infof("ChainHeightPollPeriod is zero, setting to %s.", cfg.ChainHeightPollPeriod)
 	}
 
 	if cfg.UnknownRequestsTTL == 0 {
-		cfg.UnknownRequestsTTL = 10 * time.Second
+		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 
 	// DeltaStage is optional - if not set, transmission scheduling will be disabled
