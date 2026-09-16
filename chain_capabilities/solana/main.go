@@ -211,9 +211,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			return fmt.Errorf("failed to create solana consensus metrics: %w", err)
 		}
 		c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-		// TODO(CRE-4409 follow-up): once CapabilityDonID is wired here, derive
-		// unknownRequestTTL via chainconsensus.AverageRequestTimeout like evm/main.go does.
-		c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+		// donID is 0 here (see TODO(CRE-4409 follow-up) above on InitMyDON) until
+		// Solana starts emitting KeyDonID events.
+		unknownRequestTTL := chainconsensus.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, 0, cfg.UnknownRequestsTTL)
+		if unknownRequestTTL != cfg.UnknownRequestsTTL {
+			c.lggr.Infow("Derived unknownRequestTTL from capability RequestTimeout config", "unknownRequestTTL", unknownRequestTTL)
+		}
+		c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, unknownRequestTTL, cfg.MaxUnknownRequestsCacheSize)
 		c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 			LocalConfig: ocrtypes.LocalConfig{
 				BlockchainTimeout:                  time.Second * 20,
@@ -326,6 +330,11 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.UnknownRequestsTTL == 0 {
 		cfg.UnknownRequestsTTL = 10 * time.Second
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = 1000
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 
 	return &cfg, nil

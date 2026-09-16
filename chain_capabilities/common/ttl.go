@@ -1,9 +1,11 @@
-package chainconsensus
+package capcommon
 
 import (
 	"context"
 	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -11,13 +13,16 @@ import (
 // capabilityID's CapabilityMethodConfig entries for donID. If the config can't
 // be fetched or no RemoteExecutableConfig.RequestTimeout values are found, it
 // returns fallback.
-func AverageRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration) time.Duration {
+func AverageRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
 	if registry == nil {
 		return fallback
 	}
 
-	cfg, err := registry.ConfigForCapability(ctx, capabilityID, donID)
+	cfg, err := WithPollingRetry(ctx, lggr, func(ctx context.Context) (capabilities.CapabilityConfiguration, error) {
+		return registry.ConfigForCapability(ctx, capabilityID, donID)
+	})
 	if err != nil {
+		lggr.Errorw("failed getting config for capability", "capabilityID", capabilityID, "error", err)
 		return fallback
 	}
 

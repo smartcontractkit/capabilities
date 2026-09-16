@@ -38,9 +38,10 @@ const CapabilityName = "stellar"
 
 const (
 	// Default values for optional Stellar consensus/read settings when not provided in config.
-	defaultObservationPollPeriod = 3 * time.Second
-	defaultPollerWorkersCount    = 10
-	defaultUnknownRequestsTTL    = 10 * time.Second
+	defaultObservationPollPeriod       = 3 * time.Second
+	defaultPollerWorkersCount          = 10
+	defaultUnknownRequestsTTL          = 10 * time.Second
+	defaultMaxUnknownRequestsCacheSize = 1000
 )
 
 // capabilityGRPCService is the top-level server wrapping the Stellar capability.
@@ -186,9 +187,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create stellar consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	// TODO(CRE-4409 follow-up): once CapabilityDonID is wired here, derive
-	// unknownRequestTTL via chainconsensus.AverageRequestTimeout like evm/main.go does.
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	unknownRequestTTL := chainconsensus.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, dependencies.CapabilityDonID, cfg.UnknownRequestsTTL)
+	if unknownRequestTTL != cfg.UnknownRequestsTTL {
+		c.lggr.Infow("Derived unknownRequestTTL from capability RequestTimeout config", "unknownRequestTTL", unknownRequestTTL)
+	}
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, unknownRequestTTL, cfg.MaxUnknownRequestsCacheSize)
 	c.blocksProvider, err = height.NewProvider(c.lggr, cfg.ObservationPollPeriod, stellarService)
 	if err != nil {
 		return fmt.Errorf("failed to create stellar height provider: %w", err)
@@ -284,6 +287,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.UnknownRequestsTTL == 0 {
 		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 	if cfg.ForwarderLookbackLedgers == 0 {
 		cfg.ForwarderLookbackLedgers = actions.DefaultForwarderLookbackLedgers

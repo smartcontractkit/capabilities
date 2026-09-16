@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/chain_capabilities/stellar
 go 1.26.6
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260915151623-abe666fd7d3a
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260831181702-e32c7284ce1c
 	github.com/stellar/go-stellar-sdk v0.7.1
 )
@@ -129,3 +129,5 @@ require (
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/smartcontractkit/capabilities/libs => ../../libs
