@@ -47,7 +47,7 @@ const (
 	defaultObservationWorkers                   = 10
 	defaultObservationPollPeriod                = 2 * time.Second
 	defaultUnknownRequestsTTL                   = 10 * time.Second
-	defaultMaxUnknownRequestsCacheSize          = 1000
+	defaultMaxUnknownRequestsCacheSize          = 100
 	defaultChainHeightPollPeriod                = time.Second
 	defaultRequestTimeoutToUnknownTTLMultiplier = 2
 )
@@ -145,7 +145,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	capabilityDonID := dependencies.CapabilityDonID
 
 	averageRequestTimeout := capcommon.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
-	derivedUnknownTTL := averageRequestTimeout * 2
+	derivedUnknownTTL := averageRequestTimeout * defaultRequestTimeoutToUnknownTTLMultiplier
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 
 	var scheduler ts.TransmissionScheduler
