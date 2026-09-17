@@ -16,7 +16,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
@@ -46,7 +45,15 @@ type Config struct {
 
 type Response struct {
 	capabilities.TriggerEvent
-	Payload cron.Payload
+	Payload Payload
+}
+
+// Payload is a local copy of the payload type that used to live in
+// chainlink-common's pkg/capabilities/triggers/cron, which has since been removed.
+type Payload struct {
+	// Time that cron trigger's task execution had been scheduled to occur
+	// (RFC3339Nano formatted)
+	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
 }
 
 type cronTrigger struct {

@@ -1,5 +1,3 @@
-//go:build evm_integration
-
 package evmlogtrigger
 
 import (
@@ -610,7 +608,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 		return nil, fmt.Errorf("unknown  url: %s", url)
 	}
 
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, nil)
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc)
 
 	addresses := deployContractsFn(t, donContext)
 	config.Addresses = make([]string, 0, len(addresses))
@@ -642,7 +640,6 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 	evmConfig := CreateEvmCapabilityConfig(t, 1337, "evm", 3*time.Second)
 	workflowDon.AddStandardCapability("evm-capabilities", evmBinary, evmConfig)
 
-	workflowDon.AddOCR3NonStandardCapability()
 	workflowDon.Initialise()
 
 	require.NoError(t, workflowDon.Start(t.Context()))
