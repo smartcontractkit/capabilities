@@ -43,19 +43,6 @@ type Config struct {
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
 }
 
-type Response struct {
-	capabilities.TriggerEvent
-	Payload Payload
-}
-
-// Payload is a local copy of the payload type that used to live in
-// chainlink-common's pkg/capabilities/triggers/cron, which has since been removed.
-type Payload struct {
-	// Time that cron trigger's task execution had been scheduled to occur
-	// (RFC3339Nano formatted)
-	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
-}
-
 type cronTrigger struct {
 	job        gocron.Job
 	nextRun    time.Time

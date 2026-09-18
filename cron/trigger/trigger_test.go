@@ -103,6 +103,21 @@ func registerTriggerToCronTriggerService(
 	return triggerEventsCh, request, err
 }
 
+// Response is the decoded form of a cron trigger event, used by these tests to
+// assert on the event envelope and its payload together.
+type Response struct {
+	capabilities.TriggerEvent
+	Payload Payload
+}
+
+// Payload is a local copy of the payload type that used to live in
+// chainlink-common's pkg/capabilities/triggers/cron, which has since been removed.
+type Payload struct {
+	// Time that cron trigger's task execution had been scheduled to occur
+	// (RFC3339Nano formatted)
+	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
+}
+
 func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	useTypedAPI bool) Response {
 	response := Response{}
