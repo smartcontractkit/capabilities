@@ -785,7 +785,7 @@ func TestOutcome(t *testing.T) {
 			nodesObservations: []types.Observation{
 				{
 					// node1
-					FeatureEnableMissingRequestRecovery: true,
+					EnableMissingRequestRecovery: true,
 					Observations: map[string]*types.RequestObservation{
 						"request_in_query": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						"request_missing":  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("recovered")}},
@@ -793,7 +793,7 @@ func TestOutcome(t *testing.T) {
 				},
 				{
 					// node2
-					FeatureEnableMissingRequestRecovery: true,
+					EnableMissingRequestRecovery: true,
 					Observations: map[string]*types.RequestObservation{
 						"request_in_query": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						"request_missing":  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("recovered")}},
@@ -801,7 +801,7 @@ func TestOutcome(t *testing.T) {
 				},
 				{
 					// node3
-					FeatureEnableMissingRequestRecovery: true,
+					EnableMissingRequestRecovery: true,
 					Observations: map[string]*types.RequestObservation{
 						"request_in_query": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						"request_missing":  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("recovered")}},

@@ -193,7 +193,7 @@ func (rp *reportingPlugin) Observation(
 	if err != nil {
 		rp.logger.Errorw("error checking if enableMissingRequestRecovery is enabled", "error", err)
 	}
-	observation.FeatureEnableMissingRequestRecovery = open
+	observation.EnableMissingRequestRecovery = open
 
 	// add observations for requests provided by the leader in the query
 	err = rp.addObservations(ctx, query.RequestIDs, observation)
@@ -574,11 +574,11 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 // whether missing-request recovery is enabled. This is a per-node, per-round capability flag
 // unrelated to any specific request ID, so it is voted on independently of per-request
 // observation quorum (which the aggregation loop in Outcome enforces on its own).
-func (rp *reportingPlugin) agreeOnFeatureEnableMissingRequestRecovery(aos []attributedObservation) bool {
+func (rp *reportingPlugin) agreeOnEnableMissingRequestRecovery(aos []attributedObservation) bool {
 	minMatching := rp.config.matchingThreshold()
 	counter := 0
 	for _, ob := range aos {
-		if ob.Observation.FeatureEnableMissingRequestRecovery {
+		if ob.Observation.EnableMissingRequestRecovery {
 			counter++
 			if counter >= minMatching {
 				return true
@@ -809,7 +809,7 @@ func (rp *reportingPlugin) Outcome(
 	}
 
 	requestIDs := query.RequestIDs
-	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil && rp.agreeOnFeatureEnableMissingRequestRecovery(aos) {
+	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil && rp.agreeOnEnableMissingRequestRecovery(aos) {
 		seen := make(map[string]struct{}, len(query.RequestIDs))
 		for _, requestID := range query.RequestIDs {
 			seen[requestID] = struct{}{}
@@ -818,8 +818,6 @@ func (rp *reportingPlugin) Outcome(
 		// Requests that the leader's query omitted but that a quorum of nodes still supplied
 		// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
 		// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
-		// Per-request observation quorum is enforced independently by the aggregation loop below,
-		// so it's safe to add all of them here once the feature itself has DON-wide quorum.
 		for _, requestID := range prevOutcome.MissingRequestIDs {
 			if _, ok := seen[requestID]; ok {
 				continue
