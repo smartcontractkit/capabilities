@@ -1,5 +1,3 @@
-//go:build evm_integration
-
 package evmlogtrigger
 
 import (
@@ -17,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	chainselectors "github.com/smartcontractkit/chain-selectors"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/protobuf/proto"
@@ -28,7 +27,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/workflow/generated/capabilities_registry_wrapper_v2"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 
@@ -43,6 +45,11 @@ import (
 // NonMatching is a constant string used to denote non-matching events in tests. This literal value must not be printed by the workflow
 // when processing matching events, to allow assertions that non-matching events were ignored.
 const NonMatching = "NON MATCHING"
+
+// evmChainID is the chain ID the EVM capability is configured against. The
+// capability derives its registry ID from the matching chain selector, so the
+// registry entry below has to stay in step with it.
+const evmChainID uint64 = 1337
 
 // DeployContractsFunc deploys the necessary contracts for the test and returns their addresses.
 type DeployContractsFunc func(t *testing.T, donContext framework.DonContext) []common.Address
@@ -592,6 +599,19 @@ func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, dur
 	return readCapabilityConfig
 }
 
+// evmRegistryCapability builds the capabilities registry entry for the EVM
+// capability, whose ID is "evm:ChainSelector:<selector>@1.0.0" (see
+// chain_capabilities/evm/main.go). The DON needs at least one published
+// capability, or AddNodes reverts with InvalidNodeCapabilities.
+func evmRegistryCapability(t *testing.T) kcr.CapabilitiesRegistryCapability {
+	chainSelector, ok := chainselectors.EvmChainIdToChainSelector()[evmChainID]
+	require.True(t, ok, "no chain selector for chain ID %d", evmChainID)
+
+	return kcr.CapabilitiesRegistryCapability{
+		CapabilityId: fmt.Sprintf("evm:ChainSelector:%d@1.0.0", chainSelector),
+	}
+}
+
 func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL string, numOfWorkflowNodes int,
 	workflowName string, config RuntimeConfig, deployContractsFn DeployContractsFunc) ([]*contract.Contract, framework.DonContext) {
 	configURL := workflowName + "_config.yaml"
@@ -610,7 +630,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 		return nil, fmt.Errorf("unknown  url: %s", url)
 	}
 
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, nil)
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc)
 
 	addresses := deployContractsFn(t, donContext)
 	config.Addresses = make([]string, 0, len(addresses))
@@ -639,10 +659,13 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 		[]commoncap.DON{},
 		donContext, true, 1*time.Second)
 
-	evmConfig := CreateEvmCapabilityConfig(t, 1337, "evm", 3*time.Second)
-	workflowDon.AddStandardCapability("evm-capabilities", evmBinary, evmConfig)
+	evmConfig := CreateEvmCapabilityConfig(t, evmChainID, "evm", 3*time.Second)
+	workflowDon.AddPublishedStandardCapability("evm-capabilities", evmBinary, evmConfig,
+		&capabilitiespb.CapabilityConfig{
+			DefaultConfig: values.Proto(values.EmptyMap()).GetMapValue(),
+		},
+		evmRegistryCapability(t))
 
-	workflowDon.AddOCR3NonStandardCapability()
 	workflowDon.Initialise()
 
 	require.NoError(t, workflowDon.Start(t.Context()))
