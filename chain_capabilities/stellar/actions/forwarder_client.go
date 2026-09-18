@@ -288,10 +288,11 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 		// mutually exclusive: sending both is rejected with
 		// "ledger ranges and cursor cannot both be set". The first page is bounded
 		// by the explicit range; subsequent pages follow the cursor, which is
-		// self-contained. Some RPCs return a trailing cursor that walks past
-		// EndLedger, so we additionally bound the drain by each event's ledger:
-		// events arrive in ascending ledger order, so the first event at or beyond
-		// EndLedger marks the end of the range and we stop.
+		// self-contained. Some RPCs return a trailing cursor that, once followed,
+		// either walks past EndLedger or repeats on empty pages, so we cannot rely
+		// on an empty cursor alone to terminate. Events arrive in ascending ledger
+		// order, so the range is drained as soon as a page is empty or yields an
+		// event beyond EndLedger.
 		req := stellartypes.GetEventsRequest{
 			Filters: []stellartypes.EventFilter{
 				{
@@ -338,7 +339,11 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 			})
 		}
 
-		if reachedEnd || resp.Cursor == "" {
+		// Terminate when the range is drained: a cursor page that returns no
+		// in-range events, an event beyond EndLedger, or an exhausted cursor.
+		// (Some RPCs repeat a non-empty cursor on empty pages, so an empty cursor
+		// alone is not a reliable stop signal.)
+		if reachedEnd || resp.Cursor == "" || len(resp.Events) == 0 {
 			return events, nil
 		}
 		cursor = resp.Cursor

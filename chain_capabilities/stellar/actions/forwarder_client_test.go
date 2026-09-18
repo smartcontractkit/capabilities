@@ -232,6 +232,44 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		require.Equal(t, testTxHash, events[0].TxHash)
 	})
 
+	// Regression matching observed quickstart behavior: page 1 returns in-range
+	// events with a trailing cursor; page 2 (cursor) returns the boundary event at
+	// exactly EndLedger with a fresh cursor; page 3 (cursor) returns an empty page
+	// that repeats the same non-empty cursor forever. The drain must stop at the
+	// empty page rather than run to the page cap.
+	t.Run("stops on empty cursor page that repeats a non-empty cursor", func(t *testing.T) {
+		t.Parallel()
+		svc := mocks.NewStellarService(t)
+		success := true
+		boolVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success}
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == searchRange.StartLedger && req.EndLedger == searchRange.EndLedger &&
+				req.Pagination != nil && req.Pagination.Cursor == ""
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{TransactionHash: "a", Ledger: 150, Value: boolVal}},
+			Cursor: "c1",
+		}, nil).Once()
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == 0 && req.EndLedger == 0 && req.Pagination != nil && req.Pagination.Cursor == "c1"
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{TransactionHash: testTxHash, Ledger: searchRange.EndLedger, Value: boolVal}}, // boundary, in-range
+			Cursor: "c2",
+		}, nil).Once()
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == 0 && req.EndLedger == 0 && req.Pagination != nil && req.Pagination.Cursor == "c2"
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{}, // empty page, repeating cursor
+			Cursor: "c2",
+		}, nil).Once()
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+
+		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
+		require.NoError(t, err)
+		require.Len(t, events, 2)
+		require.Equal(t, "a", events[0].TxHash)
+		require.Equal(t, testTxHash, events[1].TxHash)
+	})
+
 	t.Run("index behind requested range returns retryable error", func(t *testing.T) {
 		t.Parallel()
 		svc := mocks.NewStellarService(t)
