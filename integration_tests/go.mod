@@ -19,6 +19,8 @@ require (
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.109
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260917115705-1d3a14a9b049
+	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20260710181111-6417709a55ee
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260821155228-fa1d775e2138
 	github.com/smartcontractkit/chainlink/v2 v2.29.1-cre-beta.0.0.20260918121404-87e960752530
 	github.com/smartcontractkit/cre-sdk-go v1.17.0-capdev.1
@@ -295,7 +297,6 @@ require (
 	github.com/smartcontractkit/chainlink-data-streams v1.1.1 // indirect
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260917132551-2a2b38e8b744 // indirect
 	github.com/smartcontractkit/chainlink-evm/contracts/cre/gobindings v0.0.0-20260403151002-2c91155b5501 // indirect
-	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20260710181111-6417709a55ee // indirect
 	github.com/smartcontractkit/chainlink-feeds v0.1.2-0.20250227211209-7cd000095135 // indirect
 	github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20260724153515-bb6a2de39bcb // indirect
 	github.com/smartcontractkit/chainlink-framework/metrics v0.0.0-20260723212800-b2f21d31b1d2 // indirect
@@ -306,7 +307,6 @@ require (
 	github.com/smartcontractkit/chainlink-protos/chainlink-ccv/message-discovery v0.0.0-20251211142334-5c3421fe2c8d // indirect
 	github.com/smartcontractkit/chainlink-protos/chainlink-ccv/message-rules v0.0.0-20260505131349-78e491b80735 // indirect
 	github.com/smartcontractkit/chainlink-protos/chainlink-ccv/verifier v0.0.0-20251211142334-5c3421fe2c8d // indirect
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138 // indirect
 	github.com/smartcontractkit/chainlink-protos/data-feeds v0.1.1-0.20260501174546-2e8846986b36 // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20260512230622-65f10f4cd305 // indirect
 	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260729184203-90b4cdd48536 // indirect
