@@ -50,18 +50,20 @@ type handler struct {
 	unknownRequestsResultByID       map[string]*unknownRequest
 	unknownRequestsOrderedByTimeout *list.List[*unknownRequest]
 	unknownRequestTTL               time.Duration
+	maxUnknownRequestsCacheSize     int
 }
 
-func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration) Handler {
-	return newHandler(lggr, poller, metrics, unknownRequestTTL)
+func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration, maxUnknownRequestsCacheSize int) Handler {
+	return newHandler(lggr, poller, metrics, unknownRequestTTL, maxUnknownRequestsCacheSize)
 }
 
-func newHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration) *handler {
+func newHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration, maxUnknownRequestsCacheSize int) *handler {
 	r := &handler{
 		requests:                        requests.NewStoreWithStatsCollector[*requestCtx](metrics),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
 		unknownRequestTTL:               unknownRequestTTL,
+		maxUnknownRequestsCacheSize:     maxUnknownRequestsCacheSize,
 		poller:                          poller,
 		metrics:                         metrics,
 	}
@@ -210,6 +212,12 @@ func (s *handler) completeRequest(id string, reply types.Reply) error {
 	defer s.lock.Unlock()
 	request := s.requests.Get(id)
 	if request == nil {
+		if s.maxUnknownRequestsCacheSize > 0 && len(s.unknownRequestsResultByID) >= s.maxUnknownRequestsCacheSize {
+			if oldest := s.unknownRequestsOrderedByTimeout.Front(); oldest != nil {
+				delete(s.unknownRequestsResultByID, oldest.Value.ID)
+				s.unknownRequestsOrderedByTimeout.Remove(oldest)
+			}
+		}
 		uRequest := &unknownRequest{
 			ID:        id,
 			ExpiresAt: time.Now().Add(s.unknownRequestTTL),
