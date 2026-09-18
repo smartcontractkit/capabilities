@@ -14,6 +14,7 @@ import (
 
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 
@@ -38,7 +39,18 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const CapabilityName = "evm"
+const (
+	CapabilityName    = "evm"
+	CapabilityVersion = "1.0.0"
+
+	// Default values for optional EVM consensus/read settings when not provided in config.
+	defaultObservationWorkers                   = 10
+	defaultObservationPollPeriod                = 2 * time.Second
+	defaultUnknownRequestsTTL                   = 10 * time.Second
+	defaultMaxUnknownRequestsCacheSize          = 100
+	defaultChainHeightPollPeriod                = time.Second
+	defaultRequestTimeoutToUnknownTTLMultiplier = 2
+)
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
@@ -117,7 +129,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	// capabilityDonID is the on-chain DON ID of the capability DON this plugin
 	// process serves, used to label emitted trigger events with the *sending*
@@ -132,6 +143,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	// from the registry here: that lookup cannot disambiguate multi-DON nodes and
 	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
 	capabilityDonID := dependencies.CapabilityDonID
+
+	averageRequestTimeout := capcommon.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
+	derivedUnknownTTL := averageRequestTimeout * defaultRequestTimeoutToUnknownTTLMultiplier
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
@@ -216,23 +231,28 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	}
 
 	if cfg.ObservationPollerWorkersCount == 0 {
-		cfg.ObservationPollerWorkersCount = 10
+		cfg.ObservationPollerWorkersCount = defaultObservationWorkers
 		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
 	}
 
 	if cfg.ObservationPollPeriod == 0 {
-		cfg.ObservationPollPeriod = 2 * time.Second
+		cfg.ObservationPollPeriod = defaultObservationPollPeriod
 		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
 	}
 
 	if cfg.ChainHeightPollPeriod == 0 {
-		cfg.ChainHeightPollPeriod = time.Second
+		cfg.ChainHeightPollPeriod = defaultChainHeightPollPeriod
 		c.lggr.Infof("ChainHeightPollPeriod is zero, setting to %s.", cfg.ChainHeightPollPeriod)
 	}
 
 	if cfg.UnknownRequestsTTL == 0 {
-		cfg.UnknownRequestsTTL = 10 * time.Second
+		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 
 	// DeltaStage is optional - if not set, transmission scheduling will be disabled
