@@ -40,6 +40,7 @@ message RequestObservation {
 
   bool remove_lib_use_in_failure_message_formatting_flag = 4; // remove use of libraries in failure message formatting; flag to be removed after rollout
   bool update_error_handling_flag = 5; // migrate system errors to user errors; flag to be removed after rollout
+  bool include_error_observation_timestamps_flag = 6; // include error observations in the median outcome timestamp; flag to be removed after rollout
 }
 
 message Observation {
@@ -89,6 +90,9 @@ enum ConsensusFailureCode {
   // Indicates an error in the workflow logic, such that the workflow is not producing a consistent value type for the
   // same request across observers.
   NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS = 7;
+  // The successful outcome could not be turned into a report to sign, e.g. it has an empty report payload, a missing or
+  // out of range timestamp, an unknown request type or metadata that cannot be encoded. Only the affected request fails.
+  INVALID_OUTCOME = 8;
 }
 
 message ConsensusFailedOutcome {

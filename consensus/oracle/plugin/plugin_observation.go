@@ -36,6 +36,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			Input:      req.Input,
 			RemoveLibUseInFailureMessageFormattingFlag: true,
 			UpdateErrorHandlingFlag:                    true,
+			IncludeErrorObservationTimestampsFlag:      true,
 		}
 
 		hasCapacity := observationBatch.AddObservation(ctx, reqObs)
