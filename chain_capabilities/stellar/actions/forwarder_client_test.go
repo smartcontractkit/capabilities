@@ -193,6 +193,45 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		require.True(t, events[1].Success)
 	})
 
+	// Regression: some Soroban RPCs hand back a trailing cursor that, when
+	// followed, walks past EndLedger and keeps returning out-of-range events with
+	// a fresh cursor (never an empty one within range). The drain must stop at the
+	// first event beyond EndLedger instead of running to the page cap.
+	t.Run("stops at events beyond end ledger when cursor overruns range", func(t *testing.T) {
+		t.Parallel()
+		svc := mocks.NewStellarService(t)
+		success := true
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == searchRange.StartLedger &&
+				req.EndLedger == searchRange.EndLedger &&
+				req.Pagination != nil && req.Pagination.Cursor == ""
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{
+				TransactionHash: testTxHash,
+				Ledger:          150, // within [100, 200]
+				Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
+			}},
+			Cursor: "next", // trailing cursor despite being the last in-range page
+		}, nil).Once()
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == 0 && req.EndLedger == 0 &&
+				req.Pagination != nil && req.Pagination.Cursor == "next"
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{
+				TransactionHash: "out-of-range",
+				Ledger:          9999, // beyond EndLedger
+				Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
+			}},
+			Cursor: "still-more", // never empty; must not be followed
+		}, nil).Once()
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+
+		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
+		require.NoError(t, err)
+		require.Len(t, events, 1) // only the in-range event is kept
+		require.Equal(t, testTxHash, events[0].TxHash)
+	})
+
 	t.Run("index behind requested range returns retryable error", func(t *testing.T) {
 		t.Parallel()
 		svc := mocks.NewStellarService(t)

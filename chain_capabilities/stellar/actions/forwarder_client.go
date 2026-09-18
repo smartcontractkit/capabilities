@@ -284,7 +284,14 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 	var events []ReportProcessedEvent
 	cursor := ""
 	for page := 0; page < reportProcessedEventMaxPages; page++ {
-		// Soroban getEvents treats a pagination cursor and a ledger range as mutually exclusive
+		// Soroban getEvents treats a pagination cursor and a ledger range as
+		// mutually exclusive: sending both is rejected with
+		// "ledger ranges and cursor cannot both be set". The first page is bounded
+		// by the explicit range; subsequent pages follow the cursor, which is
+		// self-contained. Some RPCs return a trailing cursor that walks past
+		// EndLedger, so we additionally bound the drain by each event's ledger:
+		// events arrive in ascending ledger order, so the first event at or beyond
+		// EndLedger marks the end of the range and we stop.
 		req := stellartypes.GetEventsRequest{
 			Filters: []stellartypes.EventFilter{
 				{
@@ -311,7 +318,13 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 			return nil, fmt.Errorf("event index has not reached requested range: latest ledger %d, requested end ledger %d", resp.LatestLedger, searchRange.EndLedger)
 		}
 
+		reachedEnd := false
 		for i, e := range resp.Events {
+			// Past the requested range: stop without including it.
+			if e.Ledger > searchRange.EndLedger {
+				reachedEnd = true
+				break
+			}
 			if e.TransactionHash == "" {
 				return nil, fmt.Errorf("empty tx hash at event index %d", i)
 			}
@@ -325,7 +338,7 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 			})
 		}
 
-		if resp.Cursor == "" {
+		if reachedEnd || resp.Cursor == "" {
 			return events, nil
 		}
 		cursor = resp.Cursor
