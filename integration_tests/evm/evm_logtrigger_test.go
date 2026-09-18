@@ -29,11 +29,10 @@ import (
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
+	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/workflow/generated/capabilities_registry_wrapper_v2"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
-	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
@@ -609,11 +608,7 @@ func evmRegistryCapability(t *testing.T) kcr.CapabilitiesRegistryCapability {
 	require.True(t, ok, "no chain selector for chain ID %d", evmChainID)
 
 	return kcr.CapabilitiesRegistryCapability{
-		LabelledName: fmt.Sprintf("evm:ChainSelector:%d", chainSelector),
-		Version:      "1.0.0",
-		// The registry contract has no combined type, and these tests exercise
-		// the log trigger.
-		CapabilityType: uint8(registrysyncer.ContractCapabilityTypeTrigger),
+		CapabilityId: fmt.Sprintf("evm:ChainSelector:%d@1.0.0", chainSelector),
 	}
 }
 
