@@ -575,7 +575,7 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 // unrelated to any specific request ID, so it is voted on independently of per-request
 // observation quorum (which the aggregation loop in Outcome enforces on its own).
 func (rp *reportingPlugin) agreeOnEnableMissingRequestRecovery(aos []attributedObservation) bool {
-	minMatching := rp.config.matchingThreshold()
+	minMatching := byzQuorumSize(rp.config.N, rp.config.F)
 	counter := 0
 	for _, ob := range aos {
 		if ob.Observation.EnableMissingRequestRecovery {
