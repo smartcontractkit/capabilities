@@ -284,8 +284,9 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 	var events []ReportProcessedEvent
 	cursor := ""
 	for page := 0; page < reportProcessedEventMaxPages; page++ {
-		// Soroban getEvents treats a pagination cursor and a ledger range as mutually exclusive
-		//Some RPCs return a trailing cursor that, once followed,
+		// Soroban getEvents treats a pagination cursor and a ledger range as mutually exclusive.
+		//
+		// Some RPCs return a trailing cursor that, once followed,
 		// either walks past EndLedger or repeats on empty pages, so we cannot rely
 		// on an empty cursor alone to terminate. Events arrive in ascending ledger
 		// order, so the range is drained as soon as a page is empty or yields an
