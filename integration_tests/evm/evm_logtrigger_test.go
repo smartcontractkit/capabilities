@@ -1,5 +1,3 @@
-//go:build evm_integration
-
 package evmlogtrigger
 
 import (
