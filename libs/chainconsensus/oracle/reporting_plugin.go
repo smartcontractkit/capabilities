@@ -26,6 +26,8 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
 
 const (
@@ -38,12 +40,11 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	MaxBatchSize                 int  // max number of requests that this node will try to process in a single round
-	MaxObservationLength         int  // max length of observation in bytes
-	MaxReportLengthBytes         int  // max length of report in bytes
-	MaxReportCount               int  // max number of reports in a single round
-	MinResponsesToAggregate      int  // minimum responses to aggregate to accept a read value; 0 means use F+1
-	EnableMissingRequestRecovery bool // whether to enable missing request recovery
+	MaxBatchSize            int // max number of requests that this node will try to process in a single round
+	MaxObservationLength    int // max length of observation in bytes
+	MaxReportLengthBytes    int // max length of report in bytes
+	MaxReportCount          int // max number of reports in a single round
+	MinResponsesToAggregate int // minimum responses to aggregate to accept a read value; 0 means use F+1
 }
 
 // matchingThreshold returns the minimum number of nodes that must report identical
@@ -57,11 +58,12 @@ func (c Config) matchingThreshold() int {
 }
 
 type reportingPlugin struct {
-	config         Config
-	logger         logger.SugaredLogger
-	blocksProvider BlocksProvider
-	requestsStore  RequestsHandler
-	metrics        metrics.ConsensusMetrics
+	config                       Config
+	logger                       logger.SugaredLogger
+	blocksProvider               BlocksProvider
+	requestsStore                RequestsHandler
+	metrics                      metrics.ConsensusMetrics
+	enableMissingRequestRecovery limits.GateLimiter
 }
 
 func newReportingPlugin(
@@ -70,14 +72,22 @@ func newReportingPlugin(
 	blocksProvider BlocksProvider,
 	requestsStore RequestsHandler,
 	metrics metrics.ConsensusMetrics,
-) *reportingPlugin {
-	return &reportingPlugin{
+	limitsFactory limits.Factory,
+) (*reportingPlugin, error) {
+	rp := &reportingPlugin{
 		config:         config,
 		logger:         logger,
 		blocksProvider: blocksProvider,
 		requestsStore:  requestsStore,
 		metrics:        metrics,
 	}
+
+	var err error
+	rp.enableMissingRequestRecovery, err = limits.MakeGateLimiter(limitsFactory, cresettings.Default.MissingRequestRecoveryEnabled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create missing request recovery gate limiter: %w", err)
+	}
+	return rp, nil
 }
 
 func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
@@ -178,6 +188,12 @@ func (rp *reportingPlugin) Observation(
 	if err != nil {
 		return nil, fmt.Errorf("failed to add observations for missing requests from previous outcome: %w", err)
 	}
+
+	open, err := rp.enableMissingRequestRecovery.IsOpen(ctx)
+	if err != nil {
+		rp.logger.Errorw("error checking if enableMissingRequestRecovery is enabled", "error", err)
+	}
+	observation.FeatureEnableMissingRequestRecovery = open
 
 	// add observations for requests provided by the leader in the query
 	err = rp.addObservations(ctx, query.RequestIDs, observation)
@@ -554,6 +570,24 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 	return result, nil
 }
 
+// agreeOnFeatureEnableMissingRequestRecovery reaches DON-wide quorum, once per round, on
+// whether missing-request recovery is enabled. This is a per-node, per-round capability flag
+// unrelated to any specific request ID, so it is voted on independently of per-request
+// observation quorum (which the aggregation loop in Outcome enforces on its own).
+func (rp *reportingPlugin) agreeOnFeatureEnableMissingRequestRecovery(aos []attributedObservation) bool {
+	minMatching := rp.config.matchingThreshold()
+	counter := 0
+	for _, ob := range aos {
+		if ob.Observation.FeatureEnableMissingRequestRecovery {
+			counter++
+			if counter >= minMatching {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
 	iterator := func(yield func(commontypes.OracleID, *observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
@@ -775,23 +809,23 @@ func (rp *reportingPlugin) Outcome(
 	}
 
 	requestIDs := query.RequestIDs
-	if rp.config.EnableMissingRequestRecovery {
-		if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil {
-			seen := make(map[string]struct{}, len(query.RequestIDs))
-			for _, requestID := range query.RequestIDs {
-				seen[requestID] = struct{}{}
-			}
+	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil && rp.agreeOnFeatureEnableMissingRequestRecovery(aos) {
+		seen := make(map[string]struct{}, len(query.RequestIDs))
+		for _, requestID := range query.RequestIDs {
+			seen[requestID] = struct{}{}
+		}
 
-			// Requests that the leader's query omitted but that a quorum of nodes still supplied
-			// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
-			// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
-			for _, requestID := range prevOutcome.MissingRequestIDs {
-				if _, ok := seen[requestID]; ok {
-					continue
-				}
-				seen[requestID] = struct{}{}
-				requestIDs = append(requestIDs, requestID)
+		// Requests that the leader's query omitted but that a quorum of nodes still supplied
+		// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
+		// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
+		// Per-request observation quorum is enforced independently by the aggregation loop below,
+		// so it's safe to add all of them here once the feature itself has DON-wide quorum.
+		for _, requestID := range prevOutcome.MissingRequestIDs {
+			if _, ok := seen[requestID]; ok {
+				continue
 			}
+			seen[requestID] = struct{}{}
+			requestIDs = append(requestIDs, requestID)
 		}
 	}
 
@@ -978,5 +1012,5 @@ func (rp *reportingPlugin) ShouldTransmitAcceptedReport(
 }
 
 func (rp *reportingPlugin) Close() error {
-	return nil
+	return rp.enableMissingRequestRecovery.Close()
 }

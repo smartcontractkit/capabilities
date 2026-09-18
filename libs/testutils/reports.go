@@ -5,7 +5,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 )
 
@@ -21,7 +21,7 @@ func NewReport(t *testing.T, value map[string][]byte) *values.Value {
 	}
 
 	wrappedSignedReport, err := values.Wrap(
-		ocr3cap.SignedReport{
+		types.SignedReport{
 			Context:    []uint8{},
 			ID:         []uint8{1},
 			Report:     wrappedValueBytes,

@@ -8,7 +8,7 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260729165045-b00a39493e13
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260915092957-846dda90a055
 	github.com/smartcontractkit/chain-selectors v1.0.106
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260915085450-70e088c78bf2
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260918090440-4031696dc913
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260410162948-2dca02f24e98
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251022073203-7d8ae8cf67c1
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260410144512-ca02ad6ed16a
@@ -89,7 +89,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/smartcontractkit/chainlink-common/keystore v1.1.1-0.20260529092756-a94bc8ce96d6 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260724142814-45996a1bcb72 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260915184316-2730f1867c92 // indirect
 	github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20260326122810-b657beadfb57 // indirect
 	github.com/smartcontractkit/chainlink-framework/metrics v0.0.0-20260401162955-be2bc6b5264b // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
@@ -215,8 +215,10 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/grpc v1.83.1 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df
+
+replace github.com/smartcontractkit/capabilities/libs => /Users/yashvardhan/capabilities/libs
