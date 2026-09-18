@@ -158,7 +158,9 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		failed := false
 		success := true
 		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
-			return req.Pagination != nil && req.Pagination.Cursor == ""
+			return req.StartLedger == searchRange.StartLedger &&
+				req.EndLedger == searchRange.EndLedger &&
+				req.Pagination != nil && req.Pagination.Cursor == ""
 		})).Return(stellartypes.GetEventsResponse{
 			Events: []stellartypes.EventInfo{{
 				TransactionHash: "failed",
@@ -167,9 +169,11 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 			}},
 			Cursor: "next",
 		}, nil).Once()
+		// Soroban getEvents rejects a ledger range combined with a cursor, so the
+		// follow-up page must carry the cursor only (no StartLedger/EndLedger).
 		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
-			return req.StartLedger == searchRange.StartLedger &&
-				req.EndLedger == searchRange.EndLedger &&
+			return req.StartLedger == 0 &&
+				req.EndLedger == 0 &&
 				req.Pagination != nil &&
 				req.Pagination.Cursor == "next"
 		})).Return(stellartypes.GetEventsResponse{

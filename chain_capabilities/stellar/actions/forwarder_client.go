@@ -284,9 +284,8 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 	var events []ReportProcessedEvent
 	cursor := ""
 	for page := 0; page < reportProcessedEventMaxPages; page++ {
-		resp, err := fc.GetEvents(ctx, stellartypes.GetEventsRequest{
-			StartLedger: searchRange.StartLedger,
-			EndLedger:   searchRange.EndLedger,
+		// Soroban getEvents treats a pagination cursor and a ledger range as mutually exclusive
+		req := stellartypes.GetEventsRequest{
 			Filters: []stellartypes.EventFilter{
 				{
 					EventTypes:  []stellartypes.EventType{stellartypes.EventTypeContract},
@@ -298,7 +297,13 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 				Cursor: cursor,
 				Limit:  reportProcessedEventPageLimit,
 			},
-		})
+		}
+		if cursor == "" {
+			// First page: bound the search by the immutable ledger range.
+			req.StartLedger = searchRange.StartLedger
+			req.EndLedger = searchRange.EndLedger
+		}
+		resp, err := fc.GetEvents(ctx, req)
 		if err != nil {
 			return nil, err
 		}
