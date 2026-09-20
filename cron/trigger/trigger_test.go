@@ -1221,6 +1221,77 @@ func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
 	require.NoError(t, ts.Close())
 }
 
+// slowOrgResolver simulates an OrgResolver.Get() call that takes longer than the trigger's
+// schedule interval, so tests can exercise a task body slower than its own schedule.
+type slowOrgResolver struct {
+	delay time.Duration
+}
+
+func (r *slowOrgResolver) Get(ctx context.Context, owner string) (string, error) {
+	time.Sleep(r.delay)
+	return "org-1", nil
+}
+
+func (r *slowOrgResolver) Start(ctx context.Context) error { return nil }
+func (r *slowOrgResolver) Close() error                     { return nil }
+func (r *slowOrgResolver) HealthReport() map[string]error   { return map[string]error{} }
+func (r *slowOrgResolver) Ready() error                      { return nil }
+func (r *slowOrgResolver) Name() string                       { return "slowOrgResolver" }
+
+var _ orgresolver.OrgResolver = (*slowOrgResolver)(nil)
+
+// TestCronTrigger_NoDuplicateEventIDsWhenTaskOutlivesSchedule is a regression test for
+// CRE-5715: a task body slower than the schedule interval (e.g. a slow org resolver
+// lookup) previously let two overlapping fires read the same cached nextRun and emit
+// the same deterministic trigger event ID, causing duplicate workflow executions.
+// The fix advances nextRun and sends the trigger response before doing any slow
+// bookkeeping, so it also asserts fires keep arriving on schedule (not delayed by a
+// slow org resolver, since that work now runs asynchronously).
+func TestCronTrigger_NoDuplicateEventIDsWhenTaskOutlivesSchedule(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	realClock := clockwork.NewRealClock()
+
+	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+
+	ts, err := NewTriggerService(lggr, realClock, limits.Factory{})
+	require.NoError(t, err)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config:      string(triggerConfig),
+		OrgResolver: &slowOrgResolver{delay: 1200 * time.Millisecond},
+	})
+	require.NoError(t, err)
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:    workflowID1,
+		WorkflowOwner: "owner-1",
+	}
+	start := realClock.Now()
+	ch, capErr := ts.RegisterTrigger(t.Context(), makeTriggerID(1), metadata, &crontypedapi.Config{Schedule: everySecond})
+	require.Nil(t, capErr)
+
+	seen := map[string]bool{}
+	for i := range 4 {
+		select {
+		case msg := <-ch:
+			require.False(t, seen[msg.Id], "duplicate trigger event ID: %s", msg.Id)
+			seen[msg.Id] = true
+			// Each fire i should land around (i+1)s after registration, not delayed by
+			// the 1.2s-per-fire org resolver latency piling up (that would push fire 4
+			// out to ~4.8s instead of ~4s).
+			elapsed := realClock.Now().Sub(start)
+			require.Less(t, elapsed, time.Duration(i+1)*time.Second+500*time.Millisecond,
+				"fire %d arrived too late (%s), bookkeeping latency should not delay ticks", i, elapsed)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("timed out waiting for event %d", i)
+		}
+	}
+
+	require.NoError(t, ts.Close())
+}
+
 func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
 	t.Parallel()
 	// a schedule that has a bunch of 5s gaps followed by a bunch of 1s gaps

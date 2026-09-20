@@ -67,6 +67,10 @@ type Service struct {
 	labeler                 custmsg.MessageEmitter
 	metrics                 *Metrics
 	orgResolver             orgresolver.OrgResolver
+
+	// asyncBookkeeping tracks in-flight org-resolver lookups and event emissions (see
+	// RegisterTrigger) so Close can wait for them instead of leaking goroutines.
+	asyncBookkeeping sync.WaitGroup
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
@@ -249,12 +253,69 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			}
 
 			workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(trigger.workflowID, response.Id, triggerIndex)
-
 			if execIDErr != nil {
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
-				// Continue with execution even if we can't generate ID or emit event
-			} else {
-				// Try to fetch organization ID if org resolver is available
+				// Continue with execution even if we can't generate ID
+			}
+
+			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "isLegacyExecutionID", false, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+
+			nextExecutionTime, nextRunErr := job.NextRun()
+			if nextRunErr != nil {
+				// .NextRun() will error if the job no longer exists
+				// or if there is no next run to schedule, which shouldn't happen with cron jobs
+				s.lggr.Errorw("task callback failed to schedule next run", "executionID", workflowExecutionID, "triggerID", triggerID)
+			}
+
+			// Advance nextRun and send the trigger response now, before any slow bookkeeping
+			// below: if a duplicate fire ever overlaps this one (e.g. a hung goroutine from a
+			// prior run), both must never read trigger.nextRun before either writes it back, or
+			// they'd compute the same deterministic event ID and duplicate the workflow execution
+			// (CRE-5715). A full Lock (rather than RLock) makes this read-modify-write atomic;
+			// doing it immediately, with no I/O in between, keeps CRON events firing as close to
+			// their scheduled real time as possible regardless of how slow the bookkeeping below is.
+			muCh.Lock()
+			if callbackCh == nil {
+				muCh.Unlock()
+				return // unregistered already
+			}
+			s.triggers.Write(triggerID, cronTrigger{
+				job:        job,
+				nextRun:    nextExecutionTime,
+				workflowID: metadata.WorkflowID,
+				close:      closeCh,
+			})
+
+			select {
+			case callbackCh <- response:
+			default:
+				s.lggr.Errorw("callback channel full, dropping event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id)
+
+				lblErr := s.labeler.With(
+					"workflowOwner", metadata.WorkflowOwner,
+					"workflowName", displayWorkflowName,
+					"workflowID", metadata.WorkflowID,
+				).Emit(ctx, "callback channel full, dropping event")
+				if lblErr != nil {
+					s.lggr.Errorw("cannot emit custom event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id, "err", lblErr)
+				}
+			}
+			muCh.Unlock()
+
+			if execIDErr != nil {
+				return
+			}
+
+			// Org ID resolution and observability event emission are pure bookkeeping (not
+			// part of the trigger payload) that can involve slow network calls; run them off
+			// the critical path so they never delay this fire or push the next one late.
+			s.asyncBookkeeping.Go(func() {
+				defer func() {
+					if r := recover(); r != nil {
+						s.lggr.Errorw("panic in async trigger bookkeeping", "err", r, "stack", string(debug.Stack()), "triggerID", triggerID, "executionID", workflowExecutionID)
+					}
+				}()
+
 				var orgID string
 				if s.orgResolver != nil && metadata.WorkflowOwner != "" {
 					func() {
@@ -288,45 +349,8 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				)
 				if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
-					// Continue with execution even if event emission fails
 				}
-			}
-
-			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "isLegacyExecutionID", false, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
-
-			nextExecutionTime, nextRunErr := job.NextRun()
-			if nextRunErr != nil {
-				// .NextRun() will error if the job no longer exists
-				// or if there is no next run to schedule, which shouldn't happen with cron jobs
-				s.lggr.Errorw("task callback failed to schedule next run", "executionID", workflowExecutionID, "triggerID", triggerID)
-			}
-
-			muCh.RLock()
-			defer muCh.RUnlock()
-			if callbackCh == nil {
-				return // unregistered already
-			}
-			s.triggers.Write(triggerID, cronTrigger{
-				job:        job,
-				nextRun:    nextExecutionTime,
-				workflowID: metadata.WorkflowID,
-				close:      closeCh,
 			})
-
-			select {
-			case callbackCh <- response:
-			default:
-				s.lggr.Errorw("callback channel full, dropping event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id)
-
-				lblErr := s.labeler.With(
-					"workflowOwner", metadata.WorkflowOwner,
-					"workflowName", displayWorkflowName,
-					"workflowID", metadata.WorkflowID,
-				).Emit(ctx, "callback channel full, dropping event")
-				if lblErr != nil {
-					s.lggr.Errorw("cannot emit custom event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id, "err", lblErr)
-				}
-			}
 		})
 
 	if s.scheduler == nil {
@@ -454,6 +478,10 @@ func (s *Service) Close() error {
 	// After .Shutdown() the scheduler cannot be started again,
 	// but calling .Start() on it will not error. Set to nil to mark closed.
 	s.scheduler = nil
+
+	// Wait for any in-flight async bookkeeping (org resolver lookups, event emissions)
+	// spawned by RegisterTrigger's task callback, so it doesn't outlive the service.
+	s.asyncBookkeeping.Wait()
 
 	s.lggr.Info(s.Name() + " closed")
 
