@@ -47,11 +47,11 @@ func TestAverageRequestTimeout(t *testing.T) {
 	t.Run("returns fallback when registry is nil", func(t *testing.T) {
 		t.Parallel()
 
-		got := AverageRequestTimeout(context.Background(), nil, capID, donID, fallback, lggr)
+		got := MaxRequestTimeout(context.Background(), nil, capID, donID, fallback, lggr)
 		require.Equal(t, fallback, got)
 	})
 
-	t.Run("averages RequestTimeout across method configs", func(t *testing.T) {
+	t.Run("returns max RequestTimeout across method configs", func(t *testing.T) {
 		t.Parallel()
 
 		reg := mocks.NewCapabilitiesRegistry(t)
@@ -61,8 +61,8 @@ func TestAverageRequestTimeout(t *testing.T) {
 			withTimeout(3*time.Second),
 		), nil)
 
-		got := AverageRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 2*time.Second, got)
+		got := MaxRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
+		require.Equal(t, 3*time.Second, got)
 	})
 
 	t.Run("skips method configs without RemoteExecutableConfig or zero RequestTimeout", func(t *testing.T) {
@@ -76,8 +76,8 @@ func TestAverageRequestTimeout(t *testing.T) {
 			withTimeout(8*time.Second),
 		), nil)
 
-		got := AverageRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 6*time.Second, got)
+		got := MaxRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
+		require.Equal(t, 8*time.Second, got)
 	})
 
 	t.Run("returns fallback when no method config has a RequestTimeout", func(t *testing.T) {
@@ -89,7 +89,7 @@ func TestAverageRequestTimeout(t *testing.T) {
 			withTimeout(0),
 		), nil)
 
-		got := AverageRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
+		got := MaxRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
 		require.Equal(t, fallback, got)
 	})
 
@@ -99,11 +99,11 @@ func TestAverageRequestTimeout(t *testing.T) {
 		reg := mocks.NewCapabilitiesRegistry(t)
 		reg.EXPECT().ConfigForCapability(mock.Anything, capID, donID).Return(configWith(), nil)
 
-		got := AverageRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
+		got := MaxRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
 		require.Equal(t, fallback, got)
 	})
 
-	t.Run("excludes WriteReport and LogTrigger methods from the average", func(t *testing.T) {
+	t.Run("excludes WriteReport and LogTrigger methods from the max", func(t *testing.T) {
 		t.Parallel()
 
 		reg := mocks.NewCapabilitiesRegistry(t)
@@ -114,8 +114,8 @@ func TestAverageRequestTimeout(t *testing.T) {
 			"LogTrigger":   {RemoteExecutableConfig: withTimeout(200 * time.Second)},
 		}), nil)
 
-		got := AverageRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 3*time.Second, got)
+		got := MaxRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
+		require.Equal(t, 4*time.Second, got)
 	})
 
 	t.Run("returns fallback when only WriteReport and LogTrigger have RequestTimeout", func(t *testing.T) {
@@ -127,7 +127,7 @@ func TestAverageRequestTimeout(t *testing.T) {
 			"LogTrigger":  {RemoteExecutableConfig: withTimeout(200 * time.Second)},
 		}), nil)
 
-		got := AverageRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
+		got := MaxRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
 		require.Equal(t, fallback, got)
 	})
 
@@ -143,11 +143,11 @@ func TestAverageRequestTimeout(t *testing.T) {
 		reg.EXPECT().ConfigForCapability(mock.Anything, capID, donID).
 			Return(capabilities.CapabilityConfiguration{}, errors.New("boom"))
 
-		got := AverageRequestTimeout(ctx, reg, capID, donID, fallback, lggr)
+		got := MaxRequestTimeout(ctx, reg, capID, donID, fallback, lggr)
 		require.Equal(t, fallback, got)
 	})
 
-	t.Run("retries after a transient error and returns average", func(t *testing.T) {
+	t.Run("retries after a transient error and returns max", func(t *testing.T) {
 		t.Parallel()
 
 		reg := mocks.NewCapabilitiesRegistry(t)
@@ -158,7 +158,7 @@ func TestAverageRequestTimeout(t *testing.T) {
 			withTimeout(3*time.Second),
 		), nil)
 
-		got := AverageRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 2*time.Second, got)
+		got := MaxRequestTimeout(context.Background(), reg, capID, donID, fallback, lggr)
+		require.Equal(t, 3*time.Second, got)
 	})
 }

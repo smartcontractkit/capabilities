@@ -174,13 +174,13 @@ func WithRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.C
 	return result, nil
 }
 
-// AverageRequestTimeout returns the average RequestTimeout configured across
+// MaxRequestTimeout returns the maximum RequestTimeout configured across
 // capabilityID's CapabilityMethodConfig entries for donID. Method configs for
 // WriteReport and LogTrigger methods are excluded — their timeout semantics
 // differ from regular executable methods. If the config can't be fetched or no
 // eligible RemoteExecutableConfig.RequestTimeout values are found, it returns
 // fallback.
-func AverageRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
+func MaxRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
 	if registry == nil {
 		return fallback
 	}
@@ -193,7 +193,7 @@ func AverageRequestTimeout(ctx context.Context, registry core.CapabilitiesRegist
 		return fallback
 	}
 
-	var total time.Duration
+	var maxTimeout time.Duration
 	var count int
 	for method, methodCfg := range cfg.CapabilityMethodConfig {
 		if isNonReadMethod(method) {
@@ -202,13 +202,15 @@ func AverageRequestTimeout(ctx context.Context, registry core.CapabilitiesRegist
 		if methodCfg.RemoteExecutableConfig == nil || methodCfg.RemoteExecutableConfig.RequestTimeout == 0 {
 			continue
 		}
-		total += methodCfg.RemoteExecutableConfig.RequestTimeout
+		if methodCfg.RemoteExecutableConfig.RequestTimeout > maxTimeout {
+			maxTimeout = methodCfg.RemoteExecutableConfig.RequestTimeout
+		}
 		count++
 	}
 	if count == 0 {
 		return fallback
 	}
-	return total / time.Duration(count)
+	return maxTimeout
 }
 
 func isNonReadMethod(method string) bool {
