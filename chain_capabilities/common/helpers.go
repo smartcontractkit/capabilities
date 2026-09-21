@@ -15,6 +15,7 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 
 	commonmon "github.com/smartcontractkit/capabilities/libs/monitoring"
@@ -171,4 +172,52 @@ func WithRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.C
 		return result, err
 	}
 	return result, nil
+}
+
+// MaxRequestTimeout returns the maximum RequestTimeout configured across
+// capabilityID's CapabilityMethodConfig entries for donID. Method configs for
+// WriteReport and LogTrigger methods are excluded — their timeout semantics
+// differ from regular executable methods. If the config can't be fetched or no
+// eligible RemoteExecutableConfig.RequestTimeout values are found, it returns
+// fallback.
+func MaxRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
+	if registry == nil {
+		return fallback
+	}
+
+	cfg, err := WithPollingRetry(ctx, lggr, func(ctx context.Context) (capabilities.CapabilityConfiguration, error) {
+		return registry.ConfigForCapability(ctx, capabilityID, donID)
+	})
+	if err != nil {
+		lggr.Errorw("failed getting config for capability", "capabilityID", capabilityID, "error", err)
+		return fallback
+	}
+
+	var maxTimeout time.Duration
+	var count int
+	for method, methodCfg := range cfg.CapabilityMethodConfig {
+		if isNonReadMethod(method) {
+			continue
+		}
+		if methodCfg.RemoteExecutableConfig == nil || methodCfg.RemoteExecutableConfig.RequestTimeout == 0 {
+			continue
+		}
+		if methodCfg.RemoteExecutableConfig.RequestTimeout > maxTimeout {
+			maxTimeout = methodCfg.RemoteExecutableConfig.RequestTimeout
+		}
+		count++
+	}
+	if count == 0 {
+		return fallback
+	}
+	return maxTimeout
+}
+
+func isNonReadMethod(method string) bool {
+	switch method {
+	case "WriteReport", "LogTrigger":
+		return true
+	default:
+		return false
+	}
 }
