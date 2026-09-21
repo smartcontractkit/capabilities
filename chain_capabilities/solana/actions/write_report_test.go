@@ -396,11 +396,17 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		}
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
+		txFeeInLamports := uint64(5000)
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil)
+
 		reportMetadata := createTestReportMetadata()
 
 		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), helper.validWriteReportReq(t, reportMetadata))
 		require.NoError(t, err)
-		require.Empty(t, result.ResponseMetadata.Metering)
+		// Nodes that did not transmit still meter the on-chain fee.
+		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
 	})
 	t.Run("TX first transmission - Successful TX execution", func(t *testing.T) {
 		ctx := t.Context()
@@ -724,13 +730,19 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 
-	t.Run("Pre-existing successful transmission has no metering", func(t *testing.T) {
+	t.Run("Pre-existing successful transmission includes metering metadata", func(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
-			State: TransmissionStateSucceeded,
+			State:     TransmissionStateSucceeded,
+			Signature: sig,
+		}, nil)
+
+		txFeeInLamports := uint64(5000)
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
 		}, nil)
 
 		reportMetadata := createTestReportMetadata()
@@ -738,6 +750,56 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), helper.validWriteReportReq(t, reportMetadata))
 		require.NoError(t, err)
 		require.NotNil(t, result)
+
+		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("Pre-existing failed transmission includes metering metadata", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		helper := createMocksAndCapability(t, testLogger)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
+			State:     TransmissionStateFailed,
+			Signature: sig,
+		}, nil)
+
+		txFeeInLamports := uint64(5000)
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil)
+
+		reportMetadata := createTestReportMetadata()
+
+		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), helper.validWriteReportReq(t, reportMetadata))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, solcap.TxStatus_TX_STATUS_ABORTED, result.Response.TxStatus)
+
+		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("Pre-existing successful transmission with fee lookup failure has no metering", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		helper := createMocksAndCapability(t, testLogger)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
+			State:     TransmissionStateSucceeded,
+			Signature: sig,
+		}, nil)
+
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(
+			(*soltypes.GetTransactionReply)(nil), errors.New("rpc error: transaction not found"))
+
+		reportMetadata := createTestReportMetadata()
+
+		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), helper.validWriteReportReq(t, reportMetadata))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, solcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 
 		require.Empty(t, result.ResponseMetadata.Metering)
 		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)

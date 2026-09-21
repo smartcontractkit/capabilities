@@ -199,7 +199,7 @@ func (wr *writeReport) execute(
 			TransactionFee:                  &feeOctas,
 			BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, txResult.BlockTimestamp),
 		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		return reply, metering.GetResponseMetadataWriteReport(feeOctas, wr.chainSelector), nil
 	}
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
