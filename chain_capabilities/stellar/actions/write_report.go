@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/stellar/go-stellar-sdk/strkey"
@@ -335,30 +334,7 @@ func (s *Stellar) validateWriteReportInputs(metadata capabilities.RequestMetadat
 		}
 	}
 
-	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
-	if err != nil {
-		return fmt.Errorf("%s failed to decode report metadata: %w", capcommon.UserError, err)
-	}
-	if reportMetadata.Version != 1 {
-		return fmt.Errorf("%s unsupported report metadata version: %d", capcommon.UserError, reportMetadata.Version)
-	}
-	if reportMetadata.ExecutionID != metadata.WorkflowExecutionID {
-		return fmt.Errorf("%s report workflowExecutionID does not match request metadata", capcommon.UserError)
-	}
-	if !strings.EqualFold(reportMetadata.WorkflowOwner, metadata.WorkflowOwner) {
-		return fmt.Errorf("%s report workflowOwner does not match request metadata", capcommon.UserError)
-	}
-	expectedWorkflowName := metadata.WorkflowName
-	if len(expectedWorkflowName) < 20 {
-		expectedWorkflowName += strings.Repeat("0", 20-len(expectedWorkflowName))
-	}
-	if !strings.EqualFold(reportMetadata.WorkflowName, expectedWorkflowName) {
-		return fmt.Errorf("%s report workflowName does not match request metadata", capcommon.UserError)
-	}
-	if reportMetadata.WorkflowID != metadata.WorkflowID {
-		return fmt.Errorf("%s report workflowID does not match request metadata", capcommon.UserError)
-	}
-	return nil
+	return capcommon.ValidateReportMetadataWithPrefix(capcommon.UserError, metadata, request.Report.RawReport)
 }
 
 func getTransmissionID(workflowExecutionID string, request *stellarcap.WriteReportRequest) (TransmissionID, error) {

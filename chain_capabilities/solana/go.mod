@@ -6,13 +6,13 @@ require (
 	github.com/gagliardetto/solana-go v1.23.0
 	github.com/google/go-cmp v0.7.0
 	github.com/mr-tron/base58 v1.2.0
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260729165045-b00a39493e13
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260915141251-0910a990ef64
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
 	github.com/smartcontractkit/chain-selectors v1.0.104
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260821143015-dd4fa25f7fee
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138
-	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260909144322-62fa34fc65b0
+	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260917175559-f7d4a86019d4
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260803170030-90043607d911
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
 	github.com/stretchr/testify v1.12.0
