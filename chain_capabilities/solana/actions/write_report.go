@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+	computebudget "github.com/gagliardetto/solana-go/programs/compute-budget"
 	"github.com/gagliardetto/solana-go/rpc"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -139,6 +141,7 @@ func (wr *WriteReport) executeWriteReport(
 		return nil, capabilities.ResponseMetadata{}, err
 	}
 
+	userProvidedComputeLimit := request.ComputeConfig != nil && request.ComputeConfig.ComputeLimit != 0
 	if request.ComputeConfig == nil {
 		request.ComputeConfig = &solcap.ComputeConfig{}
 		limit, limErr := wr.txComputeLimit.Limit(ctx)
@@ -163,7 +166,7 @@ func (wr *WriteReport) executeWriteReport(
 			return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
 		})
 	} else {
-		transmissionInfo, err = wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
+		transmissionInfo, err = wr.pollTransmissionInfo(ctx, transmissionID, queuePosition, request.ComputeConfig.GetComputeLimit())
 	}
 
 	if err != nil {
@@ -185,11 +188,22 @@ func (wr *WriteReport) executeWriteReport(
 		return wr.successWriteReportReply(&transmissionInfo.Signature), capabilities.ResponseMetadata{}, nil
 
 	case TransmissionStateFailed:
+		decision := wr.assessFailedTransmission(ctx, request, transmissionInfo, telemetryContext, userProvidedComputeLimit)
+		if !decision.retry {
+			wr.lggr.Infow(
+				"returning without a transmission attempt - transmission already attempted and failed with sufficient compute budget",
+				"signature", transmissionInfo.Signature.String(),
+				"priorTxComputeUnitLimit", decision.priorTxComputeUnitLimit,
+				"requestedComputeUnitLimit", request.ComputeConfig.GetComputeLimit(),
+			)
+			return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
+		}
 		wr.lggr.Infow(
-			"returning without a transmission attempt - transmission already attempted and failed",
+			"prior transmission attempt failed with a lower compute unit limit than requested - retrying",
 			"signature", transmissionInfo.Signature.String(),
+			"priorTxComputeUnitLimit", decision.priorTxComputeUnitLimit,
+			"requestedComputeUnitLimit", request.ComputeConfig.GetComputeLimit(),
 		)
-		return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("unexpected transmission state: %d", transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
@@ -445,12 +459,108 @@ func extractTransmissionID(receiver solana.PublicKey, report *sdk.ReportResponse
 	return sha256.Sum256(data), nil
 }
 
+type failedTransmissionDecision struct {
+	retry                   bool
+	priorTxComputeUnitLimit uint32
+}
+
+// assessFailedTransmission decides whether a failed transmission should be retried: retry iff
+// the prior tx's onchain compute unit limit is lower than the one we would submit with (honest
+// nodes submit the requested limit verbatim). A user-provided limit that doesn't match the
+// prior tx is anomalous and emits a mismatch warn + metric; an unfetchable tx means no retry.
+func (wr *WriteReport) assessFailedTransmission(
+	ctx context.Context,
+	request *solcap.WriteReportRequest,
+	transmissionInfo TransmissionInfo,
+	telemetryContext monitoring.TelemetryContext,
+	userProvidedComputeLimit bool,
+) failedTransmissionDecision {
+	requestedComputeLimit := request.ComputeConfig.GetComputeLimit()
+
+	priorTxComputeLimit, err := wr.fetchTxComputeUnitLimit(ctx, transmissionInfo.Signature)
+	if err != nil {
+		wr.lggr.Warnw("Failed to fetch the prior failed transmission tx's compute unit limit, treating the failure as genuine",
+			"error", err.Error(),
+			"signature", transmissionInfo.Signature.String(),
+			"requestedComputeUnitLimit", requestedComputeLimit,
+		)
+		return failedTransmissionDecision{}
+	}
+
+	if userProvidedComputeLimit && priorTxComputeLimit != requestedComputeLimit {
+		wr.lggr.Warnw("Compute limit mismatch: prior transmission tx compute unit limit does not match the requested compute limit",
+			"signature", transmissionInfo.Signature.String(),
+			"priorTxComputeUnitLimit", priorTxComputeLimit,
+			"requestedComputeUnitLimit", requestedComputeLimit,
+		)
+		monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor,
+			wr.messageBuilder.BuildWriteReportComputeLimitMismatch(telemetryContext, request, transmissionInfo.Signature.String(), requestedComputeLimit, priorTxComputeLimit))
+	}
+
+	return failedTransmissionDecision{
+		retry:                   priorTxComputeLimit < requestedComputeLimit,
+		priorTxComputeUnitLimit: priorTxComputeLimit,
+	}
+}
+
+// priorTxComputeLimitLower is the polling early-exit heuristic: whether the failed attempt's
+// tx carried a lower compute unit limit than requested. Fetch failures count as not lower.
+func (wr *WriteReport) priorTxComputeLimitLower(ctx context.Context, sig solana.Signature, requestedComputeLimit uint32) bool {
+	priorTxComputeLimit, err := wr.fetchTxComputeUnitLimit(ctx, sig)
+	if err != nil {
+		wr.lggr.Debugw("Failed to fetch the prior failed transmission tx's compute unit limit during polling", "error", err, "signature", sig.String())
+		return false
+	}
+	return priorTxComputeLimit < requestedComputeLimit
+}
+
+// fetchTxComputeUnitLimit reads a transaction's effective compute unit limit from chain.
+func (wr *WriteReport) fetchTxComputeUnitLimit(ctx context.Context, sig solana.Signature) (uint32, error) {
+	reply, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*soltypes.GetTransactionReply, error) {
+		return wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to get transaction: %w", err)
+	}
+	if reply == nil || reply.Transaction == nil || reply.Transaction.AsParsedTransaction == nil {
+		return 0, errors.New("transaction response is missing the parsed transaction")
+	}
+	return computeUnitLimitFromMessage(reply.Transaction.AsParsedTransaction.Message)
+}
+
+// Solana runtime defaults when no SetComputeUnitLimit instruction is present.
+const (
+	defaultInstructionComputeUnitLimit uint32 = 200_000
+	maxComputeUnitLimit                uint32 = 1_400_000
+)
+
+// computeUnitLimitFromMessage derives a transaction's effective compute unit limit: the
+// SetComputeUnitLimit value, or the runtime default per non-compute-budget instruction.
+func computeUnitLimitFromMessage(msg soltypes.Message) (uint32, error) {
+	nonBudgetInstructions := uint32(0)
+	for _, ix := range msg.Instructions {
+		// Program ids cannot come from address lookup tables; static keys suffice.
+		if int(ix.ProgramIDIndex) >= len(msg.AccountKeys) {
+			return 0, fmt.Errorf("instruction program id index %d out of range, %d account keys", ix.ProgramIDIndex, len(msg.AccountKeys))
+		}
+		if !solana.PublicKey(msg.AccountKeys[ix.ProgramIDIndex]).Equals(solana.ComputeBudget) {
+			nonBudgetInstructions++
+			continue
+		}
+		if len(ix.Data) >= 5 && ix.Data[0] == computebudget.Instruction_SetComputeUnitLimit {
+			return binary.LittleEndian.Uint32(ix.Data[1:5]), nil
+		}
+	}
+	return min(nonBudgetInstructions*defaultInstructionComputeUnitLimit, maxComputeUnitLimit), nil
+}
+
 // pollTransmissionInfo waits for the node's transmission slot then returns the current state.
 // If another node transmits successfully or fails (F+1 times) before our slot, returns early.
 func (wr *WriteReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID [32]byte,
 	queuePosition int,
+	requestedComputeLimit uint32,
 ) (lastValid TransmissionInfo, err error) {
 	delay := time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage
 	wr.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
@@ -459,6 +569,8 @@ func (wr *WriteReport) pollTransmissionInfo(
 	stageTimer := time.NewTimer(delay)
 	deltaStagePassed := false
 	hadSuccessfulPoll := false
+	// Cached across iterations: the earliest ReportInProgress log never changes.
+	var failedAttemptRetryable *bool
 	defer func() {
 		stageTimer.Stop()
 		if !deltaStagePassed && hadSuccessfulPoll {
@@ -473,8 +585,17 @@ func (wr *WriteReport) pollTransmissionInfo(
 			hadSuccessfulPoll = true
 			lastValid = info
 			switch lastValid.State {
-			case TransmissionStateSucceeded, TransmissionStateFailed:
+			case TransmissionStateSucceeded:
 				return lastValid, nil
+			case TransmissionStateFailed:
+				// Stop polling only if no earlier node will retry the failed attempt.
+				if failedAttemptRetryable == nil {
+					retryable := wr.priorTxComputeLimitLower(ctx, lastValid.Signature, requestedComputeLimit)
+					failedAttemptRetryable = &retryable
+				}
+				if !*failedAttemptRetryable {
+					return lastValid, nil
+				}
 			case TransmissionStateNotAttempted:
 			default:
 				wr.lggr.Warnw("Unexpected transmission state during polling, continuing", "state", lastValid.State)

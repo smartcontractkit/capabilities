@@ -31,6 +31,15 @@ message WriteReportTxFeeCalculationError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+// A prior failed transmission's tx carried a compute unit limit different from the requested one.
+message WriteReportComputeLimitMismatch {
+  WriteReportRequest req = 1;
+  uint32 expected_compute_unit_limit = 2;
+  uint32 actual_compute_unit_limit = 3;
+  string signature = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   repeated AccountMeta remaining_accounts = 1; // accounts that are required by the receiver to accept the report
   bytes receiver = 2; // 32 bytes receiver
