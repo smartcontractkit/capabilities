@@ -144,8 +144,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
 	capabilityDonID := dependencies.CapabilityDonID
 
-	averageRequestTimeout := capcommon.AverageRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
-	derivedUnknownTTL := averageRequestTimeout * defaultRequestTimeoutToUnknownTTLMultiplier
+	maxRequestTimeout := capcommon.MaxRequestTimeout(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
+	derivedUnknownTTL := maxRequestTimeout * defaultRequestTimeoutToUnknownTTLMultiplier
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 
 	var scheduler ts.TransmissionScheduler
