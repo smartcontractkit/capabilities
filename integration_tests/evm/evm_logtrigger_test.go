@@ -19,6 +19,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/protobuf/proto"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v3"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
@@ -33,6 +34,7 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
+	registrysyncerv2 "github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer/v2"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
@@ -134,7 +136,7 @@ func Test_SimpleLogTrigger(t *testing.T) {
 func Test_LogTriggerMultipleTopics(t *testing.T) {
 	testCases := []logTriggerTestCase{
 		{
-			workflowName:      "TestLogTrigger_topic2_filter_LATEST",
+			workflowName:      "LogTrigger_topic2_LATEST",
 			eventName:         "MultiTopicEmitted",
 			matchingMessages:  []string{"Data for log trigger using topic2 only filter"},
 			deployContractsFn: defaultDeployContracts,
@@ -176,7 +178,7 @@ func Test_LogTriggerMultipleTopics(t *testing.T) {
 			verifyNonMatchingIgnored: true,
 		},
 		{
-			workflowName:      "TestLogTrigger_topic2_and_topic4_filter_LATEST",
+			workflowName:      "LogTrigger_topic2_topic4_LATEST",
 			eventName:         "MultiTopicEmitted",
 			matchingMessages:  []string{"Data for log trigger using topic2 and topic 4, but not 3, filter"},
 			deployContractsFn: defaultDeployContracts,
@@ -235,7 +237,7 @@ func Test_LogTriggerMultipleAddressesAndTopics(t *testing.T) {
 
 	testCases := []logTriggerTestCase{
 		{
-			workflowName:     "TestLogTrigger_MultipleAddresses_LATEST",
+			workflowName:     "LogTrigger_MultiAddr_LATEST",
 			eventName:        "MultiTopicEmitted",
 			matchingMessages: matchingMsgs,
 			deployContractsFn: func(t *testing.T, donContext framework.DonContext) []common.Address {
@@ -540,12 +542,12 @@ func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowNam
 	require.NoError(t, err)
 
 	err = workflowDon.AddWorkflow(framework.Workflow{
-		Name:       workflowName,
-		ID:         workflowID,
-		Status:     0,
-		BinaryURL:  binaryURL,
-		ConfigURL:  configURL,
-		SecretsURL: secretsURL,
+		Name:      workflowName,
+		Tag:       workflowName,
+		ID:        workflowID,
+		Status:    0,
+		BinaryURL: binaryURL,
+		ConfigURL: configURL,
 	})
 	require.NoError(t, err)
 }
@@ -607,8 +609,17 @@ func evmRegistryCapability(t *testing.T) kcr.CapabilitiesRegistryCapability {
 	chainSelector, ok := chainselectors.EvmChainIdToChainSelector()[evmChainID]
 	require.True(t, ok, "no chain selector for chain ID %d", evmChainID)
 
+	// The v2 registry syncer skips any capability whose metadata it cannot parse,
+	// so the type has to be declared here or the capability never reaches the
+	// node's local registry.
+	metadata, err := json.Marshal(registrysyncerv2.CapabilityMetadata{
+		CapabilityType: uint8(registrysyncerv2.ContractCapabilityTypeTrigger),
+	})
+	require.NoError(t, err)
+
 	return kcr.CapabilitiesRegistryCapability{
 		CapabilityId: fmt.Sprintf("evm:ChainSelector:%d@1.0.0", chainSelector),
+		Metadata:     metadata,
 	}
 }
 
@@ -663,6 +674,18 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 	workflowDon.AddPublishedStandardCapability("evm-capabilities", evmBinary, evmConfig,
 		&capabilitiespb.CapabilityConfig{
 			DefaultConfig: values.Proto(values.EmptyMap()).GetMapValue(),
+			MethodConfigs: map[string]*capabilitiespb.CapabilityMethodConfig{
+				"LogTrigger": &capabilitiespb.CapabilityMethodConfig{
+					RemoteConfig: &capabilitiespb.CapabilityMethodConfig_RemoteTriggerConfig{
+						RemoteTriggerConfig: &capabilitiespb.RemoteTriggerConfig{
+							MinResponsesToAggregate: 2,
+							RegistrationExpiry:      durationpb.New(60 * time.Second),
+							RegistrationRefresh:     durationpb.New(20 * time.Second),
+							MessageExpiry:           durationpb.New(60 * time.Second),
+						},
+					},
+				},
+			},
 		},
 		evmRegistryCapability(t))
 

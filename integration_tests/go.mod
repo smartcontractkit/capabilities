@@ -17,12 +17,12 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-20260917192921-dd173aa1ec2f
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
-	github.com/smartcontractkit/chain-selectors v1.0.109
+	github.com/smartcontractkit/chain-selectors v1.0.111
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260917115705-1d3a14a9b049
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20260710181111-6417709a55ee
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260916140808-f5d22b3cb3ee
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260821155228-fa1d775e2138
-	github.com/smartcontractkit/chainlink/v2 v2.29.1-cre-beta.0.0.20260918151020-27cd3d86078c
+	github.com/smartcontractkit/chainlink/v2 v2.29.1-cre-beta.0.0.20260921120939-14bc7201e28c
 	github.com/smartcontractkit/cre-sdk-go v1.17.0-capdev.1
 	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.10.0
 	github.com/stretchr/testify v1.12.1
@@ -291,7 +291,7 @@ require (
 	github.com/smartcontractkit/chainlink-ccip/chains/evm v0.0.0-20260908164107-3de1349d970b // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20260908155618-50f521d70e62 // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana/gobindings v0.0.0-20260908155618-50f521d70e62 // indirect
-	github.com/smartcontractkit/chainlink-ccv v0.12.0 // indirect
+	github.com/smartcontractkit/chainlink-ccv v0.13.1-0.20260918171034-c93b0d2ef3c0 // indirect
 	github.com/smartcontractkit/chainlink-common/keystore v1.3.1-0.20260903141829-ef07b52a737d // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260915184316-2730f1867c92 // indirect
 	github.com/smartcontractkit/chainlink-data-streams v1.1.1 // indirect
