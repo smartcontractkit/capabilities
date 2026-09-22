@@ -272,7 +272,6 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				tc.descriptor,
 				tc.defaultValue,
 				tc.f,
-				false,
 			)
 
 			if tc.expectedError != nil {
@@ -477,7 +476,6 @@ func Test_handleMedianAggregation(t *testing.T) {
 				logger.Test(t),
 				tc.observations,
 				tc.f,
-				false,
 			)
 
 			if tc.expectedError != nil {
@@ -537,7 +535,7 @@ func Test_FieldsMapAggregation_ErrorDeterminism(t *testing.T) {
 
 	seenErrors := map[string]bool{}
 	for range 200 {
-		_, err := handleFieldsMapAggregation(lggr, observations, desc, nil, f, false)
+		_, err := handleFieldsMapAggregation(lggr, observations, desc, nil, f)
 		require.Error(t, err)
 		seenErrors[err.Error()] = true
 	}

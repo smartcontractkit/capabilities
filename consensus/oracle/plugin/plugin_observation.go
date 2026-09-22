@@ -34,6 +34,8 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			Metadata:   ToRequestMetaData(req.Metadata),
 			ReceivedAt: timestamppb.New(req.ReceivedAt),
 			Input:      req.Input,
+			// Emit true for these flags even though nothing uses them in the Outcome phase.
+			// This ensures that the flag doesn't accidentally revert during the rollout of the new version.
 			RemoveLibUseInFailureMessageFormattingFlag: true,
 			UpdateErrorHandlingFlag:                    true,
 		}
