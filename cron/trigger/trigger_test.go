@@ -20,7 +20,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -104,6 +103,21 @@ func registerTriggerToCronTriggerService(
 	return triggerEventsCh, request, err
 }
 
+// Response is the decoded form of a cron trigger event, used by these tests to
+// assert on the event envelope and its payload together.
+type Response struct {
+	capabilities.TriggerEvent
+	Payload Payload
+}
+
+// Payload is a local copy of the payload type that used to live in
+// chainlink-common's pkg/capabilities/triggers/cron, which has since been removed.
+type Payload struct {
+	// Time that cron trigger's task execution had been scheduled to occur
+	// (RFC3339Nano formatted)
+	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
+}
+
 func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	useTypedAPI bool) Response {
 	response := Response{}
@@ -115,7 +129,7 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 		payload := &crontypedapi.LegacyPayload{} //nolint:staticcheck
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
-		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
+		response.Payload = Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
 		return response
 	}
 
@@ -1194,13 +1208,13 @@ func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
 	expectedExecID, err := workflows.GenerateExecutionIDWithTriggerIndex(testWorkflowID, msg.Id, testTriggerIndex)
 	require.NoError(t, err)
 
-	// The debug log at "task callback sending trigger response" is written
-	// before the channel send, so it is already present once we receive msg.
+	// The debug log at "sending trigger event" is written before the channel
+	// send, so it is already present once we receive msg.
 	var execIDFromLog string
 	var isLegacyFromLog bool
 	var found bool
 	for _, entry := range observedLogs.All() {
-		if entry.Message == "task callback sending trigger response" {
+		if entry.Message == "sending trigger event" {
 			for _, field := range entry.Context {
 				switch field.Key {
 				case "executionID":
@@ -1213,7 +1227,7 @@ func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
 			break
 		}
 	}
-	require.True(t, found, "expected log entry 'task callback sending trigger response'")
+	require.True(t, found, "expected log entry 'sending trigger event'")
 	require.Equal(t, expectedExecID, execIDFromLog, "execution ID should match expected hash function")
 	require.False(t, isLegacyFromLog)
 

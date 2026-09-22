@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -61,6 +62,18 @@ func TestForwarderClient_ResolveSigningAccount(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "empty signing account")
 	})
+
+	t.Run("invalid signing account type", func(t *testing.T) {
+		t.Parallel()
+		svc := mocks.NewStellarService(t)
+		svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(stellartypes.GetSigningAccountResponse{AccountAddress: testReceiverAddress}, nil).Once()
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+
+		_, err := client.ResolveSigningAccount(t.Context())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid signing account")
+	})
 }
 
 func TestForwarderClient_InvokeOnReport(t *testing.T) {
@@ -73,7 +86,13 @@ func TestForwarderClient_InvokeOnReport(t *testing.T) {
 		transmissionID := testTransmissionID()
 		const maxResourceFee = uint64(100_000)
 		svc.EXPECT().SubmitTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SubmitTransactionRequest) bool {
-			return req.FromAddress == testNodeAddress &&
+			if len(req.Args) == 0 || req.Args[0].Address == nil || req.Args[0].Address.AccountID == nil {
+				return false
+			}
+			transmitter, err := strkey.Encode(strkey.VersionByteAccountID, req.Args[0].Address.AccountID)
+			return err == nil &&
+				transmitter == testNodeAddress &&
+				req.FromAddress == transmitter &&
 				req.IdempotencyKey == transmissionID.idempotencyKey() &&
 				req.MaxResourceFee == maxResourceFee
 		})).
@@ -139,7 +158,9 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		failed := false
 		success := true
 		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
-			return req.Pagination != nil && req.Pagination.Cursor == ""
+			return req.StartLedger == searchRange.StartLedger &&
+				req.EndLedger == searchRange.EndLedger &&
+				req.Pagination != nil && req.Pagination.Cursor == ""
 		})).Return(stellartypes.GetEventsResponse{
 			Events: []stellartypes.EventInfo{{
 				TransactionHash: "failed",
@@ -148,9 +169,11 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 			}},
 			Cursor: "next",
 		}, nil).Once()
+		// Soroban getEvents rejects a ledger range combined with a cursor, so the
+		// follow-up page must carry the cursor only (no StartLedger/EndLedger).
 		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
-			return req.StartLedger == searchRange.StartLedger &&
-				req.EndLedger == searchRange.EndLedger &&
+			return req.StartLedger == 0 &&
+				req.EndLedger == 0 &&
 				req.Pagination != nil &&
 				req.Pagination.Cursor == "next"
 		})).Return(stellartypes.GetEventsResponse{
@@ -168,6 +191,83 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		require.False(t, events[0].Success)
 		require.Equal(t, testTxHash, events[1].TxHash)
 		require.True(t, events[1].Success)
+	})
+
+	// Regression: some Soroban RPCs hand back a trailing cursor that, when
+	// followed, walks past EndLedger and keeps returning out-of-range events with
+	// a fresh cursor (never an empty one within range). The drain must stop at the
+	// first event beyond EndLedger instead of running to the page cap.
+	t.Run("stops at events beyond end ledger when cursor overruns range", func(t *testing.T) {
+		t.Parallel()
+		svc := mocks.NewStellarService(t)
+		success := true
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == searchRange.StartLedger &&
+				req.EndLedger == searchRange.EndLedger &&
+				req.Pagination != nil && req.Pagination.Cursor == ""
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{
+				TransactionHash: testTxHash,
+				Ledger:          150, // within [100, 200]
+				Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
+			}},
+			Cursor: "next", // trailing cursor despite being the last in-range page
+		}, nil).Once()
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == 0 && req.EndLedger == 0 &&
+				req.Pagination != nil && req.Pagination.Cursor == "next"
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{
+				TransactionHash: "out-of-range",
+				Ledger:          9999, // beyond EndLedger
+				Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
+			}},
+			Cursor: "still-more", // never empty; must not be followed
+		}, nil).Once()
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+
+		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
+		require.NoError(t, err)
+		require.Len(t, events, 1) // only the in-range event is kept
+		require.Equal(t, testTxHash, events[0].TxHash)
+	})
+
+	// Regression matching observed quickstart behavior: page 1 returns in-range
+	// events with a trailing cursor; page 2 (cursor) returns the boundary event at
+	// exactly EndLedger with a fresh cursor; page 3 (cursor) returns an empty page
+	// that repeats the same non-empty cursor forever. The drain must stop at the
+	// empty page rather than run to the page cap.
+	t.Run("stops on empty cursor page that repeats a non-empty cursor", func(t *testing.T) {
+		t.Parallel()
+		svc := mocks.NewStellarService(t)
+		success := true
+		boolVal := stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success}
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == searchRange.StartLedger && req.EndLedger == searchRange.EndLedger &&
+				req.Pagination != nil && req.Pagination.Cursor == ""
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{TransactionHash: "a", Ledger: 150, Value: boolVal}},
+			Cursor: "c1",
+		}, nil).Once()
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == 0 && req.EndLedger == 0 && req.Pagination != nil && req.Pagination.Cursor == "c1"
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{{TransactionHash: testTxHash, Ledger: searchRange.EndLedger, Value: boolVal}}, // boundary, in-range
+			Cursor: "c2",
+		}, nil).Once()
+		svc.EXPECT().GetEvents(mock.Anything, mock.MatchedBy(func(req stellartypes.GetEventsRequest) bool {
+			return req.StartLedger == 0 && req.EndLedger == 0 && req.Pagination != nil && req.Pagination.Cursor == "c2"
+		})).Return(stellartypes.GetEventsResponse{
+			Events: []stellartypes.EventInfo{}, // empty page, repeating cursor
+			Cursor: "c2",
+		}, nil).Once()
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+
+		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
+		require.NoError(t, err)
+		require.Len(t, events, 2)
+		require.Equal(t, "a", events[0].TxHash)
+		require.Equal(t, testTxHash, events[1].TxHash)
 	})
 
 	t.Run("index behind requested range returns retryable error", func(t *testing.T) {

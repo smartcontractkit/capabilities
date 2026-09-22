@@ -75,7 +75,8 @@ func buildGatewayConfigJSON(authGatewayID string, f int, nodes []gatewayNode, ha
 func buildHTTPActionGatewayConfig(authGatewayID, publicKey string) string {
 	return buildGatewayConfigJSON(
 		authGatewayID,
-		1,
+		// single-node test DON: F must be 0 to satisfy the 3F+1 minimum shard size
+		0,
 		[]gatewayNode{{Name: "test_node_1", Address: publicKey}},
 		"http-capabilities",
 		json.RawMessage(`{

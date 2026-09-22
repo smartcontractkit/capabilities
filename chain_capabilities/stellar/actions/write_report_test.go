@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -73,15 +74,14 @@ func newWriteReportHelper(t *testing.T) *writeReportHelper {
 		myPeerID, []p2ptypes.PeerID{myPeerID}, 100*time.Millisecond, 0, lggr)
 
 	s := &Stellar{
-		StellarService:           mockSvc,
-		lggr:                     logger.Sugared(lggr),
-		chainSelector:            testWRChainSelector,
-		forwarderClient:          newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
-		forwarderLookbackLedgers: 100,
-		transmissionScheduler:    scheduler,
-		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		beholderProcessor:        nopBeholderProcessor{},
-		handler:                  testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:        mockSvc,
+		lggr:                  logger.Sugared(lggr),
+		chainSelector:         testWRChainSelector,
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     nopBeholderProcessor{},
+		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))
 	return &writeReportHelper{svc: mockSvc, stellar: s}
@@ -365,8 +365,9 @@ func validateWRMetering(t *testing.T, meta capabilities.ResponseMetadata, chainS
 	t.Helper()
 	require.Len(t, meta.Metering, 1)
 	m := meta.Metering[0]
+	expectedXLM := new(big.Float).Quo(new(big.Float).SetUint64(expectedStroops), big.NewFloat(1e7)).Text('f', -1)
 	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), m.SpendUnit)
-	require.Equal(t, fmt.Sprintf("%d", expectedStroops), m.SpendValue)
+	require.Equal(t, expectedXLM, m.SpendValue)
 	require.Equal(t, fmt.Sprintf("%d", expectedStroops), m.SpendValueInGasUnits)
 	require.Empty(t, m.Peer2PeerID)
 }
@@ -487,7 +488,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "failed to decode report metadata")
+		require.Contains(t, err.Error(), "metadata: raw too short")
 	})
 
 	t.Run("WorkflowExecutionID mismatch", func(t *testing.T) {
@@ -498,7 +499,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowExecutionID does not match")
+		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata")
 	})
 
 	t.Run("WorkflowOwner mismatch", func(t *testing.T) {
@@ -509,7 +510,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowOwner does not match")
+		require.Contains(t, err.Error(), "workflowOwner in the report does not match WorkflowOwner in the request metadata")
 	})
 
 	t.Run("WorkflowName mismatch", func(t *testing.T) {
@@ -520,7 +521,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowName does not match")
+		require.Contains(t, err.Error(), "workflowName in the report does not match WorkflowName in the request metadata")
 	})
 
 	t.Run("WorkflowID mismatch", func(t *testing.T) {
@@ -531,7 +532,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		_, err := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, err)
-		require.Contains(t, err.Error(), "workflowID does not match")
+		require.Contains(t, err.Error(), "workflowID in the report does not match WorkflowID in the request metadata")
 	})
 
 	t.Run("report size exceeds limit", func(t *testing.T) {
@@ -561,7 +562,7 @@ func TestWriteReport_Validation(t *testing.T) {
 func TestWriteReport_EarlyReturn(t *testing.T) {
 	t.Parallel()
 
-	t.Run("already succeeded - returns success with no submit and no metering", func(t *testing.T) {
+	t.Run("already succeeded - returns success with no submit, metering from canonical tx fee", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		rm, reqMeta, req := newWRReportFixture(t)
@@ -580,8 +581,8 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testFee, *result.Response.TransactionFee)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		// No billing metering: this node observed, not submitted.
-		require.Empty(t, result.ResponseMetadata.Metering)
+		// Nodes that did not transmit still meter the on-chain fee.
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 
@@ -604,7 +605,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.NotNil(t, result.Response.TxHash)
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		require.Empty(t, result.ResponseMetadata.Metering)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 
@@ -625,7 +626,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.NotNil(t, result.Response.TxHash)
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		require.Empty(t, result.ResponseMetadata.Metering)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 }
@@ -1067,7 +1068,7 @@ func TestWriteReport_UnsupportedReportMetadataVersion(t *testing.T) {
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
-	require.Contains(t, capErr.Error(), "unsupported report metadata version")
+	require.Contains(t, capErr.Error(), "unsupported report version")
 }
 
 func TestGetTransmissionInfo(t *testing.T) {
@@ -1431,15 +1432,14 @@ func newQueuedWriteReportHelper(t *testing.T) *writeReportHelper {
 		lggr,
 	)
 	s := &Stellar{
-		StellarService:           mockSvc,
-		lggr:                     logger.Sugared(lggr),
-		chainSelector:            testWRChainSelector,
-		forwarderClient:          newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
-		forwarderLookbackLedgers: 100,
-		transmissionScheduler:    scheduler,
-		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		beholderProcessor:        nopBeholderProcessor{},
-		handler:                  testConsensusHandler{handle: runVolatileHashableHandle},
+		StellarService:        mockSvc,
+		lggr:                  logger.Sugared(lggr),
+		chainSelector:         testWRChainSelector,
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     nopBeholderProcessor{},
+		handler:               testConsensusHandler{handle: runVolatileHashableHandle},
 	}
 	require.NoError(t, s.initLimiters(limits.Factory{Logger: lggr}))
 	return &writeReportHelper{svc: mockSvc, stellar: s}
@@ -1696,6 +1696,42 @@ func TestPollTransmissionInfo_EmitsInvalidTransmissionStateOnlyOnce(t *testing.T
 		}
 	}
 	require.Equal(t, 1, invalidStateCount, "InvalidTransmissionState should fire exactly once even across multiple poll iterations with a persistent unexpected state")
+}
+
+func TestPollTransmissionInfo_ContextTimeoutAfterNonterminalPollEmitsNoEarlyReturn(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	processor := &recordingWriteReportProcessor{}
+	scheduler := ts.NewTransmissionScheduler(
+		p2ptypes.PeerID{2},
+		[]p2ptypes.PeerID{{1}, {2}, {3}},
+		5*time.Second,
+		0,
+		lggr,
+	)
+	stub := &stubForwarderClient{
+		transmissionInfoFn: func(int) (TransmissionInfo, error) {
+			return TransmissionInfo{State: TransmissionStateNotAttempted}, nil
+		},
+	}
+	wr := &writeReport{
+		forwarderClient:       stub,
+		lggr:                  logger.Sugared(lggr),
+		transmissionScheduler: scheduler,
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		beholderProcessor:     processor,
+	}
+	_, reqMeta, req := newWRReportFixture(t)
+	transmissionID, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 75*time.Millisecond)
+	defer cancel()
+
+	_, err = wr.pollTransmissionInfo(ctx, req, monitoring.TelemetryContext{}, transmissionID, 2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "timed out waiting for transmission info")
+	require.False(t, hasTelemetryMessage[*monitoring.WriteReportSuccessfulEarlyReturn](processor.messages))
 }
 
 func TestWriteReport_EmitsInvalidTransmissionStateOnPostSubmitUnexpectedSuccess(t *testing.T) {

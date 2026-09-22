@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -103,20 +102,6 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
 }
 
-func (e *WriteReport) getFee(ctx context.Context, txIdempotencyKey string) (*big.Int, error) {
-	if txIdempotencyKey == "" {
-		return nil, fmt.Errorf("txIdempotencyKey is empty, cannot retrieve transaction fee")
-	}
-
-	feeInWei, errTxFee := e.GetTransactionFee(ctx, txIdempotencyKey)
-	if errTxFee != nil {
-		return nil, fmt.Errorf("failed to get transaction fee: %w", errTxFee)
-	}
-	feeInEth := new(big.Float).Quo(new(big.Float).SetInt(feeInWei.TransactionFee), big.NewFloat(1e18))
-	e.lggr.Debugw("WriteReport fee", "feeInEth", feeInEth.String(), "feeInWei", feeInWei.TransactionFee.String())
-	return feeInWei.TransactionFee, nil
-}
-
 func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
@@ -159,7 +144,10 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission succeeded", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.buildSuccessReply(ctx, *txHash)
-		return reply, capabilities.ResponseMetadata{}, err
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
+		return reply, e.meteringFromReply(reply), nil
 	case contracts.TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
@@ -178,7 +166,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			// though the receipt/fee lookup failed (e.g. flaky RPC), as a user error.
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
 		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		return reply, e.meteringFromReply(reply), nil
 	case contracts.TransmissionStateFailed:
 		hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, transmissionInfo)
 		if hadEnoughGas {
@@ -203,7 +191,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				// reason even if the receipt/fee lookup failed, as a user error.
 				return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
 			}
-			return reply, capabilities.ResponseMetadata{}, nil
+			return reply, e.meteringFromReply(reply), nil
 		}
 		monitoring.LogAndEmitSuccess(ctx, "Retrying a failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, calculatedReceiverGasBudget, transmissionInfo.GasLimit, queuePosition))
@@ -242,14 +230,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 	e.lggr.Infow("Got final transmission status", newTransmissionInfo.LogAttrs()...)
 
-	var meteringMetadata capabilities.ResponseMetadata
-	feeInWei, err := e.getFee(ctx, transactionResult.TxIdempotencyKey)
-	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, transactionResult.TxIdempotencyKey, err.Error()))
-	} else {
-		meteringMetadata = metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
-	}
-
 	switch newTransmissionInfo.State {
 	case contracts.TransmissionStateSucceeded:
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
@@ -267,7 +247,10 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 		e.lggr.Infow("Made a new transmission attempt - transmission succeeded", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((txHash)[:]))
 		reply, err := e.buildSuccessReply(ctx, *txHash)
-		return reply, meteringMetadata, err
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
+		return reply, e.meteringFromReply(reply), nil
 	case contracts.TransmissionStateFailed, contracts.TransmissionStateInvalidReceiver:
 		txHash := &transactionResult.TxHash
 		// if this is a re-attempt find the original failed tx hash
@@ -289,13 +272,13 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			// Surface the known revert reason (invalid receiver / contract execution failure) so the
 			// user learns the cause even if the receipt/fee lookup failed, as a user error.
-			return nil, meteringMetadata, revertReplyBuildError(newTransmissionInfo, transmissionID, err)
+			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(newTransmissionInfo, transmissionID, err)
 		}
-		return reply, meteringMetadata, nil
+		return reply, e.meteringFromReply(reply), nil
 	default:
 		errorMsg := getInvalidStateErrorMessage(newTransmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, fmt.Sprintf("WriteReport invalid transmission state with tx status: %d", transactionResult.TxStatus), errorMsg))
-		return nil, meteringMetadata, errors.New(errorMsg)
+		return nil, capabilities.ResponseMetadata{}, errors.New(errorMsg)
 	}
 }
 
@@ -542,6 +525,19 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 	}, nil
 }
 
+// meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
+// in the reply, so that every node reports the gas spent on chain, regardless of which node
+// transmitted. Deriving it from the reply guarantees the metered fee matches the reply's
+// TransactionFee. An absent fee yields empty metadata.
+func (e *WriteReport) meteringFromReply(reply *evm.WriteReportReply) capabilities.ResponseMetadata {
+	feeInWei := pb.NewIntFromBigInt(reply.TransactionFee)
+	if feeInWei == nil {
+		e.lggr.Warnw("Transaction fee unavailable in reply; skipping metering", "txHash", hex.EncodeToString(reply.TxHash))
+		return capabilities.ResponseMetadata{}
+	}
+	return metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
+}
+
 func (e *WriteReport) includeL1FeeInReceiptFee(ctx context.Context) bool {
 	if e.writeReportL1FeeActive == nil {
 		return false
@@ -566,35 +562,8 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 		return fmt.Errorf("no signatures provided")
 	}
 
-	// TODO: PLEX-3107 move validation to common
-	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
-	if err != nil {
+	if err := capcommon.ValidateReportMetadata(requestMetadata, request.Report.RawReport); err != nil {
 		return err
-	}
-
-	if reportMetadata.Version != 1 {
-		return fmt.Errorf("unsupported report version: %d", reportMetadata.Version)
-	}
-
-	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
-		return fmt.Errorf("workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %s, request WorkflowExecutionID: %s", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
-	}
-
-	// case-insensitive verification of the owner address (so that a check-summed address matches its non-checksummed version).
-	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
-		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %s, request WorkflowOwner: %s", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
-	}
-
-	//	workflowNames are padded to 10bytes
-	decodedName := []byte(requestMetadata.WorkflowName)
-	var workflowName [20]byte
-	copy(workflowName[:], decodedName)
-	if !bytes.Equal([]byte(reportMetadata.WorkflowName[:]), workflowName[:]) {
-		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
-	}
-
-	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
-		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
 	if request.GasConfig != nil && request.GasConfig.GasLimit != 0 && request.GasConfig.GasLimit < e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost {

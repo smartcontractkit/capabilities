@@ -17,6 +17,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
@@ -38,9 +39,10 @@ const CapabilityName = "stellar"
 
 const (
 	// Default values for optional Stellar consensus/read settings when not provided in config.
-	defaultObservationPollPeriod = 3 * time.Second
-	defaultPollerWorkersCount    = 10
-	defaultUnknownRequestsTTL    = 10 * time.Second
+	defaultObservationPollPeriod       = 3 * time.Second
+	defaultPollerWorkersCount          = 10
+	defaultUnknownRequestsTTL          = 10 * time.Second
+	defaultMaxUnknownRequestsCacheSize = 1000
 )
 
 // capabilityGRPCService is the top-level server wrapping the Stellar capability.
@@ -146,8 +148,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to get stellar service: %w", err)
 	}
-	if _, err = stellarService.GetSigningAccount(ctx); err != nil {
+	signingAccount, err := stellarService.GetSigningAccount(ctx)
+	if err != nil {
 		return fmt.Errorf("stellar relayer has no signing account: %w", err)
+	}
+	if err = actions.ValidateSigningAccountAddress(signingAccount.AccountAddress); err != nil {
+		return fmt.Errorf("stellar relayer has invalid signing account: %w", err)
 	}
 
 	if err = c.setSelector(cfg); err != nil {
@@ -182,7 +188,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create stellar consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	derivedUnknownTTL := capcommon.MaxRequestTimeoutWithMultiplier(ctx, dependencies.CapabilityRegistry, c.id, c.DON.ID, cfg.UnknownRequestsTTL, c.lggr)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 	c.blocksProvider, err = height.NewProvider(c.lggr, cfg.ObservationPollPeriod, stellarService)
 	if err != nil {
 		return fmt.Errorf("failed to create stellar height provider: %w", err)
@@ -282,6 +289,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.ForwarderLookbackLedgers == 0 {
 		cfg.ForwarderLookbackLedgers = actions.DefaultForwarderLookbackLedgers
 		c.lggr.Infof("ForwarderLookbackLedgers is zero, setting to %d.", cfg.ForwarderLookbackLedgers)
+	}
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 
 	return &cfg, nil

@@ -199,7 +199,7 @@ func (wr *writeReport) execute(
 			TransactionFee:                  &feeOctas,
 			BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, txResult.BlockTimestamp),
 		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		return reply, metering.GetResponseMetadataWriteReport(feeOctas, wr.chainSelector), nil
 	}
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
@@ -482,40 +482,7 @@ func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMe
 		return fmt.Errorf("no signatures provided")
 	}
 
-	// TODO: PLEX-3107 move validation to common
-	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
-	if err != nil {
-		return fmt.Errorf("failed to decode report metadata: %w", err)
-	}
-	if reportMetadata.Version != 1 {
-		return fmt.Errorf("unsupported report version: %d", reportMetadata.Version)
-	}
-
-	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
-		return fmt.Errorf("workflowExecutionID mismatch: report=%s, request=%s",
-			reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
-	}
-
-	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
-		return fmt.Errorf("workflowOwner mismatch: report=%s, request=%s",
-			reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
-	}
-
-	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
-		return fmt.Errorf("workflowID mismatch: report=%s, request=%s",
-			reportMetadata.WorkflowID, requestMetadata.WorkflowID)
-	}
-
-	//	workflowNames are padded to 10 bytes (20 hex chars)
-	reqName := requestMetadata.WorkflowName
-	if len(reqName) < 20 {
-		reqName += strings.Repeat("0", 20-len(reqName))
-	}
-	if reportMetadata.WorkflowName != reqName {
-		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, reqName)
-	}
-
-	return nil
+	return capcommon.ValidateReportMetadata(requestMetadata, request.Report.RawReport)
 }
 
 func (s *Aptos) isUserError(err error) bool {

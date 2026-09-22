@@ -148,6 +148,22 @@ func (fc *forwarderClient) ResolveSigningAccount(ctx context.Context) (string, e
 	return fc.resolveSigningAccount(ctx)
 }
 
+// ValidateSigningAccountAddress verifies the relayer signer is a plain Stellar account
+// address suitable for both the forwarder transmitter argument and SubmitTransaction.FromAddress.
+func ValidateSigningAccountAddress(accountAddress string) error {
+	if accountAddress == "" {
+		return errors.New("relayer returned empty signing account")
+	}
+	accountBytes, err := strkey.Decode(strkey.VersionByteAccountID, accountAddress)
+	if err != nil {
+		return fmt.Errorf("relayer returned invalid signing account %q: %w", accountAddress, err)
+	}
+	if len(accountBytes) != 32 {
+		return fmt.Errorf("relayer signing account must decode to 32 bytes, got %d", len(accountBytes))
+	}
+	return nil
+}
+
 func (fc *forwarderClient) InvokeOnReport(
 	ctx context.Context,
 	transmitter, receiver string,
@@ -268,9 +284,14 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 	var events []ReportProcessedEvent
 	cursor := ""
 	for page := 0; page < reportProcessedEventMaxPages; page++ {
-		resp, err := fc.GetEvents(ctx, stellartypes.GetEventsRequest{
-			StartLedger: searchRange.StartLedger,
-			EndLedger:   searchRange.EndLedger,
+		// Soroban getEvents treats a pagination cursor and a ledger range as mutually exclusive.
+		//
+		// Some RPCs return a trailing cursor that, once followed,
+		// either walks past EndLedger or repeats on empty pages, so we cannot rely
+		// on an empty cursor alone to terminate. Events arrive in ascending ledger
+		// order, so the range is drained as soon as a page is empty or yields an
+		// event beyond EndLedger.
+		req := stellartypes.GetEventsRequest{
 			Filters: []stellartypes.EventFilter{
 				{
 					EventTypes:  []stellartypes.EventType{stellartypes.EventTypeContract},
@@ -282,7 +303,13 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 				Cursor: cursor,
 				Limit:  reportProcessedEventPageLimit,
 			},
-		})
+		}
+		if cursor == "" {
+			// First page: bound the search by the immutable ledger range.
+			req.StartLedger = searchRange.StartLedger
+			req.EndLedger = searchRange.EndLedger
+		}
+		resp, err := fc.GetEvents(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -290,7 +317,13 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 			return nil, fmt.Errorf("event index has not reached requested range: latest ledger %d, requested end ledger %d", resp.LatestLedger, searchRange.EndLedger)
 		}
 
+		reachedEnd := false
 		for i, e := range resp.Events {
+			// Past the requested range: stop without including it.
+			if e.Ledger > searchRange.EndLedger {
+				reachedEnd = true
+				break
+			}
 			if e.TransactionHash == "" {
 				return nil, fmt.Errorf("empty tx hash at event index %d", i)
 			}
@@ -304,7 +337,7 @@ func (fc *forwarderClient) GetReportProcessedEvents(
 			})
 		}
 
-		if resp.Cursor == "" {
+		if reachedEnd || resp.Cursor == "" || len(resp.Events) == 0 {
 			return events, nil
 		}
 		cursor = resp.Cursor
@@ -341,8 +374,8 @@ func (fc *forwarderClient) resolveSigningAccount(ctx context.Context) (string, e
 	if err != nil {
 		return "", err
 	}
-	if resp.AccountAddress == "" {
-		return "", errors.New("relayer returned empty signing account")
+	if err := ValidateSigningAccountAddress(resp.AccountAddress); err != nil {
+		return "", err
 	}
 	return resp.AccountAddress, nil
 }

@@ -58,7 +58,9 @@ func TestFeatureMultiTriggerFlagCheckRequiresCRE(t *testing.T) {
 
 		checkErr := multiTriggerFlag.Check(t.Context(), ts)
 		require.Error(t, checkErr)
-		assert.ErrorContains(t, checkErr, "unable to get scoped bounds limit due to missing tenant for scope: workflow")
+		var errMissingTenant limits.ErrMissingTenant
+		require.ErrorAs(t, checkErr, &errMissingTenant)
+		assert.Equal(t, settings.ScopeWorkflow, errMissingTenant.Scope)
 
 		flagOn := checkErr == nil
 		assert.False(t, flagOn)

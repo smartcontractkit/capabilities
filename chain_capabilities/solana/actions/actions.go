@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	solgo "github.com/gagliardetto/solana-go"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
@@ -53,6 +54,7 @@ type Solana struct {
 	messageBuilder           *monitoring.MessageBuilder
 	transmissionScheduler    ts.TransmissionScheduler
 	handler                  chainconsensus.RequestHandler
+	forwarderState           solgo.PublicKey
 }
 
 func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder,
@@ -76,6 +78,7 @@ func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, m
 		beholderProcessor:        beholderProcessor,
 		transmissionScheduler:    transmissionScheduler,
 		handler:                  handler,
+		forwarderState:           cfg.CREForwarderState,
 	}
 
 	return sol, sol.initLimiters(limitsFactory)

@@ -359,18 +359,17 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	}
 	l.Debug("Workflow triggered successfully")
 
-	// Emit TriggerExecutionStarted event
-	if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
-		l.Errorw("failed to emit trigger execution started event", "error", emitErr)
-	}
-
-	l.Debug("Sending response to gateway")
 	h.sendResponse(ctx, gatewayID, resp)
-
 	err = h.cacheRequestResponse(ctx, req, workflowMetadata.WorkflowID, workflowExecutionID, resp, l)
 	if err != nil {
 		l.Errorw("Failed to cache request response", "error", err)
 	}
+	l.Debug("Sent response to gateway")
+
+	if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+		l.Errorw("failed to emit trigger execution started event", "error", emitErr)
+	}
+	l.Debug("Trigger event processed")
 }
 
 type WorkflowMetadata struct {
