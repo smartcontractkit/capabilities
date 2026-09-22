@@ -182,14 +182,14 @@ func (wr *WriteReport) executeWriteReport(
 			"returning without a transmission attempt - report already onchain",
 			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.successWriteReportReply(&transmissionInfo.Signature), capabilities.ResponseMetadata{}, nil
+		return wr.successWriteReportReply(&transmissionInfo.Signature), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature), nil
 
 	case TransmissionStateFailed:
 		wr.lggr.Infow(
 			"returning without a transmission attempt - transmission already attempted and failed",
 			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
+		return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature), nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("unexpected transmission state: %d", transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
@@ -229,13 +229,7 @@ func (wr *WriteReport) executeWriteReport(
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed getting transmission info after submitting report, %w", err)
 	}
 
-	var meteringMetadata capabilities.ResponseMetadata
-	feeInLamports, err := wr.getFee(ctx, last.Signature)
-	if err != nil {
-		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, last.Signature, err.Error()))
-	} else {
-		meteringMetadata = metering.GetResponseMetadataWriteReport(feeInLamports, wr.chainSelector)
-	}
+	meteringMetadata := wr.meteringFromTxSignature(ctx, telemetryContext, request, last.Signature)
 
 	switch last.State {
 	case TransmissionStateSucceeded:
@@ -478,6 +472,21 @@ func (wr *WriteReport) pollTransmissionInfo(
 		case <-time.After(wait):
 		}
 	}
+}
+
+// meteringFromTxSignature returns billing metadata carrying the fee paid by the given on-chain
+// transaction, so that every node reports the gas spent, regardless of which node transmitted.
+// A fee lookup failure is surfaced via monitoring and yields empty metadata instead of
+// failing the reply.
+func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature) capabilities.ResponseMetadata {
+	feeInLamports, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (uint64, error) {
+		return wr.getFee(ctx, sig)
+	})
+	if err != nil {
+		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, sig, err.Error()))
+		return capabilities.ResponseMetadata{}
+	}
+	return metering.GetResponseMetadataWriteReport(feeInLamports, wr.chainSelector)
 }
 
 func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, error) {
