@@ -80,16 +80,40 @@ func (ti TransmissionInfo) LogAttrs() []any {
 	return attrs
 }
 
-// The gas cost of the forwarder contract logic, including state updates and event emission.
-// This is a rough estimate and should be updated if the forwarder contract logic changes.
-// PLEX-1524 - Make the forwarder contract logic gas cost limit configurable
+// Gas accounting constants mirroring KeystoneForwarder.sol (cre/src/v1).
+// Keep in sync with the contract; see ForwarderGasOverhead for how they combine.
 const (
-	// ForwarderContractLogicGasCost is at minimum 100k, but often goes up by several x*10%.
-	// Overshoot it by double to make sure that we don't resend txs that had enough gas leftover based on transmission gas info.
-	ForwarderContractLogicGasCost = 200_000
-	LatestBlock                   = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
-	DefaultLookbackBlocks         = 100
+	// InternalGasRequirementsAfterReport is the forwarder's reservation for storing the
+	// transmission result after the receiver call (INTERNAL_GAS_REQUIREMENTS_AFTER_REPORT).
+	InternalGasRequirementsAfterReport uint64 = 5_000
+	// InternalGasRequirements is the forwarder's total internal reservation, subtracted from
+	// gasleft() before the receiver gas budget is recorded (INTERNAL_GAS_REQUIREMENTS).
+	InternalGasRequirements uint64 = 25_000 + InternalGasRequirementsAfterReport
+	// MinimumGasLimit is the forwarder's routing floor: route() reverts the whole tx when the
+	// recorded receiver budget would fall below it (MINIMUM_GAS_LIMIT). Any transmission that
+	// routed at all therefore records at least this much gas.
+	MinimumGasLimit uint64 = InternalGasRequirements + 30_000*3 + 10_000
+	// DefaultForwarderGasOverheadMargin is the default safety margin added on top of the
+	// forwarder's internal reservation to cover the pre-route consumption that is not visible
+	// in the contract constants: tx intrinsic cost, calldata (report + signatures), ecrecover
+	// per signature, storage reads and the external this.route() call. Measured at ~40k gas
+	// for production reports on mainnet; operators may override it per chain via config.
+	DefaultForwarderGasOverheadMargin uint64 = 40_000
+
+	LatestBlock           = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
+	DefaultLookbackBlocks = 100
 )
+
+// ForwarderGasOverhead returns the total gas consumed between the gas limit set on the
+// transmission tx and the receiver gas budget the forwarder records onchain: the contract's
+// internal reservation plus a margin covering pre-route consumption. margin is the per-chain
+// configurable safety margin; 0 selects the default.
+func ForwarderGasOverhead(margin uint64) uint64 {
+	if margin == 0 {
+		margin = DefaultForwarderGasOverheadMargin
+	}
+	return InternalGasRequirements + margin
+}
 
 func NewCREForwarderCodec() (CREForwarderCodec, error) {
 	ABI, err := forwarder.KeystoneForwarderMetaData.GetAbi()
