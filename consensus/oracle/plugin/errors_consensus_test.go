@@ -4,8 +4,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
@@ -82,6 +84,11 @@ func Test_ReceivedTooManyErrorsWithDefault(t *testing.T) {
 			newCrWithErrorAndDefault(t, errors.New("its broken"), 20, md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 				verifyValueConsensusReport(t, report, infos, values.NewInt64(20), "evm")
+
+				// The default value is timestamped with when the DON observed the request, not with the zero time
+				meta, _, err := ocrtypes.Decode(report.ReportWithInfo.Report)
+				require.NoError(t, err, "Failed to extract metadata fields from report")
+				require.NotZero(t, meta.Timestamp)
 			}},
 	}
 
