@@ -243,50 +243,12 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			}
 
 			workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(trigger.workflowID, response.Id, triggerIndex)
-
 			if execIDErr != nil {
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
-				// Continue with execution even if we can't generate ID or emit event
-			} else {
-				// Try to fetch organization ID if org resolver is available
-				var orgID string
-				if s.orgResolver != nil && metadata.WorkflowOwner != "" {
-					func() {
-						defer func() {
-							if r := recover(); r != nil {
-								s.lggr.Warnw("Panic while fetching organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "panic", r)
-							}
-						}()
-						if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
-							s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
-						} else if fetchedOrgID != "" {
-							orgID = fetchedOrgID
-							s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
-						}
-					}()
-				}
-
-				// Emit TriggerExecutionStarted event
-				labeler := custmsg.NewLabeler().With(
-					events.KeyTriggerID, response.Id,
-					events.KeyWorkflowID, trigger.workflowID,
-					events.KeyWorkflowExecutionID, workflowExecutionID,
-					events.KeyWorkflowOwner, metadata.WorkflowOwner,
-					events.KeyWorkflowName, displayWorkflowName,
-					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
-					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
-					events.KeyOrganizationID, orgID,
-					events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
-					events.KeyWorkflowRegistryAddress, metadata.WorkflowRegistryAddress,
-					events.KeyEngineVersion, metadata.EngineVersion,
-				)
-				if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
-					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
-					// Continue with execution even if event emission fails
-				}
+				// Send trigger event even if we can't generate execution ID. Here the ID is used only for observability.
 			}
 
-			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "isLegacyExecutionID", false, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+			s.lggr.Debugw("sending trigger event", "executionID", workflowExecutionID, "isLegacyExecutionID", false, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {
@@ -295,31 +257,77 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				s.lggr.Errorw("task callback failed to schedule next run", "executionID", workflowExecutionID, "triggerID", triggerID)
 			}
 
-			muCh.RLock()
-			defer muCh.RUnlock()
-			if callbackCh == nil {
-				return // unregistered already
-			}
-			s.triggers.Write(triggerID, cronTrigger{
-				job:        job,
-				nextRun:    nextExecutionTime,
-				workflowID: metadata.WorkflowID,
-				close:      closeCh,
-			})
-
-			select {
-			case callbackCh <- response:
-			default:
-				s.lggr.Errorw("callback channel full, dropping event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id)
-
-				lblErr := s.labeler.With(
-					"workflowOwner", metadata.WorkflowOwner,
-					"workflowName", displayWorkflowName,
-					"workflowID", metadata.WorkflowID,
-				).Emit(ctx, "callback channel full, dropping event")
-				if lblErr != nil {
-					s.lggr.Errorw("cannot emit custom event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id, "err", lblErr)
+			func() {
+				muCh.RLock()
+				defer muCh.RUnlock()
+				if callbackCh == nil {
+					return // unregistered already
 				}
+				s.triggers.Write(triggerID, cronTrigger{
+					job:        job,
+					nextRun:    nextExecutionTime,
+					workflowID: metadata.WorkflowID,
+					close:      closeCh,
+				})
+
+				select {
+				case callbackCh <- response:
+				default:
+					s.lggr.Errorw("callback channel full, dropping event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id)
+
+					lblErr := s.labeler.With(
+						"workflowOwner", metadata.WorkflowOwner,
+						"workflowName", displayWorkflowName,
+						"workflowID", metadata.WorkflowID,
+					).Emit(ctx, "callback channel full, dropping event")
+					if lblErr != nil {
+						s.lggr.Errorw("cannot emit custom event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id, "err", lblErr)
+					}
+				}
+			}()
+
+			if execIDErr != nil {
+				return // don't emit anything if we couldn't generate execution ID
+			}
+
+			// Org resolution and event emission are done last, after trigger generation and
+			// bookkeeping above, since they can involve slow network calls (org resolver lookup,
+			// event bus) that must not delay the actual trigger or the next scheduled run.
+
+			// Try to fetch organization ID if org resolver is available
+			var orgID string
+			if s.orgResolver != nil && metadata.WorkflowOwner != "" {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							s.lggr.Warnw("Panic while fetching organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "panic", r)
+						}
+					}()
+					if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
+						s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
+					} else if fetchedOrgID != "" {
+						orgID = fetchedOrgID
+						s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
+					}
+				}()
+			}
+
+			// Emit TriggerExecutionStarted event
+			labeler := custmsg.NewLabeler().With(
+				events.KeyTriggerID, response.Id,
+				events.KeyWorkflowID, trigger.workflowID,
+				events.KeyWorkflowExecutionID, workflowExecutionID,
+				events.KeyWorkflowOwner, metadata.WorkflowOwner,
+				events.KeyWorkflowName, displayWorkflowName,
+				events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
+				events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
+				events.KeyOrganizationID, orgID,
+				events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
+				events.KeyWorkflowRegistryAddress, metadata.WorkflowRegistryAddress,
+				events.KeyEngineVersion, metadata.EngineVersion,
+			)
+			if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+				s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
 			}
 		})
 
