@@ -437,8 +437,10 @@ type failedTransmissionDecision struct {
 
 // assessFailedTransmission decides whether a failed transmission should be retried: retry iff
 // the prior tx's onchain compute unit limit is lower than the one we would submit with (honest
-// nodes submit the requested limit verbatim). A user-provided limit that doesn't match the
-// prior tx is anomalous and emits a mismatch warn + metric; an unfetchable tx means no retry.
+// nodes submit the requested limit verbatim). A tx without a SetComputeUnitLimit instruction
+// was not produced by an honest node and is always retried. A user-provided limit that doesn't
+// match the prior tx is anomalous and emits a mismatch warn + metric; an unfetchable tx means
+// no retry.
 func (wr *WriteReport) assessFailedTransmission(
 	ctx context.Context,
 	request *solcap.WriteReportRequest,
@@ -448,7 +450,7 @@ func (wr *WriteReport) assessFailedTransmission(
 ) failedTransmissionDecision {
 	requestedComputeLimit := request.ComputeConfig.GetComputeLimit()
 
-	priorTxComputeLimit, err := wr.fetchTxComputeUnitLimit(ctx, transmissionInfo.Signature)
+	priorTxComputeLimit, found, err := wr.fetchTxComputeUnitLimit(ctx, transmissionInfo.Signature)
 	if err != nil {
 		wr.lggr.Warnw("Failed to fetch the prior failed transmission tx's compute unit limit, treating the failure as genuine",
 			"error", err.Error(),
@@ -456,6 +458,16 @@ func (wr *WriteReport) assessFailedTransmission(
 			"requestedComputeUnitLimit", requestedComputeLimit,
 		)
 		return failedTransmissionDecision{}
+	}
+
+	if !found {
+		wr.lggr.Warnw("Prior transmission tx has no SetComputeUnitLimit instruction - retrying",
+			"signature", transmissionInfo.Signature.String(),
+			"requestedComputeUnitLimit", requestedComputeLimit,
+		)
+		monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor,
+			wr.messageBuilder.BuildWriteReportComputeLimitMismatch(telemetryContext, request, transmissionInfo.Signature.String(), requestedComputeLimit, 0))
+		return failedTransmissionDecision{retry: true}
 	}
 
 	if userProvidedComputeLimit && priorTxComputeLimit != requestedComputeLimit {
@@ -474,55 +486,47 @@ func (wr *WriteReport) assessFailedTransmission(
 	}
 }
 
-// priorTxComputeLimitLower is the polling early-exit heuristic: whether the failed attempt's
-// tx carried a lower compute unit limit than requested. Fetch failures count as not lower.
 func (wr *WriteReport) priorTxComputeLimitLower(ctx context.Context, sig solana.Signature, requestedComputeLimit uint32) bool {
-	priorTxComputeLimit, err := wr.fetchTxComputeUnitLimit(ctx, sig)
+	priorTxComputeLimit, found, err := wr.fetchTxComputeUnitLimit(ctx, sig)
 	if err != nil {
 		wr.lggr.Debugw("Failed to fetch the prior failed transmission tx's compute unit limit during polling", "error", err, "signature", sig.String())
 		return false
 	}
-	return priorTxComputeLimit < requestedComputeLimit
+	return !found || priorTxComputeLimit < requestedComputeLimit
 }
 
-// fetchTxComputeUnitLimit reads a transaction's effective compute unit limit from chain.
-func (wr *WriteReport) fetchTxComputeUnitLimit(ctx context.Context, sig solana.Signature) (uint32, error) {
+// fetchTxComputeUnitLimit reads a transaction's compute unit limit from chain.
+// found=false means the tx carries no SetComputeUnitLimit instruction.
+func (wr *WriteReport) fetchTxComputeUnitLimit(ctx context.Context, sig solana.Signature) (limit uint32, found bool, err error) {
 	reply, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*soltypes.GetTransactionReply, error) {
 		return wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	})
 	if err != nil {
-		return 0, fmt.Errorf("failed to get transaction: %w", err)
+		return 0, false, fmt.Errorf("failed to get transaction: %w", err)
 	}
 	if reply == nil || reply.Transaction == nil || reply.Transaction.AsParsedTransaction == nil {
-		return 0, errors.New("transaction response is missing the parsed transaction")
+		return 0, false, errors.New("transaction response is missing the parsed transaction")
 	}
 	return computeUnitLimitFromMessage(reply.Transaction.AsParsedTransaction.Message)
 }
 
-// Solana runtime defaults when no SetComputeUnitLimit instruction is present.
-const (
-	defaultInstructionComputeUnitLimit uint32 = 200_000
-	maxComputeUnitLimit                uint32 = 1_400_000
-)
-
-// computeUnitLimitFromMessage derives a transaction's effective compute unit limit: the
-// SetComputeUnitLimit value, or the runtime default per non-compute-budget instruction.
-func computeUnitLimitFromMessage(msg soltypes.Message) (uint32, error) {
-	nonBudgetInstructions := uint32(0)
+// computeUnitLimitFromMessage returns the tx's SetComputeUnitLimit value clamped to the
+// runtime's per-transaction cap, or found=false when the tx carries no SetComputeUnitLimit
+// instruction.
+func computeUnitLimitFromMessage(msg soltypes.Message) (uint32, bool, error) {
 	for _, ix := range msg.Instructions {
 		// Program ids cannot come from address lookup tables; static keys suffice.
 		if int(ix.ProgramIDIndex) >= len(msg.AccountKeys) {
-			return 0, fmt.Errorf("instruction program id index %d out of range, %d account keys", ix.ProgramIDIndex, len(msg.AccountKeys))
+			return 0, false, fmt.Errorf("instruction program id index %d out of range, %d account keys", ix.ProgramIDIndex, len(msg.AccountKeys))
 		}
 		if !solana.PublicKey(msg.AccountKeys[ix.ProgramIDIndex]).Equals(solana.ComputeBudget) {
-			nonBudgetInstructions++
 			continue
 		}
 		if len(ix.Data) >= 5 && ix.Data[0] == computebudget.Instruction_SetComputeUnitLimit {
-			return binary.LittleEndian.Uint32(ix.Data[1:5]), nil
+			return min(binary.LittleEndian.Uint32(ix.Data[1:5]), computebudget.MAX_COMPUTE_UNIT_LIMIT), true, nil
 		}
 	}
-	return min(nonBudgetInstructions*defaultInstructionComputeUnitLimit, maxComputeUnitLimit), nil
+	return 0, false, nil
 }
 
 // pollTransmissionInfo waits for the node's transmission slot then returns the current state.

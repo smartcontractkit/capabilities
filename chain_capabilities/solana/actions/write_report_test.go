@@ -1083,9 +1083,9 @@ func TestComputeUnitLimitFromMessage(t *testing.T) {
 		return soltypes.CompiledInstruction{ProgramIDIndex: 1, Data: data}
 	}
 
-	t.Run("explicit SetComputeUnitLimit wins", func(t *testing.T) {
+	t.Run("explicit SetComputeUnitLimit is returned", func(t *testing.T) {
 		t.Parallel()
-		limit, err := computeUnitLimitFromMessage(soltypes.Message{
+		limit, found, err := computeUnitLimitFromMessage(soltypes.Message{
 			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
 			Instructions: []soltypes.CompiledInstruction{
 				setLimitIx(123_456),
@@ -1093,40 +1093,41 @@ func TestComputeUnitLimitFromMessage(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
+		require.True(t, found)
 		require.Equal(t, uint32(123_456), limit)
 	})
 
-	t.Run("no compute budget instruction => 200k per top-level instruction", func(t *testing.T) {
+	t.Run("value above the runtime cap is clamped", func(t *testing.T) {
 		t.Parallel()
-		limit, err := computeUnitLimitFromMessage(soltypes.Message{
+		limit, found, err := computeUnitLimitFromMessage(soltypes.Message{
+			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
+			Instructions: []soltypes.CompiledInstruction{
+				setLimitIx(4_000_000_000),
+				{ProgramIDIndex: 2, Data: RandomBytes(8)},
+			},
+		})
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint32(1_400_000), limit)
+	})
+
+	t.Run("no compute budget instruction => not found", func(t *testing.T) {
+		t.Parallel()
+		_, found, err := computeUnitLimitFromMessage(soltypes.Message{
 			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
 			Instructions: []soltypes.CompiledInstruction{
 				{ProgramIDIndex: 2, Data: RandomBytes(8)},
 			},
 		})
 		require.NoError(t, err)
-		require.Equal(t, uint32(200_000), limit)
+		require.False(t, found)
 	})
 
-	t.Run("default is capped at the max compute unit limit", func(t *testing.T) {
-		t.Parallel()
-		ixs := make([]soltypes.CompiledInstruction, 8) // 8 * 200k = 1.6M > 1.4M cap
-		for i := range ixs {
-			ixs[i] = soltypes.CompiledInstruction{ProgramIDIndex: 2, Data: RandomBytes(8)}
-		}
-		limit, err := computeUnitLimitFromMessage(soltypes.Message{
-			AccountKeys:  soltypes.PublicKeySlice{feePayer, budget, program},
-			Instructions: ixs,
-		})
-		require.NoError(t, err)
-		require.Equal(t, uint32(1_400_000), limit)
-	})
-
-	t.Run("other compute budget instructions do not set the limit and do not count", func(t *testing.T) {
+	t.Run("other compute budget instructions do not set the limit", func(t *testing.T) {
 		t.Parallel()
 		priceIxData := make([]byte, 9)
 		priceIxData[0] = computebudget.Instruction_SetComputeUnitPrice
-		limit, err := computeUnitLimitFromMessage(soltypes.Message{
+		_, found, err := computeUnitLimitFromMessage(soltypes.Message{
 			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
 			Instructions: []soltypes.CompiledInstruction{
 				{ProgramIDIndex: 1, Data: priceIxData},
@@ -1134,12 +1135,12 @@ func TestComputeUnitLimitFromMessage(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		require.Equal(t, uint32(200_000), limit)
+		require.False(t, found)
 	})
 
 	t.Run("program id index out of range => error", func(t *testing.T) {
 		t.Parallel()
-		_, err := computeUnitLimitFromMessage(soltypes.Message{
+		_, _, err := computeUnitLimitFromMessage(soltypes.Message{
 			AccountKeys: soltypes.PublicKeySlice{feePayer},
 			Instructions: []soltypes.CompiledInstruction{
 				{ProgramIDIndex: 5, Data: RandomBytes(8)},
@@ -1210,6 +1211,23 @@ func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
 		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false)
 		require.True(t, decision.retry)
 		require.Empty(t, proc.msgs)
+	})
+
+	t.Run("prior tx has no SetComputeUnitLimit instruction => retry, mismatch reported", func(t *testing.T) {
+		t.Parallel()
+		reply := txReplyWithComputeLimitIx(0)
+		reply.Transaction.AsParsedTransaction.Message.Instructions = []soltypes.CompiledInstruction{
+			{ProgramIDIndex: 2, Data: RandomBytes(8)},
+		}
+		wr, proc := newWriteReportWithPriorTxLimit(t, reply)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false)
+		require.True(t, decision.retry)
+
+		require.Len(t, proc.msgs, 1)
+		mismatch, ok := proc.msgs[0].(*monitoring.WriteReportComputeLimitMismatch)
+		require.True(t, ok)
+		require.Equal(t, requestedComputeLimit, mismatch.GetExpectedComputeUnitLimit())
+		require.Equal(t, uint32(0), mismatch.GetActualComputeUnitLimit())
 	})
 
 	t.Run("prior tx cannot be parsed => no retry (failure treated as genuine)", func(t *testing.T) {
