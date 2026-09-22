@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -522,8 +521,13 @@ func computeUnitLimitFromMessage(msg soltypes.Message) (uint32, bool, error) {
 		if !solana.PublicKey(msg.AccountKeys[ix.ProgramIDIndex]).Equals(solana.ComputeBudget) {
 			continue
 		}
-		if len(ix.Data) >= 5 && ix.Data[0] == computebudget.Instruction_SetComputeUnitLimit {
-			return min(binary.LittleEndian.Uint32(ix.Data[1:5]), computebudget.MAX_COMPUTE_UNIT_LIMIT), true, nil
+		decoded, decErr := computebudget.DecodeInstruction(nil, ix.Data)
+		if decErr != nil {
+			// Unknown or malformed compute budget instruction; keep scanning.
+			continue
+		}
+		if setLimit, ok := decoded.Impl.(*computebudget.SetComputeUnitLimit); ok {
+			return min(setLimit.Units, computebudget.MAX_COMPUTE_UNIT_LIMIT), true, nil
 		}
 	}
 	return 0, false, nil
