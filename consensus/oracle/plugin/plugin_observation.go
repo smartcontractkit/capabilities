@@ -34,7 +34,6 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			Metadata:   ToRequestMetaData(req.Metadata),
 			ReceivedAt: timestamppb.New(req.ReceivedAt),
 			Input:      req.Input,
-			RemoveLibUseInFailureMessageFormattingFlag: true,
 		}
 
 		hasCapacity := observationBatch.AddObservation(ctx, reqObs)

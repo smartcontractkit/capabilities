@@ -107,12 +107,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
-	removeLibUseInErrorFormattingFlag := true
 	for _, obs := range observations {
-		if !obs.RemoveLibUseInFailureMessageFormattingFlag { // enable only when all nodes are updated
-			removeLibUseInErrorFormattingFlag = false
-		}
-
 		// Does the observation have a valid input?
 		if obs.Input == nil {
 			lggr.Warnw("observation missing input", "requestID", requestID, "observerMetadata", obs.Metadata)
@@ -147,18 +142,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	}
 
 	if len(obsErrors) >= r.f+1 {
-		var consensusFailedMsg string
-		if removeLibUseInErrorFormattingFlag {
-			consensusFailedMsg = fmt.Sprintf(
-				"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata: %s; Descriptor type: %s; Errors received: %s",
-				len(obsErrors), r.f+1, requestID, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), formatErrorsForLogging(ctx, removeLibUseInErrorFormattingFlag, obsErrors),
-			)
-		} else {
-			consensusFailedMsg = fmt.Sprintf(
-				"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata, descriptor and default: %+v; Errors received: %s",
-				len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, removeLibUseInErrorFormattingFlag, obsErrors),
-			)
-		}
+		consensusFailedMsg := fmt.Sprintf(
+			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata: %s; Descriptor type: %s; Errors received: %s",
+			len(obsErrors), r.f+1, requestID, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), formatErrorsForLogging(obsErrors),
+		)
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: received >= f+1 error observations",
@@ -168,18 +155,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
 	if err != nil {
 		valuesJSON := formatValuesForLogging(ctx, lggr, obsValues)
-		var consensusFailedMsg string
-		if removeLibUseInErrorFormattingFlag {
-			consensusFailedMsg = fmt.Sprintf(
-				"consensus calculation failed: %v; Consensus metadata: %s; Descriptor type: %s; Values received: %s; Errors received: %s",
-				err, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), valuesJSON, formatErrorsForLogging(ctx, removeLibUseInErrorFormattingFlag, obsErrors),
-			)
-		} else {
-			consensusFailedMsg = fmt.Sprintf(
-				"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
-				err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, removeLibUseInErrorFormattingFlag, obsErrors),
-			)
-		}
+		consensusFailedMsg := fmt.Sprintf(
+			"consensus calculation failed: %v; Consensus metadata: %s; Descriptor type: %s; Values received: %s; Errors received: %s",
+			err, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), valuesJSON, formatErrorsForLogging(obsErrors),
+		)
 
 		if errors.Is(err, oracle.ErrMoreThanOneValidOutcomeForIdenticalConsensus) {
 			return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
@@ -238,16 +217,8 @@ func consensusMDDDescriptorTypeString(mdd *oracletypes.RequestObservation) strin
 	}
 }
 
-func formatErrorsForLogging(ctx context.Context, removeLibUseInErrorFormattingFlag bool, errors []string) string {
-	if removeLibUseInErrorFormattingFlag {
-		return "[" + strings.Join(errors, ",") + "]"
-	}
-
-	b, err := json.Encode(ctx, errors)
-	if err != nil {
-		return "could not marshal errors"
-	}
-	return string(b)
+func formatErrorsForLogging(errors []string) string {
+	return "[" + strings.Join(errors, ",") + "]"
 }
 
 func formatValuesForLogging(ctx context.Context, lggr logger.Logger, obsValues []*valuespb.Value) string {
