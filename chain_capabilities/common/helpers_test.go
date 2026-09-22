@@ -62,7 +62,7 @@ func TestAverageRequestTimeout(t *testing.T) {
 		), nil)
 
 		got := MaxRequestTimeoutWithMultiplier(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 3*time.Second, got)
+		require.Equal(t, 3*time.Second*defaultRequestTimeoutToUnknownTTLMultiplier, got)
 	})
 
 	t.Run("skips method configs without RemoteExecutableConfig or zero RequestTimeout", func(t *testing.T) {
@@ -77,7 +77,7 @@ func TestAverageRequestTimeout(t *testing.T) {
 		), nil)
 
 		got := MaxRequestTimeoutWithMultiplier(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 8*time.Second, got)
+		require.Equal(t, 8*time.Second*defaultRequestTimeoutToUnknownTTLMultiplier, got)
 	})
 
 	t.Run("returns fallback when no method config has a RequestTimeout", func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestAverageRequestTimeout(t *testing.T) {
 		}), nil)
 
 		got := MaxRequestTimeoutWithMultiplier(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 4*time.Second, got)
+		require.Equal(t, 4*time.Second*defaultRequestTimeoutToUnknownTTLMultiplier, got)
 	})
 
 	t.Run("returns fallback when only WriteReport and LogTrigger have RequestTimeout", func(t *testing.T) {
@@ -159,6 +159,6 @@ func TestAverageRequestTimeout(t *testing.T) {
 		), nil)
 
 		got := MaxRequestTimeoutWithMultiplier(context.Background(), reg, capID, donID, fallback, lggr)
-		require.Equal(t, 3*time.Second, got)
+		require.Equal(t, 3*time.Second*defaultRequestTimeoutToUnknownTTLMultiplier, got)
 	})
 }
