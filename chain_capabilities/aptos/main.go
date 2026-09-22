@@ -28,6 +28,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/height"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	consmetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
@@ -41,11 +42,12 @@ const (
 	CapabilityVersion = "1.0.0"
 
 	// Default values for optional Aptos consensus/read settings when not provided in config.
-	defaultDeltaStage            = 10 * time.Second
-	defaultObservationWorkers    = 10
-	defaultObservationPollPeriod = 2 * time.Second
-	defaultUnknownRequestsTTL    = 10 * time.Second
-	defaultChainHeightPollPeriod = time.Second
+	defaultDeltaStage                  = 10 * time.Second
+	defaultObservationWorkers          = 10
+	defaultObservationPollPeriod       = 2 * time.Second
+	defaultUnknownRequestsTTL          = 10 * time.Second
+	defaultChainHeightPollPeriod       = time.Second
+	defaultMaxUnknownRequestsCacheSize = 1000
 
 	// Default value for optional Aptos action setting when not provided in config.
 	defaultTxSearchStartingBuffer = 1 * time.Minute
@@ -205,12 +207,24 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		"capabilityID", c.id,
 	)
 
+	// TODO(CRE-4409 follow-up): use dependencies.CapabilityDonID once Aptos
+	// starts emitting KeyDonID events.
+	// Until then, passing 0 preserves the legacy "first matched DON" behavior.
+	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, 0, c.lggr, false)
+	if err != nil {
+		c.lggr.Errorw("failed to init DON", "error", err)
+		return fmt.Errorf("failed to init DON: %w", err)
+	}
+	c.DON = &myDON
+	c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
+
 	consensusMetrics, err := consmetrics.NewConsensusMetrics(chainInfo)
 	if err != nil {
 		return fmt.Errorf("failed to create aptos consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	derivedUnknownTTL := capcommon.MaxRequestTimeoutWithMultiplier(ctx, dependencies.CapabilityRegistry, c.id, c.DON.ID, cfg.UnknownRequestsTTL, c.lggr)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 	c.heightProvider = height.NewProvider(c.lggr, cfg.ChainHeightPollPeriod, aptosService)
 
 	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
@@ -229,17 +243,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
-
-	// TODO(CRE-4409 follow-up): use dependencies.CapabilityDonID once Aptos
-	// starts emitting KeyDonID events.
-	// Until then, passing 0 preserves the legacy "first matched DON" behavior.
-	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, 0, c.lggr, false)
-	if err != nil {
-		c.lggr.Errorw("failed to init DON", "error", err)
-		return fmt.Errorf("failed to init DON: %w", err)
-	}
-	c.DON = &myDON
-	c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
 
 	p2pConfig := cfg.P2PToTransmitterMap
 	if len(p2pConfig) > 0 {
@@ -426,6 +429,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.TxSearchStartingBuffer == 0 {
 		cfg.TxSearchStartingBuffer = defaultTxSearchStartingBuffer
 		c.lggr.Infof("TxSearchStartingBuffer is zero, setting to %s.", cfg.TxSearchStartingBuffer)
+	}
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 	return &cfg, nil
 }

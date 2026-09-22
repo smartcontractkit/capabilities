@@ -21,7 +21,10 @@ import (
 	commonmon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
-const UserError = "user error:"
+const (
+	UserError                                   = "user error:"
+	defaultRequestTimeoutToUnknownTTLMultiplier = 2
+)
 
 // Ptr returns a pointer to the given value.
 //
@@ -180,7 +183,7 @@ func WithRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.C
 // differ from regular executable methods. If the config can't be fetched or no
 // eligible RemoteExecutableConfig.RequestTimeout values are found, it returns
 // fallback.
-func MaxRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
+func MaxRequestTimeoutWithMultiplier(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
 	if registry == nil {
 		return fallback
 	}
@@ -210,7 +213,7 @@ func MaxRequestTimeout(ctx context.Context, registry core.CapabilitiesRegistry, 
 	if count == 0 {
 		return fallback
 	}
-	return maxTimeout
+	return maxTimeout * defaultRequestTimeoutToUnknownTTLMultiplier
 }
 
 func isNonReadMethod(method string) bool {
