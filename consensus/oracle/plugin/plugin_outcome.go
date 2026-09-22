@@ -96,9 +96,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 
 // addRequestOutcomeToBatch adds the outcome for a single request to the outcome batch. Returns false if batch does not have capacity to add the outcome.
 func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr logger.Logger, requestID string, observations []*oracletypes.RequestObservation, outcome *batching.OutcomeBatch) (bool, error) {
-	// false is ok to use as the default for the updateErrorHandlingFlag parameter as the flag pertains to how the error is reported when observations have different types,
-	// in this case we know that all the observations will be of type []byte so the error will not occur and thus the flag will not have an effect on the outcome.
-	consensusMDD, err := r.calculateConsensusMetadataDescriptorAndDefault(lggr, observations, false)
+	consensusMDD, err := r.calculateConsensusMetadataDescriptorAndDefault(lggr, observations)
 	if err != nil {
 		return outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID,
 			fmt.Sprintf("failed to calculate consensus metadata, descriptor and default for request: %v", err),
@@ -110,14 +108,9 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	var timestamps []*timestamppb.Timestamp
 
 	removeLibUseInErrorFormattingFlag := true
-	updateErrorHandlingFlag := true
 	for _, obs := range observations {
 		if !obs.RemoveLibUseInFailureMessageFormattingFlag { // enable only when all nodes are updated
 			removeLibUseInErrorFormattingFlag = false
-		}
-
-		if !obs.UpdateErrorHandlingFlag {
-			updateErrorHandlingFlag = false
 		}
 
 		// Does the observation have a valid input?
@@ -172,7 +165,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, consensusMDD, timestamp)
 	}
 
-	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f, updateErrorHandlingFlag)
+	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
 	if err != nil {
 		valuesJSON := formatValuesForLogging(ctx, lggr, obsValues)
 		var consensusFailedMsg string
@@ -194,18 +187,16 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 				oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS, consensusMDD, timestamp)
 		}
 
-		if updateErrorHandlingFlag {
-			if errors.Is(err, oracle.ErrNoValuesMetFPlusOneThresholdForIdenticalConsensus) {
-				return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
-					"identical consensus calculation failed: no values met f+1 threshold",
-					oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS, consensusMDD, timestamp)
-			}
+		if errors.Is(err, oracle.ErrNoValuesMetFPlusOneThresholdForIdenticalConsensus) {
+			return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
+				"identical consensus calculation failed: no values met f+1 threshold",
+				oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS, consensusMDD, timestamp)
+		}
 
-			if errors.Is(err, oracle.ErrNoSingleValueTypeMeetsThreshold) {
-				return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
-					"consensus calculation failed: no single value type meets f+1 threshold",
-					oracletypes.ConsensusFailureCode_NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS, consensusMDD, timestamp)
-			}
+		if errors.Is(err, oracle.ErrNoSingleValueTypeMeetsThreshold) {
+			return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
+				"consensus calculation failed: no single value type meets f+1 threshold",
+				oracletypes.ConsensusFailureCode_NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS, consensusMDD, timestamp)
 		}
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
@@ -301,8 +292,7 @@ func verifyMetadataDescriptorAndDefaultMatchConsensus(obs *oracletypes.RequestOb
 	return proto.Equal(obsMDD, consensusMDD)
 }
 
-func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(lggr logger.Logger, observations []*oracletypes.RequestObservation,
-	updateErrorHandlingFlag bool) (*oracletypes.RequestObservation, error) {
+func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(lggr logger.Logger, observations []*oracletypes.RequestObservation) (*oracletypes.RequestObservation, error) {
 	var allObservationsMDDBytes []*valuespb.Value
 	for _, obs := range observations {
 		if obs.Input == nil {
@@ -327,7 +317,7 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(lggr lo
 
 	consensusMDDBytes, err := oracle.CalculateOutcomeForObservations(lggr, allObservationsMDDBytes,
 		&sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
-		nil, r.f, updateErrorHandlingFlag)
+		nil, r.f)
 	if err != nil {
 		return nil, err
 	}

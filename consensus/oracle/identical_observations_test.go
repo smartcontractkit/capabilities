@@ -182,7 +182,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr := logger.Test(t)
-			got, err := handleIdenticalAggregation(lggr, tc.inputValues, tc.f, false)
+			got, err := handleIdenticalAggregation(lggr, tc.inputValues, tc.f)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)
@@ -304,7 +304,7 @@ func Test_filterObservations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actualObservations, actualType, err := filterObservations(tc.observationProtos, tc.minObservations, true)
+			actualObservations, actualType, err := filterObservations(tc.observationProtos, tc.minObservations)
 
 			if tc.expectedError != nil {
 				require.Error(t, err)
