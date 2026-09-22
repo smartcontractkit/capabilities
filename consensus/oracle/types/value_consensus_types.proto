@@ -38,9 +38,8 @@ message RequestObservation {
   sdk.v1alpha.SimpleConsensusInputs input = 2;
   google.protobuf.Timestamp received_at = 3;
 
-  // 4 was remove_lib_use_in_failure_message_formatting_flag, 5 was update_error_handling_flag;
-  // both rollouts are complete.
-  reserved 4, 5;
+  bool remove_lib_use_in_failure_message_formatting_flag = 4; // remove use of libraries in failure message formatting; deprecated/not used.
+  bool update_error_handling_flag = 5; // migrate system errors to user errors; deprecated/not used
 }
 
 message Observation {
