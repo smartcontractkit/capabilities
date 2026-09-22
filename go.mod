@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities
 
-go 1.26.6
+go 1.26.7
 
 require (
 	github.com/stretchr/testify v1.11.1

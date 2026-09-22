@@ -16,7 +16,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
@@ -42,11 +41,6 @@ var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 
 type Config struct {
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
-}
-
-type Response struct {
-	capabilities.TriggerEvent
-	Payload cron.Payload
 }
 
 type cronTrigger struct {
