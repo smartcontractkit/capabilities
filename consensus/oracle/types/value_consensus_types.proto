@@ -40,6 +40,7 @@ message RequestObservation {
 
   bool remove_lib_use_in_failure_message_formatting_flag = 4  [deprecated = true]; // remove use of libraries in failure message formatting
   bool update_error_handling_flag = 5  [deprecated = true]; // migrate system errors to user errors
+  bool median_2fplus1_quorum_flag = 6;
 }
 
 message Observation {
