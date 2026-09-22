@@ -1208,13 +1208,13 @@ func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
 	expectedExecID, err := workflows.GenerateExecutionIDWithTriggerIndex(testWorkflowID, msg.Id, testTriggerIndex)
 	require.NoError(t, err)
 
-	// The debug log at "task callback sending trigger response" is written
-	// before the channel send, so it is already present once we receive msg.
+	// The debug log at "sending trigger event" is written before the channel
+	// send, so it is already present once we receive msg.
 	var execIDFromLog string
 	var isLegacyFromLog bool
 	var found bool
 	for _, entry := range observedLogs.All() {
-		if entry.Message == "task callback sending trigger response" {
+		if entry.Message == "sending trigger event" {
 			for _, field := range entry.Context {
 				switch field.Key {
 				case "executionID":
@@ -1227,7 +1227,7 @@ func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
 			break
 		}
 	}
-	require.True(t, found, "expected log entry 'task callback sending trigger response'")
+	require.True(t, found, "expected log entry 'sending trigger event'")
 	require.Equal(t, expectedExecID, execIDFromLog, "execution ID should match expected hash function")
 	require.False(t, isLegacyFromLog)
 
