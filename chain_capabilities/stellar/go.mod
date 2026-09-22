@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/chain_capabilities/stellar
 go 1.26.6
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260922114021-5cee95428866
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260917115705-1d3a14a9b049
 	github.com/stellar/go-stellar-sdk v0.7.1
 )
@@ -77,7 +77,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260915141251-0910a990ef64
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260922114021-5cee95428866
 	github.com/smartcontractkit/chain-selectors v1.0.104
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260915184316-2730f1867c92 // indirect
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243

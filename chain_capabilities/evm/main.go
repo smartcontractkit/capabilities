@@ -47,7 +47,7 @@ const (
 	defaultObservationWorkers          = 10
 	defaultObservationPollPeriod       = 2 * time.Second
 	defaultUnknownRequestsTTL          = 10 * time.Second
-	defaultMaxUnknownRequestsCacheSize = 100
+	defaultMaxUnknownRequestsCacheSize = 1000
 	defaultChainHeightPollPeriod       = time.Second
 )
 
