@@ -20,7 +20,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -104,6 +103,21 @@ func registerTriggerToCronTriggerService(
 	return triggerEventsCh, request, err
 }
 
+// Response is the decoded form of a cron trigger event, used by these tests to
+// assert on the event envelope and its payload together.
+type Response struct {
+	capabilities.TriggerEvent
+	Payload Payload
+}
+
+// Payload is a local copy of the payload type that used to live in
+// chainlink-common's pkg/capabilities/triggers/cron, which has since been removed.
+type Payload struct {
+	// Time that cron trigger's task execution had been scheduled to occur
+	// (RFC3339Nano formatted)
+	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
+}
+
 func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	useTypedAPI bool) Response {
 	response := Response{}
@@ -115,7 +129,7 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 		payload := &crontypedapi.LegacyPayload{} //nolint:staticcheck
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
-		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
+		response.Payload = Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
 		return response
 	}
 
