@@ -479,7 +479,9 @@ func (wr *WriteReport) pollTransmissionInfo(
 // A fee lookup failure is surfaced via monitoring and yields empty metadata instead of
 // failing the reply.
 func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature) capabilities.ResponseMetadata {
-	feeInLamports, err := wr.getFee(ctx, sig)
+	feeInLamports, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (uint64, error) {
+		return wr.getFee(ctx, sig)
+	})
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, sig, err.Error()))
 		return capabilities.ResponseMetadata{}

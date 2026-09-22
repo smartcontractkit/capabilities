@@ -660,8 +660,50 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
 	})
 
-	t.Run("Fee calculation failure does not fail WriteReport", func(t *testing.T) {
+	t.Run("Fee lookup retries transient failures", func(t *testing.T) {
 		ctx := t.Context()
+		testLogger := logger.Test(t)
+		helper := createMocksAndCapability(t, testLogger)
+
+		receiverAddress := key.PublicKey()
+		reportMetadata := createTestReportMetadata()
+
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		signedReport := writeReportRequest.Report
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
+			State: TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		helper.creForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, mock.Anything, signedReport, mock.Anything).Return(&soltypes.SubmitTransactionReply{
+			Signature: soltypes.Signature(sig),
+		}, nil)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
+			State:     TransmissionStateSucceeded,
+			Signature: sig,
+		}, nil).Once()
+
+		txFeeInLamports := uint64(5000)
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(
+			(*soltypes.GetTransactionReply)(nil), errors.New("rpc error: transaction not found")).Once()
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil).Once()
+
+		result, err := helper.solana.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
+		helper.solanaService.AssertNumberOfCalls(t, "GetTransaction", 2)
+	})
+
+	t.Run("Fee calculation failure does not fail WriteReport", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
@@ -697,7 +739,8 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 	})
 
 	t.Run("Nil transaction meta in fee lookup does not fail WriteReport", func(t *testing.T) {
-		ctx := t.Context()
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
@@ -782,7 +825,8 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 	})
 
 	t.Run("Pre-existing successful transmission with fee lookup failure has no metering", func(t *testing.T) {
-		ctx := t.Context()
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
