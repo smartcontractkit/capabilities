@@ -38,8 +38,8 @@ message RequestObservation {
   sdk.v1alpha.SimpleConsensusInputs input = 2;
   google.protobuf.Timestamp received_at = 3;
 
-  bool remove_lib_use_in_failure_message_formatting_flag = 4; // remove use of libraries in failure message formatting; flag to be removed after rollout
-  bool update_error_handling_flag = 5; // migrate system errors to user errors; flag to be removed after rollout
+  bool remove_lib_use_in_failure_message_formatting_flag = 4  [deprecated = true]; // remove use of libraries in failure message formatting
+  bool update_error_handling_flag = 5  [deprecated = true]; // migrate system errors to user errors
 }
 
 message Observation {

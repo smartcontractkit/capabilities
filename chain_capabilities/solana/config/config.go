@@ -21,6 +21,7 @@ type Config struct {
 	ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
 	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
 	UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
+	MaxUnknownRequestsCacheSize   int           `json:"maxUnknownRequestsCacheSize"`
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {
@@ -37,6 +38,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
 		ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
 		UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
+		MaxUnknownRequestsCacheSize   int           `json:"maxUnknownRequestsCacheSize"`
 	}
 	var cfg config
 
@@ -66,6 +68,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.ObservationPollerWorkersCount = cfg.ObservationPollerWorkersCount
 	c.ObservationPollPeriod = cfg.ObservationPollPeriod
 	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL
+	c.MaxUnknownRequestsCacheSize = cfg.MaxUnknownRequestsCacheSize
 
 	return nil
 }

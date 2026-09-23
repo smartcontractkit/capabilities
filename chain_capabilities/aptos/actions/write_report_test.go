@@ -452,7 +452,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
 		requireReplyBlockTimestamp(t, result.Response, uint64(txTs))
-		require.Empty(t, result.ResponseMetadata.Metering)
+		// Nodes that did not transmit still meter the on-chain fee.
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
