@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 
@@ -325,7 +326,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 		switch tRequestOb := requestOb.Observation.(type) {
 		case *ctypes.RequestObservation_Aggregatable:
 			if value := tRequestOb.Aggregatable.GetValue(); value != nil &&
-				(value.Exponent < -MaxAggregatableExponent || value.Exponent > MaxAggregatableExponent) {
+				math.Abs(float64(value.Exponent)) > MaxAggregatableExponent {
 				return fmt.Errorf("aggregatable exponent out of range for request ID %s: got %d, allowed [-%d, %d]. OracleID: %d",
 					requestID, value.Exponent, MaxAggregatableExponent, MaxAggregatableExponent, ao.Observer)
 			}
