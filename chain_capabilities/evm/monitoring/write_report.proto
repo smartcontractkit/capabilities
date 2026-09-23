@@ -13,6 +13,10 @@ message WriteReportInitiated {
 message WriteReportSuccess {
   WriteReportRequest req = 1;
   int32 log_count = 2;
+  // tx_hashes lists every transaction hash that landed on-chain for this
+  // transmission (from the forwarder ReportProcessed logs). More than one entry
+  // means multiple transmissions (e.g. duplicates / re-broadcasts) were recorded.
+  repeated string tx_hashes = 3;
   monitoring.ExecutionContext execution_context = 20;
 }
 

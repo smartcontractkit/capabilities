@@ -82,9 +82,10 @@ func convertAttributedSignature(attributedSignatures []*sdkpb.AttributedSignatur
 	return convertedSignatures
 }
 
-func (m *MessageBuilder) BuildWriteReportSuccess(tc TelemetryContext, req *evmcap.WriteReportRequest) *WriteReportSuccess {
+func (m *MessageBuilder) BuildWriteReportSuccess(tc TelemetryContext, req *evmcap.WriteReportRequest, txHashes []string) *WriteReportSuccess {
 	return &WriteReportSuccess{
 		Req:              convertWriteReportRequest(req),
+		TxHashes:         txHashes,
 		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
