@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math"
 	"math/big"
 	"testing"
 
@@ -569,6 +570,63 @@ func TestValidateObservation(t *testing.T) {
 				}),
 			},
 			expectedError: "too many volatile observations for request ID volatile-req",
+		},
+		{
+			name: "Valid aggregatable observation (exponent 0)",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"aggr-req": {
+							Observation: &types.RequestObservation_Aggregatable{
+								Aggregatable: &types.AggregatableObservation{
+									Method: types.AggregationMethodFPlusOneHighest,
+									Value:  &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(21000)), Exponent: 0},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "",
+		},
+		{
+			name: "Aggregatable exponent above the maximum is rejected",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"aggr-req": {
+							Observation: &types.RequestObservation_Aggregatable{
+								Aggregatable: &types.AggregatableObservation{
+									Method: types.AggregationMethodFPlusOneHighest,
+									Value:  &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(1)), Exponent: math.MaxInt32},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "aggregatable exponent out of range for request ID aggr-req",
+		},
+		{
+			name: "Aggregatable exponent below the minimum is rejected",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"aggr-req": {
+							Observation: &types.RequestObservation_Aggregatable{
+								Aggregatable: &types.AggregatableObservation{
+									Method: types.AggregationMethodFPlusOneHighest,
+									Value:  &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(1)), Exponent: math.MinInt32},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "aggregatable exponent out of range for request ID aggr-req",
 		},
 	}
 
