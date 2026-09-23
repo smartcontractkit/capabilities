@@ -309,7 +309,14 @@ func (rp *reportingPlugin) addObservationsOfPrevMissingRequests(ctx context.Cont
 
 	// Prioritize the original list of missing requests from the previous outcome.
 	// This handles cases where the leader's order of requests in query is different from the majority of other nodes.
-	return rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation)
+	if err := rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation); err != nil {
+		return err
+	}
+
+	rp.logger.Debugw("Finished adding observations for previously missing requests",
+		"requested", leaderMissingRequests,
+		"observationsAdded", len(observation.Observations))
+	return nil
 }
 
 func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{}) ([]string, error) {
@@ -323,6 +330,11 @@ func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{
 		if _, ok := roundRequests[requestID]; !ok {
 			missingRequestIDs = append(missingRequestIDs, requestID)
 		}
+	}
+
+	if len(missingRequestIDs) > 0 {
+		rp.logger.Infow("Proposing missing request IDs: present in local store but absent from the leader's query",
+			"missingRequestIDs", missingRequestIDs)
 	}
 
 	return missingRequestIDs, nil
@@ -588,6 +600,10 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 	}
 
 	sort.Strings(result)
+	if len(result) > 0 {
+		rp.logger.Infow("Quorum agreed on missing request IDs: committing them to the outcome for recovery in the next round",
+			"missingRequestIDs", result)
+	}
 	return result, nil
 }
 
@@ -602,6 +618,8 @@ func (rp *reportingPlugin) agreeOnEnableMissingRequestRecovery(aos []attributedO
 		if ob.Observation.EnableMissingRequestRecovery {
 			counter++
 			if counter >= minMatching {
+				rp.logger.Infow("Quorum reached for enabling missing request recovery: recovered requests will be aggregated into this round's outcome",
+					"votes", counter, "required", minMatching)
 				return true
 			}
 		}
@@ -839,12 +857,20 @@ func (rp *reportingPlugin) Outcome(
 		// Requests that the leader's query omitted but that a quorum of nodes still supplied
 		// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
 		// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
+		recoveredRequestIDs := make([]string, 0, len(prevOutcome.MissingRequestIDs))
 		for _, requestID := range prevOutcome.MissingRequestIDs {
 			if _, ok := seen[requestID]; ok {
 				continue
 			}
 			seen[requestID] = struct{}{}
 			requestIDs = append(requestIDs, requestID)
+			recoveredRequestIDs = append(recoveredRequestIDs, requestID)
+		}
+
+		if len(recoveredRequestIDs) > 0 {
+			rp.logger.Infow("Missing request recovery: adding previously missing requests to this round's outcome "+
+				"(they were omitted by the leader's query but agreed upon by a quorum in the previous round)",
+				"recoveredRequestIDs", recoveredRequestIDs)
 		}
 	}
 

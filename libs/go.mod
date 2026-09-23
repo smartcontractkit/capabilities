@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/libs
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.8.0
 	github.com/shopspring/decimal v1.4.0
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260918090440-4031696dc913
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260923105616-0ed2ac25c152
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260804191526-b7a850ae7648
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
 	github.com/stretchr/testify v1.12.1
