@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 
@@ -26,6 +27,8 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
 
 const (
@@ -56,11 +59,16 @@ func (c Config) matchingThreshold() int {
 }
 
 type reportingPlugin struct {
-	config         Config
-	logger         logger.SugaredLogger
-	blocksProvider BlocksProvider
-	requestsStore  RequestsHandler
-	metrics        metrics.ConsensusMetrics
+	config                       Config
+	logger                       logger.SugaredLogger
+	blocksProvider               BlocksProvider
+	requestsStore                RequestsHandler
+	metrics                      metrics.ConsensusMetrics
+	enableMissingRequestRecovery limits.GateLimiter
+	// emptyQueryLeaderNode is a TEST HACK (branch: empty-query-leader-node): when the
+	// CRE_CHAIN_CONSENSUS_EMPTY_QUERY env var is set, this node returns an empty query
+	// whenever it is the round leader, simulating a leader that never proposes requests.
+	emptyQueryLeaderNode bool
 }
 
 func newReportingPlugin(
@@ -69,17 +77,41 @@ func newReportingPlugin(
 	blocksProvider BlocksProvider,
 	requestsStore RequestsHandler,
 	metrics metrics.ConsensusMetrics,
-) *reportingPlugin {
-	return &reportingPlugin{
+	limitsFactory limits.Factory,
+) (*reportingPlugin, error) {
+	rp := &reportingPlugin{
 		config:         config,
 		logger:         logger,
 		blocksProvider: blocksProvider,
 		requestsStore:  requestsStore,
 		metrics:        metrics,
 	}
+
+	// TEST HACK: see emptyQueryLeaderNode field doc. Inert unless the env var is set.
+	rp.emptyQueryLeaderNode = os.Getenv("CRE_CHAIN_CONSENSUS_EMPTY_QUERY") != ""
+	if rp.emptyQueryLeaderNode {
+		logger.Warnw("TEST HACK ENABLED: this node will return EMPTY queries when it is the round leader " +
+			"(simulating a leader that never proposes requests to be processed)")
+	}
+
+	var err error
+	rp.enableMissingRequestRecovery, err = limits.MakeGateLimiter(limitsFactory, cresettings.Default.MissingRequestRecoveryEnabled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create missing request recovery gate limiter: %w", err)
+	}
+	return rp, nil
 }
 
 func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
+	// TEST HACK (branch: empty-query-leader-node): libocr invokes Query only on the round
+	// leader, so returning an empty ID list here makes every round this node leads omit
+	// all pending requests. Other nodes then propose them via MissingRequestIDs, and —
+	// once the recovery setting is enabled DON-wide — report their outcomes in the next
+	// round. Enable by setting CRE_CHAIN_CONSENSUS_EMPTY_QUERY on this node only.
+	if rp.emptyQueryLeaderNode {
+		rp.logger.Infow("TEST HACK: returning empty query (leader stall simulation)")
+		return proto.Marshal(&ctypes.Query{})
+	}
 	ids, err := rp.requestsStore.GetRequestIDs(rp.config.MaxBatchSize)
 	if err != nil {
 		return types.Query{}, fmt.Errorf("failed to get request ready for processing IDs: %w", err)
@@ -178,6 +210,12 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("failed to add observations for missing requests from previous outcome: %w", err)
 	}
 
+	open, err := rp.enableMissingRequestRecovery.IsOpen(ctx)
+	if err != nil {
+		rp.logger.Errorw("error checking if enableMissingRequestRecovery is enabled", "error", err)
+	}
+	observation.EnableMissingRequestRecovery = open
+
 	// add observations for requests provided by the leader in the query
 	err = rp.addObservations(ctx, query.RequestIDs, observation)
 	if err != nil {
@@ -271,7 +309,14 @@ func (rp *reportingPlugin) addObservationsOfPrevMissingRequests(ctx context.Cont
 
 	// Prioritize the original list of missing requests from the previous outcome.
 	// This handles cases where the leader's order of requests in query is different from the majority of other nodes.
-	return rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation)
+	if err := rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation); err != nil {
+		return err
+	}
+
+	rp.logger.Debugw("Finished adding observations for previously missing requests",
+		"requested", leaderMissingRequests,
+		"observationsAdded", len(observation.Observations))
+	return nil
 }
 
 func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{}) ([]string, error) {
@@ -285,6 +330,11 @@ func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{
 		if _, ok := roundRequests[requestID]; !ok {
 			missingRequestIDs = append(missingRequestIDs, requestID)
 		}
+	}
+
+	if len(missingRequestIDs) > 0 {
+		rp.logger.Infow("Proposing missing request IDs: present in local store but absent from the leader's query",
+			"missingRequestIDs", missingRequestIDs)
 	}
 
 	return missingRequestIDs, nil
@@ -550,7 +600,31 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 	}
 
 	sort.Strings(result)
+	if len(result) > 0 {
+		rp.logger.Infow("Quorum agreed on missing request IDs: committing them to the outcome for recovery in the next round",
+			"missingRequestIDs", result)
+	}
 	return result, nil
+}
+
+// agreeOnFeatureEnableMissingRequestRecovery reaches DON-wide quorum, once per round, on
+// whether missing-request recovery is enabled. This is a per-node, per-round capability flag
+// unrelated to any specific request ID, so it is voted on independently of per-request
+// observation quorum (which the aggregation loop in Outcome enforces on its own).
+func (rp *reportingPlugin) agreeOnEnableMissingRequestRecovery(aos []attributedObservation) bool {
+	minMatching := byzQuorumSize(rp.config.N, rp.config.F)
+	counter := 0
+	for _, ob := range aos {
+		if ob.Observation.EnableMissingRequestRecovery {
+			counter++
+			if counter >= minMatching {
+				rp.logger.Infow("Quorum reached for enabling missing request recovery: recovered requests will be aggregated into this round's outcome",
+					"votes", counter, "required", minMatching)
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
@@ -773,7 +847,34 @@ func (rp *reportingPlugin) Outcome(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	for _, requestID := range query.RequestIDs {
+	requestIDs := query.RequestIDs
+	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil && rp.agreeOnEnableMissingRequestRecovery(aos) {
+		seen := make(map[string]struct{}, len(query.RequestIDs))
+		for _, requestID := range query.RequestIDs {
+			seen[requestID] = struct{}{}
+		}
+
+		// Requests that the leader's query omitted but that a quorum of nodes still supplied
+		// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
+		// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
+		recoveredRequestIDs := make([]string, 0, len(prevOutcome.MissingRequestIDs))
+		for _, requestID := range prevOutcome.MissingRequestIDs {
+			if _, ok := seen[requestID]; ok {
+				continue
+			}
+			seen[requestID] = struct{}{}
+			requestIDs = append(requestIDs, requestID)
+			recoveredRequestIDs = append(recoveredRequestIDs, requestID)
+		}
+
+		if len(recoveredRequestIDs) > 0 {
+			rp.logger.Infow("Missing request recovery: adding previously missing requests to this round's outcome "+
+				"(they were omitted by the leader's query but agreed upon by a quorum in the previous round)",
+				"recoveredRequestIDs", recoveredRequestIDs)
+		}
+	}
+
+	for _, requestID := range requestIDs {
 		observationType, err := rp.agreeOnObservationType(requestID, aos)
 		if err != nil {
 			rp.logger.Infow("Could not determine observation type", "requestID", requestID, "err", err)
@@ -956,5 +1057,5 @@ func (rp *reportingPlugin) ShouldTransmitAcceptedReport(
 }
 
 func (rp *reportingPlugin) Close() error {
-	return nil
+	return rp.enableMissingRequestRecovery.Close()
 }
