@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
+	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 type processor struct {
@@ -58,6 +59,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportSuccessfulEarlyReturn(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportSuccessfulEarlyReturn metrics: %w", err)
 		}
+	// -- Shared chain-agnostic messages --
+	case *capmonitoring.WriteReportTransactions:
+		// Log-only: carries the set of landed tx hashes; no dedicated metric.
+		p.logMessage(msg)
 	case *WriteReportError:
 		p.logMessage(msg)
 		if !msg.GetIsUserError() {
