@@ -6,6 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -18,6 +19,15 @@ const (
 	AttrStatusCode        = "status_code"
 	AttrMethodName        = "method_name"
 	AttrSuccess           = "success"
+	AttrGatewayID         = "gateway_id"
+	AttrReason            = "reason"
+)
+
+// Reasons for http_action_capability_gateway_round_trip_failures. Restricted to these two
+// values to keep cardinality low.
+const (
+	RoundTripReasonSendError   = "send_error"
+	RoundTripReasonContextDone = "context_done"
 )
 
 // Metrics contains metrics for HTTP actions
@@ -35,6 +45,8 @@ type Metrics struct {
 	requestLatencyExcludingExternal metric.Int64Histogram
 	externalEndpointLatency         metric.Int64Histogram
 	noGatewaysAvailable             metric.Int64Counter
+	gatewayRoundTrip                metric.Int64Histogram
+	gatewayRoundTripFailures        metric.Int64Counter
 }
 
 // NewMetrics creates a new instance of Metrics
@@ -154,6 +166,22 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create no gateways available metric: %w", err)
 	}
 
+	m.gatewayRoundTrip, err = meter.Int64Histogram(
+		"http_action_capability_gateway_round_trip_ms",
+		metric.WithDescription("Node-observed HTTP action round trip in milliseconds, from SendToGateway until the response is received: send, gateway processing, and response delivery, including loop-plugin boundary latency when applicable. Not pure websocket latency. Received error responses are recorded too; failed waits are counted by http_action_capability_gateway_round_trip_failures instead"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create gateway round trip metric: %w", err)
+	}
+
+	m.gatewayRoundTripFailures, err = meter.Int64Counter(
+		"http_action_capability_gateway_round_trip_failures",
+		metric.WithDescription("Number of HTTP action gateway round trips that ended without a response: request send failures (reason=send_error) or waits ended by context cancellation/timeout (reason=context_done)"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create gateway round trip failures metric: %w", err)
+	}
+
 	return nil
 }
 
@@ -208,6 +236,37 @@ func gatewaySendMetricAttrs(nodeAddress, gatewayProxyDonID string) metric.AddOpt
 		attribute.String(AttrNodeAddress, nodeAddress),
 		attribute.String(AttrGatewayProxyDonID, gatewayProxyDonID),
 	)
+}
+
+// RecordGatewayRoundTrip records the node-observed application round trip to
+// the selected gateway. Labeled only with gateway_id; ingest supplies node_id.
+func (m *Metrics) RecordGatewayRoundTrip(ctx context.Context, gatewayID string, latencyMs int64, lggr logger.Logger) {
+	m.gatewayRoundTrip.Record(ctx, latencyMs, metric.WithAttributes(
+		attribute.String(AttrGatewayID, gatewayID),
+	))
+}
+
+// IncrementGatewayRoundTripFailures counts round trips that ended without a
+// response. reason must be RoundTripReasonSendError or RoundTripReasonContextDone.
+func (m *Metrics) IncrementGatewayRoundTripFailures(ctx context.Context, gatewayID, reason string, lggr logger.Logger) {
+	m.gatewayRoundTripFailures.Add(ctx, 1, metric.WithAttributes(
+		attribute.String(AttrGatewayID, gatewayID),
+		attribute.String(AttrReason, reason),
+	))
+}
+
+// MetricViews returns histogram bucket definitions for this package's metrics.
+// Due to the OTEL specification, all histogram buckets must be defined when the beholder client is created.
+func MetricViews() []sdkmetric.View {
+	return []sdkmetric.View{
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "http_action_capability_gateway_round_trip_ms"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				// 10ms up to 90s (max request timeout is on this order), with finer granularity at the lower end
+				Boundaries: []float64{10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 90000},
+			}},
+		),
+	}
 }
 
 func (m *Metrics) RecordRequestLatency(ctx context.Context, totalLatencyMs, externalLatencyMs int64, proxyMode ProxyMode, success bool, lggr logger.Logger) {
