@@ -62,8 +62,8 @@ func makeMedianQuorumObs(
 }
 
 // Test_Outcome_median2fPlus1QuorumFlag checks the rollout gating in addRequestOutcomeToBatch:
-// the 2f+1 median quorum is only applied when every observation in the round sets the flag,
-// so a single node that has not yet been upgraded keeps the round on the f+1 quorum.
+// the 2f+1 median quorum is applied once at least f+1 observations set the flag, guaranteeing
+// that at least one honest node has the feature enabled.
 func Test_Outcome_median2fPlus1QuorumFlag(t *testing.T) {
 	t.Parallel()
 
@@ -116,10 +116,20 @@ func Test_Outcome_median2fPlus1QuorumFlag(t *testing.T) {
 		require.Contains(t, failure.FailureMessage, oracle.ErrNoSingleValueTypeMeetsThreshold.Error())
 	})
 
-	t.Run("one observation missing the flag keeps the f+1 quorum", func(t *testing.T) {
+	t.Run("f+1 observations setting the flag apply the 2f+1 quorum", func(t *testing.T) {
 		t.Parallel()
 
-		outcome := runOutcome(t, []bool{true, true, true, true, false})
+		outcome := runOutcome(t, []bool{true, true, true, false, false})
+
+		failure := outcome.Outcomes[0].GetFailure()
+		require.NotNil(t, failure, "expected consensus to fail under the 2f+1 median quorum")
+		require.Contains(t, failure.FailureMessage, oracle.ErrNoSingleValueTypeMeetsThreshold.Error())
+	})
+
+	t.Run("only f observations setting the flag keeps the f+1 quorum", func(t *testing.T) {
+		t.Parallel()
+
+		outcome := runOutcome(t, []bool{true, true, false, false, false})
 
 		requireSuccessValue(t, outcome, values.Proto(values.NewInt64(20)))
 	})
@@ -144,4 +154,29 @@ func requireSuccessValue(t *testing.T, outcome *oracletypes.Outcome, expected *v
 	require.NoError(t, proto.Unmarshal(success.GetOutcome(), got))
 	require.True(t, proto.Equal(got, expected),
 		"expected the median of the three int64 observations\nExpected: %+v\nActual:   %+v", expected, got)
+}
+
+// Test_Observation_propagatesStricterMedianQuorum checks the locally evaluated flag survives the
+// request store (which hands out copies) and is emitted on the observation.
+func Test_Observation_propagatesStricterMedianQuorum(t *testing.T) {
+	t.Parallel()
+
+	for _, stricterMedianQuorum := range []bool{false, true} {
+		reportingPlugin, reqStore := createReportingPlugin(t, logger.Test(t), 1, 4, 5, defaultMaxLengthBytes)
+
+		md := testMetaData()
+		req := oracle.NewConsensusRequest(&sdk.SimpleConsensusInputs{}, time.Now(), time.Now().Add(time.Hour), nil, md, nil, stricterMedianQuorum)
+		require.NoError(t, reqStore.Add(req))
+
+		qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{md.RequestID()}})
+		require.NoError(t, err)
+
+		obsBytes, err := reportingPlugin.Observation(t.Context(), ocr3types.OutcomeContext{SeqNr: 1}, qBytes)
+		require.NoError(t, err)
+
+		obs := &oracletypes.Observation{}
+		require.NoError(t, proto.Unmarshal(obsBytes, obs))
+		require.Contains(t, obs.Observations, md.RequestID())
+		require.Equal(t, stricterMedianQuorum, obs.Observations[md.RequestID()].Median_2Fplus1QuorumFlag)
+	}
 }

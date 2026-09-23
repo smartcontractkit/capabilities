@@ -38,6 +38,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			// This ensures that the flag doesn't accidentally revert during the rollout of the new version.
 			RemoveLibUseInFailureMessageFormattingFlag: true,
 			UpdateErrorHandlingFlag:                    true,
+			Median_2Fplus1QuorumFlag:                   req.StricterMedianQuorum,
 		}
 
 		hasCapacity := observationBatch.AddObservation(ctx, reqObs)

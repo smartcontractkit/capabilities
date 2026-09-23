@@ -107,10 +107,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
-	median2fPlus1QuorumFlag := true
+	median2fPlus1QuorumVotes := 0
 	for _, obs := range observations {
-		if !obs.Median_2Fplus1QuorumFlag {
-			median2fPlus1QuorumFlag = false
+		if obs.Median_2Fplus1QuorumFlag {
+			median2fPlus1QuorumVotes++
 		}
 
 		// Does the observation have a valid input?
@@ -157,7 +157,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, consensusMDD, timestamp)
 	}
 
-	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f, median2fPlus1QuorumFlag)
+	stricterMedianQuorum := median2fPlus1QuorumVotes >= r.f+1
+	r.metrics.IncStricterMedianQuorum(ctx, "aggregated", stricterMedianQuorum)
+
+	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f, stricterMedianQuorum)
 	if err != nil {
 		valuesJSON := formatValuesForLogging(ctx, lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
