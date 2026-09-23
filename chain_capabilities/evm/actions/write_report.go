@@ -26,6 +26,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
@@ -52,6 +53,9 @@ type WriteReport struct {
 	writeReportL1FeeActive limits.RangeLimiter[commoncfg.Timestamp]
 	transmissionScheduler  ts.TransmissionScheduler
 	executionTimestamp     time.Time
+
+	// txHashesEmitted guards the one-shot WriteReportTransactions emit per execution.
+	txHashesEmitted bool
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -143,6 +147,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission succeeded", "txHash", common.Bytes2Hex(txHash[:]))
+		e.emitTxHashes(ctx, telemetryContext, txHashRetriever)
 		reply, err := e.buildSuccessReply(ctx, *txHash)
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
@@ -236,6 +241,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
+		e.emitTxHashes(ctx, telemetryContext, txHashRetriever)
 		switch transactionResult.TxStatus {
 		case evmtypes.TxReverted:
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
@@ -280,6 +286,30 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, fmt.Sprintf("WriteReport invalid transmission state with tx status: %d", transactionResult.TxStatus), errorMsg))
 		return nil, capabilities.ResponseMetadata{}, errors.New(errorMsg)
 	}
+}
+
+// emitTxHashes immediately emits every landed tx hash for the transmission as a shared
+// WriteReportTransactions message, the moment the hashes are known (before WriteReportSuccess).
+// It fires at most once per execution. Failures are logged and non-fatal: the single
+// selected hash on the reply remains authoritative.
+func (e *WriteReport) emitTxHashes(ctx context.Context, telemetryContext monitoring.TelemetryContext, txHashRetriever TxHashRetriever) {
+	if e.txHashesEmitted {
+		return
+	}
+	hashes, err := txHashRetriever.GetAllTransmissionHashes(ctx)
+	if err != nil {
+		e.lggr.Warnw("failed to collect full tx hash set for telemetry", "error", err.Error())
+		return
+	}
+	if len(hashes) == 0 {
+		return
+	}
+	e.txHashesEmitted = true
+	monitoring.LogAndEmitSuccess(ctx, "WriteReport produced on-chain transactions", e.lggr, e.beholderProcessor,
+		&capmonitoring.WriteReportTransactions{
+			TxHashes:         hashes,
+			ExecutionContext: e.messageBuilder.BuildExecutionContext(telemetryContext),
+		})
 }
 
 // getQueuePosition returns this node's position in the transmission queue, or -1 if not in DON or scheduler not configured
@@ -681,6 +711,35 @@ func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsLi
 	}
 
 	return details, nil
+}
+
+// GetAllTransmissionHashes returns the hex hash of every ReportProcessed log for this
+// transmission, ordered by block number (earliest first). Used for telemetry so the full
+// set of landed transactions (including duplicates / re-broadcasts) can be emitted.
+func (thr *TxHashRetriever) GetAllTransmissionHashes(ctx context.Context) ([]string, error) {
+	details, err := thr.fetchAndParseLogs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Order by block number for a stable, deterministic view across nodes.
+	sorted := make(logDetailsList, len(details))
+	copy(sorted, details)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && sorted[j].BlockNumber.Cmp(sorted[j-1].BlockNumber) < 0; j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+	hashes := make([]string, 0, len(sorted))
+	seen := make(map[string]struct{}, len(sorted))
+	for _, d := range sorted {
+		h := common.Bytes2Hex(d.TxHash[:])
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+		hashes = append(hashes, h)
+	}
+	return hashes, nil
 }
 
 // GetSuccessfulTransmissionHash finds and returns the hash of a successful transmission.
