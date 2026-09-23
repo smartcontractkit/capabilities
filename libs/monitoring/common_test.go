@@ -2,6 +2,7 @@ package monitoring_test
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,6 +47,44 @@ func TestNewMetricsCapBasic_WithoutBuckets(t *testing.T) {
 
 	require.NotNil(t, findHistogram(resourceMetrics, "test_metric_default_cap_duration"))
 	require.NotNil(t, findCounter(resourceMetrics, "test_metric_default_count"))
+}
+
+func TestMetricsCapBasic_RecordEmitSkipsReversedTimestamps(t *testing.T) {
+	reader := useManualMetricReader(t)
+
+	info := capmonitoring.NewMetricsInfoCapBasic("test_metric_reversed", "test.event.reversed")
+	metrics, err := capmonitoring.NewMetricsCapBasic(info)
+	require.NoError(t, err)
+
+	metrics.RecordEmit(t.Context(), 200, 100)
+
+	var resourceMetrics metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &resourceMetrics))
+
+	require.EqualValues(t, 1, counterValue(t, resourceMetrics, "test_metric_reversed_count"))
+	require.EqualValues(t, 1, counterValue(t, resourceMetrics, "test_metric_reversed_invalid_telemetry_count"))
+	require.Nil(t, findHistogram(resourceMetrics, "test_metric_reversed_cap_duration"))
+	require.Nil(t, findGauge(resourceMetrics, "test_metric_reversed_cap_timestamp_start"))
+	require.Nil(t, findGauge(resourceMetrics, "test_metric_reversed_cap_timestamp_emit"))
+}
+
+func TestMetricsCapBasic_RecordEmitSkipsTimestampsThatOverflowInt64(t *testing.T) {
+	reader := useManualMetricReader(t)
+
+	info := capmonitoring.NewMetricsInfoCapBasic("test_metric_overflow", "test.event.overflow")
+	metrics, err := capmonitoring.NewMetricsCapBasic(info)
+	require.NoError(t, err)
+
+	metrics.RecordEmit(t.Context(), uint64(math.MaxInt64)+1, uint64(math.MaxInt64)+2)
+
+	var resourceMetrics metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &resourceMetrics))
+
+	require.EqualValues(t, 1, counterValue(t, resourceMetrics, "test_metric_overflow_count"))
+	require.EqualValues(t, 1, counterValue(t, resourceMetrics, "test_metric_overflow_invalid_telemetry_count"))
+	require.Nil(t, findHistogram(resourceMetrics, "test_metric_overflow_cap_duration"))
+	require.Nil(t, findGauge(resourceMetrics, "test_metric_overflow_cap_timestamp_start"))
+	require.Nil(t, findGauge(resourceMetrics, "test_metric_overflow_cap_timestamp_emit"))
 }
 
 func useManualMetricReader(t *testing.T) *sdkmetric.ManualReader {
@@ -93,4 +132,27 @@ func findCounter(resourceMetrics metricdata.ResourceMetrics, name string) *metri
 		}
 	}
 	return nil
+}
+
+func findGauge(resourceMetrics metricdata.ResourceMetrics, name string) *metricdata.Gauge[int64] {
+	for _, scopeMetrics := range resourceMetrics.ScopeMetrics {
+		for _, metric := range scopeMetrics.Metrics {
+			if metric.Name != name {
+				continue
+			}
+			if gauge, ok := metric.Data.(metricdata.Gauge[int64]); ok {
+				return &gauge
+			}
+		}
+	}
+	return nil
+}
+
+func counterValue(t *testing.T, resourceMetrics metricdata.ResourceMetrics, name string) int64 {
+	t.Helper()
+
+	counter := findCounter(resourceMetrics, name)
+	require.NotNil(t, counter)
+	require.Len(t, counter.DataPoints, 1)
+	return counter.DataPoints[0].Value
 }
