@@ -26,6 +26,7 @@ func TestConsensusRequest_SendTimeout_InsufficientObservations(t *testing.T) {
 		make(chan ConsensusResponse, 1),
 		testRequestMetadata("exec-1", "01"),
 		tracker,
+		false,
 	)
 
 	req.SendTimeout(context.Background())
@@ -50,6 +51,7 @@ func TestConsensusRequest_SendTimeout_DeadlineExceededWhenQuorumReached(t *testi
 		make(chan ConsensusResponse, 1),
 		testRequestMetadata("exec-1", "01"),
 		tracker,
+		false,
 	)
 
 	req.SendTimeout(context.Background())
