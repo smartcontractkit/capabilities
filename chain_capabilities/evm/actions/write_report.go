@@ -52,6 +52,10 @@ type WriteReport struct {
 	writeReportL1FeeActive limits.RangeLimiter[commoncfg.Timestamp]
 	transmissionScheduler  ts.TransmissionScheduler
 	executionTimestamp     time.Time
+
+	// txHashes accumulates every landed tx hash for the transmission, populated during
+	// executeWriteReport. Read by the EVM wrapper to enrich the success telemetry.
+	txHashes []string
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -64,7 +68,7 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 		return nil, capError
 	}
 
-	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
+	report, billingMetadata, txHashes, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
 		isUserError := e.isUserErrorWriteReport(err)
 		capError := capcommon.GetError(err, isUserError)
@@ -73,7 +77,7 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 		return nil, capError
 	}
 
-	monitoring.LogAndEmitSuccess(ctx, "Successfully executed WriteReport", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
+	monitoring.LogAndEmitSuccess(ctx, "Successfully executed WriteReport", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input, txHashes))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
 		Response:         report,
 		ResponseMetadata: billingMetadata,
@@ -81,7 +85,7 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	return &responseAndMetadata, nil
 }
 
-func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
+func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, []string, error) {
 	wr := &WriteReport{
 		EVMService:         e.EVMService,
 		forwarderClient:    e.forwarderClient,
@@ -99,7 +103,8 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		executionTimestamp:     metadata.ExecutionTimestamp,
 	}
 
-	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
+	reply, responseMetadata, err := wr.executeWriteReport(ctx, request, metadata, telemetryContext)
+	return reply, responseMetadata, wr.txHashes, err
 }
 
 func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
@@ -143,6 +148,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission succeeded", "txHash", common.Bytes2Hex(txHash[:]))
+		e.collectTxHashes(ctx, txHashRetriever)
 		reply, err := e.buildSuccessReply(ctx, *txHash)
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
@@ -236,6 +242,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
+		e.collectTxHashes(ctx, txHashRetriever)
 		switch transactionResult.TxStatus {
 		case evmtypes.TxReverted:
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
@@ -280,6 +287,21 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, fmt.Sprintf("WriteReport invalid transmission state with tx status: %d", transactionResult.TxStatus), errorMsg))
 		return nil, capabilities.ResponseMetadata{}, errors.New(errorMsg)
 	}
+}
+
+// collectTxHashes fetches and caches every landed tx hash for the transmission so the
+// success telemetry can emit the full set. Failures are logged and non-fatal: the single
+// selected hash on the reply remains authoritative.
+func (e *WriteReport) collectTxHashes(ctx context.Context, txHashRetriever TxHashRetriever) {
+	if e.txHashes != nil {
+		return
+	}
+	hashes, err := txHashRetriever.GetAllTransmissionHashes(ctx)
+	if err != nil {
+		e.lggr.Warnw("failed to collect full tx hash set for telemetry", "error", err.Error())
+		return
+	}
+	e.txHashes = hashes
 }
 
 // getQueuePosition returns this node's position in the transmission queue, or -1 if not in DON or scheduler not configured
@@ -681,6 +703,35 @@ func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsLi
 	}
 
 	return details, nil
+}
+
+// GetAllTransmissionHashes returns the hex hash of every ReportProcessed log for this
+// transmission, ordered by block number (earliest first). Used for telemetry so the full
+// set of landed transactions (including duplicates / re-broadcasts) can be emitted.
+func (thr *TxHashRetriever) GetAllTransmissionHashes(ctx context.Context) ([]string, error) {
+	details, err := thr.fetchAndParseLogs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Order by block number for a stable, deterministic view across nodes.
+	sorted := make(logDetailsList, len(details))
+	copy(sorted, details)
+	for i := 1; i < len(sorted); i++ {
+		for j := i; j > 0 && sorted[j].BlockNumber.Cmp(sorted[j-1].BlockNumber) < 0; j-- {
+			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
+		}
+	}
+	hashes := make([]string, 0, len(sorted))
+	seen := make(map[string]struct{}, len(sorted))
+	for _, d := range sorted {
+		h := common.Bytes2Hex(d.TxHash[:])
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+		hashes = append(hashes, h)
+	}
+	return hashes, nil
 }
 
 // GetSuccessfulTransmissionHash finds and returns the hash of a successful transmission.

@@ -2181,7 +2181,7 @@ func TestWriteReport_RevertReceiptFetchFailsReturnsUserError(t *testing.T) {
 			run: func(t *testing.T, ctx context.Context, service *EVM, fixture writeReportTestFixture) (capabilities.ResponseMetadata, error) {
 				t.Helper()
 
-				reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+				reply, responseMetadata, _, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
 				require.Nil(t, reply)
 				return responseMetadata, err
 			},
@@ -2484,7 +2484,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		}, nil)
 
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
-		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+		reply, responseMetadata, _, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.NotNil(t, reply)
 		require.Equal(t, evm.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
@@ -2541,7 +2541,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(nil, errors.New(expectedError))
 
 		ctx = contexts.WithCRE(ctx, contexts.CRE{Workflow: "wf-id"})
-		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+		reply, responseMetadata, _, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedError)
 		require.NotContains(t, err.Error(), "context deadline exceeded")
@@ -2582,7 +2582,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 			TransactionFee: big.NewInt(2000),
 		}, nil)
 
-		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+		reply, responseMetadata, _, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.NotNil(t, reply)
 		require.Equal(t, evm.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
@@ -2606,7 +2606,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 		expectedError := "transmission info error"
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 
-		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+		reply, responseMetadata, _, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedError)
 		// Verify we get the original error, not a context timeout
