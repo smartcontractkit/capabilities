@@ -141,7 +141,7 @@ func (wr *WriteReport) executeWriteReport(
 	}
 
 	userProvidedComputeLimit := request.ComputeConfig != nil && request.ComputeConfig.ComputeLimit != 0
-	if request.ComputeConfig == nil {
+	if request.ComputeConfig == nil || request.ComputeConfig.ComputeLimit == 0 {
 		request.ComputeConfig = &solcap.ComputeConfig{}
 		limit, limErr := wr.txComputeLimit.Limit(ctx)
 		if limErr != nil {
@@ -542,8 +542,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 	stageTimer := time.NewTimer(delay)
 	deltaStagePassed := false
 	hadSuccessfulPoll := false
-	// Cached across iterations: the earliest ReportInProgress log never changes.
-	var failedAttemptRetryable *bool
+	priorComputeLimitChecked := false
 	defer func() {
 		stageTimer.Stop()
 		if !deltaStagePassed && hadSuccessfulPoll {
@@ -561,13 +560,12 @@ func (wr *WriteReport) pollTransmissionInfo(
 			case TransmissionStateSucceeded:
 				return lastValid, nil
 			case TransmissionStateFailed:
-				// Stop polling only if no earlier node will retry the failed attempt.
-				if failedAttemptRetryable == nil {
-					retryable := wr.priorTxComputeLimitLower(ctx, lastValid.Signature, requestedComputeLimit)
-					failedAttemptRetryable = &retryable
-				}
-				if !*failedAttemptRetryable {
-					return lastValid, nil
+				if !priorComputeLimitChecked {
+					priorComputeLimitChecked = true
+					insufficientComputeLimit := wr.priorTxComputeLimitLower(ctx, lastValid.Signature, requestedComputeLimit)
+					if !insufficientComputeLimit {
+						return lastValid, nil
+					}
 				}
 			case TransmissionStateNotAttempted:
 			default:
