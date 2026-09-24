@@ -558,8 +558,9 @@ func (wr *WriteReport) pollTransmissionInfo(
 			case TransmissionStateSucceeded:
 				return lastValid, nil, nil
 			case TransmissionStateFailed:
-				// If the failed attempt had a sufficient compute limit no earlier node
-				// will retry it - stop polling; else keep waiting for our slot.
+				// If the failed attempt had a sufficient compute limit, failure is on the user's side - return signature to workflow
+				// Otherwise, wait for success or our turn.
+				// If the first tx fails due to a low limit and the following tx fails on the user's side, we accept increased latency to reduce code complexity.
 				if prior == nil {
 					limit, found, fetchErr := wr.fetchTxComputeUnitLimit(ctx, lastValid.Signature)
 					if fetchErr != nil {
