@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"google.golang.org/protobuf/proto"
@@ -19,7 +20,6 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/common"
 	"github.com/smartcontractkit/capabilities/http_action/validate"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -139,6 +139,10 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 }
 
 func setupSendRequestTestWithConfig(t *testing.T, cfg common.ServiceConfig) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
+	return setupSendRequestTestWithMetrics(t, cfg, newMetrics(t))
+}
+
+func setupSendRequestTestWithMetrics(t *testing.T, cfg common.ServiceConfig, metrics *common.Metrics) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
 	readyCh := make(chan string, 1)
 	mockConnector := &mockGatewayConnector{
 		SourceDonID: "don1",
@@ -154,7 +158,7 @@ func setupSendRequestTestWithConfig(t *testing.T, cfg common.ServiceConfig) (*ga
 		mockConnector,
 		cfg,
 		lggr,
-		newMetrics(t),
+		metrics,
 		newTestValidator(t),
 	)
 	require.NoError(t, err)
@@ -162,26 +166,19 @@ func setupSendRequestTestWithConfig(t *testing.T, cfg common.ServiceConfig) (*ga
 }
 
 func newMetrics(t *testing.T) *common.Metrics {
-	m, err := common.NewMetrics()
+	m, err := common.NewMetrics(noop.Meter{})
 	require.NoError(t, err)
 	return m
 }
 
-// setupBeholderReader swaps the process-global Beholder client for one backed
-// by a ManualReader so emitted metrics can be asserted, and returns the reader.
-// Metrics must be constructed (newMetrics / NewGatewayOutboundProxy) after this.
-func setupBeholderReader(t *testing.T) *sdkmetric.ManualReader {
+func newMetricsWithReader(t *testing.T) (*common.Metrics, *sdkmetric.ManualReader) {
 	t.Helper()
 	reader := sdkmetric.NewManualReader()
 	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { require.NoError(t, meterProvider.Shutdown(context.Background())) })
-	previousClient := beholder.GetClient()
-	t.Cleanup(func() { beholder.SetClient(previousClient) })
-	client := beholder.NoopClientConfig{Lggr: logger.Test(t)}.New()
-	client.Meter = meterProvider.Meter("http-action-test")
-	client.MeterProvider = meterProvider
-	beholder.SetClient(client)
-	return reader
+	m, err := common.NewMetrics(meterProvider.Meter("http-action-test"))
+	require.NoError(t, err)
+	return m, reader
 }
 
 func findHistogramDataPoint(t *testing.T, rm metricdata.ResourceMetrics, name string, attrs map[string]string) (metricdata.HistogramDataPoint[int64], bool) {
@@ -236,7 +233,7 @@ func attributesMatch(set attribute.Set, attrs map[string]string) bool {
 	return true
 }
 
-func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) { //nolint:paralleltest // replaces the process-global Beholder client
+func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) {
 	metadata := capabilities.RequestMetadata{
 		WorkflowID:          "wf1",
 		WorkflowExecutionID: "exec1",
@@ -254,8 +251,8 @@ func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) { //nol
 	gatewayAttr := map[string]string{common.AttrGatewayID: "gateway1"}
 
 	t.Run("delayed gateway response appears in round trip, recorded once", func(t *testing.T) {
-		reader := setupBeholderReader(t)
-		proxy, _, readyCh := setupSendRequestTest(t)
+		metrics, reader := newMetricsWithReader(t)
+		proxy, _, readyCh := setupSendRequestTestWithMetrics(t, common.ServiceConfig{}, metrics)
 
 		const responseDelay = 200 * time.Millisecond
 		go func() {
@@ -278,8 +275,8 @@ func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) { //nol
 	})
 
 	t.Run("error response is still recorded as a round trip", func(t *testing.T) {
-		reader := setupBeholderReader(t)
-		proxy, _, readyCh := setupSendRequestTest(t)
+		metrics, reader := newMetricsWithReader(t)
+		proxy, _, readyCh := setupSendRequestTestWithMetrics(t, common.ServiceConfig{}, metrics)
 
 		go func() {
 			id := <-readyCh
@@ -297,8 +294,8 @@ func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) { //nol
 	})
 
 	t.Run("send error increments failure counter, no duration sample", func(t *testing.T) {
-		reader := setupBeholderReader(t)
-		proxy, mockConnector, _ := setupSendRequestTest(t)
+		metrics, reader := newMetricsWithReader(t)
+		proxy, mockConnector, _ := setupSendRequestTestWithMetrics(t, common.ServiceConfig{}, metrics)
 		mockConnector.SendErr = errors.New("boom")
 
 		_, _, err := proxy.SendRequest(t.Context(), metadata, newInput(5*time.Second), time.Now())
@@ -313,10 +310,10 @@ func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) { //nol
 	})
 
 	t.Run("context done increments failure counter, no duration sample", func(t *testing.T) {
-		reader := setupBeholderReader(t)
-		proxy, _, readyCh := setupSendRequestTestWithConfig(t, common.ServiceConfig{
+		metrics, reader := newMetricsWithReader(t)
+		proxy, _, readyCh := setupSendRequestTestWithMetrics(t, common.ServiceConfig{
 			GatewayConnectionConfig: common.GatewayConnectionConfig{ResponseGraceMs: 100},
-		})
+		}, metrics)
 
 		// Never respond on behalf of the gateway; the wait context times out.
 		go func() { <-readyCh }()
@@ -334,7 +331,6 @@ func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) { //nol
 		require.False(t, ok, "failed waits must not appear in the completed-response histogram")
 	})
 }
-
 
 func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	proxy, _, readyCh := setupSendRequestTest(t)

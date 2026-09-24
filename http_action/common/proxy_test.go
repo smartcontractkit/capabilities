@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/metric/noop"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -36,7 +37,7 @@ func newTestValidator(t *testing.T) RequestValidator {
 }
 
 func newTestMetrics(t *testing.T) *Metrics {
-	m, err := NewMetrics()
+	m, err := NewMetrics(noop.Meter{})
 	require.NoError(t, err)
 	return m
 }

@@ -8,7 +8,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
@@ -50,16 +49,15 @@ type Metrics struct {
 }
 
 // NewMetrics creates a new instance of Metrics
-func NewMetrics() (*Metrics, error) {
+func NewMetrics(meter metric.Meter) (*Metrics, error) {
 	m := &Metrics{}
-	if err := m.init(); err != nil {
+	if err := m.init(meter); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (m *Metrics) init() error {
-	meter := beholder.GetMeter()
+func (m *Metrics) init(meter metric.Meter) error {
 	var err error
 
 	m.requestCount, err = meter.Int64Counter(
