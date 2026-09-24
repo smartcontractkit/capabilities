@@ -161,6 +161,8 @@ func accountDataBytesFromJSON(asJSON []byte) ([]byte, error) {
 	return nil, fmt.Errorf("could not extract base64 account data from json")
 }
 
+// Retrieve transmission transaction signature from logs deterministically
+// Use log with lowest block number and lowest index.
 func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signature, error) {
 	if len(inProgressLogs) == 0 {
 		return solana.Signature{}, fmt.Errorf("no in-progress logs")
@@ -171,6 +173,9 @@ func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signatu
 		if l.BlockNumber < minBlock {
 			log = l
 			minBlock = l.BlockNumber
+		}
+		if l.BlockNumber == minBlock && l.LogIndex < log.LogIndex {
+			log = l
 		}
 	}
 	return solana.Signature(log.TxHash), nil
@@ -202,8 +207,10 @@ func (lr *logReader) registerInProgressFilter(ctx context.Context) error {
 	return nil
 }
 
+const inProgressLogsLimit = 20
+
 func (lr *logReader) queryInProgress(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {
-	limit := query.NewLimitAndSort(query.CountLimit(1), query.NewSortBySequence(query.Desc))
+	limit := query.NewLimitAndSort(query.CountLimit(inProgressLogsLimit), query.NewSortBySequence(query.Asc))
 	exprs := []query.Expression{
 		solprimitives.NewEventSigFilter(lr.sigInProgress),
 		solprimitives.NewAddressFilter(soltypes.PublicKey(lr.forwarderProgramID)),
