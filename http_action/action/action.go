@@ -11,6 +11,7 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/gateway"
 	"github.com/smartcontractkit/capabilities/http_action/validate"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
@@ -55,7 +56,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	s.cfg.ApplyDefault()
 
-	s.metrics, err = common.NewMetrics()
+	s.metrics, err = common.NewMetrics(beholder.GetMeter())
 	if err != nil {
 		return err
 	}

@@ -10,6 +10,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -135,6 +139,10 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 }
 
 func setupSendRequestTestWithConfig(t *testing.T, cfg common.ServiceConfig) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
+	return setupSendRequestTestWithMetrics(t, cfg, newMetrics(t))
+}
+
+func setupSendRequestTestWithMetrics(t *testing.T, cfg common.ServiceConfig, metrics *common.Metrics) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
 	readyCh := make(chan string, 1)
 	mockConnector := &mockGatewayConnector{
 		SourceDonID: "don1",
@@ -150,7 +158,7 @@ func setupSendRequestTestWithConfig(t *testing.T, cfg common.ServiceConfig) (*ga
 		mockConnector,
 		cfg,
 		lggr,
-		newMetrics(t),
+		metrics,
 		newTestValidator(t),
 	)
 	require.NoError(t, err)
@@ -158,9 +166,170 @@ func setupSendRequestTestWithConfig(t *testing.T, cfg common.ServiceConfig) (*ga
 }
 
 func newMetrics(t *testing.T) *common.Metrics {
-	m, err := common.NewMetrics()
+	m, err := common.NewMetrics(noop.Meter{})
 	require.NoError(t, err)
 	return m
+}
+
+func newMetricsWithReader(t *testing.T) (*common.Metrics, *sdkmetric.ManualReader) {
+	t.Helper()
+	reader := sdkmetric.NewManualReader()
+	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, meterProvider.Shutdown(context.Background())) })
+	m, err := common.NewMetrics(meterProvider.Meter("http-action-test"))
+	require.NoError(t, err)
+	return m, reader
+}
+
+func findHistogramDataPoint(t *testing.T, rm metricdata.ResourceMetrics, name string, attrs map[string]string) (metricdata.HistogramDataPoint[int64], bool) {
+	t.Helper()
+	for _, scopeMetrics := range rm.ScopeMetrics {
+		for _, m := range scopeMetrics.Metrics {
+			if m.Name != name {
+				continue
+			}
+			histogram, ok := m.Data.(metricdata.Histogram[int64])
+			if !ok {
+				continue
+			}
+			for _, dp := range histogram.DataPoints {
+				if attributesMatch(dp.Attributes, attrs) {
+					return dp, true
+				}
+			}
+		}
+	}
+	return metricdata.HistogramDataPoint[int64]{}, false
+}
+
+func sumCounterByAttrs(rm metricdata.ResourceMetrics, name string, attrs map[string]string) int64 {
+	var total int64
+	for _, scopeMetrics := range rm.ScopeMetrics {
+		for _, m := range scopeMetrics.Metrics {
+			if m.Name != name {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok {
+				continue
+			}
+			for _, dp := range sum.DataPoints {
+				if attributesMatch(dp.Attributes, attrs) {
+					total += dp.Value
+				}
+			}
+		}
+	}
+	return total
+}
+
+func attributesMatch(set attribute.Set, attrs map[string]string) bool {
+	for k, v := range attrs {
+		attributeValue, ok := set.Value(attribute.Key(k))
+		if !ok || attributeValue.AsString() != v {
+			return false
+		}
+	}
+	return true
+}
+
+func TestGatewayOutboundProxy_SendRequest_RoundTripMetrics(t *testing.T) {
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	newInput := func(timeout time.Duration) *http.Request {
+		return &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Body:          []byte("test"),
+			Timeout:       durationpb.New(timeout),
+			CacheSettings: &http.CacheSettings{},
+		}
+	}
+	gatewayAttr := map[string]string{common.AttrGatewayID: "gateway1"}
+
+	t.Run("delayed gateway response appears in round trip, recorded once", func(t *testing.T) {
+		metrics, reader := newMetricsWithReader(t)
+		proxy, _, readyCh := setupSendRequestTestWithMetrics(t, common.ServiceConfig{}, metrics)
+
+		const responseDelay = 200 * time.Millisecond
+		go func() {
+			id := <-readyCh
+			time.Sleep(responseDelay)
+			simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
+		}()
+
+		output, _, err := proxy.SendRequest(t.Context(), metadata, newInput(5*time.Second), time.Now())
+		require.NoError(t, err)
+		require.NotNil(t, output)
+
+		var rm metricdata.ResourceMetrics
+		require.NoError(t, reader.Collect(t.Context(), &rm))
+		dp, ok := findHistogramDataPoint(t, rm, "http_action_capability_gateway_round_trip_ms", gatewayAttr)
+		require.True(t, ok, "round trip must be recorded for the selected gateway")
+		require.Equal(t, uint64(1), dp.Count, "each completed round trip must record exactly once")
+		require.GreaterOrEqual(t, dp.Sum, int64(150), "round trip must include the gateway response delay")
+		require.Zero(t, sumCounterByAttrs(rm, "http_action_capability_gateway_round_trip_failures", gatewayAttr))
+	})
+
+	t.Run("error response is still recorded as a round trip", func(t *testing.T) {
+		metrics, reader := newMetricsWithReader(t)
+		proxy, _, readyCh := setupSendRequestTestWithMetrics(t, common.ServiceConfig{}, metrics)
+
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessage(t, proxy, id, 500, "", "some error", true)
+		}()
+
+		_, _, err := proxy.SendRequest(t.Context(), metadata, newInput(5*time.Second), time.Now())
+		require.Error(t, err)
+
+		var rm metricdata.ResourceMetrics
+		require.NoError(t, reader.Collect(t.Context(), &rm))
+		dp, ok := findHistogramDataPoint(t, rm, "http_action_capability_gateway_round_trip_ms", gatewayAttr)
+		require.True(t, ok, "received error responses must also record the round trip")
+		require.Equal(t, uint64(1), dp.Count)
+	})
+
+	t.Run("send error increments failure counter, no duration sample", func(t *testing.T) {
+		metrics, reader := newMetricsWithReader(t)
+		proxy, mockConnector, _ := setupSendRequestTestWithMetrics(t, common.ServiceConfig{}, metrics)
+		mockConnector.SendErr = errors.New("boom")
+
+		_, _, err := proxy.SendRequest(t.Context(), metadata, newInput(5*time.Second), time.Now())
+		require.ErrorContains(t, err, "failed to send request to gateway")
+
+		var rm metricdata.ResourceMetrics
+		require.NoError(t, reader.Collect(t.Context(), &rm))
+		require.Equal(t, int64(1), sumCounterByAttrs(rm, "http_action_capability_gateway_round_trip_failures",
+			map[string]string{common.AttrGatewayID: "gateway1", common.AttrReason: common.RoundTripReasonSendError}))
+		_, ok := findHistogramDataPoint(t, rm, "http_action_capability_gateway_round_trip_ms", gatewayAttr)
+		require.False(t, ok, "failed sends must not appear in the completed-response histogram")
+	})
+
+	t.Run("context done increments failure counter, no duration sample", func(t *testing.T) {
+		metrics, reader := newMetricsWithReader(t)
+		proxy, _, readyCh := setupSendRequestTestWithMetrics(t, common.ServiceConfig{
+			GatewayConnectionConfig: common.GatewayConnectionConfig{ResponseGraceMs: 100},
+		}, metrics)
+
+		// Never respond on behalf of the gateway; the wait context times out.
+		go func() { <-readyCh }()
+
+		_, _, err := proxy.SendRequest(t.Context(), metadata, newInput(100*time.Millisecond), time.Now())
+		require.Error(t, err)
+		var timeoutErr TimeoutError
+		require.True(t, errors.As(err, &timeoutErr), "existing timeout error behavior must be preserved")
+
+		var rm metricdata.ResourceMetrics
+		require.NoError(t, reader.Collect(t.Context(), &rm))
+		require.Equal(t, int64(1), sumCounterByAttrs(rm, "http_action_capability_gateway_round_trip_failures",
+			map[string]string{common.AttrGatewayID: "gateway1", common.AttrReason: common.RoundTripReasonContextDone}))
+		_, ok := findHistogramDataPoint(t, rm, "http_action_capability_gateway_round_trip_ms", gatewayAttr)
+		require.False(t, ok, "failed waits must not appear in the completed-response histogram")
+	})
 }
 
 func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
