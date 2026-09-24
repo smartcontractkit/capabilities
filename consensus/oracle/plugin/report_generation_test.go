@@ -216,7 +216,7 @@ func newRRts(rawBytes []byte, metaData oracle.ConsensusRequestMetadata, recieved
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
-	return oracle.NewConsensusRequest(simpleConsensusInputs, recievedAt, time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
+	return oracle.NewConsensusRequest(simpleConsensusInputs, recievedAt, time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil, false)
 }
 
 func Test_ReportTooLarge_ReturnsFailure(t *testing.T) {

@@ -450,6 +450,7 @@ func Test_Outcome_RecordsObservationQuorumForTimeoutClassification(t *testing.T)
 		make(chan oracle.ConsensusResponse, 1),
 		md,
 		tracker,
+		false,
 	)
 	req.SendTimeout(ctx)
 

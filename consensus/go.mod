@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/consensus
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/cloudevents/sdk-go/v2 v2.16.1
@@ -8,7 +8,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260916141258-4d4c4ec65942
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260917115705-1d3a14a9b049
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260923103453-0b5b0700ab5c
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260804191526-b7a850ae7648
 	github.com/smartcontractkit/cre-sdk-go v0.9.0
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
@@ -16,6 +16,7 @@ require (
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
+	go.uber.org/zap v1.28.0
 	golang.org/x/exp v0.0.0-20260508232706-74f9aab9d74a
 	google.golang.org/protobuf v1.36.12
 )
@@ -110,7 +111,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/goleak v1.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.55.0 // indirect

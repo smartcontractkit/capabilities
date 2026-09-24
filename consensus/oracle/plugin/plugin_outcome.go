@@ -107,7 +107,12 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
+	median2fPlus1QuorumVotes := 0
 	for _, obs := range observations {
+		if obs.Median_2Fplus1QuorumFlag {
+			median2fPlus1QuorumVotes++
+		}
+
 		// Does the observation have a valid input?
 		if obs.Input == nil {
 			lggr.Warnw("observation missing input", "requestID", requestID, "observerMetadata", obs.Metadata)
@@ -152,7 +157,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, consensusMDD, timestamp)
 	}
 
-	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
+	stricterMedianQuorum := median2fPlus1QuorumVotes >= r.f+1
+	r.metrics.IncStricterMedianQuorum(ctx, "aggregated", stricterMedianQuorum)
+
+	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f, stricterMedianQuorum)
 	if err != nil {
 		valuesJSON := formatValuesForLogging(ctx, lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
@@ -288,7 +296,7 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(lggr lo
 
 	consensusMDDBytes, err := oracle.CalculateOutcomeForObservations(lggr, allObservationsMDDBytes,
 		&sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
-		nil, r.f)
+		nil, r.f, false)
 	if err != nil {
 		return nil, err
 	}
