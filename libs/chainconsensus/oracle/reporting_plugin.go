@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 
@@ -32,6 +33,12 @@ const (
 	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of OCRBatchSize increase.
 	OCRRoundMaxBatchSize = 1000
+
+	// MaxAggregatableExponent bounds the base-10 exponent of an aggregatable value. Comparing
+	// decimals with different exponents rescales them to a common exponent, and that cost grows
+	// with the exponent gap. Every in-tree producer reports exponent 0; the symmetric window
+	// leaves room for scaled values.
+	MaxAggregatableExponent = 128
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
@@ -317,6 +324,12 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 		}
 
 		switch tRequestOb := requestOb.Observation.(type) {
+		case *ctypes.RequestObservation_Aggregatable:
+			if value := tRequestOb.Aggregatable.GetValue(); value != nil &&
+				math.Abs(float64(value.Exponent)) > MaxAggregatableExponent {
+				return fmt.Errorf("aggregatable exponent out of range for request ID %s: got %d, allowed [-%d, %d]. OracleID: %d",
+					requestID, value.Exponent, MaxAggregatableExponent, MaxAggregatableExponent, ao.Observer)
+			}
 		case *ctypes.RequestObservation_Hashable:
 			if len(tRequestOb.Hashable) != ctypes.HashLength {
 				return fmt.Errorf("invalid hash length for request ID %s: got %d, expected %d. OracleID: %d", requestID, len(tRequestOb.Hashable), ctypes.HashLength, ao.Observer)
