@@ -161,7 +161,7 @@ func accountDataBytesFromJSON(asJSON []byte) ([]byte, error) {
 	return nil, fmt.Errorf("could not extract base64 account data from json")
 }
 
-// Retreive transmission transaction signature from logs deterministically
+// Retrieve transmission transaction signature from logs deterministically
 // Use log with lowest block number and lowest index.
 func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signature, error) {
 	if len(inProgressLogs) == 0 {
