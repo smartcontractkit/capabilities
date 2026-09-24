@@ -160,12 +160,13 @@ func (wr *WriteReport) executeWriteReport(
 	wr.lggr = logger.With(wr.lggr, "queuePosition", queuePosition)
 
 	var transmissionInfo TransmissionInfo
+	var prior *priorTxLimit
 	if queuePosition <= 0 {
 		transmissionInfo, err = capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 			return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
 		})
 	} else {
-		transmissionInfo, err = wr.pollTransmissionInfo(ctx, transmissionID, queuePosition, request.ComputeConfig.GetComputeLimit())
+		transmissionInfo, prior, err = wr.pollTransmissionInfo(ctx, transmissionID, queuePosition, request.ComputeConfig.GetComputeLimit())
 	}
 
 	if err != nil {
@@ -187,7 +188,7 @@ func (wr *WriteReport) executeWriteReport(
 		return wr.successWriteReportReply(&transmissionInfo.Signature), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature), nil
 
 	case TransmissionStateFailed:
-		decision := wr.assessFailedTransmission(ctx, request, transmissionInfo, telemetryContext, userProvidedComputeLimit)
+		decision := wr.assessFailedTransmission(ctx, request, transmissionInfo, telemetryContext, userProvidedComputeLimit, prior)
 		if !decision.retry {
 			wr.lggr.Infow(
 				"returning without a transmission attempt - transmission already attempted and failed with sufficient compute budget",
@@ -429,31 +430,32 @@ type failedTransmissionDecision struct {
 }
 
 // assessFailedTransmission decides whether a failed transmission should be retried: retry iff
-// the prior tx's onchain compute unit limit is lower than the one we would submit with (honest
-// nodes submit the requested limit verbatim). A tx without a SetComputeUnitLimit instruction
-// was not produced by an honest node and is always retried. A user-provided limit that doesn't
-// match the prior tx is anomalous and emits a mismatch warn + metric; an unfetchable tx means
-// no retry.
+// the prior tx's onchain compute unit limit is lower than requested (or missing entirely).
 func (wr *WriteReport) assessFailedTransmission(
 	ctx context.Context,
 	request *solcap.WriteReportRequest,
 	transmissionInfo TransmissionInfo,
 	telemetryContext monitoring.TelemetryContext,
 	userProvidedComputeLimit bool,
+	prior *priorTxLimit, // nil when this node did not poll
 ) failedTransmissionDecision {
 	requestedComputeLimit := request.ComputeConfig.GetComputeLimit()
 
-	priorTxComputeLimit, found, err := wr.fetchTxComputeUnitLimit(ctx, transmissionInfo.Signature)
-	if err != nil {
-		wr.lggr.Warnw("Failed to fetch the prior failed transmission tx's compute unit limit, treating the failure as genuine",
-			"error", err.Error(),
-			"signature", transmissionInfo.Signature.String(),
-			"requestedComputeUnitLimit", requestedComputeLimit,
-		)
-		return failedTransmissionDecision{}
+	if prior == nil || prior.sig != transmissionInfo.Signature {
+		limit, found, err := wr.fetchTxComputeUnitLimit(ctx, transmissionInfo.Signature)
+		if err != nil {
+			wr.lggr.Warnw("Failed to fetch the prior failed transmission tx's compute unit limit, treating the failure as genuine",
+				"error", err.Error(),
+				"signature", transmissionInfo.Signature.String(),
+				"requestedComputeUnitLimit", requestedComputeLimit,
+			)
+			return failedTransmissionDecision{}
+		}
+		prior = &priorTxLimit{sig: transmissionInfo.Signature, limit: limit, found: found}
 	}
+	priorTxComputeLimit := prior.limit
 
-	if !found {
+	if !prior.found {
 		wr.lggr.Warnw("Prior transmission tx has no SetComputeUnitLimit instruction - retrying",
 			"signature", transmissionInfo.Signature.String(),
 			"requestedComputeUnitLimit", requestedComputeLimit,
@@ -479,17 +481,8 @@ func (wr *WriteReport) assessFailedTransmission(
 	}
 }
 
-func (wr *WriteReport) priorTxComputeLimitLower(ctx context.Context, sig solana.Signature, requestedComputeLimit uint32) bool {
-	priorTxComputeLimit, found, err := wr.fetchTxComputeUnitLimit(ctx, sig)
-	if err != nil {
-		wr.lggr.Debugw("Failed to fetch the prior failed transmission tx's compute unit limit during polling", "error", err, "signature", sig.String())
-		return false
-	}
-	return !found || priorTxComputeLimit < requestedComputeLimit
-}
-
-// fetchTxComputeUnitLimit reads a transaction's compute unit limit from chain.
-// found=false means the tx carries no SetComputeUnitLimit instruction.
+// fetchTxComputeUnitLimit reads a transaction's compute unit limit from chain;
+// found=false means no SetComputeUnitLimit instruction.
 func (wr *WriteReport) fetchTxComputeUnitLimit(ctx context.Context, sig solana.Signature) (limit uint32, found bool, err error) {
 	reply, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*soltypes.GetTransactionReply, error) {
 		return wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
@@ -503,9 +496,15 @@ func (wr *WriteReport) fetchTxComputeUnitLimit(ctx context.Context, sig solana.S
 	return computeUnitLimitFromMessage(reply.Transaction.AsParsedTransaction.Message)
 }
 
+// priorTxLimit is a failed attempt's fetched compute limit.
+type priorTxLimit struct {
+	sig   solana.Signature
+	limit uint32
+	found bool
+}
+
 // computeUnitLimitFromMessage returns the tx's SetComputeUnitLimit value clamped to the
-// runtime's per-transaction cap, or found=false when the tx carries no SetComputeUnitLimit
-// instruction.
+// runtime cap, or found=false when absent.
 func computeUnitLimitFromMessage(msg soltypes.Message) (uint32, bool, error) {
 	for _, ix := range msg.Instructions {
 		// Program ids cannot come from address lookup tables; static keys suffice.
@@ -534,7 +533,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 	transmissionID [32]byte,
 	queuePosition int,
 	requestedComputeLimit uint32,
-) (lastValid TransmissionInfo, err error) {
+) (lastValid TransmissionInfo, prior *priorTxLimit, err error) {
 	delay := time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage
 	wr.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
 
@@ -542,7 +541,6 @@ func (wr *WriteReport) pollTransmissionInfo(
 	stageTimer := time.NewTimer(delay)
 	deltaStagePassed := false
 	hadSuccessfulPoll := false
-	priorComputeLimitChecked := false
 	defer func() {
 		stageTimer.Stop()
 		if !deltaStagePassed && hadSuccessfulPoll {
@@ -558,13 +556,19 @@ func (wr *WriteReport) pollTransmissionInfo(
 			lastValid = info
 			switch lastValid.State {
 			case TransmissionStateSucceeded:
-				return lastValid, nil
+				return lastValid, nil, nil
 			case TransmissionStateFailed:
-				if !priorComputeLimitChecked {
-					priorComputeLimitChecked = true
-					insufficientComputeLimit := wr.priorTxComputeLimitLower(ctx, lastValid.Signature, requestedComputeLimit)
-					if !insufficientComputeLimit {
-						return lastValid, nil
+				// If the failed attempt had a sufficient compute limit no earlier node
+				// will retry it - stop polling; else keep waiting for our slot.
+				if prior == nil {
+					limit, found, fetchErr := wr.fetchTxComputeUnitLimit(ctx, lastValid.Signature)
+					if fetchErr != nil {
+						wr.lggr.Debugw("Failed to fetch the prior failed transmission tx's compute unit limit during polling", "error", fetchErr, "signature", lastValid.Signature.String())
+						return lastValid, nil, nil
+					}
+					prior = &priorTxLimit{sig: lastValid.Signature, limit: limit, found: found}
+					if found && limit >= requestedComputeLimit {
+						return lastValid, prior, nil
 					}
 				}
 			case TransmissionStateNotAttempted:
@@ -579,7 +583,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 		select {
 		case <-ctx.Done():
 			hadSuccessfulPoll = false
-			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
+			return TransmissionInfo{}, nil, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
 			deltaStagePassed = true
 			if lastValid.State == TransmissionStateNotAttempted {
@@ -592,10 +596,10 @@ func (wr *WriteReport) pollTransmissionInfo(
 			}
 			if !hadSuccessfulPoll {
 				wr.lggr.Errorw("All GetTransmissionInfo polls failed during delta stage window, cannot determine transmission state")
-				return TransmissionInfo{}, fmt.Errorf("all GetTransmissionInfo polls failed during delta stage window")
+				return TransmissionInfo{}, nil, fmt.Errorf("all GetTransmissionInfo polls failed during delta stage window")
 			}
 			wr.lggr.Infow("Delta stage has passed, returning transmission info")
-			return lastValid, nil
+			return lastValid, prior, nil
 		case <-time.After(wait):
 		}
 	}

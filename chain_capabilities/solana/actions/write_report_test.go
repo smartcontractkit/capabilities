@@ -903,7 +903,7 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 			Maybe()
 
 		var transmissionID [32]byte
-		info, err := wr.pollTransmissionInfo(ctx, transmissionID, 1, 200_000)
+		info, _, err := wr.pollTransmissionInfo(ctx, transmissionID, 1, 200_000)
 		require.NoError(t, err)
 		require.True(t, chainStateUpdated.Load(), "chain state should have updated before stage timer returned")
 		require.Equal(t, TransmissionStateSucceeded, info.State)
@@ -926,7 +926,7 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 			Maybe()
 
 		var transmissionID [32]byte
-		_, err := wr.pollTransmissionInfo(ctx, transmissionID, 2, 200_000)
+		_, _, err := wr.pollTransmissionInfo(ctx, transmissionID, 2, 200_000)
 		require.Greater(t, rpcCalls.Load(), int64(0))
 		require.Error(t, err)
 	})
@@ -1283,7 +1283,7 @@ func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
 	t.Run("prior tx used a lower compute limit than requested => retry (attack case)", func(t *testing.T) {
 		t.Parallel()
 		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit-50_000))
-		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
 		require.True(t, decision.retry)
 		require.Equal(t, requestedComputeLimit-50_000, decision.priorTxComputeUnitLimit)
 
@@ -1298,7 +1298,7 @@ func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
 	t.Run("prior tx used exactly the requested compute limit => no retry (genuine revert)", func(t *testing.T) {
 		t.Parallel()
 		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit))
-		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
 		require.False(t, decision.retry)
 		require.Empty(t, proc.msgs)
 	})
@@ -1306,7 +1306,7 @@ func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
 	t.Run("prior tx used more than requested => no retry, but mismatch is reported", func(t *testing.T) {
 		t.Parallel()
 		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit+10_000))
-		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
 		require.False(t, decision.retry)
 		require.Len(t, proc.msgs, 1)
 	})
@@ -1314,7 +1314,7 @@ func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
 	t.Run("node-derived compute limit => retry decision only, no mismatch report", func(t *testing.T) {
 		t.Parallel()
 		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit-50_000))
-		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false, nil)
 		require.True(t, decision.retry)
 		require.Empty(t, proc.msgs)
 	})
@@ -1326,7 +1326,7 @@ func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
 			{ProgramIDIndex: 2, Data: RandomBytes(8)},
 		}
 		wr, proc := newWriteReportWithPriorTxLimit(t, reply)
-		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false, nil)
 		require.True(t, decision.retry)
 
 		require.Len(t, proc.msgs, 1)
@@ -1339,7 +1339,7 @@ func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
 	t.Run("prior tx cannot be parsed => no retry (failure treated as genuine)", func(t *testing.T) {
 		t.Parallel()
 		wr, proc := newWriteReportWithPriorTxLimit(t, &soltypes.GetTransactionReply{})
-		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
 		require.False(t, decision.retry)
 		require.Empty(t, proc.msgs)
 	})
