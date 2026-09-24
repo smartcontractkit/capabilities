@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+	computebudget "github.com/gagliardetto/solana-go/programs/compute-budget"
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -902,7 +903,7 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 			Maybe()
 
 		var transmissionID [32]byte
-		info, err := wr.pollTransmissionInfo(ctx, transmissionID, 1)
+		info, _, err := wr.pollTransmissionInfo(ctx, transmissionID, 1, 200_000)
 		require.NoError(t, err)
 		require.True(t, chainStateUpdated.Load(), "chain state should have updated before stage timer returned")
 		require.Equal(t, TransmissionStateSucceeded, info.State)
@@ -925,7 +926,7 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 			Maybe()
 
 		var transmissionID [32]byte
-		_, err := wr.pollTransmissionInfo(ctx, transmissionID, 2)
+		_, _, err := wr.pollTransmissionInfo(ctx, transmissionID, 2, 200_000)
 		require.Greater(t, rpcCalls.Load(), int64(0))
 		require.Error(t, err)
 	})
@@ -1139,5 +1140,265 @@ func TestToPayload(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "report context length 10")
+	})
+}
+
+type capturingBeholderProcessor struct{ msgs []proto.Message }
+
+func (c *capturingBeholderProcessor) Process(_ context.Context, m proto.Message, _ ...any) error {
+	c.msgs = append(c.msgs, m)
+	return nil
+}
+
+// txReplyWithComputeLimitIx builds a GetTransaction reply carrying a SetComputeUnitLimit instruction.
+func txReplyWithComputeLimitIx(limit uint32) *soltypes.GetTransactionReply {
+	ixData := make([]byte, 5)
+	ixData[0] = computebudget.Instruction_SetComputeUnitLimit
+	binary.LittleEndian.PutUint32(ixData[1:], limit)
+	return &soltypes.GetTransactionReply{
+		Meta: &soltypes.TransactionMeta{Fee: 5000},
+		Transaction: &soltypes.TransactionResultEnvelope{
+			AsParsedTransaction: &soltypes.Transaction{
+				Message: soltypes.Message{
+					AccountKeys: soltypes.PublicKeySlice{
+						soltypes.PublicKey(RandomBytes(solana.PublicKeyLength)), // fee payer
+						soltypes.PublicKey(solana.ComputeBudget),
+						soltypes.PublicKey(RandomBytes(solana.PublicKeyLength)), // forwarder program
+					},
+					Instructions: []soltypes.CompiledInstruction{
+						{ProgramIDIndex: 1, Data: ixData},
+						{ProgramIDIndex: 2, Data: RandomBytes(8)},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestComputeUnitLimitFromMessage(t *testing.T) {
+	t.Parallel()
+
+	feePayer := soltypes.PublicKey(RandomBytes(solana.PublicKeyLength))
+	program := soltypes.PublicKey(RandomBytes(solana.PublicKeyLength))
+	budget := soltypes.PublicKey(solana.ComputeBudget)
+
+	setLimitIx := func(limit uint32) soltypes.CompiledInstruction {
+		data := make([]byte, 5)
+		data[0] = computebudget.Instruction_SetComputeUnitLimit
+		binary.LittleEndian.PutUint32(data[1:], limit)
+		return soltypes.CompiledInstruction{ProgramIDIndex: 1, Data: data}
+	}
+
+	t.Run("explicit SetComputeUnitLimit is returned", func(t *testing.T) {
+		t.Parallel()
+		limit, found, err := computeUnitLimitFromMessage(soltypes.Message{
+			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
+			Instructions: []soltypes.CompiledInstruction{
+				setLimitIx(123_456),
+				{ProgramIDIndex: 2, Data: RandomBytes(8)},
+			},
+		})
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint32(123_456), limit)
+	})
+
+	t.Run("value above the runtime cap is clamped", func(t *testing.T) {
+		t.Parallel()
+		limit, found, err := computeUnitLimitFromMessage(soltypes.Message{
+			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
+			Instructions: []soltypes.CompiledInstruction{
+				setLimitIx(4_000_000_000),
+				{ProgramIDIndex: 2, Data: RandomBytes(8)},
+			},
+		})
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, uint32(1_400_000), limit)
+	})
+
+	t.Run("no compute budget instruction => not found", func(t *testing.T) {
+		t.Parallel()
+		_, found, err := computeUnitLimitFromMessage(soltypes.Message{
+			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
+			Instructions: []soltypes.CompiledInstruction{
+				{ProgramIDIndex: 2, Data: RandomBytes(8)},
+			},
+		})
+		require.NoError(t, err)
+		require.False(t, found)
+	})
+
+	t.Run("other compute budget instructions do not set the limit", func(t *testing.T) {
+		t.Parallel()
+		priceIxData := make([]byte, 9)
+		priceIxData[0] = computebudget.Instruction_SetComputeUnitPrice
+		_, found, err := computeUnitLimitFromMessage(soltypes.Message{
+			AccountKeys: soltypes.PublicKeySlice{feePayer, budget, program},
+			Instructions: []soltypes.CompiledInstruction{
+				{ProgramIDIndex: 1, Data: priceIxData},
+				{ProgramIDIndex: 2, Data: RandomBytes(8)},
+			},
+		})
+		require.NoError(t, err)
+		require.False(t, found)
+	})
+
+	t.Run("program id index out of range => error", func(t *testing.T) {
+		t.Parallel()
+		_, _, err := computeUnitLimitFromMessage(soltypes.Message{
+			AccountKeys: soltypes.PublicKeySlice{feePayer},
+			Instructions: []soltypes.CompiledInstruction{
+				{ProgramIDIndex: 5, Data: RandomBytes(8)},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "out of range")
+	})
+}
+
+func TestAssessFailedTransmission_ComputeLimitCheck(t *testing.T) {
+	t.Parallel()
+
+	const requestedComputeLimit = uint32(250_000)
+	failedSig := solana.Signature{7, 7, 7}
+
+	newWriteReportWithPriorTxLimit := func(t *testing.T, reply *soltypes.GetTransactionReply) (*WriteReport, *capturingBeholderProcessor) {
+		t.Helper()
+		mockSolanaService := mocks.NewSolanaService(t)
+		mockSolanaService.On("GetTransaction", mock.Anything, mock.MatchedBy(func(req soltypes.GetTransactionRequest) bool {
+			return req.Signature == soltypes.Signature(failedSig)
+		})).Return(reply, nil)
+		proc := &capturingBeholderProcessor{}
+		return &WriteReport{
+			SolanaService:     mocks.WrapSolanaService(mockSolanaService),
+			lggr:              logger.Test(t),
+			beholderProcessor: proc,
+			messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		}, proc
+	}
+	request := &solcap.WriteReportRequest{ComputeConfig: &solcap.ComputeConfig{ComputeLimit: requestedComputeLimit}}
+	failedInfo := TransmissionInfo{State: TransmissionStateFailed, Signature: failedSig}
+
+	t.Run("prior tx used a lower compute limit than requested => retry (attack case)", func(t *testing.T) {
+		t.Parallel()
+		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit-50_000))
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
+		require.True(t, decision.retry)
+		require.Equal(t, requestedComputeLimit-50_000, decision.priorTxComputeUnitLimit)
+
+		require.Len(t, proc.msgs, 1)
+		mismatch, ok := proc.msgs[0].(*monitoring.WriteReportComputeLimitMismatch)
+		require.True(t, ok)
+		require.Equal(t, requestedComputeLimit, mismatch.GetExpectedComputeUnitLimit())
+		require.Equal(t, requestedComputeLimit-50_000, mismatch.GetActualComputeUnitLimit())
+		require.Equal(t, failedSig.String(), mismatch.GetSignature())
+	})
+
+	t.Run("prior tx used exactly the requested compute limit => no retry (genuine revert)", func(t *testing.T) {
+		t.Parallel()
+		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit))
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
+		require.False(t, decision.retry)
+		require.Empty(t, proc.msgs)
+	})
+
+	t.Run("prior tx used more than requested => no retry, but mismatch is reported", func(t *testing.T) {
+		t.Parallel()
+		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit+10_000))
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
+		require.False(t, decision.retry)
+		require.Len(t, proc.msgs, 1)
+	})
+
+	t.Run("node-derived compute limit => retry decision only, no mismatch report", func(t *testing.T) {
+		t.Parallel()
+		wr, proc := newWriteReportWithPriorTxLimit(t, txReplyWithComputeLimitIx(requestedComputeLimit-50_000))
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false, nil)
+		require.True(t, decision.retry)
+		require.Empty(t, proc.msgs)
+	})
+
+	t.Run("prior tx has no SetComputeUnitLimit instruction => retry, mismatch reported", func(t *testing.T) {
+		t.Parallel()
+		reply := txReplyWithComputeLimitIx(0)
+		reply.Transaction.AsParsedTransaction.Message.Instructions = []soltypes.CompiledInstruction{
+			{ProgramIDIndex: 2, Data: RandomBytes(8)},
+		}
+		wr, proc := newWriteReportWithPriorTxLimit(t, reply)
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, false, nil)
+		require.True(t, decision.retry)
+
+		require.Len(t, proc.msgs, 1)
+		mismatch, ok := proc.msgs[0].(*monitoring.WriteReportComputeLimitMismatch)
+		require.True(t, ok)
+		require.Equal(t, requestedComputeLimit, mismatch.GetExpectedComputeUnitLimit())
+		require.Equal(t, uint32(0), mismatch.GetActualComputeUnitLimit())
+	})
+
+	t.Run("prior tx cannot be parsed => no retry (failure treated as genuine)", func(t *testing.T) {
+		t.Parallel()
+		wr, proc := newWriteReportWithPriorTxLimit(t, &soltypes.GetTransactionReply{})
+		decision := wr.assessFailedTransmission(t.Context(), request, failedInfo, monitoring.TelemetryContext{}, true, nil)
+		require.False(t, decision.retry)
+		require.Empty(t, proc.msgs)
+	})
+}
+
+func TestWriteReport_FailedTransmissionRetry(t *testing.T) {
+	t.Parallel()
+
+	key, _ := solana.NewRandomPrivateKey()
+	failedSig := solana.Signature{9, 9, 9}
+	const requestedComputeLimit = uint32(250_000)
+
+	t.Run("prior failed tx under-budgeted => retries and succeeds", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+
+		receiverAddress := key.PublicKey()
+		reportMetadata := createTestReportMetadata()
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		writeReportRequest.ComputeConfig = &solcap.ComputeConfig{ComputeLimit: requestedComputeLimit}
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
+			State:     TransmissionStateFailed,
+			Signature: failedSig,
+		}, nil).Once()
+
+		// The prior failed tx carried less compute than requested => retry path.
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(txReplyWithComputeLimitIx(requestedComputeLimit-100_000), nil)
+
+		helper.creForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, mock.Anything, writeReportRequest.Report, mock.Anything).Return(&soltypes.SubmitTransactionReply{}, nil)
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
+			State: TransmissionStateSucceeded,
+		}, nil).Once()
+
+		result, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), writeReportRequest)
+		require.NoError(t, err)
+		require.Equal(t, solcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+	})
+
+	t.Run("prior failed tx carried the requested compute limit => no retry", func(t *testing.T) {
+		t.Parallel()
+		helper := createMocksAndCapability(t, logger.Test(t))
+
+		receiverAddress := key.PublicKey()
+		reportMetadata := createTestReportMetadata()
+		helper.expectReceiverIsProgram(receiverAddress)
+		writeReportRequest := buildWriteReportReq(t, helper.forwarderState, reportMetadata, receiverAddress)
+		writeReportRequest.ComputeConfig = &solcap.ComputeConfig{ComputeLimit: requestedComputeLimit}
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
+			State:     TransmissionStateFailed,
+			Signature: failedSig,
+		}, nil).Once()
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(txReplyWithComputeLimitIx(requestedComputeLimit), nil)
+
+		result, err := helper.solana.WriteReport(t.Context(), createTestRequestMetadata(reportMetadata), writeReportRequest)
+		require.NoError(t, err)
+		require.Equal(t, solcap.TxStatus_TX_STATUS_ABORTED, result.Response.TxStatus)
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }
