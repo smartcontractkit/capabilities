@@ -211,8 +211,14 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	lggr.Debugw("sending request to gateway", "donID", donID, "selectedGateway", selectedGateway)
 
 	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
+	// The node-observed application round trip starts at the send: it covers
+	// delivery to the gateway, gateway processing, and response delivery back,
+	// including loop-plugin boundary latency when applicable. It is not pure
+	// websocket latency.
+	roundTripStart := time.Now()
 	if err := p.gatewayConnector.SendToGateway(sendCtx, selectedGateway, &gatewayResp); err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
+		p.metrics.IncrementGatewayRoundTripFailures(ctx, selectedGateway, common.RoundTripReasonSendError, lggr)
 		return nil, 0, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
@@ -222,6 +228,9 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	select {
 	case resp := <-responseCh:
+		// Record the round trip before inspecting the response so that received
+		// error responses are measured too. Failed waits produce no sample here.
+		p.metrics.RecordGatewayRoundTrip(ctx, selectedGateway, time.Since(roundTripStart).Milliseconds(), lggr)
 		lggr.Debugw("received response from gateway")
 		if resp.ErrorMessage != "" {
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
@@ -252,6 +261,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 		return response, resp.ExternalEndpointLatency, nil
 	case <-waitCtx.Done():
+		p.metrics.IncrementGatewayRoundTripFailures(ctx, selectedGateway, common.RoundTripReasonContextDone, lggr)
 		elapsedMs := time.Since(startTime).Milliseconds()
 		timeoutMs := responseTimeout.Milliseconds()
 
