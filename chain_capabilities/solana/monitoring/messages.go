@@ -61,6 +61,21 @@ func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryConte
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportComputeLimitMismatch(
+	tc TelemetryContext,
+	req *solanacappb.WriteReportRequest,
+	signature string,
+	expectedComputeUnitLimit, actualComputeUnitLimit uint32,
+) Message {
+	return &WriteReportComputeLimitMismatch{
+		Req:                      convertWriteReportRequest(req),
+		Signature:                signature,
+		ExpectedComputeUnitLimit: expectedComputeUnitLimit,
+		ActualComputeUnitLimit:   actualComputeUnitLimit,
+		ExecutionContext:         m.BuildExecutionContext(tc),
+	}
+}
+
 func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *solanacappb.FilterLogTriggerRequest) *LogTriggerInitiated {
 	return &LogTriggerInitiated{Req: logTriggerRequestToMonitoring(req), ExecutionContext: m.BuildExecutionContext(tc)}
 }

@@ -22,6 +22,9 @@ type Metrics struct {
 	WriteReportError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportComputeLimitMismatch struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	LogTriggerSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -72,6 +75,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report error metric: %w", err)
+	}
+	wrComputeLimitMismatch := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_compute_limit_mismatch"), commonbeholder.ToSchemaFullName(&WriteReportComputeLimitMismatch{}))
+	m.WriteReportComputeLimitMismatch.basic, err = commoncapbeholder.NewMetricsCapBasic(wrComputeLimitMismatch)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report compute limit mismatch metric: %w", err)
 	}
 
 	return m, nil
@@ -150,6 +158,25 @@ func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (m *Metrics) OnWriteReportComputeLimitMismatch(ctx context.Context, msg *WriteReportComputeLimitMismatch) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportComputeLimitMismatch.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (r *WriteReportComputeLimitMismatch) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("signature", r.GetSignature()),
+		attribute.Int64("expected_compute_unit_limit", int64(r.GetExpectedComputeUnitLimit())),
+		attribute.Int64("actual_compute_unit_limit", int64(r.GetActualComputeUnitLimit())),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportComputeLimitMismatch) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
