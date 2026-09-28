@@ -295,11 +295,7 @@ func (rp *reportingPlugin) addObservationsOfPrevMissingRequests(ctx context.Cont
 
 	// Prioritize the original list of missing requests from the previous outcome.
 	// This handles cases where the leader's order of requests in query is different from the majority of other nodes.
-	if err := rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation); err != nil {
-		return err
-	}
-
-	return nil
+	return rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation)
 }
 
 func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{}) ([]string, error) {
