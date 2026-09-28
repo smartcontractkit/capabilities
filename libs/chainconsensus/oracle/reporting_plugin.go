@@ -289,15 +289,16 @@ func (rp *reportingPlugin) addObservationsOfPrevMissingRequests(ctx context.Cont
 		return nil
 	}
 
+	rp.logger.Infow("Adding observations for missing requests. It's expected to happen occasionally. "+
+		"If you see this log line frequently there might be an issue in communication between the current leader and workflow DON",
+		"leaderMissingRequests", leaderMissingRequests)
+
 	// Prioritize the original list of missing requests from the previous outcome.
 	// This handles cases where the leader's order of requests in query is different from the majority of other nodes.
 	if err := rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation); err != nil {
 		return err
 	}
 
-	rp.logger.Debugw("Finished adding observations for previously missing requests",
-		"requested", leaderMissingRequests,
-		"observationsAdded", len(observation.Observations))
 	return nil
 }
 
