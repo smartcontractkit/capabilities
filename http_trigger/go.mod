@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/http_trigger
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
