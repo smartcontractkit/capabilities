@@ -6,7 +6,7 @@ linters:
     - depguard
     - errorlint
     - exhaustive
-    - gomodguard
+    - gomodguard_v2
     - gosec
     - loggercheck
     - misspell
