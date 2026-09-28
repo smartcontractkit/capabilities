@@ -19,6 +19,7 @@ type Metrics struct {
 	requestSizeHistogram          metric.Float64Histogram
 	observationBatchSizeHistogram metric.Float64Histogram
 	outcomeBatchSizeHistogram     metric.Float64Histogram
+	stricterMedianQuorum          metric.Int64Counter
 }
 
 // NewMetrics creates a new instance of Metrics
@@ -105,6 +106,14 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create consensus outcome batch size histogram: %w", err)
 	}
 
+	m.stricterMedianQuorum, err = meter.Int64Counter(
+		"consensus_capability_stricter_median_quorum",
+		metric.WithDescription("Number of requests by stricter median quorum value, per stage (request: local flag, aggregated: outcome after voting)"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create stricter median quorum counter: %w", err)
+	}
+
 	return nil
 }
 
@@ -130,4 +139,11 @@ func (m *Metrics) RecordObservationBatchSize(ctx context.Context, size float64) 
 
 func (m *Metrics) RecordOutcomeBatchSize(ctx context.Context, size float64) {
 	m.outcomeBatchSizeHistogram.Record(ctx, size)
+}
+
+func (m *Metrics) IncStricterMedianQuorum(ctx context.Context, stage string, enabled bool) {
+	m.stricterMedianQuorum.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("stage", stage),
+		attribute.Bool("enabled", enabled),
+	))
 }
