@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"slices"
 	"sort"
 
@@ -72,10 +71,6 @@ type reportingPlugin struct {
 	requestsStore                RequestsHandler
 	metrics                      metrics.ConsensusMetrics
 	enableMissingRequestRecovery limits.GateLimiter
-	// emptyQueryLeaderNode is a TEST HACK (branch: empty-query-leader-node): when the
-	// CRE_CHAIN_CONSENSUS_EMPTY_QUERY env var is set, this node returns an empty query
-	// whenever it is the round leader, simulating a leader that never proposes requests.
-	emptyQueryLeaderNode bool
 }
 
 func newReportingPlugin(
@@ -94,13 +89,6 @@ func newReportingPlugin(
 		metrics:        metrics,
 	}
 
-	// TEST HACK: see emptyQueryLeaderNode field doc. Inert unless the env var is set.
-	rp.emptyQueryLeaderNode = os.Getenv("CRE_CHAIN_CONSENSUS_EMPTY_QUERY") != ""
-	if rp.emptyQueryLeaderNode {
-		logger.Warnw("TEST HACK ENABLED: this node will return EMPTY queries when it is the round leader " +
-			"(simulating a leader that never proposes requests to be processed)")
-	}
-
 	var err error
 	rp.enableMissingRequestRecovery, err = limits.MakeGateLimiter(limitsFactory, cresettings.Default.MissingRequestRecoveryEnabled)
 	if err != nil {
@@ -110,15 +98,6 @@ func newReportingPlugin(
 }
 
 func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
-	// TEST HACK (branch: empty-query-leader-node): libocr invokes Query only on the round
-	// leader, so returning an empty ID list here makes every round this node leads omit
-	// all pending requests. Other nodes then propose them via MissingRequestIDs, and —
-	// once the recovery setting is enabled DON-wide — report their outcomes in the next
-	// round. Enable by setting CRE_CHAIN_CONSENSUS_EMPTY_QUERY on this node only.
-	if rp.emptyQueryLeaderNode {
-		rp.logger.Infow("TEST HACK: returning empty query (leader stall simulation)")
-		return proto.Marshal(&ctypes.Query{})
-	}
 	ids, err := rp.requestsStore.GetRequestIDs(rp.config.MaxBatchSize)
 	if err != nil {
 		return types.Query{}, fmt.Errorf("failed to get request ready for processing IDs: %w", err)
@@ -309,10 +288,6 @@ func (rp *reportingPlugin) addObservationsOfPrevMissingRequests(ctx context.Cont
 	if len(leaderMissingRequests) == 0 {
 		return nil
 	}
-
-	rp.logger.Infow("Adding observations for missing requests. It's expected to happen occasionally. "+
-		"If you see this log line frequently there might be an issue in communication between the current leader and workflow DON",
-		"leaderMissingRequests", leaderMissingRequests)
 
 	// Prioritize the original list of missing requests from the previous outcome.
 	// This handles cases where the leader's order of requests in query is different from the majority of other nodes.
@@ -624,6 +599,7 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 // whether missing-request recovery is enabled. This is a per-node, per-round capability flag
 // unrelated to any specific request ID, so it is voted on independently of per-request
 // observation quorum (which the aggregation loop in Outcome enforces on its own).
+// TODO: clean up settings flag and logic when all nodes in all envs support missing-request recovery: https://smartcontract-it.atlassian.net/browse/PLEX-3461
 func (rp *reportingPlugin) agreeOnEnableMissingRequestRecovery(aos []attributedObservation) bool {
 	minMatching := byzQuorumSize(rp.config.N, rp.config.F)
 	counter := 0
