@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/http_action
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/doyensec/safeurl v0.2.4
