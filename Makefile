@@ -22,7 +22,7 @@ protoc: ## Install protoc and protoc-gen-go
 	./script/install-protoc.sh 29.3
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v$(PROTOC_GEN_GO_VERSION)
 
-MOCKERY_VERSION := 2.53.5
+MOCKERY_VERSION := 2.53.7
 .PHONY: mockery
 mockery: ## Install mockery at the version specified in .tool-versions
 	go install github.com/vektra/mockery/v2@v$(MOCKERY_VERSION)
