@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/chain_capabilities/aptos
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/aptos-labs/aptos-go-sdk v1.12.1

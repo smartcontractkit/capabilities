@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/chain_capabilities/stellar
 
-go 1.26.6
+go 1.27.1
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260922114021-5cee95428866
