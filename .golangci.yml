@@ -88,7 +88,7 @@ linters:
       errorf: false
     exhaustive:
       default-signifies-exhaustive: true
-    gomodguard:
+    gomodguard_v2:
       blocked:
         local-replace-directives: false
     gosec:
