@@ -89,8 +89,7 @@ linters:
     exhaustive:
       default-signifies-exhaustive: true
     gomodguard_v2:
-      blocked:
-        local-replace-directives: false
+      local-replace-directives: false
     gosec:
       excludes:
         - G101
