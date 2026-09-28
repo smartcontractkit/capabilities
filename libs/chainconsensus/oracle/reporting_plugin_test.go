@@ -676,7 +676,7 @@ func TestAgreeOnChainHeight(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{F: 1}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			aos := make([]attributedObservation, len(tc.observedChainHeights))
 			for i, chainHeight := range tc.observedChainHeights {
 				aos[i] = attributedObservation{Observation: &types.Observation{ChainHeight: chainHeight}}
@@ -916,7 +916,7 @@ func TestOutcome(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr, observed := logger.TestObserved(t, zapcore.DebugLevel)
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(lggr), nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(lggr), nil, nil, test.GetConsensusMetrics(t))
 			var rawAOs []ocrtypes.AttributedObservation
 			for i := range tc.nodesObservations {
 				nodesObservations := &tc.nodesObservations[i]
@@ -996,7 +996,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			nodesObservations := make([]attributedObservation, 0, len(tc.nodesObservations))
 			for i, ob := range tc.nodesObservations {
 				nodesObservations = append(nodesObservations, attributedObservation{
@@ -1094,7 +1094,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			nodesObservations := make([]attributedObservation, 0, len(tc.nodesObservations))
 			for i, h := range tc.nodesObservations {
 				var ro *types.RequestObservation
@@ -1270,7 +1270,7 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
 				ro := tc.observations[i]
@@ -1391,7 +1391,7 @@ func TestAgreeOnObservationType(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
 				ob := &tc.observations[i]
@@ -1498,7 +1498,7 @@ func TestAggregateValue(t *testing.T) {
 	for _, tc := range testCases {
 		const id = "id"
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
 				ob := tc.observations[i]
@@ -1823,7 +1823,7 @@ func TestAgreeOnEventuallyConsistentValue_TwoFPlusOne(t *testing.T) {
 	const id = "req-2f1"
 	// N=7, F=2 → require 5 identical (2F+1)
 	plugin := newReportingPlugin(Config{
-		ReportingPluginConfig:   ocr3types.ReportingPluginConfig{F: 2, N: 7},
+		F: 2, N: 7,
 		MinResponsesToAggregate: 5,
 	}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 
@@ -1860,7 +1860,7 @@ func TestAgreeOnEventuallyConsistentValue_TwoFPlusOne(t *testing.T) {
 
 	t.Run("default F+1 still works when MinIdenticalObservations is zero", func(t *testing.T) {
 		pluginDefault := newReportingPlugin(Config{
-			ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 2, N: 7},
+			F: 2, N: 7,
 		}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 		// 3 of 7 matching → F+1=3, should succeed
 		aos := makeAos([]string{"v", "v", "v", "a", "b", "c", "d"})

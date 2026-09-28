@@ -46,9 +46,7 @@ func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.O
 	initialOverhead := calculateMessageSize(&oracletypes.Outcome{HistoricalOutcomes: historicalOutcomes})
 
 	return &OutcomeBatch{
-		Outcome: oracletypes.Outcome{
-			HistoricalOutcomes: historicalOutcomes,
-		},
+		HistoricalOutcomes:             historicalOutcomes,
 		lggr:                           lggr,
 		outctx:                         outctx,
 		currentSerialisedBatchSize:     initialOverhead,

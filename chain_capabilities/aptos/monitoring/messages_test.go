@@ -34,16 +34,14 @@ func newMessageBuilder() *monitoring.MessageBuilder {
 
 func newTelemetryContext() monitoring.TelemetryContext {
 	return monitoring.TelemetryContext{
-		TsStart: 1234,
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID:               "workflow-id",
-			WorkflowOwner:            "workflow-owner",
-			WorkflowExecutionID:      "workflow-execution-id",
-			WorkflowName:             hex.EncodeToString([]byte("aptos workflow")),
-			WorkflowDonID:            7,
-			WorkflowDonConfigVersion: 2,
-			ReferenceID:              "step-1",
-		},
+		TsStart:                  1234,
+		WorkflowID:               "workflow-id",
+		WorkflowOwner:            "workflow-owner",
+		WorkflowExecutionID:      "workflow-execution-id",
+		WorkflowName:             hex.EncodeToString([]byte("aptos workflow")),
+		WorkflowDonID:            7,
+		WorkflowDonConfigVersion: 2,
+		ReferenceID:              "step-1",
 	}
 }
 

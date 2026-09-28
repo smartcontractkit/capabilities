@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
@@ -64,9 +63,7 @@ func TestConsensusRequest_SendTimeout_DeadlineExceededWhenQuorumReached(t *testi
 
 func testRequestMetadata(workflowExecutionID, referenceID string) ConsensusRequestMetadata {
 	return ConsensusRequestMetadata{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowExecutionID: workflowExecutionID,
-			ReferenceID:         referenceID,
-		},
+		WorkflowExecutionID: workflowExecutionID,
+		ReferenceID:         referenceID,
 	}
 }
