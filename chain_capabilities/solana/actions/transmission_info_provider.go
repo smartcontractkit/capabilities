@@ -23,6 +23,7 @@ import (
 )
 
 const eventReportInProgress = "ReportInProgress"
+const eventReportProcessed = "ReportProcessed"
 
 // transmissionLogSubkeyPath indexes ReportInProgress by transmission_id.
 var transmissionLogSubkeyPath = []string{"TransmissionId"}
@@ -35,6 +36,7 @@ type logReader struct {
 	forwarderProgramID solana.PublicKey
 	forwarderState     solana.PublicKey
 	sigInProgress      soltypes.EventSignature
+	sigProcessed       soltypes.EventSignature
 }
 
 // OnChainTransmissionInfoProvider uses the ExecutionState PDA for success/failure and
@@ -57,6 +59,9 @@ func newOnChainTransmissionInfoProvider(ctx context.Context, programID, forwarde
 	}
 	if err := lr.unregisterLegacyInProgressFilter(ctx); err != nil {
 		return nil, fmt.Errorf("failed to unregister legacy ReportInProgress log filter: %w", err)
+	}
+	if err := lr.registerProcessedFilter(ctx); err != nil {
+
 	}
 	return &OnChainTransmissionInfoProvider{
 		SolanaService:      s,
@@ -204,6 +209,26 @@ func (lr *logReader) registerInProgressFilter(ctx context.Context) error {
 	}
 
 	lr.sigInProgress = sigInProgress
+	return nil
+}
+
+func (lr *logReader) registerProcessedFilter(ctx context.Context) error {
+	idlJSON := []byte(contracts.FetchForwarderIDL())
+	sigProcessed := soltypes.EventSignature(lptypes.NewEventSignatureFromName(eventReportProcessed))
+	err := lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
+		Name:            eventReportProcessed + "_" + lr.forwarderProgramID.String() + "_v2",
+		Address:         soltypes.PublicKey(lr.forwarderProgramID),
+		EventName:       eventReportInProgress,
+		EventSig:        sigProcessed,
+		ContractIdlJSON: idlJSON,
+		SubkeyPaths:     [][]string{transmissionLogSubkeyPath, stateSubkeyPath},
+		IncludeReverted: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to register ReportInProgress filter for forwarder: %w", err)
+	}
+
+	lr.sigProcessed = sigProcessed
 	return nil
 }
 
