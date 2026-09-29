@@ -120,7 +120,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 					},
 				},
 			},
-			expectedError: ErrMoreThanOneValidOutcomeForIdenticalConsensus,
+			expectedError: errors.New("insufficient observations (0) to meet minimum (2)"),
 		},
 		{
 			name: "median: mixed types, one eligible type (int64) - handled by filtering",

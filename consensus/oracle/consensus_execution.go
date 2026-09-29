@@ -104,8 +104,8 @@ func handleFieldsMapAggregation(
 				switch obs.Value.(type) {
 				case *valuespb.Value_MapValue:
 					fields := obs.GetMapValue().GetFields()
-					if _, ok := fields[key]; ok {
-						obsForKey = append(obsForKey, fields[key])
+					if v, ok := fields[key]; ok {
+						obsForKey = append(obsForKey, v)
 					}
 				default:
 					lggr.Debugw("unsupported observation type", "observationIndex", i, "key", key, "valueType", fmt.Sprintf("%T", obs.Value))
