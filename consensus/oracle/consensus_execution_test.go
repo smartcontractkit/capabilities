@@ -100,6 +100,29 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			expectedError: ErrMoreThanOneValidOutcomeForIdenticalConsensus,
 		},
 		{
+			name: "median: nil value provided",
+			f:    1,
+			observations: []*valuespb.Value{
+				valuespb.NewMapValue(map[string]*valuespb.Value{}),
+				valuespb.NewMapValue(map[string]*valuespb.Value{}),
+				valuespb.NewMapValue(map[string]*valuespb.Value{}),
+			},
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_FieldsMap{
+					FieldsMap: &sdk.FieldsMap{
+						Fields: map[string]*sdk.ConsensusDescriptor{
+							"price": &sdk.ConsensusDescriptor{
+								Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+									Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedError: errors.New("insufficient observations (0) to meet minimum (2)"),
+		},
+		{
 			name: "median: mixed types, one eligible type (int64) - handled by filtering",
 			f:    2,
 			observations: []*valuespb.Value{
@@ -404,6 +427,17 @@ func Test_handleMedianAggregation(t *testing.T) {
 			f:               1,
 		},
 		{
+			name: "decimal median: nil coefficient",
+			observations: []*valuespb.Value{
+				{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{}}},
+				{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{}}},
+				{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{}}},
+			},
+			expectedOutcome: nil,
+			expectedError:   errors.New("failed to calculate decimal median: insufficient observations to reach consensus"),
+			f:               1,
+		},
+		{
 			name: "bigint median: basic five values",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewBigInt(big.NewInt(300))), values.Proto(values.NewBigInt(big.NewInt(400))),
@@ -553,4 +587,73 @@ func firstKey(m map[string]bool) string {
 		return k
 	}
 	return ""
+}
+
+func FuzzCalculateOutcomeForObservations(f *testing.F) {
+	aggregation := func(a sdk.AggregationType) *sdk.ConsensusDescriptor {
+		return &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: a}}
+	}
+	fieldsMap := func(fields map[string]*sdk.ConsensusDescriptor) *sdk.ConsensusDescriptor {
+		return &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_FieldsMap{FieldsMap: &sdk.FieldsMap{Fields: fields}}}
+	}
+	mustMarshal := func(m proto.Message) []byte {
+		b, err := proto.Marshal(m)
+		require.NoError(f, err)
+		return b
+	}
+	observationsOf := func(obs ...*valuespb.Value) []byte {
+		return mustMarshal(&valuespb.List{Fields: obs})
+	}
+
+	ints := observationsOf(valuespb.NewInt64Value(1), valuespb.NewInt64Value(2), valuespb.NewInt64Value(3))
+	lists := observationsOf(
+		valuespb.NewListValue([]*valuespb.Value{valuespb.NewStringValue("a"), valuespb.NewStringValue("b")}),
+		valuespb.NewListValue([]*valuespb.Value{valuespb.NewStringValue("a"), valuespb.NewStringValue("c")}),
+		valuespb.NewListValue([]*valuespb.Value{valuespb.NewStringValue("a")}),
+	)
+	maps := observationsOf(
+		valuespb.NewMapValue(map[string]*valuespb.Value{"price": valuespb.NewInt64Value(15)}),
+		valuespb.NewMapValue(map[string]*valuespb.Value{"price": valuespb.NewInt64Value(25)}),
+		valuespb.NewMapValue(map[string]*valuespb.Value{}),
+	)
+	emptyMaps := observationsOf(
+		valuespb.NewMapValue(map[string]*valuespb.Value{}),
+		valuespb.NewMapValue(map[string]*valuespb.Value{}),
+		valuespb.NewMapValue(map[string]*valuespb.Value{}),
+	)
+	defaultPrice := mustMarshal(valuespb.NewMapValue(map[string]*valuespb.Value{"price": valuespb.NewInt64Value(0)}))
+	priceMedian := mustMarshal(fieldsMap(map[string]*sdk.ConsensusDescriptor{
+		"price": aggregation(sdk.AggregationType_AGGREGATION_TYPE_MEDIAN),
+	}))
+
+	for _, a := range sdk.AggregationType_value {
+		desc := mustMarshal(aggregation(sdk.AggregationType(a)))
+		f.Add(ints, desc, []byte(nil), uint8(1), false)
+		f.Add(lists, desc, []byte(nil), uint8(1), true)
+	}
+	f.Add(maps, priceMedian, defaultPrice, uint8(1), true)
+	f.Add(maps, priceMedian, []byte(nil), uint8(0), false)
+	f.Add(emptyMaps, priceMedian, []byte(nil), uint8(1), false)
+
+	f.Fuzz(func(t *testing.T, observationsBytes, descriptorBytes, defaultBytes []byte, fault uint8, medianQuorumFlag bool) {
+		var observations valuespb.List
+		if err := proto.Unmarshal(observationsBytes, &observations); err != nil {
+			t.Skip()
+		}
+		var descriptor sdk.ConsensusDescriptor
+		if err := proto.Unmarshal(descriptorBytes, &descriptor); err != nil {
+			t.Skip()
+		}
+		var defaultValue *valuespb.Value
+		if defaultBytes != nil {
+			defaultValue = &valuespb.Value{}
+			if err := proto.Unmarshal(defaultBytes, defaultValue); err != nil {
+				t.Skip()
+			}
+		}
+
+		require.NotPanics(t, func() {
+			_, _ = CalculateOutcomeForObservations(logger.Nop(), observations.GetFields(), &descriptor, defaultValue, int(fault), medianQuorumFlag)
+		})
+	})
 }
