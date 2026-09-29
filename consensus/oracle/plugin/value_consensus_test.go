@@ -15,7 +15,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -648,20 +647,18 @@ func Test_WithOutcomeContext(t *testing.T) {
 
 func newRequestMetaData() oracle.ConsensusRequestMetadata {
 	return oracle.ConsensusRequestMetadata{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID:    "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
-			WorkflowOwner: "1139525c34de895c8fa68006bd634387a9f1192a",
+		WorkflowID:    "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
+		WorkflowOwner: "1139525c34de895c8fa68006bd634387a9f1192a",
 
-			WorkflowExecutionID:      generateRandomHexString(32),
-			WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
-			WorkflowDonID:            1,
-			WorkflowDonConfigVersion: 1,
-			ReferenceID:              "01",
-			DecodedWorkflowName:      "test-workflow-decoded",
-			SpendLimits:              nil,
-		},
-		KeyBundleID: "",
-		ReportID:    generateRandomHexString(2),
+		WorkflowExecutionID:      generateRandomHexString(32),
+		WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
+		WorkflowDonID:            1,
+		WorkflowDonConfigVersion: 1,
+		ReferenceID:              "01",
+		DecodedWorkflowName:      "test-workflow-decoded",
+		SpendLimits:              nil,
+		KeyBundleID:              "",
+		ReportID:                 generateRandomHexString(2),
 	}
 }
 

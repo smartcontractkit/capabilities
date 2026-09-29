@@ -324,10 +324,8 @@ func (lts *SolanaLogTriggerService) close() error {
 func (lts *SolanaLogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 	lts.lggr.Debugf("Starting cleanUpStaleFilters")
 	telemetryContext := monitoring.TelemetryContext{
-		TsStart: time.Now().UnixMilli(),
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID: "solana-log-trigger-cleanup",
-		},
+		TsStart:    time.Now().UnixMilli(),
+		WorkflowID: "solana-log-trigger-cleanup",
 	}
 
 	filterNames, err := lts.SolanaService.GetFiltersNames(ctx)
