@@ -104,7 +104,9 @@ func handleFieldsMapAggregation(
 				switch obs.Value.(type) {
 				case *valuespb.Value_MapValue:
 					fields := obs.GetMapValue().GetFields()
-					obsForKey = append(obsForKey, fields[key])
+					if _, ok := fields[key]; ok {
+						obsForKey = append(obsForKey, fields[key])
+					}
 				default:
 					lggr.Debugw("unsupported observation type", "observationIndex", i, "key", key, "valueType", fmt.Sprintf("%T", obs.Value))
 					continue
@@ -558,7 +560,7 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 
 	observationsByType := map[reflect.Type][]*valuespb.Value{}
 	for _, observation := range observationProtos {
-		if observation.Value == nil {
+		if observation == nil || observation.Value == nil {
 			continue
 		}
 
