@@ -2,14 +2,17 @@ package oracle
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 
@@ -438,6 +441,17 @@ func Test_handleMedianAggregation(t *testing.T) {
 			f:               1,
 		},
 		{
+			name: "decimal median: extreme exponent is excluded",
+			observations: []*valuespb.Value{
+				valuespb.NewDecimalValue(decimal.New(1, 0)),
+				valuespb.NewDecimalValue(decimal.New(2, 0)),
+				valuespb.NewDecimalValue(decimal.New(3, 0)),
+				{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(1)), Exponent: math.MaxInt32}}},
+			},
+			expectedOutcome: valuespb.NewDecimalValue(decimal.New(2, 0)),
+			f:               1,
+		},
+		{
 			name: "bigint median: basic five values",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewBigInt(big.NewInt(300))), values.Proto(values.NewBigInt(big.NewInt(400))),
@@ -626,14 +640,62 @@ func FuzzCalculateOutcomeForObservations(f *testing.F) {
 		"price": aggregation(sdk.AggregationType_AGGREGATION_TYPE_MEDIAN),
 	}))
 
+	// Byte-level mutation rarely synthesizes nested messages like Decimal or Timestamp,
+	// so every Value variant that reaches values.FromProto needs a seed of its own.
+	uints := observationsOf(valuespb.NewUInt64Value(0), valuespb.NewUInt64Value(1), valuespb.NewUInt64Value(math.MaxUint64))
+	floats := observationsOf(
+		valuespb.NewFloat64(math.NaN()),
+		valuespb.NewFloat64(math.Inf(1)),
+		valuespb.NewFloat64(math.Inf(-1)),
+		valuespb.NewFloat64(math.Copysign(0, -1)),
+		valuespb.NewFloat64(0),
+		valuespb.NewFloat64(1.5),
+	)
+	decimals := observationsOf(
+		valuespb.NewDecimalValue(decimal.New(15, -1)),
+		valuespb.NewDecimalValue(decimal.New(-15, 1)),
+		&valuespb.Value{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{}}},
+		&valuespb.Value{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{Coefficient: &valuespb.BigInt{}, Exponent: math.MaxInt32}}},
+		&valuespb.Value{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{Coefficient: &valuespb.BigInt{AbsVal: []byte{1}, Sign: -1}, Exponent: math.MinInt32}}},
+	)
+	bigints := observationsOf(
+		valuespb.NewBigIntValue(0, nil),
+		valuespb.NewBigIntValue(-1, []byte{1}),
+		valuespb.NewBigIntValue(1, []byte{0, 0, 1}),
+		valuespb.NewBigIntValue(1, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}),
+		&valuespb.Value{Value: &valuespb.Value_BigintValue{}},
+	)
+	times := observationsOf(
+		valuespb.NewTime(time.Unix(0, 0)),
+		valuespb.NewTime(time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)),
+		&valuespb.Value{Value: &valuespb.Value_TimeValue{}},
+		&valuespb.Value{Value: &valuespb.Value_TimeValue{TimeValue: &timestamppb.Timestamp{Seconds: -1, Nanos: 2e9}}},
+		&valuespb.Value{Value: &valuespb.Value_TimeValue{TimeValue: &timestamppb.Timestamp{Seconds: math.MinInt64}}},
+	)
+	mixed := observationsOf(
+		valuespb.NewInt64Value(1), valuespb.NewInt64Value(2), valuespb.NewInt64Value(3),
+		valuespb.NewStringValue("a"), valuespb.NewStringValue("b"), valuespb.NewStringValue("c"),
+	)
+	withEmptyValues := observationsOf(
+		&valuespb.Value{}, &valuespb.Value{}, &valuespb.Value{},
+		valuespb.NewInt64Value(1),
+		valuespb.NewListValue([]*valuespb.Value{{}, valuespb.NewStringValue("a")}),
+	)
+
 	for _, a := range sdk.AggregationType_value {
 		desc := mustMarshal(aggregation(sdk.AggregationType(a)))
 		f.Add(ints, desc, []byte(nil), uint8(1), false)
 		f.Add(lists, desc, []byte(nil), uint8(1), true)
+		for _, obs := range [][]byte{uints, floats, decimals, bigints, times, mixed, withEmptyValues} {
+			f.Add(obs, desc, []byte(nil), uint8(1), false)
+			f.Add(obs, desc, []byte(nil), uint8(1), true)
+		}
 	}
 	f.Add(maps, priceMedian, defaultPrice, uint8(1), true)
 	f.Add(maps, priceMedian, []byte(nil), uint8(0), false)
 	f.Add(emptyMaps, priceMedian, []byte(nil), uint8(1), false)
+
+	deterministic := proto.MarshalOptions{Deterministic: true}
 
 	f.Fuzz(func(t *testing.T, observationsBytes, descriptorBytes, defaultBytes []byte, fault uint8, medianQuorumFlag bool) {
 		var observations valuespb.List
@@ -652,8 +714,38 @@ func FuzzCalculateOutcomeForObservations(f *testing.F) {
 			}
 		}
 
-		require.NotPanics(t, func() {
-			_, _ = CalculateOutcomeForObservations(logger.Nop(), observations.GetFields(), &descriptor, defaultValue, int(fault), medianQuorumFlag)
-		})
+		// Compared via deterministic encoding rather than proto.Equal, which treats NaN as unequal to itself.
+		encode := func(vs ...*valuespb.Value) []byte {
+			b, err := deterministic.Marshal(&valuespb.List{Fields: vs})
+			require.NoError(t, err)
+			return b
+		}
+		calculate := func(obs []*valuespb.Value) (*valuespb.Value, error) {
+			var (
+				outcome *valuespb.Value
+				err     error
+			)
+			require.NotPanics(t, func() {
+				outcome, err = CalculateOutcomeForObservations(logger.Nop(), obs, &descriptor, defaultValue, int(fault), medianQuorumFlag)
+			})
+			return outcome, err
+		}
+
+		obs := observations.GetFields()
+		inputsBefore := encode(append(slices.Clone(obs), defaultValue)...)
+		outcome, err := calculate(obs)
+		require.Equal(t, inputsBefore, encode(append(slices.Clone(obs), defaultValue)...), "inputs were mutated")
+
+		// Consensus must not depend on the order in which observations arrive.
+		if len(obs) > 1 {
+			reversed := slices.Clone(obs)
+			slices.Reverse(reversed)
+			rotated := append(slices.Clone(obs[1:]), obs[0])
+			for _, permuted := range [][]*valuespb.Value{reversed, rotated} {
+				permutedOutcome, permutedErr := calculate(permuted)
+				require.Equal(t, fmt.Sprint(err), fmt.Sprint(permutedErr))
+				require.Equal(t, encode(outcome), encode(permutedOutcome))
+			}
+		}
 	})
 }
