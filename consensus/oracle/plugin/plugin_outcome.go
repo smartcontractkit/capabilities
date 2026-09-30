@@ -107,12 +107,25 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
+	// Before doing anything else, let's iterate over the observations and determine what flags are enabled.
 	median2fPlus1QuorumVotes := 0
+	includeAllTimestampsVotes := 0
 	for _, obs := range observations {
 		if obs.Median_2Fplus1QuorumFlag {
 			median2fPlus1QuorumVotes++
 		}
 
+		if obs.IncludeAllTimestampsFlag {
+			includeAllTimestampsVotes++
+		}
+	}
+
+	includeAllTimestampsQuorum := includeAllTimestampsVotes >= r.f+1
+	r.metrics.IncIncludeAllTimestamps(ctx, "aggregated", includeAllTimestampsQuorum)
+	stricterMedianQuorum := median2fPlus1QuorumVotes >= r.f+1
+	r.metrics.IncStricterMedianQuorum(ctx, "aggregated", stricterMedianQuorum)
+
+	for _, obs := range observations {
 		// Does the observation have a valid input?
 		if obs.Input == nil {
 			lggr.Warnw("observation missing input", "requestID", requestID, "observerMetadata", obs.Metadata)
@@ -131,11 +144,17 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 			continue
 		}
 
+		if includeAllTimestampsQuorum {
+			timestamps = append(timestamps, obs.ReceivedAt)
+		}
+
 		// Is the observation an error or a value?
 		switch inputObservation := obs.Input.GetObservation().(type) {
 		case *sdk.SimpleConsensusInputs_Value:
 			obsValues = append(obsValues, inputObservation.Value)
-			timestamps = append(timestamps, obs.ReceivedAt)
+			if !includeAllTimestampsQuorum {
+				timestamps = append(timestamps, obs.ReceivedAt)
+			}
 		case *sdk.SimpleConsensusInputs_Error:
 			obsErrors = append(obsErrors, inputObservation.Error)
 		}
@@ -156,9 +175,6 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 			"consensus calculation failed: received >= f+1 error observations",
 			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, consensusMDD, timestamp)
 	}
-
-	stricterMedianQuorum := median2fPlus1QuorumVotes >= r.f+1
-	r.metrics.IncStricterMedianQuorum(ctx, "aggregated", stricterMedianQuorum)
 
 	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f, stricterMedianQuorum)
 	if err != nil {
