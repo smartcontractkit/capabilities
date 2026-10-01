@@ -541,6 +541,10 @@ func (c *consensusCapability) Close() error {
 		c.lggr.Errorw("error closing stricter median quorum limiter", "err", err)
 	}
 
+	if err := c.includeAllTimestamps.Close(); err != nil {
+		c.lggr.Errorw("error closing include all timestamps limiter", "err", err)
+	}
+
 	if c.oracle != nil {
 		if err := c.oracle.Close(context.Background()); err != nil {
 			return fmt.Errorf("error when closing oracle: %w", err)
