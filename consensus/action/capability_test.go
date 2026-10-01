@@ -560,3 +560,68 @@ func Test_SendRequest_StricterMedianQuorum(t *testing.T) {
 		})
 	}
 }
+
+func Test_SendRequest_IncludeAllTimestamps(t *testing.T) {
+	activeFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activeUntil := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	activePeriod := settings.Range[config.Timestamp]{
+		Lower: config.NewTimestamp(activeFrom),
+		Upper: config.NewTimestamp(activeUntil),
+	}
+
+	testCases := []struct {
+		name               string
+		executionTimestamp time.Time
+		closeLimiter       bool
+		expectedFlag       bool
+		expectWarning      bool
+	}{
+		{name: "inside the active period", executionTimestamp: activeFrom.Add(time.Hour), expectedFlag: true},
+		{name: "before the active period", executionTimestamp: activeFrom.Add(-time.Hour)},
+		{name: "after the active period", executionTimestamp: activeUntil.Add(time.Hour)},
+		{name: "unset execution timestamp", executionTimestamp: time.Time{}},
+		{name: "limiter error defaults to off", executionTimestamp: activeFrom.Add(time.Hour), closeLimiter: true, expectWarning: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lggr, logs := logger.TestObserved(t, zapcore.WarnLevel)
+
+			capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
+			require.NoError(t, err)
+			capability.requestTimeout = time.Minute
+
+			limiter := limits.NewRangeLimiter(activePeriod)
+			if tc.closeLimiter {
+				require.NoError(t, limiter.Close())
+			}
+			capability.includeAllTimestamps = limiter
+
+			servicetest.Run(t, capability.reqHandler)
+
+			metadata := newRequestMetaData()
+			metadata.ExecutionTimestamp = tc.executionTimestamp
+			md := oracle.ConsensusRequestMetadata{
+				RequestMetadata: metadata,
+				RequestType:     types.RequestType_VALUE_CONSENSUS,
+			}
+
+			capability.sendRequest(t.Context(), &sdk.SimpleConsensusInputs{}, md)
+
+			var req *oracle.ConsensusRequest
+			require.Eventually(t, func() bool {
+				req = capability.reqStore.Get(md.RequestID())
+				return req != nil
+			}, 5*time.Second, 10*time.Millisecond)
+
+			require.Equal(t, tc.expectedFlag, req.IncludeAllTimestamps)
+
+			warnings := logs.FilterMessage("error evaluating includeAllTimestamps, defaulting to off").Len()
+			if tc.expectWarning {
+				require.Equal(t, 1, warnings)
+			} else {
+				require.Zero(t, warnings)
+			}
+		})
+	}
+}

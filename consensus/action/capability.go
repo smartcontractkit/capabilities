@@ -79,6 +79,7 @@ type consensusCapability struct {
 
 	maxRequestSizeBytes       limits.BoundLimiter[config.Size]
 	stricterMedianQuorum      limits.RangeLimiter[config.Timestamp]
+	includeAllTimestamps      limits.RangeLimiter[config.Timestamp]
 	valueConsensusKeyBundleID string
 	maxRequestOutcomeSize     int
 
@@ -114,6 +115,11 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 		return nil, fmt.Errorf("error creating stricter median quorum limiter: %w", err)
 	}
 
+	includeAllTimestamps, err := limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureConsensusIncludeAllTimestampsActivePeriod)
+	if err != nil {
+		return nil, fmt.Errorf("error creating include all timestamps limiter: %w", err)
+	}
+
 	return &consensusCapability{
 		lggr:                     lggr,
 		reqStore:                 reqStore,
@@ -121,6 +127,7 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 		metrics:                  metrics,
 		limitsFactory:            limitsFactory,
 		stricterMedianQuorum:     stricterMedianQuorum,
+		includeAllTimestamps:     includeAllTimestamps,
 		observationQuorumTracker: oracle.NewObservationQuorumTracker(),
 	}, nil
 }
@@ -423,8 +430,15 @@ func (c *consensusCapability) sendRequest(ctx context.Context, input *sdk.Simple
 	}
 	c.metrics.IncStricterMedianQuorum(ctx, "request", stricterMedianQuorum)
 
+	err = c.includeAllTimestamps.Check(ctx, config.NewTimestamp(consensusRequestMetaData.ExecutionTimestamp))
+	includeAllTimestamps := err == nil
+	if _, outOfRange := errors.AsType[limits.ErrorRangeLimited[config.Timestamp]](err); err != nil && !outOfRange {
+		c.lggr.Warnw("error evaluating includeAllTimestamps, defaulting to off", "error", err)
+	}
+	c.metrics.IncIncludeAllTimestamps(ctx, "request", includeAllTimestamps)
+
 	req := oracle.NewConsensusRequest(input, time.Now(), time.Now().Add(requestTimeout), callbackChan,
-		consensusRequestMetaData, c.observationQuorumTracker, stricterMedianQuorum,
+		consensusRequestMetaData, c.observationQuorumTracker, stricterMedianQuorum, includeAllTimestamps,
 	)
 
 	c.reqHandler.SendRequest(ctx, req)
@@ -525,6 +539,10 @@ func (c *consensusCapability) Close() error {
 
 	if err := c.stricterMedianQuorum.Close(); err != nil {
 		c.lggr.Errorw("error closing stricter median quorum limiter", "err", err)
+	}
+
+	if err := c.includeAllTimestamps.Close(); err != nil {
+		c.lggr.Errorw("error closing include all timestamps limiter", "err", err)
 	}
 
 	if c.oracle != nil {

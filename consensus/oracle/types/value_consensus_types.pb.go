@@ -326,6 +326,7 @@ type RequestObservation struct {
 	// Deprecated: Marked as deprecated in value_consensus_types.proto.
 	UpdateErrorHandlingFlag  bool `protobuf:"varint,5,opt,name=update_error_handling_flag,json=updateErrorHandlingFlag,proto3" json:"update_error_handling_flag,omitempty"` // migrate system errors to user errors
 	Median_2Fplus1QuorumFlag bool `protobuf:"varint,6,opt,name=median_2fplus1_quorum_flag,json=median2fplus1QuorumFlag,proto3" json:"median_2fplus1_quorum_flag,omitempty"`
+	IncludeAllTimestampsFlag bool `protobuf:"varint,7,opt,name=include_all_timestamps_flag,json=includeAllTimestampsFlag,proto3" json:"include_all_timestamps_flag,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -400,6 +401,13 @@ func (x *RequestObservation) GetUpdateErrorHandlingFlag() bool {
 func (x *RequestObservation) GetMedian_2Fplus1QuorumFlag() bool {
 	if x != nil {
 		return x.Median_2Fplus1QuorumFlag
+	}
+	return false
+}
+
+func (x *RequestObservation) GetIncludeAllTimestampsFlag() bool {
+	if x != nil {
+		return x.IncludeAllTimestampsFlag
 	}
 	return false
 }
@@ -840,7 +848,7 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05Query\x12\x1e\n" +
 	"\n" +
 	"requestIDs\x18\x01 \x03(\tR\n" +
-	"requestIDs\"\xb8\x03\n" +
+	"requestIDs\"\xf7\x03\n" +
 	"\x12RequestObservation\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x128\n" +
 	"\x05input\x18\x02 \x01(\v2\".sdk.v1alpha.SimpleConsensusInputsR\x05input\x12;\n" +
@@ -848,7 +856,8 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"receivedAt\x12i\n" +
 	"1remove_lib_use_in_failure_message_formatting_flag\x18\x04 \x01(\bB\x02\x18\x01R*removeLibUseInFailureMessageFormattingFlag\x12?\n" +
 	"\x1aupdate_error_handling_flag\x18\x05 \x01(\bB\x02\x18\x01R\x17updateErrorHandlingFlag\x12;\n" +
-	"\x1amedian_2fplus1_quorum_flag\x18\x06 \x01(\bR\x17median2fplus1QuorumFlag\"\xd3\x01\n" +
+	"\x1amedian_2fplus1_quorum_flag\x18\x06 \x01(\bR\x17median2fplus1QuorumFlag\x12=\n" +
+	"\x1binclude_all_timestamps_flag\x18\a \x01(\bR\x18includeAllTimestampsFlag\"\xd3\x01\n" +
 	"\vObservation\x12X\n" +
 	"\fobservations\x18\x01 \x03(\v24.value_consensus_types.Observation.ObservationsEntryR\fobservations\x1aj\n" +
 	"\x11ObservationsEntry\x12\x10\n" +

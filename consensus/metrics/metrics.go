@@ -20,6 +20,7 @@ type Metrics struct {
 	observationBatchSizeHistogram metric.Float64Histogram
 	outcomeBatchSizeHistogram     metric.Float64Histogram
 	stricterMedianQuorum          metric.Int64Counter
+	includeAllTimestamps          metric.Int64Counter
 }
 
 // NewMetrics creates a new instance of Metrics
@@ -114,6 +115,14 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create stricter median quorum counter: %w", err)
 	}
 
+	m.includeAllTimestamps, err = meter.Int64Counter(
+		"consensus_capability_include_all_timestamps",
+		metric.WithDescription("Number of requests by include all timestamps flag, per stage (request: local flag, aggregated: outcome after voting)"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create include all timestamps counter: %w", err)
+	}
+
 	return nil
 }
 
@@ -143,6 +152,13 @@ func (m *Metrics) RecordOutcomeBatchSize(ctx context.Context, size float64) {
 
 func (m *Metrics) IncStricterMedianQuorum(ctx context.Context, stage string, enabled bool) {
 	m.stricterMedianQuorum.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("stage", stage),
+		attribute.Bool("enabled", enabled),
+	))
+}
+
+func (m *Metrics) IncIncludeAllTimestamps(ctx context.Context, stage string, enabled bool) {
+	m.includeAllTimestamps.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("stage", stage),
 		attribute.Bool("enabled", enabled),
 	))
