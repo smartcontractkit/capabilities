@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -33,17 +32,15 @@ import (
 
 func testMetaData() oracle.ConsensusRequestMetadata {
 	return oracle.ConsensusRequestMetadata{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID:               "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
-			WorkflowOwner:            "1139525c34de895c8fa68006bd634387a9f1192a",
-			WorkflowExecutionID:      "0102030405060708091011121314151617181920212223242526272829303132",
-			WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
-			WorkflowDonID:            1,
-			WorkflowDonConfigVersion: 1,
-			ReferenceID:              "01",
-		},
-		KeyBundleID: "evm",
-		ReportID:    "aabb",
+		WorkflowID:               "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
+		WorkflowOwner:            "1139525c34de895c8fa68006bd634387a9f1192a",
+		WorkflowExecutionID:      "0102030405060708091011121314151617181920212223242526272829303132",
+		WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
+		WorkflowDonID:            1,
+		WorkflowDonConfigVersion: 1,
+		ReferenceID:              "01",
+		KeyBundleID:              "evm",
+		ReportID:                 "aabb",
 	}
 }
 
@@ -450,6 +447,7 @@ func Test_Outcome_RecordsObservationQuorumForTimeoutClassification(t *testing.T)
 		make(chan oracle.ConsensusResponse, 1),
 		md,
 		tracker,
+		false,
 	)
 	req.SendTimeout(ctx)
 

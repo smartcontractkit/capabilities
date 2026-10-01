@@ -21,8 +21,7 @@ func GetRequestID(methodName string, parts ...string) string {
 
 // UserErrorCode returns the appropriate error code for a user-facing HTTP action error.
 func UserErrorCode(err error) caperrors.ErrorCode {
-	var limitErr limits.LimitError
-	if errors.As(err, &limitErr) {
+	if _, ok := errors.AsType[limits.LimitError](err); ok {
 		return caperrors.LimitExceeded
 	}
 	return caperrors.InvalidArgument

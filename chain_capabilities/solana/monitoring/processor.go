@@ -47,6 +47,13 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 				return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
 			}
 		}
+	case *WriteReportComputeLimitMismatch:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportComputeLimitMismatch log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportComputeLimitMismatch(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportComputeLimitMismatch metrics: %w", err)
+		}
 	case *LogTriggerInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit LogTriggerInitiated log: %w", err)

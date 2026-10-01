@@ -24,7 +24,13 @@ var (
 	ErrMoreThanOneValidOutcomeForIdenticalConsensus      = errors.New("not identical, multiple values with f+1 occurrences")
 	ErrInsufficientObservations                          = errors.New("insufficient observations to reach consensus")
 	ErrNoSingleValueTypeMeetsThreshold                   = errors.New("no single value type meets the minimum observation threshold")
+	ErrDecimalExponentOutOfRange                         = errors.New("decimal exponent out of range")
 )
+
+// Comparing decimals rescales them to a common exponent, which costs time and memory
+// proportional to the exponent gap, so a single observation with an extreme exponent
+// could stall every node computing the median.
+const maxDecimalExponent = 1000
 
 // Constants for type names used in aggregation logic.
 var (
@@ -46,6 +52,7 @@ func CalculateOutcomeForObservations(
 	consensusDescriptor *sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
 	f int,
+	medianQuorumFlag bool,
 ) (*valuespb.Value, error) {
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
 	case *sdk.ConsensusDescriptor_Aggregation:
@@ -54,7 +61,7 @@ func CalculateOutcomeForObservations(
 		case sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL:
 			return handleIdenticalAggregation(lggr, observations, f)
 		case sdk.AggregationType_AGGREGATION_TYPE_MEDIAN:
-			return handleMedianAggregation(lggr, observations, f)
+			return handleMedianAggregation(lggr, observations, f, medianQuorumFlag)
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
 			return handleCommonPrefixAggregation(lggr, observations, f)
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
@@ -65,7 +72,7 @@ func CalculateOutcomeForObservations(
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
 	case *sdk.ConsensusDescriptor_FieldsMap:
-		return handleFieldsMapAggregation(lggr, observations, desc.FieldsMap.GetFields(), defaultValue, f)
+		return handleFieldsMapAggregation(lggr, observations, desc.FieldsMap.GetFields(), defaultValue, f, medianQuorumFlag)
 	default:
 		return nil, fmt.Errorf("unknown consensus descriptor type: %T", desc)
 	}
@@ -77,6 +84,7 @@ func handleFieldsMapAggregation(
 	desc map[string]*sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
 	f int,
+	medianQuorumFlag bool,
 ) (*valuespb.Value, error) {
 	if len(observations) < f+1 {
 		return nil, ErrInsufficientObservations
@@ -102,7 +110,9 @@ func handleFieldsMapAggregation(
 				switch obs.Value.(type) {
 				case *valuespb.Value_MapValue:
 					fields := obs.GetMapValue().GetFields()
-					obsForKey = append(obsForKey, fields[key])
+					if v, ok := fields[key]; ok {
+						obsForKey = append(obsForKey, v)
+					}
 				default:
 					lggr.Debugw("unsupported observation type", "observationIndex", i, "key", key, "valueType", fmt.Sprintf("%T", obs.Value))
 					continue
@@ -122,7 +132,7 @@ func handleFieldsMapAggregation(
 			}
 		}
 
-		aggregated, err = CalculateOutcomeForObservations(lggr, obsForKey, d, defaultForKey, f)
+		aggregated, err = CalculateOutcomeForObservations(lggr, obsForKey, d, defaultForKey, f, medianQuorumFlag)
 		if err == nil {
 			result[key] = aggregated
 			continue
@@ -157,16 +167,19 @@ func handleMedianAggregation(
 	lggr logger.Logger,
 	observations []*valuespb.Value,
 	f int,
+	medianQuorumFlag bool,
 ) (*valuespb.Value, error) {
 	var (
 		medianResult *valuespb.Value
 		err          error
 	)
 
-	// The Report function is guaranteed to receive at least 2f+1 distinct attributed
-	// observations. By assumption, up to f of these may be faulty, which includes
-	// being malformed. Conversely, there have to be at least f+1 valid observations.
-	filtered, medianType, err := filterObservations(observations, f+1)
+	medianQuorum := f + 1
+	if medianQuorumFlag {
+		medianQuorum = 2*f + 1
+	}
+
+	filtered, medianType, err := filterObservations(observations, medianQuorum)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +201,7 @@ func handleMedianAggregation(
 				return 0
 			},
 			f,
+			medianQuorumFlag,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate uint64 median: %w", err)
@@ -209,6 +223,7 @@ func handleMedianAggregation(
 				return 0
 			},
 			f,
+			medianQuorumFlag,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate int64 median: %w", err)
@@ -232,6 +247,7 @@ func handleMedianAggregation(
 				return 0
 			},
 			f,
+			medianQuorumFlag,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate float64 median: %w", err)
@@ -242,6 +258,9 @@ func handleMedianAggregation(
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
+				if exp := val.GetDecimalValue().GetExponent(); exp > maxDecimalExponent || exp < -maxDecimalExponent {
+					return d, fmt.Errorf("%w: %d", ErrDecimalExponentOutOfRange, exp)
+				}
 				v, err := values.FromProto(val)
 				if err != nil {
 					return d, err
@@ -252,6 +271,7 @@ func handleMedianAggregation(
 				return a.Cmp(b)
 			},
 			f,
+			medianQuorumFlag,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate decimal median: %w", err)
@@ -272,6 +292,7 @@ func handleMedianAggregation(
 				return a.Cmp(b)
 			},
 			f,
+			medianQuorumFlag,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate big.Int median: %w", err)
@@ -292,6 +313,7 @@ func handleMedianAggregation(
 				return a.Compare(b)
 			},
 			f,
+			medianQuorumFlag,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate time median: %w", err)
@@ -547,7 +569,7 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 
 	observationsByType := map[reflect.Type][]*valuespb.Value{}
 	for _, observation := range observationProtos {
-		if observation.Value == nil {
+		if observation == nil || observation.Value == nil {
 			continue
 		}
 
@@ -584,8 +606,14 @@ func getMedian[T any](
 	unwrap func(val *valuespb.Value) (T, error),
 	compare func(a, b T) int,
 	f int,
+	medianQuorumFlag bool,
 ) (*valuespb.Value, error) {
-	if len(observations) < f+1 {
+	medianQuorum := f + 1
+	if medianQuorumFlag {
+		medianQuorum = 2*f + 1
+	}
+
+	if len(observations) < medianQuorum {
 		return nil, ErrInsufficientObservations
 	}
 
@@ -601,7 +629,7 @@ func getMedian[T any](
 	}
 
 	// As values are filtered for unwrapping errors, need to re-check the number of observations is still sufficient for consensus
-	if len(unwrappedValues) < f+1 {
+	if len(unwrappedValues) < medianQuorum {
 		return nil, ErrInsufficientObservations
 	}
 
@@ -624,7 +652,7 @@ func reverseListValue(list *valuespb.Value) (*valuespb.Value, error) {
 	if list != nil {
 		switch list.Value.(type) {
 		case *valuespb.Value_ListValue:
-			reversed := list.GetListValue().GetFields()
+			reversed := slices.Clone(list.GetListValue().GetFields())
 			reverse(reversed)
 			return valuespb.NewListValue(reversed), nil
 		default:

@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
@@ -26,6 +25,7 @@ func TestConsensusRequest_SendTimeout_InsufficientObservations(t *testing.T) {
 		make(chan ConsensusResponse, 1),
 		testRequestMetadata("exec-1", "01"),
 		tracker,
+		false,
 	)
 
 	req.SendTimeout(context.Background())
@@ -50,6 +50,7 @@ func TestConsensusRequest_SendTimeout_DeadlineExceededWhenQuorumReached(t *testi
 		make(chan ConsensusResponse, 1),
 		testRequestMetadata("exec-1", "01"),
 		tracker,
+		false,
 	)
 
 	req.SendTimeout(context.Background())
@@ -62,9 +63,7 @@ func TestConsensusRequest_SendTimeout_DeadlineExceededWhenQuorumReached(t *testi
 
 func testRequestMetadata(workflowExecutionID, referenceID string) ConsensusRequestMetadata {
 	return ConsensusRequestMetadata{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowExecutionID: workflowExecutionID,
-			ReferenceID:         referenceID,
-		},
+		WorkflowExecutionID: workflowExecutionID,
+		ReferenceID:         referenceID,
 	}
 }

@@ -78,6 +78,7 @@ type consensusCapability struct {
 	requestTimeoutLock sync.RWMutex
 
 	maxRequestSizeBytes       limits.BoundLimiter[config.Size]
+	stricterMedianQuorum      limits.RangeLimiter[config.Timestamp]
 	valueConsensusKeyBundleID string
 	maxRequestOutcomeSize     int
 
@@ -108,12 +109,18 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 			requestStoreRequests: metrics.PendingConsensusRequests,
 		})
 
+	stricterMedianQuorum, err := limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureConsensusStricterMedianQuorumActivePeriod)
+	if err != nil {
+		return nil, fmt.Errorf("error creating stricter median quorum limiter: %w", err)
+	}
+
 	return &consensusCapability{
 		lggr:                     lggr,
 		reqStore:                 reqStore,
 		reqHandler:               requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
 		metrics:                  metrics,
 		limitsFactory:            limitsFactory,
+		stricterMedianQuorum:     stricterMedianQuorum,
 		observationQuorumTracker: oracle.NewObservationQuorumTracker(),
 	}, nil
 }
@@ -409,10 +416,18 @@ func (c *consensusCapability) sendRequest(ctx context.Context, input *sdk.Simple
 
 	callbackChan := make(chan oracle.ConsensusResponse, 1)
 
-	c.reqHandler.SendRequest(ctx,
-		oracle.NewConsensusRequest(input, time.Now(), time.Now().Add(requestTimeout), callbackChan,
-			consensusRequestMetaData, c.observationQuorumTracker,
-		))
+	err := c.stricterMedianQuorum.Check(ctx, config.NewTimestamp(consensusRequestMetaData.ExecutionTimestamp))
+	stricterMedianQuorum := err == nil
+	if _, outOfRange := errors.AsType[limits.ErrorRangeLimited[config.Timestamp]](err); err != nil && !outOfRange {
+		c.lggr.Warnw("error evaluating stricterMedianQuorum, defaulting to off", "error", err)
+	}
+	c.metrics.IncStricterMedianQuorum(ctx, "request", stricterMedianQuorum)
+
+	req := oracle.NewConsensusRequest(input, time.Now(), time.Now().Add(requestTimeout), callbackChan,
+		consensusRequestMetaData, c.observationQuorumTracker, stricterMedianQuorum,
+	)
+
+	c.reqHandler.SendRequest(ctx, req)
 	return callbackChan
 }
 
@@ -506,6 +521,10 @@ func (c *consensusCapability) Close() error {
 	err := c.reqHandler.Close()
 	if err != nil {
 		c.lggr.Errorw("error closing request handler", "err", err)
+	}
+
+	if err := c.stricterMedianQuorum.Close(); err != nil {
+		c.lggr.Errorw("error closing stricter median quorum limiter", "err", err)
 	}
 
 	if c.oracle != nil {
