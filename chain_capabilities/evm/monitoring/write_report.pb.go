@@ -75,9 +75,13 @@ func (x *WriteReportInitiated) GetExecutionContext() *monitoring.ExecutionContex
 }
 
 type WriteReportSuccess struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Req              *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
-	LogCount         int32                        `protobuf:"varint,2,opt,name=log_count,json=logCount,proto3" json:"log_count,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Req      *WriteReportRequest    `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	LogCount int32                  `protobuf:"varint,2,opt,name=log_count,json=logCount,proto3" json:"log_count,omitempty"`
+	// tx_hashes lists every transaction hash that landed on-chain for this
+	// transmission (from the forwarder ReportProcessed logs). More than one entry
+	// means multiple transmissions (e.g. duplicates / re-broadcasts) were recorded.
+	TxHashes         []string                     `protobuf:"bytes,3,rep,name=tx_hashes,json=txHashes,proto3" json:"tx_hashes,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -125,6 +129,13 @@ func (x *WriteReportSuccess) GetLogCount() int32 {
 		return x.LogCount
 	}
 	return 0
+}
+
+func (x *WriteReportSuccess) GetTxHashes() []string {
+	if x != nil {
+		return x.TxHashes
+	}
+	return nil
 }
 
 func (x *WriteReportSuccess) GetExecutionContext() *monitoring.ExecutionContext {
@@ -897,10 +908,11 @@ const file_chain_capabilities_evm_monitoring_write_report_proto_rawDesc = "" +
 	"4chain_capabilities/evm/monitoring/write_report.proto\x12\x16chain_capabilities.evm\x1a'libs/monitoring/execution_context.proto\"\x9f\x01\n" +
 	"\x14WriteReportInitiated\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xba\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xd7\x01\n" +
 	"\x12WriteReportSuccess\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12\x1b\n" +
-	"\tlog_count\x18\x02 \x01(\x05R\blogCount\x12I\n" +
+	"\tlog_count\x18\x02 \x01(\x05R\blogCount\x12\x1b\n" +
+	"\ttx_hashes\x18\x03 \x03(\tR\btxHashes\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xed\x01\n" +
 	"\x10WriteReportError\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12\x18\n" +
