@@ -1206,7 +1206,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t), limits.Factory{})
+			plugin, err := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t), limits.Factory{})
 			require.NoError(t, err)
 			nodesObservations := make([]attributedObservation, 0, len(tc.nodesObservations))
 			for i, h := range tc.nodesObservations {
@@ -1383,7 +1383,7 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t), limits.Factory{})
+			plugin, err := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t), limits.Factory{})
 			require.NoError(t, err)
 			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
@@ -1505,7 +1505,7 @@ func TestAgreeOnObservationType(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t), limits.Factory{})
+			plugin, err := newReportingPlugin(Config{F: 1, N: 4}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t), limits.Factory{})
 			require.NoError(t, err)
 			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
