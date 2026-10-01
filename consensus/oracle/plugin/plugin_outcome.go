@@ -37,10 +37,30 @@ func (r *reportingPlugin) ValidateObservation(ctx context.Context, outctx ocr3ty
 		return fmt.Errorf("could not unmarshal observation from observer %d: %w", ao.Observer, err)
 	}
 
+	requestsQuery := &oracletypes.Query{}
+	if err := proto.Unmarshal(query, requestsQuery); err != nil {
+		lggr.Warnw("could not unmarshal query", "error", err)
+		return fmt.Errorf("could not unmarshal query: %w", err)
+	}
+	queriedIDs := make(map[string]struct{}, len(requestsQuery.RequestIDs))
+	for _, id := range requestsQuery.RequestIDs {
+		queriedIDs[id] = struct{}{}
+	}
+
 	for requestID, reqObs := range obs.Observations {
 		if reqObs.Metadata == nil {
 			lggr.Warnw("observation missing metadata", "requestID", requestID)
 			return fmt.Errorf("observation from observer %d is missing metadata for request %s", ao.Observer, requestID)
+		}
+
+		if requestID != reqObs.Metadata.GetRequestId() {
+			lggr.Warnw("observation key does not match metadata request ID", "requestID", requestID, "metadataRequestID", reqObs.Metadata.GetRequestId())
+			return fmt.Errorf("observation from observer %d has key %s that does not match metadata request ID %s", ao.Observer, requestID, reqObs.Metadata.GetRequestId())
+		}
+
+		if _, inQuery := queriedIDs[requestID]; !inQuery {
+			lggr.Warnw("observation for request not in query", "requestID", requestID)
+			return fmt.Errorf("observation from observer %d is for request %s which is not in the query", ao.Observer, requestID)
 		}
 
 		if reqObs.Input == nil {

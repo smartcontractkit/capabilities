@@ -193,6 +193,40 @@ func Test_Outcome_RequestWithHistoricalOutcome(t *testing.T) {
 	require.Equal(t, map[string]uint64{reqID: 1}, outcome.HistoricalOutcomes)
 }
 
+// Test_ValidateObservation_RequestIDConsistency checks that an observation entry is
+// rejected when its map key does not match its metadata's request ID or when it is
+// for a request that is not in the query.
+func Test_ValidateObservation_RequestIDConsistency(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	ao := makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	require.NoError(t, reportingPlugin.ValidateObservation(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, ao))
+
+	// Entry keyed under a different request's ID than its metadata declares.
+	mismatched := makeOutcomeTestObs(t, "some-other-request-id", md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	err = reportingPlugin.ValidateObservation(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, mismatched)
+	require.ErrorContains(t, err, "does not match metadata request ID")
+
+	// Entry for a request that is not part of the query.
+	otherMD := testMetaData()
+	otherMD.ReferenceID = "02"
+	notQueried := makeOutcomeTestObs(t, otherMD.RequestID(), otherMD, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	err = reportingPlugin.ValidateObservation(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, notQueried)
+	require.ErrorContains(t, err, "not in the query")
+}
+
 // Test_Outcome_PlusOneErrors checks that when f+1 errors are received, Outcome() embeds the
 // per-field metadata string ("Consensus metadata: requestId=...") and the descriptor type
 // string ("Descriptor type: AGGREGATION_TYPE_MEDIAN").
