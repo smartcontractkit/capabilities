@@ -158,6 +158,41 @@ func Test_Outcome_DuplicateRequestIDsInQuery(t *testing.T) {
 	require.Len(t, outcome.Outcomes, 1, "expected a single outcome for a request ID repeated in the query")
 }
 
+// Test_Outcome_RequestWithHistoricalOutcome checks that a queried request which
+// already has an entry in the previous outcome's HistoricalOutcomes is not
+// processed again.
+func Test_Outcome_RequestWithHistoricalOutcome(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	var attributed []libocrtypes.AttributedObservation
+	for i := uint8(0); i < 5; i++ {
+		attributed = append(attributed, makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, i, false))
+	}
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	prevOutcomeBytes, err := proto.Marshal(&oracletypes.Outcome{HistoricalOutcomes: map[string]uint64{reqID: 1}})
+	require.NoError(t, err)
+
+	outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 2, PreviousOutcome: prevOutcomeBytes}, qBytes, attributed)
+	require.NoError(t, err)
+
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Empty(t, outcome.Outcomes, "expected no new outcome for a request with a historical outcome")
+	require.Equal(t, map[string]uint64{reqID: 1}, outcome.HistoricalOutcomes)
+}
+
 // Test_Outcome_PlusOneErrors checks that when f+1 errors are received, Outcome() embeds the
 // per-field metadata string ("Consensus metadata: requestId=...") and the descriptor type
 // string ("Descriptor type: AGGREGATION_TYPE_MEDIAN").
