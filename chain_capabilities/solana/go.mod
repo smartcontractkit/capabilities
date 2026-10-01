@@ -7,9 +7,9 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260922114021-5cee95428866
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260922114021-5cee95428866
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961
 	github.com/smartcontractkit/chain-selectors v1.0.104
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260917115705-1d3a14a9b049
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260925190414-e1b87ad2d7b1
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138
 	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260917175559-f7d4a86019d4
