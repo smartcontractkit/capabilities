@@ -34,6 +34,7 @@ import (
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -57,10 +58,17 @@ type capabilityGRPCService struct {
 	capability
 	lggr          logger.Logger
 	limitsFactory limits.Factory
+
+	// meteringCfg and capabilityUsageEnabled come from the LOOP environment
+	// ([Metering] on the host). usageMeter emits cre:workflow:gas usage records
+	// for write reports when enabled; nil otherwise.
+	meteringCfg            resourcemanager.Config
+	capabilityUsageEnabled bool
 }
 
 type capability struct {
 	*actions.EVM
+	usageMeter       *resourcemanager.ResourceManager
 	id               string
 	requestPoller    *poller.Poller
 	consensusHandler chainconsensus.Handler
@@ -73,7 +81,12 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
+		return evmcapserver.NewClientServer(&capabilityGRPCService{
+			lggr:                   s.Logger,
+			limitsFactory:          s.LimitsFactory,
+			meteringCfg:            s.MeteringConfig(),
+			capabilityUsageEnabled: s.EnvConfig.CapabilityUsageEnabled,
+		})
 	}, loop.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
 }
 
@@ -169,6 +182,22 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
+	if c.capabilityUsageEnabled {
+		// Gated by [Metering].CapabilityUsageEnabled on the host, independent of
+		// MeterRecordsEnabled (durable resource metering), so force records on.
+		rmCfg := c.meteringCfg.ResourceManagerConfig
+		rmCfg.MeterRecordsEnabled = true
+		rmCfg.MeterSnapshotsEnabled = false
+		c.usageMeter = resourcemanager.NewResourceManager(c.lggr, rmCfg)
+		identity := resourcemanager.NewBaseIdentity(c.meteringCfg.DeploymentIdentity, resourcemanager.EmittingServiceChainWrite, resourcemanager.WorkflowUsageResourcePool)
+		if capabilityDonID != 0 {
+			identity = identity.WithDonID(strconv.FormatUint(uint64(capabilityDonID), 10))
+		}
+		c.EVM.WithUsageMeter(c.usageMeter, identity)
+		if rmCfg.Emitter == nil {
+			c.lggr.Warnw("Capability usage metering enabled but this LOOP has no durable emitter; gas usage records will not be delivered")
+		}
+	}
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
@@ -199,6 +228,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
+	if c.usageMeter != nil {
+		startServices = append(startServices, c.usageMeter)
+	}
 	for _, service := range startServices {
 		if err := service.Start(ctx); err != nil {
 			return err
@@ -263,7 +295,11 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	return errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
+	errs := errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
+	if c.usageMeter != nil {
+		errs = errors.Join(errs, c.usageMeter.Close())
+	}
+	return errs
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {

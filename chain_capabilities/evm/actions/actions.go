@@ -21,6 +21,7 @@ import (
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -44,6 +45,8 @@ type EVM struct {
 	types.EVMService
 	consensusHandler         chainconsensus.RequestHandler
 	chainSelector            uint64
+	usageMeter               *resourcemanager.ResourceManager
+	usageIdentity            resourcemanager.ResourceIdentity
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
@@ -93,6 +96,14 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 	}
 
 	return e, nil
+}
+
+// WithUsageMeter enables cre:workflow:gas usage MeterRecords for write reports.
+// identity is the base metering identity (DON id already stamped). Nil rm
+// disables emission.
+func (e *EVM) WithUsageMeter(rm *resourcemanager.ResourceManager, identity resourcemanager.ResourceIdentity) {
+	e.usageMeter = rm
+	e.usageIdentity = identity
 }
 
 func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {

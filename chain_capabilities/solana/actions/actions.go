@@ -25,6 +25,7 @@ import (
 	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -55,6 +56,16 @@ type Solana struct {
 	transmissionScheduler    ts.TransmissionScheduler
 	handler                  chainconsensus.RequestHandler
 	forwarderState           solgo.PublicKey
+	usageMeter               *resourcemanager.ResourceManager
+	usageIdentity            resourcemanager.ResourceIdentity
+}
+
+// WithUsageMeter enables cre:workflow:gas usage MeterRecords for write reports.
+// identity is the base metering identity (DON id already stamped). Nil rm
+// disables emission.
+func (s *Solana) WithUsageMeter(rm *resourcemanager.ResourceManager, identity resourcemanager.ResourceIdentity) {
+	s.usageMeter = rm
+	s.usageIdentity = identity
 }
 
 func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder,
