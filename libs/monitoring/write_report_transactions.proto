@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package monitoring;
+option go_package = "github.com/smartcontractkit/capabilities/libs/monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+// WriteReportTransactions carries the set of on-chain transaction hashes produced by a
+// single workflow WriteReport call. It is emitted by a chain capability as soon as the
+// hash(es) are known (typically right after submit / confirmation), independently of the
+// per-chain WriteReportSuccess message, so consumers can associate every landed
+// transaction with the workflow execution that produced it.
+//
+// It is intentionally chain-agnostic so any chain family (EVM, Solana, Stellar, Aptos, ...)
+// can emit the same shape. Hashes are emitted in the chain's native string encoding
+// (EVM hex, Solana base58 signature, Stellar hex, ...).
+message WriteReportTransactions {
+  // tx_hashes is every distinct on-chain transaction hash observed for this transmission,
+  // in the order observed. More than one entry indicates duplicate / re-broadcast
+  // transactions that also landed.
+  repeated string tx_hashes = 1;
+  ExecutionContext execution_context = 20;
+}
