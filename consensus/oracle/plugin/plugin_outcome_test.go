@@ -128,6 +128,36 @@ func extractSingleFailureCode(t *testing.T, outcomeBytes ocr3types.Outcome) orac
 	return failure.GetCode()
 }
 
+// Test_Outcome_DuplicateRequestIDsInQuery checks that a query listing the same
+// request ID multiple times produces a single outcome for it.
+func Test_Outcome_DuplicateRequestIDsInQuery(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	var attributed []libocrtypes.AttributedObservation
+	for i := uint8(0); i < 5; i++ {
+		attributed = append(attributed, makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, i, false))
+	}
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID, reqID, reqID}})
+	require.NoError(t, err)
+
+	outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+	require.NoError(t, err)
+
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Len(t, outcome.Outcomes, 1, "expected a single outcome for a request ID repeated in the query")
+}
+
 // Test_Outcome_PlusOneErrors checks that when f+1 errors are received, Outcome() embeds the
 // per-field metadata string ("Consensus metadata: requestId=...") and the descriptor type
 // string ("Descriptor type: AGGREGATION_TYPE_MEDIAN").

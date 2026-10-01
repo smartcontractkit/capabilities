@@ -70,7 +70,8 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 	requestIDToObservations := groupAttributedObservationsByRequestID(lggr, attributedObservations)
 
 	observationQuorumThreshold := 2*r.f + 1
-	for _, requestID := range requestsQuery.RequestIDs {
+	// Deduplicate so Outcome processes the same set of IDs as Observation does
+	for _, requestID := range deduplicateRequestIDs(requestsQuery.RequestIDs) {
 		observations := requestIDToObservations[requestID]
 		r.observationQuorumTracker.Record(requestID, len(observations), observationQuorumThreshold)
 
