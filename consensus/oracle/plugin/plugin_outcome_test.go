@@ -547,6 +547,7 @@ func Test_Outcome_RecordsObservationQuorumForTimeoutClassification(t *testing.T)
 		md,
 		tracker,
 		false,
+		false,
 	)
 	req.SendTimeout(ctx)
 

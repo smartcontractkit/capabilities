@@ -38,6 +38,7 @@ type ConsensusRequest struct {
 	Metadata ConsensusRequestMetadata
 
 	StricterMedianQuorum bool
+	IncludeAllTimestamps bool
 
 	observationQuorumTracker *ObservationQuorumTracker
 }
@@ -50,6 +51,7 @@ func NewConsensusRequest(
 	metadata ConsensusRequestMetadata,
 	observationQuorumTracker *ObservationQuorumTracker,
 	stricterMedianQuorum bool,
+	includeAllTimestamps bool,
 ) *ConsensusRequest {
 	return &ConsensusRequest{
 		RequestID:                metadata.RequestID(),
@@ -60,6 +62,7 @@ func NewConsensusRequest(
 		Metadata:                 metadata,
 		observationQuorumTracker: observationQuorumTracker,
 		StricterMedianQuorum:     stricterMedianQuorum,
+		IncludeAllTimestamps:     includeAllTimestamps,
 	}
 }
 
@@ -121,6 +124,7 @@ func (r *ConsensusRequest) Copy() *ConsensusRequest {
 		ExpiresAt:            r.ExpiresAt,
 		Metadata:             r.Metadata,
 		StricterMedianQuorum: r.StricterMedianQuorum,
+		IncludeAllTimestamps: r.IncludeAllTimestamps,
 
 		// Intentionally not copied, but are thread-safe.
 		CallbackCh: r.CallbackCh,
