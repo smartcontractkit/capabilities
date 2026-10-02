@@ -89,10 +89,6 @@ const (
 	// InternalGasRequirements is the forwarder's total internal reservation, subtracted from
 	// gasleft() before the receiver gas budget is recorded (INTERNAL_GAS_REQUIREMENTS).
 	InternalGasRequirements uint64 = 25_000 + InternalGasRequirementsAfterReport
-	// MinimumGasLimit is the forwarder's routing floor: route() reverts the whole tx when the
-	// recorded receiver budget would fall below it (MINIMUM_GAS_LIMIT). Any transmission that
-	// routed at all therefore records at least this much gas.
-	MinimumGasLimit uint64 = InternalGasRequirements + 30_000*3 + 10_000
 	// DefaultForwarderGasOverheadMargin is the default safety margin added on top of the
 	// forwarder's internal reservation to cover the pre-route consumption that is not visible
 	// in the contract constants: tx intrinsic cost, calldata (report + signatures), ecrecover

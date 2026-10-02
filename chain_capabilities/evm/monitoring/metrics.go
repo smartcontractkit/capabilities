@@ -675,9 +675,6 @@ func (r *WriteReportInsufficientGasRetry) MetricAttributes() []attribute.KeyValu
 func (r *WriteReportGasMismatch) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
-		attribute.String("tx_hash", r.GetTxHash()),
-		attribute.Int64("expected_tx_gas_limit", int64(r.GetExpectedTxGasLimit())), //nolint:gosec // G115: EVM gas fits int64 for logging
-		attribute.Int64("actual_tx_gas_limit", int64(r.GetActualTxGasLimit())),     //nolint:gosec // G115: EVM gas fits int64 for logging
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
