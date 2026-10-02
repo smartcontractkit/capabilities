@@ -562,7 +562,7 @@ func TestWriteReport_Validation(t *testing.T) {
 func TestWriteReport_EarlyReturn(t *testing.T) {
 	t.Parallel()
 
-	t.Run("already succeeded - returns success with no submit and no metering", func(t *testing.T) {
+	t.Run("already succeeded - returns success with no submit, metering from canonical tx fee", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		rm, reqMeta, req := newWRReportFixture(t)
@@ -581,8 +581,8 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testFee, *result.Response.TransactionFee)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		// No billing metering: this node observed, not submitted.
-		require.Empty(t, result.ResponseMetadata.Metering)
+		// Nodes that did not transmit still meter the on-chain fee.
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 
@@ -605,7 +605,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.NotNil(t, result.Response.TxHash)
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		require.Empty(t, result.ResponseMetadata.Metering)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 
@@ -626,7 +626,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 		require.NotNil(t, result.Response.TxHash)
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		require.Empty(t, result.ResponseMetadata.Metering)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 }

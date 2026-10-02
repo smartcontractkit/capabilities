@@ -206,11 +206,12 @@ func TestHTTPTrigger(t *testing.T) {
 }
 
 func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
-	// 2 honest nodes and 1 faulty node
+	// 2 honest nodes and 2 faulty nodes (n = 3f + 1 = 4 is the minimum DON size
+	// accepted by the gateway config validation)
 	// f + 1 = 2 is enough for workflow metadata aggregation
 	// (f + n) // 2 + 1 = 3 is required for consensus
 	// 2 honest nodes is not enough to reach consensus
-	env := setupTestEnv(t, 2, 1)
+	env := setupTestEnv(t, 2, 2)
 	var requestID string
 	var req *http.Request
 	var input map[string]any
@@ -303,17 +304,24 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 	validateHTTPTriggerResponse(t, body, requestID, env.workflowID)
 	assertTriggerPayload(t, env, requestID, input)
 
+	// Replaying the same requestID is rejected with a conflict: the gateway retains
+	// the callback entry after responding (until its reaper removes it) so that it can
+	// recognise duplicates and late node responses.
 	request, _, _ = createSampleRequest(t, env.userURL, env.signingKey, workflow, requestID)
 	resp, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusConflict, resp.StatusCode)
 
-	validateHTTPTriggerResponse(t, body, requestID, env.workflowID)
+	var errResp jsonrpc.Response[json.RawMessage]
+	require.NoError(t, json.Unmarshal(body, &errResp))
+	require.Equal(t, requestID, errResp.ID)
+	require.NotNil(t, errResp.Error)
+	require.Contains(t, errResp.Error.Message, "has already been used")
 
-	// This request should be deduplicated, so no new triggers should be sent to the nodes
+	// The duplicate is rejected by the gateway, so no new triggers should be sent to the nodes
 	for i, ch := range env.triggerChs {
 		require.Equal(t, 0, len(ch), "Node %d should not have received any new trigger payloads due to deduplication", i)
 	}

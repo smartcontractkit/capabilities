@@ -19,6 +19,7 @@ type Config struct {
 	ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
 	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
 	UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
+	MaxUnknownRequestsCacheSize   int           `json:"maxUnknownRequestsCacheSize"`
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {

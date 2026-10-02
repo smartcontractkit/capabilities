@@ -481,8 +481,7 @@ func (h *connectorHandler) generateWorkflowExecutionID(
 		workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(strippedWorkflowID, reqID, triggerIndex)
 		isLegacyExecutionID = false
 	} else {
-		var rangeErr limits.ErrorRangeLimited[config.Timestamp]
-		if errors.As(checkErr, &rangeErr) {
+		if _, ok := errors.AsType[limits.ErrorRangeLimited[config.Timestamp]](checkErr); ok {
 			l.Debugw("Multi-trigger execution ID flag not active; using legacy execution ID", "error", checkErr)
 		} else {
 			l.Errorw("Multi-trigger execution ID flag check failed; using legacy execution ID", "error", checkErr)

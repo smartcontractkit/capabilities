@@ -153,7 +153,10 @@ func (wr *writeReport) execute(
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
 		reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
-		return reply, capabilities.ResponseMetadata{}, err
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateInvalidReceiver:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -168,7 +171,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateFailed:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -183,7 +186,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
-		return reply, capabilities.ResponseMetadata{}, nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateNotAttempted:
 	case TransmissionStateUnknown:
 		// Unknown state must not authorize spend.
@@ -432,6 +435,17 @@ func (wr *writeReport) pollTransmissionInfo(
 		case <-time.After(wait):
 		}
 	}
+}
+
+// meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
+// in the reply, so that nodes returning early for a prior transmission still report the gas
+// spent on chain. An absent fee (unavailable from the chain) yields empty metadata.
+func (wr *writeReport) meteringFromReply(reply *stellarcap.WriteReportReply) capabilities.ResponseMetadata {
+	if reply.TransactionFee == nil {
+		wr.lggr.Warnw("Transaction fee unavailable in reply; skipping metering", "txHash", reply.GetTxHash())
+		return capabilities.ResponseMetadata{}
+	}
+	return metering.GetResponseMetadataWriteReport(*reply.TransactionFee, wr.chainSelector)
 }
 
 func (wr *writeReport) meteringFromSubmitResponse(submitResp *stellartypes.SubmitTransactionResponse) capabilities.ResponseMetadata {

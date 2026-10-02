@@ -8,6 +8,8 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/stretchr/testify/require"
+
+	solanatesting "github.com/smartcontractkit/chainlink-solana/pkg/solana/testing"
 )
 
 func FundAccounts(t *testing.T, accounts []solana.PrivateKey, solanaGoClient *rpc.Client) {
@@ -36,7 +38,7 @@ func fundAccounts(t *testing.T, accounts []solana.PrivateKey, solanaGoClient *rp
 	ctx := t.Context()
 	sigs := []solana.Signature{}
 	for _, v := range accounts {
-		sig, err := solanaGoClient.RequestAirdrop(ctx, v.PublicKey(), 1000*solana.LAMPORTS_PER_SOL, rpc.CommitmentFinalized)
+		sig, err := solanatesting.Transfer(ctx, solanaGoClient, solanatesting.Funder, v.PublicKey(), 1000*solana.LAMPORTS_PER_SOL)
 		require.NoError(t, err)
 		sigs = append(sigs, sig)
 	}

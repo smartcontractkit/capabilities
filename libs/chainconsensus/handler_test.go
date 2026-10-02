@@ -26,7 +26,7 @@ import (
 func TestGetRequestIDs(t *testing.T) {
 	poller := mocks.NewPoller(t)
 	poller.EXPECT().Enqueue(mock.Anything, mock.Anything)
-	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second)
+	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second, 1000)
 	addRequestToHandler := func(t *testing.T, ctx context.Context, id string) {
 		request := types.NewEventuallyConsistentRequest(id, nil)
 		_, err := handler.Handle(ctx, request)
@@ -72,7 +72,7 @@ func TestGetRequestIDs(t *testing.T) {
 func TestGetRequest(t *testing.T) {
 	poller := mocks.NewPoller(t)
 	poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Maybe()
-	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second)
+	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second, 1000)
 	addRequestToHandler := func(t *testing.T, ctx context.Context, id string) {
 		request := types.NewAggregatableRequest(id, nil)
 		_, err := handler.Handle(ctx, request)
@@ -102,7 +102,7 @@ func TestGetRequest(t *testing.T) {
 
 func TestCompleteRequest(t *testing.T) {
 	newHandler := func(t *testing.T, lggr logger.Logger, poller Poller) *handler {
-		h := newHandler(lggr, poller, test.GetConsensusMetrics(t), time.Second)
+		h := newHandler(lggr, poller, test.GetConsensusMetrics(t), time.Second, 1000)
 		require.NoError(t, h.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, h.Close())
@@ -276,7 +276,7 @@ func TestCompleteRequest(t *testing.T) {
 
 func TestHandle(t *testing.T) {
 	poller := mocks.NewPoller(t)
-	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second)
+	handler := NewHandler(logger.Test(t), poller, test.GetConsensusMetrics(t), time.Second, 1000)
 	require.NoError(t, handler.Start(t.Context()))
 	t.Cleanup(func() {
 		require.NoError(t, handler.Close())
@@ -308,4 +308,35 @@ func mustMarshalProto(t *testing.T, msg proto.Message) []byte {
 	data, err := proto.Marshal(msg)
 	require.NoError(t, err)
 	return data
+}
+
+func TestCompleteRequest_UnknownRequestsCacheEviction(t *testing.T) {
+	const maxCacheSize = 3
+	h := newHandler(logger.Test(t), nil, test.GetConsensusMetrics(t), time.Minute, maxCacheSize)
+
+	completeUnknown := func(t *testing.T, id string) {
+		require.NoError(t, h.CompleteProtoRequest(id, &types.RequestReport{
+			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte(id)},
+		}))
+	}
+
+	completeUnknown(t, "req-1")
+	completeUnknown(t, "req-2")
+	completeUnknown(t, "req-3")
+
+	h.lock.RLock()
+	require.Len(t, h.unknownRequestsResultByID, maxCacheSize)
+	require.Contains(t, h.unknownRequestsResultByID, "req-1")
+	h.lock.RUnlock()
+
+	// cache is full; completing one more unknown request must evict the oldest ("req-1")
+	completeUnknown(t, "req-4")
+
+	h.lock.RLock()
+	require.Len(t, h.unknownRequestsResultByID, maxCacheSize)
+	require.NotContains(t, h.unknownRequestsResultByID, "req-1")
+	require.Contains(t, h.unknownRequestsResultByID, "req-2")
+	require.Contains(t, h.unknownRequestsResultByID, "req-3")
+	require.Contains(t, h.unknownRequestsResultByID, "req-4")
+	h.lock.RUnlock()
 }

@@ -111,10 +111,10 @@ func setupMultiDonRoutingEnv(
 	}
 
 	nodeConfig := fmt.Sprintf(multiDonNodeConfigTemplate, testDonName, publicKey, usNodeURL, euNodeURL)
-	var cfg connector.ConnectorConfig
+	var cfg connector.Config
 	require.NoError(t, toml.Unmarshal([]byte(nodeConfig), &cfg))
 
-	gc, err := connector.NewGatewayConnector(&cfg, &client{privateKey: privateKey}, clockwork.NewRealClock(), lggr)
+	gc, err := connector.NewGatewayConnector(&cfg, &client{privateKey: privateKey}, clockwork.NewRealClock(), lggr, publicKey)
 	require.NoError(t, err)
 	servicetest.Run(t, gc)
 

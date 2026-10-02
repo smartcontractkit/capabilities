@@ -90,7 +90,7 @@ func TestGetAccountInfoWithOpts(t *testing.T) {
 		const slot uint64 = 42_000
 		accountData := []byte("account-data")
 		serviceReply := &soltypes.GetAccountInfoReply{
-			RPCContext: soltypes.RPCContext{Slot: slot},
+			Slot: slot,
 			Value: &soltypes.Account{
 				Lamports: 1_000_000,
 				Data: &soltypes.DataBytesOrJSON{
@@ -437,8 +437,8 @@ func TestGetMultipleAccountsWithOpts(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceReply := &soltypes.GetMultipleAccountsReply{
-			RPCContext: soltypes.RPCContext{Slot: 77},
-			Value:      []*soltypes.Account{{Lamports: 500}},
+			Slot:  77,
+			Value: []*soltypes.Account{{Lamports: 500}},
 		}
 		helper.solanaService.EXPECT().
 			GetMultipleAccountsWithOpts(mock.Anything, mock.Anything).
@@ -987,7 +987,7 @@ func TestReadLimits(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceReply := &soltypes.GetAccountInfoReply{
-			RPCContext: soltypes.RPCContext{Slot: 42},
+			Slot: 42,
 			Value: &soltypes.Account{
 				Lamports: 1,
 				Data: &soltypes.DataBytesOrJSON{
