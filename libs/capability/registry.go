@@ -4,163 +4,90 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"slices"
+	"strconv"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/remote"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
-// newRegistry builds the registry this process holds its capabilities in and resolves others
-// through, as a service.
-//
-// Nothing is dialled here. grpc.NewClient connects on the first RPC rather than when it is made, so
-// a proxy that is not up yet delays the first lookup instead of failing the whole boot - which
-// matters because the node starts this process and the two race.
-//
-// It does not validate the target either: an empty string and an unknown scheme both build a client
-// happily, so the error below is close to unreachable and a typo shows up as a failed lookup rather
-// than at startup. What catches an unset URL is the `validate:"required"` tag on the setting.
-//
-// It is built rather than started for the same reason telemetry is: a capability is handed the
-// registry when it is constructed, which is before the root that owns this can start anything.
-func newRegistry(lggr logger.Logger, cfg capabilityConfig, servers *serverFactory) (*registryService, error) {
-	r := &registryService{servers: servers}
-	local := registry.Local(lggr)
+func newRegistry(lggr logger.Logger, cfg capabilityConfig, grpcCfg grpcConfig) (*registryService, error) {
+	r := &registryService{local: registry.NewRegistry(lggr)}
 
-	if cfg.ProxyURL == "" {
-		// No node to ask. The local registry is the whole of this process's: it resolves what this
-		// binary registered and nothing else, and the metadata calls - which DONs exist, what OCR
-		// configuration a capability runs under - fail rather than answering with something
-		// invented. That is what a binary run on its own wants, and it dials nothing.
-		r.proxy = local
-	} else {
-		conn, err := grpc.NewClient(cfg.ProxyURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if cfg.ProxyURL != "" {
+		conn, err := dial(cfg.ProxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create registry proxy client for %s: %w", cfg.ProxyURL, err)
 		}
-		r.conn = conn
 
-		// One registry, two questions: what capabilities there are, and what configuration an OCR
-		// one runs under. Both are answered by whoever read the registry, over the one connection.
-		//
-		// The addresses map WithRemote takes is deliberately nil. Add on the result would announce
-		// the address it found written there - a convention shared between whoever serves a
-		// capability and whoever announces it. This service announces with AddAt instead, at the
-		// point the address exists, so the map would be a write nobody reads.
-		r.proxy = local.WithRemote(conn, nil)
+		transport, err := remote.NewListenerTransport(remote.ListenerTransportParams{
+			Lggr: lggr,
+			Listen: func() (net.Listener, error) {
+				return net.Listen("tcp", net.JoinHostPort(grpcCfg.AdvertiseHost, strconv.Itoa(int(0))))
+			},
+			Connect: dial,
+		})
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("failed to create listener transport: %w", err)
+		}
+
+		r.conn = conn
+		r.fallback = remote.NewCapabilitiesRegistryClient(lggr, conn, transport)
 	}
 
 	r.Service, r.eng = services.Config{Name: "CapabilityRegistry", Close: r.close}.NewServiceEngine(lggr)
 	return r, nil
 }
 
+func dial(target string) (*grpc.ClientConn, error) {
+	return grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+}
+
 // startRegistry builds the registry and starts it.
-func startRegistry(ctx context.Context, lggr logger.Logger, cfg capabilityConfig, servers *serverFactory) (*registryService, error) {
-	r, err := newRegistry(lggr, cfg, servers)
+func startRegistry(ctx context.Context, lggr logger.Logger, cfg capabilityConfig, grpcCfg grpcConfig) (*registryService, error) {
+	r, err := newRegistry(lggr, cfg, grpcCfg)
 	if err != nil {
 		return nil, err
 	}
 	return r, r.Start(ctx)
 }
 
-// registryService is the registry this process holds its own capabilities in and resolves others
-// through, the servers its own are reached on, and the connection to the node's registry - as one
-// service, so that closing it undoes all three in order.
-//
-// There is no Start. A lazily-connected client has nothing to start, and the work with ordering in
-// it - serving and announcing a capability - is Add's, called once the capability exists rather
-// than when the root starts.
+var _ registry.CapabilitiesRegistry = (*registryService)(nil)
+
+// registryService resolves capabilities from what this binary hosts first and the node's registry
+// second, and keeps the two in lock-step on Add and Remove.
 type registryService struct {
 	services.Service
 	eng *services.Engine
 
-	// proxy resolves capabilities: what this binary hosts first, as the values it already holds,
-	// and the rest from the node behind conn. Local first is not an optimisation: a capability
-	// hosted here is a value this process already has, so resolving it locally hands back the
-	// implementation rather than a gRPC client looping back into this same process.
-	proxy registry.Registry
+	// Local first is not an optimisation: a capability hosted here is a value this process already
+	// has, so resolving it locally hands back the implementation rather than a gRPC client looping
+	// back into this same process.
+	local registry.CapabilitiesRegistry
 
-	// servers makes the gRPC server each Add serves its capability on - one per capability, since
-	// a registry addresses a capability by the address serving it.
-	servers *serverFactory
+	// fallback is the node's registry, which also serves and announces what Add is handed. Nil
+	// when no proxy is configured, which is a binary with no node behind it.
+	fallback registry.CapabilitiesRegistry
+	conn     *grpc.ClientConn
 
-	// hosted is what Add made reachable, so close undoes exactly that, in reverse.
-	hosted []hosted
-
-	// conn is the connection to the node's registry proxy, which resolutions, announcements and
-	// OCR questions all share. Nil when no proxy is configured, which is a binary with no node
-	// behind it.
-	conn *grpc.ClientConn
+	mu sync.Mutex
+	// added is what Add registered, so close undoes exactly that, in reverse.
+	added []string
 }
 
-// hosted is one capability being served, and the server serving it.
-type hosted struct {
-	id     string
-	server *server
-}
-
-// Add makes c reachable: served on a gRPC server of its own, held in this process's registry, and
-// announced to the node's.
-//
-// The order is the registration protocol. Serving comes first because the announcement is what
-// invites traffic, so nothing is announced until it can be answered - and the address is announced
-// where it is made, rather than written somewhere an Add can find it later, so the two cannot
-// disagree.
-//
-// It is called at build time rather than from a Start of this service's own: a capability that
-// cannot be announced fails the run before it is nominally up, and the health checker - which the
-// run starts after this - only reports ready once this has run. The capability itself is already
-// started by the caller, so traffic the announcement invites lands on something running.
-func (r *registryService) Add(ctx context.Context, c Capability) error {
-	info, err := c.Info(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to read the capability's info: %w", err)
-	}
-
-	server, err := r.servers.new(ctx, logger.Named(r.eng, info.ID))
-	if err != nil {
-		return fmt.Errorf("failed to open a server for capability %s: %w", info.ID, err)
-	}
-	// Undone here on any failure below rather than by close: a failure before the run starts this
-	// service means it never started, and StopOnce would refuse to run close's undo at all.
-	if err := registry.RegisterCapability(r.eng, server.grpcServer(), c, info.CapabilityType); err != nil {
-		_ = server.Close()
-		return fmt.Errorf("failed to serve capability %s: %w", info.ID, err)
-	}
-	if err := server.Start(ctx); err != nil {
-		_ = server.Close()
-		return fmt.Errorf("failed to start the server for capability %s: %w", info.ID, err)
-	}
-
-	if err := r.proxy.Add(ctx, c); err != nil {
-		_ = server.Close()
-		return fmt.Errorf("failed to register capability %s: %w", info.ID, err)
-	}
-
-	// Announced last: the announcement is what invites traffic, so nothing is announced until it
-	// can be served. With no node behind this process there is nothing to announce to.
-	if r.conn != nil {
-		if err := r.proxy.AddAt(ctx, info.ID, info.CapabilityType, server.address()); err != nil {
-			_ = r.proxy.Remove(ctx, info.ID)
-			_ = server.Close()
-			return fmt.Errorf("failed to announce capability %s: %w", info.ID, err)
-		}
-	}
-
-	r.hosted = append(r.hosted, hosted{id: info.ID, server: server})
-	r.eng.Infow("Registered capability", "capabilityID", info.ID, "type", info.CapabilityType, "address", server.address())
-	return nil
-}
-
-// close undoes every Add in reverse: stop inviting traffic (Remove drops the local hold and tells
-// the node's registry to drop the address), then stop answering it, then release the connection.
-//
-// One ordered function rather than concurrent closes, because the steps are each other's
-// preconditions: the Remove RPC has to reach the node before the connection it travels on closes.
+// close undoes every Add in reverse, then releases the connection the deregistrations travel on.
 //
 // Failure to deregister is logged rather than returned. The process is going away, and a stale
 // entry in a registry that cannot reach it any more is not worth failing shutdown over - the
@@ -172,19 +99,120 @@ func (r *registryService) close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	for i := len(r.hosted) - 1; i >= 0; i-- {
-		h := r.hosted[i]
-		if err := r.proxy.Remove(ctx, h.id); err != nil {
-			r.eng.Warnw("Failed to deregister capability", "capabilityID", h.id, "err", err)
+	r.mu.Lock()
+	added := slices.Clone(r.added)
+	r.mu.Unlock()
+
+	for _, id := range slices.Backward(added) {
+		if err := r.Remove(ctx, id); err != nil {
+			r.eng.Warnw("Failed to deregister capability", "capabilityID", id, "err", err)
 		}
-		r.eng.ErrorIfFn(h.server.Close, "Failed to stop the server for capability "+h.id)
 	}
 
-	// The registry first: what it closes is what it dialled of its own accord - the capability
-	// addresses it resolved - which are connections of their own rather than this one.
-	err := r.proxy.Close()
 	if r.conn == nil {
+		return nil
+	}
+	return r.conn.Close()
+}
+
+func withFallback[T any](r *registryService, call func(registry.CapabilitiesRegistry) (T, error)) (T, error) {
+	v, err := call(r.local)
+	if err == nil || r.fallback == nil {
+		return v, err
+	}
+
+	fv, ferr := call(r.fallback)
+	if ferr != nil {
+		var zero T
+		return zero, errors.Join(err, ferr)
+	}
+	return fv, nil
+}
+
+func (r *registryService) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) (capabilities.TriggerCapability, error) {
+		return reg.GetTrigger(ctx, id)
+	})
+}
+
+func (r *registryService) Get(ctx context.Context, id string) (capabilities.BaseCapability, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) (capabilities.BaseCapability, error) {
+		return reg.Get(ctx, id)
+	})
+}
+
+func (r *registryService) GetExecutable(ctx context.Context, id string) (capabilities.ExecutableCapability, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) (capabilities.ExecutableCapability, error) {
+		return reg.GetExecutable(ctx, id)
+	})
+}
+
+func (r *registryService) List(ctx context.Context) ([]capabilities.BaseCapability, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) ([]capabilities.BaseCapability, error) {
+		return reg.List(ctx)
+	})
+}
+
+func (r *registryService) LocalNode(ctx context.Context) (capabilities.Node, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) (capabilities.Node, error) {
+		return reg.LocalNode(ctx)
+	})
+}
+
+func (r *registryService) NodeByPeerID(ctx context.Context, peerID p2ptypes.PeerID) (capabilities.Node, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) (capabilities.Node, error) {
+		return reg.NodeByPeerID(ctx, peerID)
+	})
+}
+
+func (r *registryService) ConfigForCapability(ctx context.Context, capabilityID string, donID uint32) (capabilities.CapabilityConfiguration, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) (capabilities.CapabilityConfiguration, error) {
+		return reg.ConfigForCapability(ctx, capabilityID, donID)
+	})
+}
+
+func (r *registryService) DONsForCapability(ctx context.Context, capabilityID string) ([]capabilities.DONWithNodes, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) ([]capabilities.DONWithNodes, error) {
+		return reg.DONsForCapability(ctx, capabilityID)
+	})
+}
+
+func (r *registryService) DONByID(ctx context.Context, donID uint32) (capabilities.DON, error) {
+	return withFallback(r, func(reg registry.CapabilitiesRegistry) (capabilities.DON, error) {
+		return reg.DONByID(ctx, donID)
+	})
+}
+
+// Add rolls back the local registration if the fallback rejects it, so the two never disagree.
+func (r *registryService) Add(ctx context.Context, c capabilities.BaseCapability) error {
+	info, err := c.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read the capability's info: %w", err)
+	}
+
+	if err := r.local.Add(ctx, c); err != nil {
 		return err
 	}
-	return errors.Join(err, r.conn.Close())
+	if r.fallback != nil {
+		if err := r.fallback.Add(ctx, c); err != nil {
+			return errors.Join(err, r.local.Remove(ctx, info.ID))
+		}
+	}
+
+	r.mu.Lock()
+	r.added = append(r.added, info.ID)
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *registryService) Remove(ctx context.Context, id string) error {
+	r.mu.Lock()
+	r.added = slices.DeleteFunc(r.added, func(a string) bool { return a == id })
+	r.mu.Unlock()
+
+	err := r.local.Remove(ctx, id)
+	if r.fallback == nil {
+		return err
+	}
+	return errors.Join(err, r.fallback.Remove(ctx, id))
 }

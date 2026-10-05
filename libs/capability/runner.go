@@ -40,10 +40,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	}
 	svcs = append(svcs, telemetry)
 
-	reg, err := startRegistry(ctx, lggr, cfg.capabilities, &serverFactory{
-		host:      cfg.grpc.AdvertiseHost,
-		startPort: cfg.grpc.StartPort,
-	})
+	reg, err := startRegistry(ctx, lggr, cfg.capabilities, cfg.grpc)
 	if err != nil {
 		return fmt.Errorf("failed to start registry: %w", err)
 	}
@@ -111,7 +108,7 @@ func underPluginHost() bool {
 func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor constructor, reg *registryService, settings *loop.AtomicSettings, mux *http.ServeMux) (Capability, error) {
 	c, err := ctor.call(Dependencies{
 		Logger:             lggr,
-		CapabilityRegistry: reg.proxy,
+		CapabilityRegistry: reg,
 		LimitsFactory:      newLimitsFactory(lggr, settings),
 	})
 	if err != nil {
@@ -129,7 +126,7 @@ func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor 
 	}
 
 	if cfg.capabilities.HTTPDebug {
-		if err := mountDebugUI(ctx, lggr, mux, reg.proxy, c); err != nil {
+		if err := mountDebugUI(ctx, lggr, mux, reg, c); err != nil {
 			_ = c.Close()
 			return nil, err
 		}

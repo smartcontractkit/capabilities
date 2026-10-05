@@ -12,6 +12,12 @@ const capabilitiesNamespace = "capabilities"
 
 const grpcNamespace = "grpc"
 
+const defaultHost = "localhost"
+
+type grpcConfig struct {
+	AdvertiseHost string `usage:"host the gRPC servers this process opens bind to and are advertised at; empty binds every interface"`
+}
+
 // the standard configuration for a capability; does not include the config that a capability may request via its constructor.
 type config struct {
 	observability observability

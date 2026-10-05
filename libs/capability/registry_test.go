@@ -26,7 +26,7 @@ func TestNewRegistryDoesNotDial(t *testing.T) {
 		&serverFactory{host: defaultHost})
 
 	require.NoError(t, err, "an unreachable proxy should not fail construction")
-	require.NotNil(t, reg.proxy)
+	require.NotNil(t, reg.registry)
 	assert.Empty(t, reg.hosted, "nothing is served yet, so nothing is announced")
 
 	require.NoError(t, reg.Start(t.Context()))
@@ -62,9 +62,9 @@ func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
 	require.NoError(t, reg.Start(t.Context()))
 
 	assert.Nil(t, reg.conn, "nothing should have been dialled")
-	require.NotNil(t, reg.proxy)
+	require.NotNil(t, reg.registry)
 
-	_, err = reg.proxy.DONByID(t.Context(), 1)
+	_, err = reg.registry.DONByID(t.Context(), 1)
 	assert.Error(t, err, "there is no node to ask, so the metadata calls should fail")
 }
 
@@ -84,7 +84,7 @@ func TestRegistryAddServesAndHolds(t *testing.T) {
 	_ = conn.Close()
 
 	// Held: the registry resolves the capability as a value.
-	got, err := reg.proxy.Get(t.Context(), fakeID)
+	got, err := reg.registry.Get(t.Context(), fakeID)
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 
@@ -92,7 +92,7 @@ func TestRegistryAddServesAndHolds(t *testing.T) {
 	// what the ID still maps to answers nothing.
 	require.NoError(t, reg.Close())
 
-	got, err = reg.proxy.Get(t.Context(), fakeID)
+	got, err = reg.registry.Get(t.Context(), fakeID)
 	if err == nil {
 		_, err = got.Info(t.Context())
 	}
