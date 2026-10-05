@@ -92,31 +92,7 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 	// ReportInProgress without ReportProcessed: the report was attempted, but every
 	// attempt so far landed in a reverted tx (a successful tx would have emitted a
 	// tracked ReportProcessed log).
-	sig, sigErr := signatureFromInProgressLogs(inProgressLogs)
-	if sigErr != nil {
-		return TransmissionInfo{}, sigErr
-	}
-	return TransmissionInfo{State: TransmissionStateFailed, Signature: sig}, nil
-}
-
-// Retrieve transmission transaction signature from logs deterministically
-// Use log with lowest block number and lowest index.
-func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signature, error) {
-	if len(inProgressLogs) == 0 {
-		return solana.Signature{}, fmt.Errorf("no in-progress logs")
-	}
-	log := inProgressLogs[0]
-	minBlock := inProgressLogs[0].BlockNumber
-	for _, l := range inProgressLogs {
-		if l.BlockNumber < minBlock {
-			log = l
-			minBlock = l.BlockNumber
-		}
-		if l.BlockNumber == minBlock && l.LogIndex < log.LogIndex {
-			log = l
-		}
-	}
-	return solana.Signature(log.TxHash), nil
+	return TransmissionInfo{State: TransmissionStateFailed, Signature: solana.Signature(inProgressLogs[0].TxHash)}, nil
 }
 
 // Legacy LogTracking doesn't validate against forwarder state used in Event.
@@ -167,7 +143,7 @@ func (lr *logReader) registerProcessedFilter(ctx context.Context) error {
 	return nil
 }
 
-const inProgressLogsLimit = 20
+const inProgressLogsLimit = 1
 
 func (lr *logReader) queryInProgress(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {
 	limit := query.NewLimitAndSort(query.CountLimit(inProgressLogsLimit), query.NewSortBySequence(query.Asc))

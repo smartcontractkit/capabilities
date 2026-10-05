@@ -217,15 +217,12 @@ func TestOnChainTransmissionInfoProvider_GetTransmissionInfo(t *testing.T) {
 		svc, provider, programID, forwarderState := newTestProvider(t)
 		transmissionID := [32]byte{7}
 
-		laterSig := solana.Signature{3}
 		earliestSig := solana.Signature{4}
 
 		svc.EXPECT().
 			QueryTrackedLogs(mock.Anything, forwarderLogQueryMatcher(testSigInProgress, transmissionID, programID, forwarderState), mock.Anything).
 			Return([]*soltypes.Log{
-				testLog(laterSig, 300, 0),
 				testLog(earliestSig, 200, 5),
-				testLog(laterSig, 200, 9),
 			}, nil).
 			Once()
 		svc.EXPECT().
