@@ -189,7 +189,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		rmCfg.MeterRecordsEnabled = true
 		rmCfg.MeterSnapshotsEnabled = false
 		c.usageMeter = resourcemanager.NewResourceManager(c.lggr, rmCfg)
-		identity := resourcemanager.NewBaseIdentity(c.meteringCfg.DeploymentIdentity, resourcemanager.EmittingServiceChainWrite, resourcemanager.WorkflowUsageResourcePool)
+		identity := resourcemanager.WithWorkflowUsagePool(resourcemanager.NewBaseIdentity(c.meteringCfg.DeploymentIdentity, resourcemanager.EmittingServiceChainWrite, ""), resourcemanager.WorkflowGasResourceType(c.chainSelector))
 		if capabilityDonID != 0 {
 			identity = identity.WithDonID(strconv.FormatUint(uint64(capabilityDonID), 10))
 		}

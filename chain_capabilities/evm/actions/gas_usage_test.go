@@ -28,7 +28,7 @@ func (r *recordingEmitter) Emit(_ context.Context, body []byte, _ ...any) error 
 
 func TestEmitGasUsage(t *testing.T) {
 	metadata := capabilities.RequestMetadata{WorkflowID: "wf-1", WorkflowExecutionID: "exec-1", OrgID: "org-1"}
-	identity := resourcemanager.ResourceIdentity{Product: "cre", Service: resourcemanager.EmittingServiceChainWrite, ResourcePool: resourcemanager.WorkflowUsageResourcePool}
+	identity := resourcemanager.WithWorkflowUsagePool(resourcemanager.ResourceIdentity{Product: "cre", Service: resourcemanager.EmittingServiceChainWrite}, resourcemanager.WorkflowGasResourceType(421614))
 	fee, _ := new(big.Int).SetString("123456789012345678901234", 10)
 
 	t.Run("emits one gas record keyed by tx hash and logs the contract line", func(t *testing.T) {
@@ -42,6 +42,8 @@ func TestEmitGasUsage(t *testing.T) {
 		rec := emitter.records[0]
 		require.Equal(t, meteringpb.MeterAction_METER_ACTION_USAGE, rec.GetAction())
 		require.Equal(t, resourcemanager.EmittingServiceChainWrite, rec.GetIdentity().GetService())
+		require.Equal(t, "cre:workflow:gas", rec.GetIdentity().GetResourcePool())
+		require.Equal(t, "cre:workflow:gas:421614", rec.GetIdentity().GetResourcePoolId())
 		require.Len(t, rec.GetUtilizations(), 1)
 		u := rec.GetUtilizations()[0]
 		require.Equal(t, "cre:workflow:gas:421614", u.GetResourceType())
