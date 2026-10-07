@@ -59,11 +59,10 @@ type capabilityGRPCService struct {
 	lggr          logger.Logger
 	limitsFactory limits.Factory
 
-	// meteringCfg and capabilityUsageEnabled come from the LOOP environment
-	// ([Metering] on the host). usageMeter emits cre:workflow:gas usage records
-	// for write reports when enabled; nil otherwise.
-	meteringCfg            resourcemanager.Config
-	capabilityUsageEnabled bool
+	// meteringCfg comes from the LOOP environment ([Metering] on the host).
+	// usageMeter emits cre:workflow:gas usage records for write reports when
+	// MeterRecordsEnabled; nil otherwise.
+	meteringCfg resourcemanager.Config
 }
 
 type capability struct {
@@ -82,10 +81,9 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
 		return evmcapserver.NewClientServer(&capabilityGRPCService{
-			lggr:                   s.Logger,
-			limitsFactory:          s.LimitsFactory,
-			meteringCfg:            s.MeteringConfig(),
-			capabilityUsageEnabled: s.EnvConfig.CapabilityUsageEnabled,
+			lggr:          s.Logger,
+			limitsFactory: s.LimitsFactory,
+			meteringCfg:   s.MeteringConfig(),
 		})
 	}, loop.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
 }
@@ -182,11 +180,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
-	if c.capabilityUsageEnabled {
-		// Gated by [Metering].CapabilityUsageEnabled on the host, independent of
-		// MeterRecordsEnabled (durable resource metering), so force records on.
+	if c.meteringCfg.MeterRecordsEnabled {
+		// Gas usage records share the host's [Metering].MeterRecordsEnabled gate
+		// with durable resource metering; they are never snapshotted.
 		rmCfg := c.meteringCfg.ResourceManagerConfig
-		rmCfg.MeterRecordsEnabled = true
 		rmCfg.MeterSnapshotsEnabled = false
 		c.usageMeter = resourcemanager.NewResourceManager(c.lggr, rmCfg)
 		identity := resourcemanager.WithWorkflowUsagePool(resourcemanager.NewBaseIdentity(c.meteringCfg.DeploymentIdentity, resourcemanager.EmittingServiceChainWrite, ""), resourcemanager.WorkflowGasResourceType(c.chainSelector))
