@@ -125,29 +125,25 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	if err != nil {
 		s.lggr.Errorw("request failed", "error", err, "workflowID", metadata.WorkflowID, "workflowOwner", metadata.WorkflowOwner, "workflowExecutionID", metadata.WorkflowExecutionID)
 		s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), externalEndpointLatency.Milliseconds(), s.cfg.ProxyMode, false, s.lggr)
-		var validationErr common.InputValidationError
-		if errors.As(err, &validationErr) {
+		if validationErr, ok := errors.AsType[common.InputValidationError](err); ok {
 			return nil, caperrors.NewPublicUserError(
 				fmt.Errorf("input validation failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
 					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
 				common.UserErrorCode(validationErr.Err))
 		}
-		var userErr gateway.UserError
-		if errors.As(err, &userErr) {
+		if _, ok := errors.AsType[gateway.UserError](err); ok {
 			return nil, caperrors.NewPublicUserError(
 				fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
 					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
 				common.UserErrorCode(err))
 		}
-		var canceledErr gateway.CanceledError
-		if errors.As(err, &canceledErr) {
+		if _, ok := errors.AsType[gateway.CanceledError](err); ok {
 			return nil, caperrors.NewPublicSystemError(
 				fmt.Errorf("request canceled for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
 					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
 				caperrors.Canceled)
 		}
-		var gatewayTimeoutErr gateway.TimeoutError
-		if errors.As(err, &gatewayTimeoutErr) {
+		if _, ok := errors.AsType[gateway.TimeoutError](err); ok {
 			return nil, caperrors.NewPublicSystemError(
 				fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
 					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),

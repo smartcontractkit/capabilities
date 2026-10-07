@@ -26,7 +26,6 @@ func NewQueryBatch(ctx context.Context, lggr logger.Logger, maxQueryLengthBytes 
 	messageSize := calculateMessageSize(obs)
 
 	return &QueryBatch{
-		Query:                      oracletypes.Query{RequestIDs: nil},
 		lggr:                       lggr,
 		currentSerialisedBatchSize: messageSize,
 		maxQueryLengthBytes:        maxQueryLengthBytes,

@@ -1094,8 +1094,8 @@ github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-202609171
 github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-20260917192921-dd173aa1ec2f/go.mod h1:xkqJi6oVC4t0IGzON45Y7nQNUUbiQ/krJk6js/AZkm0=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64 h1:D+N1i+pa+lmmd8llrSgCYmUxG3TX+iyGda5ac2sO4tc=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64/go.mod h1:DZkOtlIRV6ecpCskdXMF+k2es3uJQqTT1m5TRB9etjQ=
-github.com/smartcontractkit/chain-selectors v1.0.111 h1:urb/qOyRanxDn+Wras+LULHEHSlJ4tYnfeAHzeMBn5U=
-github.com/smartcontractkit/chain-selectors v1.0.111/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
+github.com/smartcontractkit/chain-selectors v1.0.112 h1:3VO+ttHsqGzPviMmb1AsIT5+rXVgz/Xx6wmvTpamrzE=
+github.com/smartcontractkit/chain-selectors v1.0.112/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
 github.com/smartcontractkit/chainlink-aptos/codec v0.0.0-20260716230027-bd85997bc03c h1:aDS7I+SK9mWkDcWlfP5JrDY4NnicC/4KVm30dG7HQaw=
 github.com/smartcontractkit/chainlink-aptos/codec v0.0.0-20260716230027-bd85997bc03c/go.mod h1:/ABThVk5DzhpsO1A4io8C6cAmqpF8RzgQDlGj98hke0=
 github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20260908155618-50f521d70e62 h1:nQg1GNpy3f0synbDhGUXlhNWQcwluUEAq1ua6NprPLs=

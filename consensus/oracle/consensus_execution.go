@@ -24,7 +24,13 @@ var (
 	ErrMoreThanOneValidOutcomeForIdenticalConsensus      = errors.New("not identical, multiple values with f+1 occurrences")
 	ErrInsufficientObservations                          = errors.New("insufficient observations to reach consensus")
 	ErrNoSingleValueTypeMeetsThreshold                   = errors.New("no single value type meets the minimum observation threshold")
+	ErrDecimalExponentOutOfRange                         = errors.New("decimal exponent out of range")
 )
+
+// Comparing decimals rescales them to a common exponent, which costs time and memory
+// proportional to the exponent gap, so a single observation with an extreme exponent
+// could stall every node computing the median.
+const maxDecimalExponent = 1000
 
 // Constants for type names used in aggregation logic.
 var (
@@ -104,7 +110,9 @@ func handleFieldsMapAggregation(
 				switch obs.Value.(type) {
 				case *valuespb.Value_MapValue:
 					fields := obs.GetMapValue().GetFields()
-					obsForKey = append(obsForKey, fields[key])
+					if v, ok := fields[key]; ok {
+						obsForKey = append(obsForKey, v)
+					}
 				default:
 					lggr.Debugw("unsupported observation type", "observationIndex", i, "key", key, "valueType", fmt.Sprintf("%T", obs.Value))
 					continue
@@ -250,6 +258,9 @@ func handleMedianAggregation(
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
+				if exp := val.GetDecimalValue().GetExponent(); exp > maxDecimalExponent || exp < -maxDecimalExponent {
+					return d, fmt.Errorf("%w: %d", ErrDecimalExponentOutOfRange, exp)
+				}
 				v, err := values.FromProto(val)
 				if err != nil {
 					return d, err
@@ -558,7 +569,7 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 
 	observationsByType := map[reflect.Type][]*valuespb.Value{}
 	for _, observation := range observationProtos {
-		if observation.Value == nil {
+		if observation == nil || observation.Value == nil {
 			continue
 		}
 
@@ -641,7 +652,7 @@ func reverseListValue(list *valuespb.Value) (*valuespb.Value, error) {
 	if list != nil {
 		switch list.Value.(type) {
 		case *valuespb.Value_ListValue:
-			reversed := list.GetListValue().GetFields()
+			reversed := slices.Clone(list.GetListValue().GetFields())
 			reverse(reversed)
 			return valuespb.NewListValue(reversed), nil
 		default:

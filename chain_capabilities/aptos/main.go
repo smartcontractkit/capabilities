@@ -237,7 +237,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			ContractConfigLoadTimeout:          10 * time.Second,
 			DefaultMaxDurationInitialization:   10 * time.Second,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics, c.limitsFactory),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {

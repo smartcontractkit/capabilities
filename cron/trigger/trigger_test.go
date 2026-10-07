@@ -120,8 +120,7 @@ type Payload struct {
 
 func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	useTypedAPI bool) Response {
-	response := Response{}
-	response.TriggerType = event.TriggerType
+	response := Response{TriggerType: event.TriggerType}
 	assert.Equal(t, server.CronID, response.TriggerType)
 	response.ID = event.ID
 

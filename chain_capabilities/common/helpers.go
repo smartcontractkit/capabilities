@@ -132,8 +132,7 @@ func NewUserError(err error) caperrors.Error {
 
 // UserErrorCode returns the appropriate error code for a user-facing error.
 func UserErrorCode(err error) caperrors.ErrorCode {
-	var limitErr limits.LimitError
-	if errors.As(err, &limitErr) {
+	if _, ok := errors.AsType[limits.LimitError](err); ok {
 		return caperrors.LimitExceeded
 	}
 	return caperrors.Unknown

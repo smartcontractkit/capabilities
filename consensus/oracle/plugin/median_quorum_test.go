@@ -165,7 +165,7 @@ func Test_Observation_propagatesStricterMedianQuorum(t *testing.T) {
 		reportingPlugin, reqStore := createReportingPlugin(t, logger.Test(t), 1, 4, 5, defaultMaxLengthBytes)
 
 		md := testMetaData()
-		req := oracle.NewConsensusRequest(&sdk.SimpleConsensusInputs{}, time.Now(), time.Now().Add(time.Hour), nil, md, nil, stricterMedianQuorum)
+		req := oracle.NewConsensusRequest(&sdk.SimpleConsensusInputs{}, time.Now(), time.Now().Add(time.Hour), nil, md, nil, stricterMedianQuorum, false)
 		require.NoError(t, reqStore.Add(req))
 
 		qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{md.RequestID()}})

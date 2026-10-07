@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -33,17 +32,15 @@ import (
 
 func testMetaData() oracle.ConsensusRequestMetadata {
 	return oracle.ConsensusRequestMetadata{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID:               "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
-			WorkflowOwner:            "1139525c34de895c8fa68006bd634387a9f1192a",
-			WorkflowExecutionID:      "0102030405060708091011121314151617181920212223242526272829303132",
-			WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
-			WorkflowDonID:            1,
-			WorkflowDonConfigVersion: 1,
-			ReferenceID:              "01",
-		},
-		KeyBundleID: "evm",
-		ReportID:    "aabb",
+		WorkflowID:               "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
+		WorkflowOwner:            "1139525c34de895c8fa68006bd634387a9f1192a",
+		WorkflowExecutionID:      "0102030405060708091011121314151617181920212223242526272829303132",
+		WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
+		WorkflowDonID:            1,
+		WorkflowDonConfigVersion: 1,
+		ReferenceID:              "01",
+		KeyBundleID:              "evm",
+		ReportID:                 "aabb",
 	}
 }
 
@@ -129,6 +126,105 @@ func extractSingleFailureCode(t *testing.T, outcomeBytes ocr3types.Outcome) orac
 	failure := outcome.Outcomes[0].GetFailure()
 	require.NotNil(t, failure, "expected a failed consensus outcome, got a success")
 	return failure.GetCode()
+}
+
+// Test_Outcome_DuplicateRequestIDsInQuery checks that a query listing the same
+// request ID multiple times produces a single outcome for it.
+func Test_Outcome_DuplicateRequestIDsInQuery(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	var attributed []libocrtypes.AttributedObservation
+	for i := uint8(0); i < 5; i++ {
+		attributed = append(attributed, makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, i, false))
+	}
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID, reqID, reqID}})
+	require.NoError(t, err)
+
+	outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+	require.NoError(t, err)
+
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Len(t, outcome.Outcomes, 1, "expected a single outcome for a request ID repeated in the query")
+}
+
+// Test_Outcome_RequestWithHistoricalOutcome checks that a queried request which
+// already has an entry in the previous outcome's HistoricalOutcomes is not
+// processed again.
+func Test_Outcome_RequestWithHistoricalOutcome(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	var attributed []libocrtypes.AttributedObservation
+	for i := uint8(0); i < 5; i++ {
+		attributed = append(attributed, makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, i, false))
+	}
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	prevOutcomeBytes, err := proto.Marshal(&oracletypes.Outcome{HistoricalOutcomes: map[string]uint64{reqID: 1}})
+	require.NoError(t, err)
+
+	outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 2, PreviousOutcome: prevOutcomeBytes}, qBytes, attributed)
+	require.NoError(t, err)
+
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Empty(t, outcome.Outcomes, "expected no new outcome for a request with a historical outcome")
+	require.Equal(t, map[string]uint64{reqID: 1}, outcome.HistoricalOutcomes)
+}
+
+// Test_ValidateObservation_RequestIDConsistency checks that an observation entry is
+// rejected when its map key does not match its metadata's request ID or when it is
+// for a request that is not in the query.
+func Test_ValidateObservation_RequestIDConsistency(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	ao := makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	require.NoError(t, reportingPlugin.ValidateObservation(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, ao))
+
+	// Entry keyed under a different request's ID than its metadata declares.
+	mismatched := makeOutcomeTestObs(t, "some-other-request-id", md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	err = reportingPlugin.ValidateObservation(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, mismatched)
+	require.ErrorContains(t, err, "does not match metadata request ID")
+
+	// Entry for a request that is not part of the query.
+	otherMD := testMetaData()
+	otherMD.ReferenceID = "02"
+	notQueried := makeOutcomeTestObs(t, otherMD.RequestID(), otherMD, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	err = reportingPlugin.ValidateObservation(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, notQueried)
+	require.ErrorContains(t, err, "not in the query")
 }
 
 // Test_Outcome_PlusOneErrors checks that when f+1 errors are received, Outcome() embeds the
@@ -450,6 +546,7 @@ func Test_Outcome_RecordsObservationQuorumForTimeoutClassification(t *testing.T)
 		make(chan oracle.ConsensusResponse, 1),
 		md,
 		tracker,
+		false,
 		false,
 	)
 	req.SendTimeout(ctx)

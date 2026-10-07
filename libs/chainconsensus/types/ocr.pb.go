@@ -495,12 +495,13 @@ func (*RequestObservation_Hashable) isRequestObservation_Observation() {}
 func (*RequestObservation_Volatile) isRequestObservation_Observation() {}
 
 type Observation struct {
-	state             protoimpl.MessageState         `protogen:"open.v1"`
-	ChainHeight       *ChainHeight                   `protobuf:"bytes,1,opt,name=chainHeight,proto3" json:"chainHeight,omitempty"`
-	Observations      map[string]*RequestObservation `protobuf:"bytes,2,rep,name=observations,proto3" json:"observations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	MissingRequestIDs []string                       `protobuf:"bytes,3,rep,name=missingRequestIDs,proto3" json:"missingRequestIDs,omitempty"` // list of requests IDs that are known by observer, but not requested by leader
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state                        protoimpl.MessageState         `protogen:"open.v1"`
+	ChainHeight                  *ChainHeight                   `protobuf:"bytes,1,opt,name=chainHeight,proto3" json:"chainHeight,omitempty"`
+	Observations                 map[string]*RequestObservation `protobuf:"bytes,2,rep,name=observations,proto3" json:"observations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	MissingRequestIDs            []string                       `protobuf:"bytes,3,rep,name=missingRequestIDs,proto3" json:"missingRequestIDs,omitempty"` // list of requests IDs that are known by observer, but not requested by leader
+	EnableMissingRequestRecovery bool                           `protobuf:"varint,4,opt,name=enableMissingRequestRecovery,proto3" json:"enableMissingRequestRecovery,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
 }
 
 func (x *Observation) Reset() {
@@ -552,6 +553,13 @@ func (x *Observation) GetMissingRequestIDs() []string {
 		return x.MissingRequestIDs
 	}
 	return nil
+}
+
+func (x *Observation) GetEnableMissingRequestRecovery() bool {
+	if x != nil {
+		return x.EnableMissingRequestRecovery
+	}
+	return false
 }
 
 type RequestError struct {
@@ -947,11 +955,12 @@ const file_ocr_proto_rawDesc = "" +
 	"\x05error\x18\x04 \x01(\fH\x00R\x05error\x12\x1c\n" +
 	"\bhashable\x18\x05 \x01(\fH\x00R\bhashable\x12P\n" +
 	"\bvolatile\x18\x06 \x01(\v22.chain_capabilities.evm.types.VolatileObservationsH\x00R\bvolatileB\r\n" +
-	"\vobservation\"\xdc\x02\n" +
+	"\vobservation\"\xa0\x03\n" +
 	"\vObservation\x12K\n" +
 	"\vchainHeight\x18\x01 \x01(\v2).chain_capabilities.evm.types.ChainHeightR\vchainHeight\x12_\n" +
 	"\fobservations\x18\x02 \x03(\v2;.chain_capabilities.evm.types.Observation.ObservationsEntryR\fobservations\x12,\n" +
-	"\x11missingRequestIDs\x18\x03 \x03(\tR\x11missingRequestIDs\x1aq\n" +
+	"\x11missingRequestIDs\x18\x03 \x03(\tR\x11missingRequestIDs\x12B\n" +
+	"\x1cenableMissingRequestRecovery\x18\x04 \x01(\bR\x1cenableMissingRequestRecovery\x1aq\n" +
 	"\x11ObservationsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12F\n" +
 	"\x05value\x18\x02 \x01(\v20.chain_capabilities.evm.types.RequestObservationR\x05value:\x028\x01\"&\n" +
