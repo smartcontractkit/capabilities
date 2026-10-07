@@ -25,7 +25,6 @@ import (
 	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -35,6 +34,7 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -56,16 +56,13 @@ type Solana struct {
 	transmissionScheduler    ts.TransmissionScheduler
 	handler                  chainconsensus.RequestHandler
 	forwarderState           solgo.PublicKey
-	usageMeter               *resourcemanager.ResourceManager
-	usageIdentity            resourcemanager.ResourceIdentity
+	gasMeter                 *gasmeter.Meter
 }
 
-// WithUsageMeter enables cre:workflow:gas usage MeterRecords for write reports.
-// identity is the base metering identity (DON id already stamped). Nil rm
-// disables emission.
-func (s *Solana) WithUsageMeter(rm *resourcemanager.ResourceManager, identity resourcemanager.ResourceIdentity) {
-	s.usageMeter = rm
-	s.usageIdentity = identity
+// WithGasMeter enables cre:workflow:gas usage MeterRecords for write reports.
+// A nil meter disables emission.
+func (s *Solana) WithGasMeter(m *gasmeter.Meter) {
+	s.gasMeter = m
 }
 
 func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder,

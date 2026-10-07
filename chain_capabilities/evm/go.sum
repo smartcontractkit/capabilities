@@ -457,6 +457,8 @@ github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMB
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260922114021-5cee95428866 h1:nJ3V1j6QSFJ3zfwTO8Ty5TVNEb7g4HUkr9VXXV7hLSg=
 github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260922114021-5cee95428866/go.mod h1:URIXl+ew48QapONMSLC1faCcGRnm5CRL3jj1PtpJt5E=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261007160123-bed53f59b8a4 h1:I3k5OaOI3BwdFH0GCIcibPnKD6HaxngU6z6bppPCx8g=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261007160123-bed53f59b8a4/go.mod h1:ubztvmJnKJilCw4CzrlHSkKvPYXNeUArML/xY1VzsBg=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961 h1:2+0wOWEiYcEm0XlS1HwgH09y/3qZ0zjokTdbExY2VQQ=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961/go.mod h1:h4kazMLsDM6CsKl2OnT9AtCHhhRsFptA/OTM7Hkj2GE=
 github.com/smartcontractkit/chain-selectors v1.0.112 h1:3VO+ttHsqGzPviMmb1AsIT5+rXVgz/Xx6wmvTpamrzE=

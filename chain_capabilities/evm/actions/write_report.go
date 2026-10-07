@@ -21,11 +21,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
@@ -54,8 +54,7 @@ type WriteReport struct {
 	transmissionScheduler  ts.TransmissionScheduler
 	executionTimestamp     time.Time
 
-	usageMeter    *resourcemanager.ResourceManager
-	usageIdentity resourcemanager.ResourceIdentity
+	gasMeter *gasmeter.Meter
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -101,8 +100,7 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		writeReportL1FeeActive: e.writeReportL1FeeActive,
 		transmissionScheduler:  e.transmissionScheduler,
 		executionTimestamp:     metadata.ExecutionTimestamp,
-		usageMeter:             e.usageMeter,
-		usageIdentity:          e.usageIdentity,
+		gasMeter:               e.gasMeter,
 	}
 
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
@@ -541,39 +539,8 @@ func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabiliti
 		e.lggr.Warnw("Transaction fee unavailable in reply; skipping metering", "txHash", hex.EncodeToString(reply.TxHash))
 		return capabilities.ResponseMetadata{}
 	}
-	emitGasUsage(ctx, e.lggr, e.usageMeter, e.usageIdentity, e.chainSelector, metadata, hex.EncodeToString(reply.TxHash), feeInWei)
+	e.gasMeter.Emit(ctx, metadata, hex.EncodeToString(reply.TxHash), feeInWei)
 	return metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
-}
-
-// emitGasUsage emits the cre:workflow:gas:<chain_selector> usage MeterRecord for
-// one chain write and logs the emission. The log line is a contract consumed by
-// the billing reconciler (fields: executionID, eventID, resourceType, value,
-// orgID, txHash) and must stay stable. Fail-open: never affects the reply.
-func emitGasUsage(ctx context.Context, lggr logger.Logger, rm *resourcemanager.ResourceManager, identity resourcemanager.ResourceIdentity, chainSelector uint64, metadata capabilities.RequestMetadata, txHash string, fee *big.Int) {
-	if rm == nil || fee == nil {
-		return
-	}
-	resourceID, err := resourcemanager.WorkflowUsageResourceID(metadata.WorkflowID, metadata.WorkflowExecutionID)
-	if err != nil {
-		lggr.Errorw("Gas usage meter record not emitted", "err", err, "executionID", metadata.WorkflowExecutionID)
-		return
-	}
-	resourceType := resourcemanager.WorkflowGasResourceType(chainSelector)
-	// The capability event id for gas is the transaction hash: one record per
-	// on-chain write, identical on every node of the DON that observes it.
-	rm.EmitUsageValue(ctx, identity, txHash, fee, resourcemanager.UtilizationFields{
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		OrgID:        metadata.OrgID,
-	})
-	lggr.Infow("Emitted capability usage meter record",
-		"executionID", metadata.WorkflowExecutionID,
-		"eventID", txHash,
-		"resourceType", resourceType,
-		"value", fee.String(),
-		"orgID", metadata.OrgID,
-		"txHash", txHash,
-	)
 }
 
 func (e *WriteReport) includeL1FeeInReceiptFee(ctx context.Context) bool {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	chainselectors "github.com/smartcontractkit/chain-selectors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
@@ -60,14 +62,14 @@ type capabilityGRPCService struct {
 	limitsFactory limits.Factory
 
 	// meteringCfg comes from the LOOP environment ([Metering] on the host).
-	// usageMeter emits cre:workflow:gas usage records for write reports when
+	// gasMeter emits cre:workflow:gas usage records for write reports when
 	// MeterRecordsEnabled; nil otherwise.
 	meteringCfg resourcemanager.Config
 }
 
 type capability struct {
 	*actions.EVM
-	usageMeter       *resourcemanager.ResourceManager
+	gasMeter         *gasmeter.Meter
 	id               string
 	requestPoller    *poller.Poller
 	consensusHandler chainconsensus.Handler
@@ -180,19 +182,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
-	if c.meteringCfg.MeterRecordsEnabled {
-		rmCfg := c.meteringCfg.ResourceManagerConfig
-		rmCfg.MeterSnapshotsEnabled = false
-		c.usageMeter = resourcemanager.NewResourceManager(c.lggr, rmCfg)
-		identity := resourcemanager.WithWorkflowUsagePool(resourcemanager.NewBaseIdentity(c.meteringCfg.DeploymentIdentity, resourcemanager.EmittingServiceChainWrite, ""), resourcemanager.WorkflowGasResourceType(c.chainSelector))
-		if capabilityDonID != 0 {
-			identity = identity.WithDonID(strconv.FormatUint(uint64(capabilityDonID), 10))
-		}
-		c.EVM.WithUsageMeter(c.usageMeter, identity)
-		if rmCfg.Emitter == nil {
-			c.lggr.Errorw("Capability usage metering enabled but this LOOP has no durable emitter; gas usage records will not be delivered")
-		}
-	}
+	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, capabilityDonID)
+	c.EVM.WithGasMeter(c.gasMeter)
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
@@ -223,8 +214,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
-	if c.usageMeter != nil {
-		startServices = append(startServices, c.usageMeter)
+	if c.gasMeter != nil {
+		startServices = append(startServices, c.gasMeter)
 	}
 	for _, service := range startServices {
 		if err := service.Start(ctx); err != nil {
@@ -291,8 +282,8 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
 	errs := errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
-	if c.usageMeter != nil {
-		errs = errors.Join(errs, c.usageMeter.Close())
+	if c.gasMeter != nil {
+		errs = errors.Join(errs, c.gasMeter.Close())
 	}
 	return errs
 }

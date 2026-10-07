@@ -22,7 +22,6 @@ import (
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -31,6 +30,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -71,8 +71,7 @@ type WriteReport struct {
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler ts.TransmissionScheduler
 
-	usageMeter    *resourcemanager.ResourceManager
-	usageIdentity resourcemanager.ResourceIdentity
+	gasMeter *gasmeter.Meter
 }
 
 func (s *Solana) WriteReport(
@@ -127,8 +126,7 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		beholderProcessor:        s.beholderProcessor,
 		messageBuilder:           s.messageBuilder,
 		transmissionScheduler:    s.transmissionScheduler,
-		usageMeter:               s.usageMeter,
-		usageIdentity:            s.usageIdentity,
+		gasMeter:                 s.gasMeter,
 	}
 
 	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
@@ -625,39 +623,8 @@ func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryCon
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, sig, err.Error()))
 		return capabilities.ResponseMetadata{}
 	}
-	emitGasUsage(ctx, wr.lggr, wr.usageMeter, wr.usageIdentity, wr.chainSelector, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(feeInLamports))
+	wr.gasMeter.Emit(ctx, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(feeInLamports))
 	return metering.GetResponseMetadataWriteReport(feeInLamports, wr.chainSelector)
-}
-
-// emitGasUsage emits the cre:workflow:gas:<chain_selector> usage MeterRecord for
-// one chain write and logs the emission. The log line is a contract consumed by
-// the billing reconciler (fields: executionID, eventID, resourceType, value,
-// orgID, txHash) and must stay stable. Fail-open: never affects the reply.
-func emitGasUsage(ctx context.Context, lggr logger.Logger, rm *resourcemanager.ResourceManager, identity resourcemanager.ResourceIdentity, chainSelector uint64, metadata capabilities.RequestMetadata, txHash string, fee *big.Int) {
-	if rm == nil || fee == nil {
-		return
-	}
-	resourceID, err := resourcemanager.WorkflowUsageResourceID(metadata.WorkflowID, metadata.WorkflowExecutionID)
-	if err != nil {
-		lggr.Errorw("Gas usage meter record not emitted", "err", err, "executionID", metadata.WorkflowExecutionID)
-		return
-	}
-	resourceType := resourcemanager.WorkflowGasResourceType(chainSelector)
-	// The capability event id for gas is the transaction hash: one record per
-	// on-chain write, identical on every node of the DON that observes it.
-	rm.EmitUsageValue(ctx, identity, txHash, fee, resourcemanager.UtilizationFields{
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		OrgID:        metadata.OrgID,
-	})
-	lggr.Infow("Emitted capability usage meter record",
-		"executionID", metadata.WorkflowExecutionID,
-		"eventID", txHash,
-		"resourceType", resourceType,
-		"value", fee.String(),
-		"orgID", metadata.OrgID,
-		"txHash", txHash,
-	)
 }
 
 func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, error) {

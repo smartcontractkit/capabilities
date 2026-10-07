@@ -27,6 +27,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
@@ -58,10 +59,10 @@ type capabilityGRPCService struct {
 	triggerService *trigger.SolanaLogTriggerService
 
 	// meteringCfg comes from the LOOP environment ([Metering] on the host).
-	// usageMeter emits cre:workflow:gas usage records for write reports when
+	// gasMeter emits cre:workflow:gas usage records for write reports when
 	// MeterRecordsEnabled; nil otherwise.
 	meteringCfg resourcemanager.Config
-	usageMeter  *resourcemanager.ResourceManager
+	gasMeter    *gasmeter.Meter
 }
 
 type capability struct {
@@ -120,8 +121,8 @@ func (c *capabilityGRPCService) Close() error {
 	if c.Solana != nil {
 		closers = append(closers, c.Solana)
 	}
-	if c.usageMeter != nil {
-		closers = append(closers, c.usageMeter)
+	if c.gasMeter != nil {
+		closers = append(closers, c.gasMeter)
 	}
 	return services.CloseAll(closers...)
 }
@@ -254,19 +255,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return err
 	}
-	if c.meteringCfg.MeterRecordsEnabled {
-		rmCfg := c.meteringCfg.ResourceManagerConfig
-		rmCfg.MeterSnapshotsEnabled = false
-		c.usageMeter = resourcemanager.NewResourceManager(c.lggr, rmCfg)
-		identity := resourcemanager.WithWorkflowUsagePool(resourcemanager.NewBaseIdentity(c.meteringCfg.DeploymentIdentity, resourcemanager.EmittingServiceChainWrite, ""), resourcemanager.WorkflowGasResourceType(c.chainSelector))
-		if dependencies.CapabilityDonID != 0 {
-			identity = identity.WithDonID(strconv.FormatUint(uint64(dependencies.CapabilityDonID), 10))
-		}
-		c.Solana.WithUsageMeter(c.usageMeter, identity)
-		if rmCfg.Emitter == nil {
-			c.lggr.Errorw("Capability usage metering enabled but this LOOP has no durable emitter; gas usage records will not be delivered")
-		}
-		toStart = append(toStart, c.usageMeter)
+	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, dependencies.CapabilityDonID)
+	c.Solana.WithGasMeter(c.gasMeter)
+	if c.gasMeter != nil {
+		toStart = append(toStart, c.gasMeter)
 	}
 
 	c.triggerService, err = trigger.NewLogTriggerService(trigger.LogTriggerServiceOpts{
