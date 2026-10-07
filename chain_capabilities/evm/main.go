@@ -181,8 +181,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 	if c.meteringCfg.MeterRecordsEnabled {
-		// Gas usage records share the host's [Metering].MeterRecordsEnabled gate
-		// with durable resource metering; they are never snapshotted.
 		rmCfg := c.meteringCfg.ResourceManagerConfig
 		rmCfg.MeterSnapshotsEnabled = false
 		c.usageMeter = resourcemanager.NewResourceManager(c.lggr, rmCfg)
@@ -192,7 +190,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		}
 		c.EVM.WithUsageMeter(c.usageMeter, identity)
 		if rmCfg.Emitter == nil {
-			c.lggr.Warnw("Capability usage metering enabled but this LOOP has no durable emitter; gas usage records will not be delivered")
+			c.lggr.Errorw("Capability usage metering enabled but this LOOP has no durable emitter; gas usage records will not be delivered")
 		}
 	}
 
