@@ -476,11 +476,11 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 
 		workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
 		if execIDErr != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "isLegacyExecutionID", false, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
 			workflowExecutionID = ""
 		}
-		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID, "isLegacyExecutionID", false)
+		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID)
 
 		displayWorkflowName := telemetryContext.DecodedWorkflowName
 		if displayWorkflowName == "" {

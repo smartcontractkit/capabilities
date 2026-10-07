@@ -1215,11 +1215,8 @@ func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
 	for _, entry := range observedLogs.All() {
 		if entry.Message == "sending trigger event" {
 			for _, field := range entry.Context {
-				switch field.Key {
-				case "executionID":
+				if field.Key == "executionID" {
 					execIDFromLog = field.String
-				case "isLegacyExecutionID":
-					isLegacyFromLog = field.Integer == 1
 				}
 			}
 			found = true
