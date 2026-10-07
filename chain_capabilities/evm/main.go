@@ -183,7 +183,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, capabilityDonID)
-	c.EVM.WithGasMeter(c.gasMeter)
+	c.WithGasMeter(c.gasMeter)
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)

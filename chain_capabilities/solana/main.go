@@ -256,7 +256,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, dependencies.CapabilityDonID)
-	c.Solana.WithGasMeter(c.gasMeter)
+	c.WithGasMeter(c.gasMeter)
 	if c.gasMeter != nil {
 		toStart = append(toStart, c.gasMeter)
 	}
