@@ -248,7 +248,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				// Send trigger event even if we can't generate execution ID. Here the ID is used only for observability.
 			}
 
-			s.lggr.Debugw("sending trigger event", "executionID", workflowExecutionID, "isLegacyExecutionID", false, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+			s.lggr.Debugw("sending trigger event", "executionID", workflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {

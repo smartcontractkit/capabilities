@@ -119,7 +119,7 @@ All responses follow the JSON-RPC 2.0 specification:
 #### Workflow Execution ID Generation
 Execution IDs are generated using:
 ```go
-workflowExecutionID = EncodeExecutionID(workflowID, requestID)
+workflowExecutionID = GenerateExecutionIDWithTriggerIndex(workflowID, requestID, 0)
 ```
 This ensures unique execution IDs that can be traced back to their originating request and guarantees uniqueness per workflow.
 
