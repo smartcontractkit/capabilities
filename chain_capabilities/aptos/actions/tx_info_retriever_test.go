@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -345,4 +346,20 @@ func TestReceiverAddressesEqual(t *testing.T) {
 	require.True(t, receiverAddressesEqual(shortOnChainHex, expected))
 	require.True(t, receiverAddressesEqual("0x04476bcdb448e33b69d2745f9509570e104caee1393da08d7d53becf570cffa7", expected))
 	require.False(t, receiverAddressesEqual("0xbb", expected))
+}
+
+func TestEntryFunctionsEqual_LeadingZeroForwarder(t *testing.T) {
+	var forwarder aptos_sdk.AccountAddress
+	require.NoError(t, forwarder.ParseStringRelaxed("0x7cd20f64feabb51cde3196811ac98ded4f8c43df43f576bd3a3e00d0b9dae07"))
+	expected := fmt.Sprintf("%s::forwarder::report", forwarder.String())
+	require.Contains(t, expected, "0x07cd2", "SDK String() should pad to the long form")
+
+	// The REST API strips leading zeros from the address in the function id.
+	const onChain = "0x7cd20f64feabb51cde3196811ac98ded4f8c43df43f576bd3a3e00d0b9dae07::forwarder::report"
+	require.True(t, entryFunctionsEqual(onChain, expected))
+	require.True(t, entryFunctionsEqual(expected, expected))
+
+	require.False(t, entryFunctionsEqual("0x7cd20f64feabb51cde3196811ac98ded4f8c43df43f576bd3a3e00d0b9dae08::forwarder::report", expected))
+	require.False(t, entryFunctionsEqual("0x7cd20f64feabb51cde3196811ac98ded4f8c43df43f576bd3a3e00d0b9dae07::forwarder::other", expected))
+	require.False(t, entryFunctionsEqual("not-a-function-id", expected))
 }
