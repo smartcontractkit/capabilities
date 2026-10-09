@@ -178,7 +178,7 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 		}
 
 		// match function name
-		if payload.Inner.Function != thr.entryFunctionName {
+		if !entryFunctionsEqual(payload.Inner.Function, thr.entryFunctionName) {
 			continue
 		}
 
@@ -471,6 +471,37 @@ func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []any) bool {
 	reportHex, _ := arguments[1].(string)
 	expectedReportHex := hex.EncodeToString(slices.Concat(thr.report.ReportContext, thr.report.RawReport))
 	return strings.TrimPrefix(reportHex, "0x") == expectedReportHex
+}
+
+// entryFunctionsEqual compares two "<address>::<module>::<function>" ids, parsing the address
+// part so that a leading-zero-stripped form from the REST API (0x7cd2...) matches the padded
+// form from AccountAddress.String() (0x07cd2...). Falls back to an exact string compare if
+// either side can't be parsed.
+func entryFunctionsEqual(actual, expected string) bool {
+	if actual == expected {
+		return true
+	}
+	actualAddr, actualRest, ok := splitFunctionID(actual)
+	if !ok {
+		return false
+	}
+	expectedAddr, expectedRest, ok := splitFunctionID(expected)
+	if !ok {
+		return false
+	}
+	return actualAddr == expectedAddr && actualRest == expectedRest
+}
+
+func splitFunctionID(id string) (aptos_sdk.AccountAddress, string, bool) {
+	addrStr, rest, found := strings.Cut(id, "::")
+	if !found {
+		return aptos_sdk.AccountAddress{}, "", false
+	}
+	var addr aptos_sdk.AccountAddress
+	if err := addr.ParseStringRelaxed(addrStr); err != nil {
+		return aptos_sdk.AccountAddress{}, "", false
+	}
+	return addr, rest, true
 }
 
 // receiverAddressesEqual compares a hex-encoded receiver from chain tx arguments
