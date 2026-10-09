@@ -20,9 +20,12 @@ import (
 const (
 	forwarderReportFunction              = "report"
 	forwarderGetTransmissionInfoFunction = "get_transmission_info"
-	defaultLedgerBoundsOffset            = uint32(20)
-	reportProcessedEventPageLimit        = uint32(100)
-	reportProcessedEventMaxPages         = 10
+	// The report() tx is valid for the next 2 ledgers (MaxLedger is exclusive). stellar-core
+	// drops an unincluded tx from its queue after 4 ledgers and never re-floods the same hash,
+	// so a short validity lets the TXM resend a fresh envelope every ~2 ledgers.
+	defaultLedgerBoundsOffset     = uint32(3)
+	reportProcessedEventPageLimit = uint32(100)
+	reportProcessedEventMaxPages  = 10
 	// DefaultForwarderLookbackLedgers is how many ledgers back to search for ReportProcessed events.
 	DefaultForwarderLookbackLedgers = int64(100)
 )
