@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -68,6 +70,8 @@ type WriteReport struct {
 	txComputeLimit        limits.BoundLimiter[uint32]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler ts.TransmissionScheduler
+
+	gasMeter *gasmeter.Meter
 }
 
 func (s *Solana) WriteReport(
@@ -122,6 +126,7 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		beholderProcessor:        s.beholderProcessor,
 		messageBuilder:           s.messageBuilder,
 		transmissionScheduler:    s.transmissionScheduler,
+		gasMeter:                 s.gasMeter,
 	}
 
 	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
@@ -618,6 +623,7 @@ func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryCon
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, sig, err.Error()))
 		return capabilities.ResponseMetadata{}
 	}
+	wr.gasMeter.Emit(ctx, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(feeInLamports))
 	return metering.GetResponseMetadataWriteReport(feeInLamports, wr.chainSelector)
 }
 
