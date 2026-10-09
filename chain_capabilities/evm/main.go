@@ -137,10 +137,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	//   - job-spec boot path: populated when unambiguous, otherwise 0 (e.g. a node
 	//     that belongs to multiple DONs running this capability, or a core node
 	//     that pre-dates CRE-4409).
-	// When it is 0 the trigger service falls back to the consumer workflow's DON
-	// ID (see trigger.NewLogTriggerService). We deliberately do NOT re-resolve it
-	// from the registry here: that lookup cannot disambiguate multi-DON nodes and
-	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
+	// When it is 0 trigger events carry no DON ID. We deliberately do NOT
+	// re-resolve it from the registry here: that lookup cannot disambiguate
+	// multi-DON nodes and could emit an incorrect guess.
 	capabilityDonID := dependencies.CapabilityDonID
 	derivedUnknownTTL := capcommon.MaxRequestTimeoutWithMultiplier(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)

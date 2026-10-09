@@ -56,10 +56,8 @@ type LogTriggerService struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	// capabilityDonID is the on-chain DON ID of this capability DON.
-	// Used to label emitted events with the sending DON ID, distinct from the
-	// consumer workflow's DON ID carried in RequestMetadata.WorkflowDonID. Zero
-	// means unknown; the labeler then falls back to WorkflowDonID.
+	// capabilityDonID is the on-chain DON ID of this capability DON, used to label
+	// emitted events with the sending DON ID. Zero means unknown.
 	capabilityDonID uint32
 
 	triggers                        LogTriggerStore
@@ -494,20 +492,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowName, displayWorkflowName,
 		)
 
-		// Emit the *sending* capability DON ID. The trigger plugin runs on a capability
-		// DON (e.g. chain_capabilities_zone-a), separate from the consumer workflow's
-		// DON carried in RequestMetadata.WorkflowDonID. The workflow service needs the
-		// sender's DON to resolve on-chain quorum params (N, F). See CRE-4409.
-		// capabilityDonID is 0 when the host could not resolve it authoritatively
-		// (a multi-DON job-spec node, or a core node that pre-dates CRE-4409); in
-		// that case we fall back to WorkflowDonID. This fallback is permanent, not
-		// transitional, since the job-spec boot path is still supported.
-		switch {
-		case lts.capabilityDonID != 0:
-			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(lts.capabilityDonID)))
-		case telemetryContext.WorkflowDonID != 0:
-			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)))
-		}
+		labeler = withCapabilityDonID(labeler, lts.capabilityDonID)
 		if telemetryContext.WorkflowDonConfigVersion != 0 {
 			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.WorkflowDonConfigVersion)))
 		}
@@ -781,3 +766,14 @@ func (r realTicker) Stop() {
 }
 
 var defaultTickerFactory tickerFactory = realTickerFactory{}
+
+// withCapabilityDonID labels trigger events with the *sending* capability DON ID,
+// which the workflow service uses to resolve on-chain quorum params (N, F). The
+// label is left unset when the DON ID is unknown, otherwise the consumer workflow's
+// DON ID would be wrong for a capability DON.
+func withCapabilityDonID(labeler custmsg.MessageEmitter, capabilityDonID uint32) custmsg.MessageEmitter {
+	if capabilityDonID == 0 {
+		return labeler
+	}
+	return labeler.With(events.KeyDonID, strconv.Itoa(int(capabilityDonID)))
+}

@@ -38,7 +38,7 @@ type connectorHandler struct {
 	lggr                     logger.Logger
 	gatewayConnector         core.GatewayConnector
 	config                   ServiceConfig
-	capabilityDonID          uint32 // authoritative sending DON ID; 0 = unknown, falls back to WorkflowDONID
+	capabilityDonID          uint32 // authoritative sending DON ID; 0 = unknown
 	requestCache             *requestCache
 	workflowStore            *workflowStore
 	gatewayMetadataPublisher GatewayMetadataPublisher
@@ -315,18 +315,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		displayWorkflowName = workflowMetadata.WorkflowName
 	}
 
-	// Emit the *sending* capability DON ID. The HTTP trigger plugin runs on a
-	// capability DON, separate from the consumer workflow's DON. The workflow
-	// service needs the sender's DON to resolve on-chain quorum params (N, F).
-	// See CRE-4409. capabilityDonID is 0 when the host could not resolve it
-	// authoritatively (a multi-DON job-spec node, or a core node that pre-dates
-	// CRE-4409); in that case we fall back to WorkflowDONID. This fallback is
-	// permanent, not transitional, since the job-spec boot path is still supported.
-	donIDForEvent := h.capabilityDonID
-	if donIDForEvent == 0 {
-		donIDForEvent = workflowMetadata.WorkflowDONID
-	}
-
 	labeler := custmsg.NewLabeler().With(
 		events.KeyTriggerID, req.ID,
 		events.KeyWorkflowID, workflowMetadata.WorkflowID,
@@ -336,8 +324,8 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
-		events.KeyDonID, strconv.Itoa(int(donIDForEvent)),
 	)
+	labeler = withCapabilityDonID(labeler, h.capabilityDonID)
 	if orgID != "" {
 		labeler = labeler.With(events.KeyOrganizationID, orgID)
 	}
@@ -362,6 +350,17 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		l.Errorw("failed to emit trigger execution started event", "error", emitErr)
 	}
 	l.Debug("Trigger event processed")
+}
+
+// withCapabilityDonID labels trigger events with the *sending* capability DON ID,
+// which the workflow service uses to resolve on-chain quorum params (N, F). The
+// label is left unset when the DON ID is unknown, otherwise the consumer workflow's
+// DON ID would be wrong for a capability DON.
+func withCapabilityDonID(labeler custmsg.MessageEmitter, capabilityDonID uint32) custmsg.MessageEmitter {
+	if capabilityDonID == 0 {
+		return labeler
+	}
+	return labeler.With(events.KeyDonID, strconv.Itoa(int(capabilityDonID)))
 }
 
 type WorkflowMetadata struct {
