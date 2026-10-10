@@ -334,6 +334,16 @@ func (h *writeReportHelper) expectObservedTxHashLookup(t *testing.T, rm ocrtypes
 	h.expectGetTransaction(t)
 }
 
+// expectTransmissionInfoReread expects the get_transmission_info re-read that follows a local
+// simulate or submit failure.
+func (h *writeReportHelper) expectTransmissionInfoReread(t *testing.T, transmissionInfoXDR string) {
+	t.Helper()
+	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(r stellartypes.SimulateTransactionRequest) bool {
+		return r.Function == forwarderGetTransmissionInfoFunction
+	})).
+		Return(transmissionResp(transmissionInfoXDR), nil).Once()
+}
+
 func (h *writeReportHelper) expectPostSubmitSuccessTxLookup(t *testing.T, rm ocrtypes.Metadata, receiver string) {
 	t.Helper()
 	h.expectObservedTxHashLookup(t, rm, receiver, true)
@@ -685,10 +695,35 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(nil, errors.New("TXM: context deadline exceeded")).Once()
+		h.expectTransmissionInfoReread(t, notAttemptedXDR(t))
 
 		_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to submit forwarder report transaction")
+	})
+
+	t.Run("SubmitTransaction fails after a peer landed the report - returns recorded success", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		rm, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t, reqMeta, req)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		// e.g. the TXM's re-simulation hit the forwarder's AlreadyProcessed error.
+		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+			Return(nil, errors.New("submit transaction: pipeline failure")).Once()
+		h.expectTransmissionInfoReread(t, succeededXDR(t))
+		h.expectObservedTxHashLookup(t, rm, req.ContractId, true)
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		rcSuccess := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
+		require.Equal(t, &rcSuccess, result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 	})
 
 	t.Run("post-submit poll fails - returns error without event-only success", func(t *testing.T) {
@@ -888,6 +923,7 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 			return req.Function == forwarderReportFunction
 		})).
 			Return(stellartypes.SimulateTransactionResponse{Error: "host function trapped"}, nil).Once()
+		h.expectTransmissionInfoReread(t, notAttemptedXDR(t))
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
@@ -910,6 +946,7 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 			return req.Function == forwarderReportFunction
 		})).
 			Return(stellartypes.SimulateTransactionResponse{Success: false, Error: "not a Wasm contract"}, nil).Once()
+		h.expectTransmissionInfoReread(t, notAttemptedXDR(t))
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
@@ -957,11 +994,39 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 			return req.Function == forwarderReportFunction
 		})).
 			Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc unavailable")).Once()
+		h.expectTransmissionInfoReread(t, notAttemptedXDR(t))
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "pre-submit report simulation failed")
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("simulation rejects a report a peer landed after the poll - returns recorded success, no submit", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		rm, reqMeta, req := newWRReportFixture(t)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+			return req.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{Error: "HostError: Error(Contract, #13)"}, nil).Once()
+		h.expectTransmissionInfoReread(t, succeededXDR(t))
+		h.expectObservedTxHashLookup(t, rm, req.ContractId, true)
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		rcSuccess := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
+		require.Equal(t, &rcSuccess, result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 
