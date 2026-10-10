@@ -3,6 +3,7 @@ package monitoring
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -15,7 +16,8 @@ type MetricsInfoCapBasic struct {
 	capTimestampStart  beholder.MetricInfo
 	capTimestampEmit   beholder.MetricInfo
 	capDuration        beholder.MetricInfo // ts.emit - ts.start
-	capDurationBuckets []float64           // explicit histogram buckets; nil uses the SDK default
+	invalidTelemetry   beholder.MetricInfo
+	capDurationBuckets []float64 // explicit histogram buckets; nil uses the SDK default
 }
 
 // NewMetricsInfoCapBasic creates a MetricsInfoCapBasic with default histogram buckets.
@@ -51,6 +53,11 @@ func newMetricsInfoCapBasic(metricPrefix, eventRef string, buckets []float64) Me
 			Unit:        "ms",
 			Description: fmt.Sprintf("The duration (local) since capability exec start to message: '%s' emit", eventRef),
 		},
+		invalidTelemetry: beholder.MetricInfo{
+			Name:        fmt.Sprintf("%s_invalid_telemetry_count", metricPrefix),
+			Unit:        "",
+			Description: fmt.Sprintf("The count of message: '%s' emitted with invalid telemetry timestamps", eventRef),
+		},
 		capDurationBuckets: buckets,
 	}
 }
@@ -61,6 +68,7 @@ type MetricsCapBasic struct {
 	capTimestampStart metric.Int64Gauge
 	capTimestampEmit  metric.Int64Gauge
 	capDuration       metric.Int64Histogram // ts.emit - ts.start
+	invalidTelemetry  metric.Int64Counter
 }
 
 // NewMetricsCapBasic creates a new MetricsCapBasic using the provided MetricsInfoCapBasic
@@ -98,6 +106,11 @@ func NewMetricsCapBasic(info MetricsInfoCapBasic) (MetricsCapBasic, error) {
 		return set, fmt.Errorf("failed to create new histogram: %w", err)
 	}
 
+	set.invalidTelemetry, err = info.invalidTelemetry.NewInt64Counter(meter)
+	if err != nil {
+		return set, fmt.Errorf("failed to create new counter: %w", err)
+	}
+
 	return set, nil
 }
 
@@ -107,6 +120,11 @@ func (m *MetricsCapBasic) RecordEmit(ctx context.Context, start, emit uint64, at
 
 	// Count events
 	m.count.Add(ctx, 1, attrs)
+
+	if start > math.MaxInt64 || emit > math.MaxInt64 || emit < start {
+		m.invalidTelemetry.Add(ctx, 1, attrs)
+		return
+	}
 
 	// Timestamp events
 	m.capTimestampStart.Record(ctx, int64(start), attrs)
