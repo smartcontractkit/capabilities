@@ -20,12 +20,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
@@ -55,6 +57,12 @@ type capabilityGRPCService struct {
 	lggr           logger.Logger
 	limitsFactory  limits.Factory
 	triggerService *trigger.SolanaLogTriggerService
+
+	// meteringCfg comes from the LOOP environment ([Metering] on the host).
+	// gasMeter emits cre:workflow:gas usage records for write reports when
+	// MeterRecordsEnabled; nil otherwise.
+	meteringCfg resourcemanager.Config
+	gasMeter    *gasmeter.Meter
 }
 
 type capability struct {
@@ -69,7 +77,11 @@ var _ solcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return solcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
+		return solcapserver.NewClientServer(&capabilityGRPCService{
+			lggr:          s.Logger.Named(CapabilityName),
+			limitsFactory: s.LimitsFactory,
+			meteringCfg:   s.MeteringConfig(),
+		})
 	}, loop.WithOtelViews(append(consMetrics.MetricViews(), capmon.MetricViews()...)))
 }
 
@@ -108,6 +120,9 @@ func (c *capabilityGRPCService) Close() error {
 	}
 	if c.Solana != nil {
 		closers = append(closers, c.Solana)
+	}
+	if c.gasMeter != nil {
+		closers = append(closers, c.gasMeter)
 	}
 	return services.CloseAll(closers...)
 }
@@ -239,6 +254,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector, c.consensusHandler)
 	if err != nil {
 		return err
+	}
+	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, dependencies.CapabilityDonID)
+	c.WithGasMeter(c.gasMeter)
+	if c.gasMeter != nil {
+		toStart = append(toStart, c.gasMeter)
 	}
 
 	c.triggerService, err = trigger.NewLogTriggerService(trigger.LogTriggerServiceOpts{
