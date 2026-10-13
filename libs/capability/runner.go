@@ -46,13 +46,13 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	}
 	svcs = append(svcs, reg)
 
-	settings, err := newSettings(lggr)
+	settings, err := startSettings(ctx, lggr, cfg.settings)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start settings: %w", err)
 	}
-	mux.HandleFunc(reloadPath(), reloadHandler(lggr, settings, settingsPath()))
+	svcs = append(svcs, settings)
 
-	capability, err := startCapability(ctx, lggr, cfg, newCapability, reg, settings, mux)
+	capability, err := startCapability(ctx, lggr, cfg, newCapability, reg, settings.values, mux)
 	if err != nil {
 		return err
 	}

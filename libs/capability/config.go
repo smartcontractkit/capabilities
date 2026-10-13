@@ -12,6 +12,8 @@ const capabilitiesNamespace = "capabilities"
 
 const grpcNamespace = "grpc"
 
+const settingsNamespace = "settings"
+
 const defaultHost = "localhost"
 
 type grpcConfig struct {
@@ -23,6 +25,7 @@ type config struct {
 	observability observability
 	capabilities  capabilityConfig
 	grpc          grpcConfig
+	settings      settingsConfig
 }
 
 func defaultConfig() *config {
@@ -38,6 +41,7 @@ func (c *config) namespaced() []section {
 	return append(c.observability.namespaced(),
 		section{capabilitiesNamespace, &c.capabilities},
 		section{grpcNamespace, &c.grpc},
+		section{settingsNamespace, &c.settings},
 	)
 }
 

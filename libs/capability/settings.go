@@ -1,109 +1,152 @@
 package capability
 
-// CRE settings, and the limits resolved out of them.
-//
-// A capability binary runs under the empty LOOP: the node supervises its liveness over go-plugin but
-// exposes no RPCs to it, so settings reach it through the filesystem instead. The node dumps each
-// update to a conventional path and then hits this process's reload endpoint; both share a
-// container, so os.TempDir() resolves to the same place on either side.
-//
-// The constants below are that convention, and are a copy of the ones in standalone/capability
-// rather than a reference to them - importing that package would be a cycle, since it reaches back
-// into the bootstrapper that imports this one. They have to keep the same values: the node writes
-// the file, this reads it.
-
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"net/http"
-	"os"
-	"path/filepath"
+	"io"
+
+	"github.com/cenkalti/backoff/v5"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/timeutil"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const (
-	// settingsDirName names the directory, under os.TempDir(), that CRE settings are dumped to.
-	settingsDirName = "cre_limits"
-
-	// settingsFileName is the name of the file CRE settings are dumped to, and the path suffix of
-	// the reload endpoint: /reload/<settingsFileName>.
-	//
-	// A limit's effective value is resolved out of this same payload, so there is no separate limits
-	// file: reloading this one reloads limits too.
-	settingsFileName = "settings.txt"
-
-	// reloadPathPrefix is the route prefix reload requests are served on.
-	reloadPathPrefix = "/reload/"
-)
-
-// settingsPath is the file CRE settings are dumped to. Both sides resolve it the same way, which is
-// the whole contract: the node writes it, this process reads it.
-func settingsPath() string { return filepath.Join(os.TempDir(), settingsDirName, settingsFileName) }
-
-// reloadPath is the route the node hits after dumping new settings: /reload/settings.txt.
-func reloadPath() string { return reloadPathPrefix + settingsFileName }
-
-// reloadHandler re-reads the settings file and swaps it in. 200 means every limit in this process
-// now resolves against the new settings; 500 means none of them do and the previous settings are
-// still in force.
-func reloadHandler(lggr logger.Logger, settings *loop.AtomicSettings, path string) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		if err := loadSettings(settings, path); err != nil {
-			lggr.Errorw("Failed to reload settings", "err", err, "path", path)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		lggr.Infow("Reloaded settings", "path", path)
-		fmt.Fprintln(w, "ok")
-	}
+type settingsConfig struct {
+	URL string `usage:"gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes settings updates to this process. Unset leaves every limit at its compiled-in default"`
 }
 
-// newSettings builds this process's settings, seeded from the dumped file if the node has already
-// written one.
-func newSettings(lggr logger.Logger) (*loop.AtomicSettings, error) {
-	s := &loop.AtomicSettings{Lggr: lggr}
-	s.SetGetter(cresettings.DefaultGetter)
+// settingsService holds this process's CRE settings and, when the host serves them, keeps them
+// following the host's updates for as long as it runs.
+type settingsService struct {
+	services.Service
+	eng *services.Engine
 
-	if err := loadSettings(s, settingsPath()); err != nil {
-		return nil, err
+	values *loop.AtomicSettings
+	conn   *grpc.ClientConn
+}
+
+func newSettingsService(lggr logger.Logger, cfg settingsConfig) (*settingsService, error) {
+	s := &settingsService{values: newSettings(lggr)}
+	if cfg.URL != "" {
+		conn, err := dial(cfg.URL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create settings client for %s: %w", cfg.URL, err)
+		}
+		s.conn = conn
 	}
+	s.Service, s.eng = services.Config{Name: "Settings", Start: s.start, Close: s.close}.NewServiceEngine(lggr)
 	return s, nil
 }
 
-// loadSettings reads the dumped settings file into s.
-//
-// A missing file is not an error: nothing has been dumped yet, so s keeps the getter it was built
-// with and every limit resolves to its compiled-in default. That is the same state a LOOP starts in
-// before its first update arrives.
-func loadSettings(s *loop.AtomicSettings, path string) error {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+func startSettings(ctx context.Context, lggr logger.Logger, cfg settingsConfig) (*settingsService, error) {
+	s, err := newSettingsService(lggr, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return s, s.Start(ctx)
+}
+
+func (s *settingsService) start(context.Context) error {
+	if s.conn == nil {
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("failed to read settings file %s: %w", path, err)
-	}
-
-	// Hash is left empty: the node owns the hash of an update, and what is on disk is only ever a
-	// copy of one. Nothing downstream compares it.
-	if err := s.Store(core.SettingsUpdate{Settings: string(b)}); err != nil {
-		return fmt.Errorf("failed to apply settings from %s: %w", path, err)
-	}
+	host := newSettingsClient(s.eng, s.conn)
+	s.eng.Go(func(ctx context.Context) { followHostSettings(ctx, s.eng, host, s.values) })
 	return nil
+}
+
+func (s *settingsService) close() error {
+	if s.conn == nil {
+		return nil
+	}
+	return s.conn.Close()
+}
+
+// newSettings builds this process's CRE settings. Until the host pushes an update, every limit
+// resolves to its compiled-in default.
+func newSettings(lggr logger.Logger) *loop.AtomicSettings {
+	s := &loop.AtomicSettings{Lggr: lggr}
+	s.SetGetter(cresettings.DefaultGetter)
+	return s
+}
+
+// followHostSettings applies every settings update the host broadcasts, resubscribing with backoff
+// whenever the subscription cannot be made or ends.
+func followHostSettings(ctx context.Context, lggr logger.Logger, host core.SettingsBroadcaster, settings *loop.AtomicSettings) {
+	bo := backoff.NewExponentialBackOff()
+	for {
+		ch, err := host.Subscribe(ctx)
+		if err != nil {
+			lggr.Errorw("Failed to subscribe to settings updates", "err", err)
+			if !timeutil.Sleep(ctx.Done(), bo.NextBackOff()) {
+				return
+			}
+			continue
+		}
+		lggr.Info("Subscribed to settings updates")
+		bo.Reset()
+		for update := range ch {
+			if err := settings.Store(update); err != nil {
+				lggr.Errorw("Failed to update settings", "err", err)
+				continue
+			}
+			lggr.Infow("Updated settings", "hash", update.Hash)
+		}
+	}
+}
+
+// settingsClient is the host's settings service as a core.SettingsBroadcaster. Each subscription is
+// one server stream, forwarded until it ends or ctx is done.
+type settingsClient struct {
+	lggr logger.Logger
+	grpc pb.SettingsClient
+}
+
+func newSettingsClient(lggr logger.Logger, conn grpc.ClientConnInterface) *settingsClient {
+	return &settingsClient{lggr: lggr, grpc: pb.NewSettingsClient(conn)}
+}
+
+func (c *settingsClient) Subscribe(ctx context.Context) (<-chan core.SettingsUpdate, error) {
+	stream, err := c.grpc.Subscribe(ctx, &emptypb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan core.SettingsUpdate)
+	go func() {
+		defer close(ch)
+		for {
+			update, err := stream.Recv()
+			if err != nil {
+				if !errors.Is(err, io.EOF) && stream.Context().Err() == nil {
+					c.lggr.Errorw("Failed to receive settings update", "err", err)
+				}
+				return
+			}
+			select {
+			case <-stream.Context().Done():
+				return
+			case ch <- core.SettingsUpdate{Settings: update.Settings, Hash: update.Hash}:
+			}
+		}
+	}()
+	return ch, nil
 }
 
 // newLimitsFactory builds the limits factory over settings.
 //
 // AtomicSettings is a settings.Getter rather than a settings.Registry, so the factory polls it
 // rather than subscribing - which is why swapping the getter is enough to make every limit in the
-// process follow a reload.
+// process follow an update.
 //
 // The meter is read here rather than captured earlier, so it has to be built after telemetry has
 // installed itself: an instrument resolves its meter once, and one made against the noop client

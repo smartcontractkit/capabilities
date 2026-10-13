@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -210,36 +208,6 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 	}
 
 	assertPortFree(t, port)
-}
-
-// TestRunServesTheSettingsReloadEndpoint is the endpoint through the real run: the node dumps new
-// settings to the file and hits /reload/settings.txt, and a 200 says every limit in the process now
-// resolves against them.
-//
-// The handler reads the shared settings path - that path is the contract with the node - so this
-// writes the real file and removes it again after: a leftover would be read by every other run in
-// this package.
-func TestRunServesTheSettingsReloadEndpoint(t *testing.T) {
-	require.NoError(t, os.MkdirAll(filepath.Dir(settingsPath()), 0o700))
-	require.NoError(t, os.WriteFile(settingsPath(), []byte("[global]\n"), 0o600))
-	t.Cleanup(func() { _ = os.Remove(settingsPath()) })
-
-	cfg, c, port := runArgs(t, newFake)
-	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c) }()
-
-	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
-		"the run should be serving while it is up")
-
-	res, err := http.Post(fmt.Sprintf("http://localhost:%d%s", port, reloadPath()), "", nil)
-	require.NoError(t, err)
-	require.NoError(t, res.Body.Close())
-	assert.Equal(t, http.StatusOK, res.StatusCode)
-
-	cancel()
-	require.NoError(t, <-done)
 }
 
 // TestUnderPluginHost covers the cookie go-plugin's Serve insists on, which is what decides whether
