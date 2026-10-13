@@ -168,7 +168,7 @@ func (wr *writeReport) execute(
 	}
 	wr.lggr = wr.lggr.With("transmissionID", transmissionID.GetDebugID())
 
-	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer, request.Report,
+	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress, requestStartTime, wr.txSearchStartingBuffer, request.Report,
 		WithTxInfoRetrieverMonitoring(wr.beholderProcessor, wr.messageBuilder, telemetryContext))
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())

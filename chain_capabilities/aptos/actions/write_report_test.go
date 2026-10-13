@@ -262,7 +262,7 @@ func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, t
 		Sigs:          fixedTestSignatures(),
 	}
 	processor := &recordingTxInfoProcessor{}
-	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime, 1*time.Minute, report, txInfoRetrieverMonitoringOption(processor)), processor
+	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr, requestStartTime, 1*time.Minute, report, txInfoRetrieverMonitoringOption(processor)), processor
 }
 
 func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {
