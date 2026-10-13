@@ -99,7 +99,7 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor any, opts ...Op
 	return root.ExecuteContext(ctx)
 }
 
-type constructor struct {
+type constructorFn struct {
 	fn  reflect.Value
 	typ reflect.Type
 
@@ -117,26 +117,26 @@ var capabilityType = reflect.TypeFor[Capability]()
 // newConstructor validates that constructor has the right shape, i.e.:
 // - it's a function
 // - and the function returns a capability and optionally an error
-func newConstructor(ctor any) (constructor, error) {
+func newConstructor(ctor any) (constructorFn, error) {
 	t := reflect.TypeOf(ctor)
 	if t == nil || t.Kind() != reflect.Func {
-		return constructor{}, fmt.Errorf("a capability constructor must be a function, got %T", ctor)
+		return constructorFn{}, fmt.Errorf("a capability constructor must be a function, got %T", ctor)
 	}
 
 	switch t.NumOut() {
 	case 1:
 	case 2:
 		if t.Out(1) != reflect.TypeFor[error]() {
-			return constructor{}, fmt.Errorf(
+			return constructorFn{}, fmt.Errorf(
 				"a capability constructor returning two values must return an error second, got %s", t)
 		}
 	default:
-		return constructor{}, fmt.Errorf(
+		return constructorFn{}, fmt.Errorf(
 			"a capability constructor must return the capability, and optionally an error, got %s", t)
 	}
 
 	if out := t.Out(0); !out.Implements(capabilityType) {
-		return constructor{}, fmt.Errorf("%s does not implement capability.Capability", out)
+		return constructorFn{}, fmt.Errorf("%s does not implement capability.Capability", out)
 	}
 
 	configIn := -1
@@ -145,11 +145,11 @@ func newConstructor(ctor any) (constructor, error) {
 			continue
 		}
 		if configIn >= 0 {
-			return constructor{}, fmt.Errorf("a capability constructor takes its config once, got %s", t)
+			return constructorFn{}, fmt.Errorf("a capability constructor takes its config once, got %s", t)
 		}
 		configIn = i
 	}
-	return constructor{fn: reflect.ValueOf(ctor), typ: t, configIn: configIn}, nil
+	return constructorFn{fn: reflect.ValueOf(ctor), typ: t, configIn: configIn}, nil
 }
 
 var isConfigType = reflect.TypeFor[Config]()
@@ -171,7 +171,7 @@ func isConfig(t reflect.Type) bool {
 
 // bindCapabilityConfig creates the config the constructor declares, if any, and binds its fields as flags
 // on root, under root's name.
-func (c *constructor) bindCapabilityConfig(root *cobra.Command) error {
+func (c *constructorFn) bindCapabilityConfig(root *cobra.Command) error {
 	if c.configIn < 0 {
 		return nil
 	}
@@ -189,7 +189,7 @@ func (c *constructor) bindCapabilityConfig(root *cobra.Command) error {
 // call builds the capability by calling the contstructor.
 // The constructor's parameters are scanned, and type matched against the dependency set.
 // The config parameter is treated exceptionally and hydrated from the configuration that was passed in.
-func (c constructor) call(deps Dependencies) (Capability, error) {
+func (c constructorFn) call(deps Dependencies) (Capability, error) {
 	args := make([]reflect.Value, c.typ.NumIn())
 	for i := range args {
 		if i == c.configIn {

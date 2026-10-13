@@ -125,12 +125,5 @@ func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor 
 		return nil, err
 	}
 
-	if cfg.capabilities.HTTPDebug {
-		if err := mountDebugUI(ctx, lggr, mux, reg, c); err != nil {
-			_ = c.Close()
-			return nil, err
-		}
-	}
-
 	return c, nil
 }
