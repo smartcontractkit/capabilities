@@ -18,7 +18,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -224,9 +223,9 @@ func TestRunPassesTheLoggerToTheConstructor(t *testing.T) {
 // does not - which is what lets the one below coexist with the no-argument constructors elsewhere
 // in these tests.
 func TestRunPassesTheRegistryToTheConstructor(t *testing.T) {
-	var got registry.Registry
+	var got core.CapabilitiesRegistry
 
-	require.NoError(t, execute(t, logger.Test(t), func(r registry.Registry) *fake {
+	require.NoError(t, execute(t, logger.Test(t), func(r core.CapabilitiesRegistry) *fake {
 		got = r
 		return newFake()
 	}, "run"))
@@ -370,17 +369,12 @@ func TestRunHasARunCommand(t *testing.T) {
 // The removal half is reliable to assert here because the registry's close is one ordered
 // function: the Remove RPC is sent before the connection it travels on is closed.
 func TestRunServesAndAnnouncesTheCapability(t *testing.T) {
-	stub := &stubRegistry{adds: map[string]string{}}
-	proxyURL := serveStubRegistry(t, stub)
+	node := newSpyRegistry(t)
+	proxyURL := serveNodeRegistry(t, node)
 
 	require.NoError(t, execute(t, logger.Test(t), func() *fake { return newFake() },
 		"run", "--capabilities.proxy-url", proxyURL))
 
-	addr, ok := stub.announced(fakeID)
-	require.True(t, ok, "the run should have announced the capability to the node's registry")
-	assert.NotEmpty(t, addr)
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	assert.Contains(t, stub.removes, fakeID, "and deregistered it on the way out")
+	assert.Equal(t, []string{fakeID}, node.addedIDs(), "the run should have announced the capability to the node's registry")
+	assert.Equal(t, []string{fakeID}, node.removedIDs(), "and deregistered it on the way out")
 }

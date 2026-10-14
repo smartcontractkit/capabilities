@@ -30,7 +30,7 @@ func runArgs(t *testing.T, ctor any) (*config, constructor, uint16) {
 	cfg.observability.http.Port = port
 	// A stub the registrar's announcement can land on: registering the capability dials the
 	// proxy, so it has to be a real listener rather than merely a lazy one.
-	cfg.capabilities.ProxyURL = serveStubRegistry(t, &stubRegistry{adds: map[string]string{}})
+	cfg.capabilities.ProxyURL = serveNodeRegistry(t, newSpyRegistry(t))
 
 	return cfg, c, port
 }

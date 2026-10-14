@@ -5,16 +5,18 @@ import (
 	"net"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 
-	registrypb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/pb"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/remote"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
+
+var testGRPC = grpcConfig{AdvertiseHost: defaultHost}
 
 // TestNewRegistryDoesNotDial is the property the boot sequence rests on: the node starts this
 // process and the two race, so a registry proxy that is not up yet has to delay the first lookup
@@ -22,12 +24,11 @@ import (
 //
 // Nothing is listening on the port below, and building the registry still succeeds.
 func TestNewRegistryDoesNotDial(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: "localhost:1", CapabilityDonID: 1},
-		&serverFactory{host: defaultHost})
+	reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, testGRPC)
 
 	require.NoError(t, err, "an unreachable proxy should not fail construction")
-	require.NotNil(t, reg.registry)
-	assert.Empty(t, reg.hosted, "nothing is served yet, so nothing is announced")
+	require.NotNil(t, reg.fallback)
+	assert.Empty(t, reg.added, "nothing is added yet, so nothing is announced")
 
 	require.NoError(t, reg.Start(t.Context()))
 	require.NoError(t, reg.Close())
@@ -37,12 +38,11 @@ func TestNewRegistryDoesNotDial(t *testing.T) {
 // even a nonsense target fails here.
 //
 // grpc.NewClient defers everything to the first RPC, so a typo in --capabilities.proxy-url is not
-// reported at startup - it surfaces as a failed capability lookup later on. What catches an unset
-// one is the `validate:"required"` tag on the setting, not this.
+// reported at startup - it surfaces as a failed capability lookup later on.
 func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
-	for _, target := range []string{"", "!://not a target", "unknownscheme:///x"} {
+	for _, target := range []string{"!://not a target", "unknownscheme:///x"} {
 		t.Run(target, func(t *testing.T) {
-			reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: target}, &serverFactory{host: defaultHost})
+			reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: target}, testGRPC)
 			require.NoError(t, err)
 			require.NoError(t, reg.Start(t.Context()))
 			assert.NoError(t, reg.Close())
@@ -56,43 +56,36 @@ func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 // The metadata calls failing is the point rather than a shortcoming. A process holding capability
 // values has no way to know which DONs exist, so saying so beats answering with something invented.
 func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{CapabilityDonID: 1}, &serverFactory{host: defaultHost})
+	reg, err := newRegistry(logger.Test(t), capabilityConfig{CapabilityDonID: 1}, testGRPC)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
 	require.NoError(t, reg.Start(t.Context()))
 
 	assert.Nil(t, reg.conn, "nothing should have been dialled")
-	require.NotNil(t, reg.registry)
+	assert.Nil(t, reg.fallback)
 
-	_, err = reg.registry.DONByID(t.Context(), 1)
+	_, err = reg.DONByID(t.Context(), 1)
 	assert.Error(t, err, "there is no node to ask, so the metadata calls should fail")
 }
 
-// TestRegistryAddServesAndHolds covers the local half of being reachable: the capability is served
-// on an address of its own, and this process's registry resolves it.
-func TestRegistryAddServesAndHolds(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{}, &serverFactory{host: defaultHost})
+// TestRegistryAddHoldsUntilClose covers the local half: this process's registry resolves what was
+// added to it, and stops doing so once it closes.
+func TestRegistryAddHoldsUntilClose(t *testing.T) {
+	reg, err := newRegistry(logger.Test(t), capabilityConfig{}, testGRPC)
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 
 	require.NoError(t, reg.Add(t.Context(), newFake()))
 
-	// Served: the hosted server's address answers.
-	require.Len(t, reg.hosted, 1)
-	conn, err := net.DialTimeout("tcp", reg.hosted[0].server.address(), 5*time.Second)
-	require.NoError(t, err)
-	_ = conn.Close()
-
-	// Held: the registry resolves the capability as a value.
-	got, err := reg.registry.Get(t.Context(), fakeID)
+	got, err := reg.Get(t.Context(), fakeID)
 	require.NoError(t, err)
 	assert.NotNil(t, got)
 
-	// Close takes both back. Remove hollows the registry's entry out rather than deleting it, so
-	// what the ID still maps to answers nothing.
+	// Remove hollows the registry's entry out rather than deleting it, so what the ID still maps to
+	// answers nothing.
 	require.NoError(t, reg.Close())
 
-	got, err = reg.registry.Get(t.Context(), fakeID)
+	got, err = reg.Get(t.Context(), fakeID)
 	if err == nil {
 		_, err = got.Info(t.Context())
 	}
@@ -100,73 +93,89 @@ func TestRegistryAddServesAndHolds(t *testing.T) {
 }
 
 // TestRegistryAddAnnouncesToTheNode covers the remote half: with a proxy configured, adding the
-// capability announces the address it is served at, and closing takes the announcement back before
-// the connection it travelled on closes.
+// capability announces it to the node, which can reach it back, and closing takes the announcement
+// back before the connection it travelled on closes.
 func TestRegistryAddAnnouncesToTheNode(t *testing.T) {
-	stub := &stubRegistry{adds: map[string]string{}}
+	node := newSpyRegistry(t)
 
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: serveStubRegistry(t, stub)},
-		&serverFactory{host: defaultHost})
+	reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC)
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 
 	require.NoError(t, reg.Add(t.Context(), newFake()))
 
-	// Announced at the address it is served at, and that address answers.
-	require.Len(t, reg.hosted, 1)
-	addr, ok := stub.announced(fakeID)
-	require.True(t, ok, "the node's registry should know the capability")
-	assert.Equal(t, reg.hosted[0].server.address(), addr)
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	assert.Equal(t, []string{fakeID}, node.addedIDs(), "the node's registry should know the capability")
+	held, err := node.Get(t.Context(), fakeID)
 	require.NoError(t, err)
-	_ = conn.Close()
+	info, err := held.Info(t.Context())
+	require.NoError(t, err, "the node should reach the capability at the address it was announced at")
+	assert.Equal(t, fakeID, info.ID)
 
 	require.NoError(t, reg.Close())
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	assert.Contains(t, stub.removes, fakeID, "shutdown should take the announcement back")
+	assert.Equal(t, []string{fakeID}, node.removedIDs(), "shutdown should take the announcement back")
 }
 
-// stubRegistry is the node's registry, minimally: it records what is announced to it, and what is
-// taken back.
-type stubRegistry struct {
-	registrypb.UnimplementedCapabilitiesRegistryServer
+// spyRegistry is the node's registry, recording what is announced to it and what is taken back.
+type spyRegistry struct {
+	registry.CapabilitiesRegistry
 
 	mu      sync.Mutex
-	adds    map[string]string // capability ID -> the address it was announced at
+	adds    []string
 	removes []string
 }
 
-func (s *stubRegistry) Add(_ context.Context, req *registrypb.AddRequest) (*emptypb.Empty, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.adds[req.CapabilityId] = req.CallbackUrl
-	return &emptypb.Empty{}, nil
+func newSpyRegistry(t *testing.T) *spyRegistry {
+	return &spyRegistry{CapabilitiesRegistry: registry.NewRegistry(logger.Test(t))}
 }
 
-func (s *stubRegistry) Remove(_ context.Context, req *registrypb.RemoveRequest) (*emptypb.Empty, error) {
+func (s *spyRegistry) Add(ctx context.Context, c capabilities.BaseCapability) error {
+	info, err := c.Info(ctx)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.removes = append(s.removes, req.CapabilityId)
-	return &emptypb.Empty{}, nil
+	s.adds = append(s.adds, info.ID)
+	s.mu.Unlock()
+	return s.CapabilitiesRegistry.Add(ctx, c)
 }
 
-func (s *stubRegistry) announced(id string) (string, bool) {
+func (s *spyRegistry) Remove(ctx context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	addr, ok := s.adds[id]
-	return addr, ok
+	s.removes = append(s.removes, id)
+	s.mu.Unlock()
+	return s.CapabilitiesRegistry.Remove(ctx, id)
 }
 
-// serveStubRegistry runs a stub registry on a free port and returns its address.
-func serveStubRegistry(t *testing.T, stub *stubRegistry) string {
+func (s *spyRegistry) addedIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.adds...)
+}
+
+func (s *spyRegistry) removedIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.removes...)
+}
+
+// serveNodeRegistry serves reg the way the node's registry proxy does, on a free port, and returns
+// its address.
+func serveNodeRegistry(t *testing.T, reg registry.CapabilitiesRegistry) string {
 	t.Helper()
+	lggr := logger.Test(t)
+
+	transport, err := remote.NewListenerTransport(remote.ListenerTransportParams{
+		Lggr:    lggr,
+		Listen:  func() (net.Listener, error) { return net.Listen("tcp", "localhost:0") },
+		Connect: dial,
+	})
+	require.NoError(t, err)
 
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	gsrv := grpc.NewServer()
-	registrypb.RegisterCapabilitiesRegistryServer(gsrv, stub)
-	go func() { _ = gsrv.Serve(listener) }()
-	t.Cleanup(gsrv.Stop)
+	srv := grpc.NewServer()
+	remote.RegisterCapabilitiesRegistryServer(srv, lggr, reg, transport)
+	go func() { _ = srv.Serve(listener) }()
+	t.Cleanup(srv.Stop)
 	return listener.Addr().String()
 }
