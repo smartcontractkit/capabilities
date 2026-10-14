@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/cobra"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
@@ -177,9 +176,7 @@ func (c *constructorFn) bindCapabilityConfig(root *cobra.Command) error {
 	}
 
 	v := reflect.New(c.typ.In(c.configIn))
-	fopts := flags.DefaultTOMLOptions("CRE", "CL")
-	fopts.Namespace = root.Name()
-	if err := flags.RegisterCommandFlags(root, v.Interface(), fopts); err != nil {
+	if err := bindFlags(root, root.Name(), v.Interface()); err != nil {
 		return fmt.Errorf("failed to register the capability's config: %w", err)
 	}
 	c.config = v.Elem()

@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/config/flags"
 )
 
 const capabilitiesNamespace = "capabilities"
@@ -47,10 +45,8 @@ func (c *config) namespaced() []section {
 
 // bind binds every config to root, each under the namespace that owns it.
 func (c *config) bind(root *cobra.Command) error {
-	opts := flags.DefaultTOMLOptions("CRE", "CL")
 	for _, s := range c.namespaced() {
-		opts.Namespace = s.namespace
-		if err := flags.RegisterCommandFlags(root, s.target, opts); err != nil {
+		if err := bindFlags(root, s.namespace, s.target); err != nil {
 			return fmt.Errorf("failed to register the %s settings: %w", s.namespace, err)
 		}
 	}
