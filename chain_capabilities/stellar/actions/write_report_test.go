@@ -77,7 +77,7 @@ func newWriteReportHelper(t *testing.T) *writeReportHelper {
 		StellarService:        mockSvc,
 		lggr:                  logger.Sugared(lggr),
 		chainSelector:         testWRChainSelector,
-		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100, 0),
 		transmissionScheduler: scheduler,
 		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		beholderProcessor:     nopBeholderProcessor{},
@@ -1190,7 +1190,7 @@ func newPollTransmissionInfoHarness(t *testing.T, deltaStage time.Duration) (
 	)
 	wr := &writeReport{
 		service:               mockSvc,
-		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100, 0),
 		lggr:                  logger.Sugared(lggr),
 		transmissionScheduler: scheduler,
 	}
@@ -1500,7 +1500,7 @@ func newQueuedWriteReportHelper(t *testing.T) *writeReportHelper {
 		StellarService:        mockSvc,
 		lggr:                  logger.Sugared(lggr),
 		chainSelector:         testWRChainSelector,
-		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100),
+		forwarderClient:       newForwarderClient(mockSvc, lggr, testForwarderAddress, 100, 0),
 		transmissionScheduler: scheduler,
 		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		beholderProcessor:     nopBeholderProcessor{},
