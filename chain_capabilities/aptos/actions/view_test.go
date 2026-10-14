@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -198,6 +200,57 @@ func TestView_FailsWhenRequestedLedgerVersionOverflowsChainHeightType(t *testing
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "overflows int64")
+}
+
+func TestView_ClassifiesAptosServiceErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		serviceErr error
+		wantOrigin caperrors.Origin
+	}{
+		{
+			name:       "invalid argument is user error",
+			serviceErr: status.Error(codes.InvalidArgument, "failed to call view function: Linker Error: Module 01::registry doesn't exist"),
+			wantOrigin: caperrors.OriginUser,
+		},
+		{
+			name:       "unknown grpc code is system error",
+			serviceErr: status.Error(codes.Unknown, "failed to call view function: 429 Too Many Requests"),
+			wantOrigin: caperrors.OriginSystem,
+		},
+		{
+			name:       "plain error is system error",
+			serviceErr: fmt.Errorf("failed to get client"),
+			wantOrigin: caperrors.OriginSystem,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := typesmocks.NewAptosService(t)
+			svc.On("View", mock.Anything, mock.AnythingOfType("aptos.ViewRequest")).
+				Return((*aptostypes.ViewReply)(nil), tt.serviceErr).
+				Once()
+
+			a := newTestAptos(svc, &ctypes.ChainHeight{Latest: 321, Safe: 321, Finalized: 321})
+
+			_, err := a.View(context.Background(), capabilities.RequestMetadata{
+				WorkflowExecutionID: "weid",
+				ReferenceID:         "step-id",
+			}, &aptoscap.ViewRequest{
+				Payload: &aptoscap.ViewPayload{
+					Module:   &aptoscap.ModuleID{Address: []byte{1}, Name: "registry"},
+					Function: "get_feeds",
+				},
+			})
+			require.Error(t, err)
+			require.Equal(t, tt.wantOrigin, err.Origin())
+		})
+	}
 }
 
 func TestView_FailsOnNilViewReply(t *testing.T) {
