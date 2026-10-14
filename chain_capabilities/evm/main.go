@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	chainselectors "github.com/smartcontractkit/chain-selectors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
@@ -33,12 +36,23 @@ import (
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const CapabilityName = "evm"
+const (
+	CapabilityName    = "evm"
+	CapabilityVersion = "1.0.0"
+
+	// Default values for optional EVM consensus/read settings when not provided in config.
+	defaultObservationWorkers          = 10
+	defaultObservationPollPeriod       = 2 * time.Second
+	defaultUnknownRequestsTTL          = 10 * time.Second
+	defaultMaxUnknownRequestsCacheSize = 1000
+	defaultChainHeightPollPeriod       = time.Second
+)
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
@@ -46,10 +60,16 @@ type capabilityGRPCService struct {
 	capability
 	lggr          logger.Logger
 	limitsFactory limits.Factory
+
+	// meteringCfg comes from the LOOP environment ([Metering] on the host).
+	// gasMeter emits cre:workflow:gas usage records for write reports when
+	// MeterRecordsEnabled; nil otherwise.
+	meteringCfg resourcemanager.Config
 }
 
 type capability struct {
 	*actions.EVM
+	gasMeter         *gasmeter.Meter
 	id               string
 	requestPoller    *poller.Poller
 	consensusHandler chainconsensus.Handler
@@ -62,7 +82,11 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
+		return evmcapserver.NewClientServer(&capabilityGRPCService{
+			lggr:          s.Logger,
+			limitsFactory: s.LimitsFactory,
+			meteringCfg:   s.MeteringConfig(),
+		})
 	}, loop.WithOtelViews(append(consMetrics.MetricViews(), monitoring.MetricViews()...)))
 }
 
@@ -117,7 +141,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	// capabilityDonID is the on-chain DON ID of the capability DON this plugin
 	// process serves, used to label emitted trigger events with the *sending*
@@ -132,6 +155,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	// from the registry here: that lookup cannot disambiguate multi-DON nodes and
 	// would emit a guess instead of the safe workflow-DON fallback. See CRE-4409.
 	capabilityDonID := dependencies.CapabilityDonID
+	derivedUnknownTTL := capcommon.MaxRequestTimeoutWithMultiplier(ctx, dependencies.CapabilityRegistry, c.id, capabilityDonID, cfg.UnknownRequestsTTL, c.lggr)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
@@ -157,6 +182,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
+	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, capabilityDonID)
+	c.WithGasMeter(c.gasMeter)
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
@@ -179,7 +206,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			ContractConfigLoadTimeout:          time.Second * 10,
 			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics, c.limitsFactory),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {
@@ -187,6 +214,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
+	if c.gasMeter != nil {
+		startServices = append(startServices, c.gasMeter)
+	}
 	for _, service := range startServices {
 		if err := service.Start(ctx); err != nil {
 			return err
@@ -216,23 +246,28 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	}
 
 	if cfg.ObservationPollerWorkersCount == 0 {
-		cfg.ObservationPollerWorkersCount = 10
+		cfg.ObservationPollerWorkersCount = defaultObservationWorkers
 		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
 	}
 
 	if cfg.ObservationPollPeriod == 0 {
-		cfg.ObservationPollPeriod = 2 * time.Second
+		cfg.ObservationPollPeriod = defaultObservationPollPeriod
 		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
 	}
 
 	if cfg.ChainHeightPollPeriod == 0 {
-		cfg.ChainHeightPollPeriod = time.Second
+		cfg.ChainHeightPollPeriod = defaultChainHeightPollPeriod
 		c.lggr.Infof("ChainHeightPollPeriod is zero, setting to %s.", cfg.ChainHeightPollPeriod)
 	}
 
 	if cfg.UnknownRequestsTTL == 0 {
-		cfg.UnknownRequestsTTL = 10 * time.Second
+		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 
 	// DeltaStage is optional - if not set, transmission scheduling will be disabled
@@ -246,7 +281,11 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	return errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
+	errs := errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
+	if c.gasMeter != nil {
+		errs = errors.Join(errs, c.gasMeter.Close())
+	}
+	return errs
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {

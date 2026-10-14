@@ -2,6 +2,7 @@ package metering
 
 import (
 	"fmt"
+	"math/big"
 	"strconv"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -20,8 +21,7 @@ const (
 	GetLatestLedger SpendValueCredits = "1"
 
 	// WriteReportSpendUnitFormat is the spend unit for write operations, parameterised by chain selector.
-	// TODO: Switch to "GAS.%d" after the workflow DON accepts SpendValueInGasUnits
-	WriteReportSpendUnitFormat = "STROOP.%d"
+	WriteReportSpendUnitFormat = "GAS.%d"
 )
 
 // GetResponseMetadata returns the response metadata (metering detail) for a given read action.
@@ -38,13 +38,16 @@ func GetResponseMetadata(action SpendValueCredits) capabilities.ResponseMetadata
 }
 
 // GetResponseMetadataWriteReport returns billing ResponseMetadata for a completed write-report
-// submission. feeStroops is the actual FeeCharged from the confirmed transaction.
+// submission. feeStroops is the actual FeeCharged from the confirmed transaction in stroops
+// (native fixed-point integer, 10^-7 XLM).
+// The legacy SpendValue (in XLM) is derived from feeStroops for backwards compatibility.
 func GetResponseMetadataWriteReport(feeStroops uint64, chainSelector uint64) capabilities.ResponseMetadata {
+	feeInXLM := new(big.Float).Quo(new(big.Float).SetUint64(feeStroops), big.NewFloat(1e7))
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{
 				// Peer2PeerID is assigned by the engine, leaving it empty here.
-				SpendValue:           strconv.FormatUint(feeStroops, 10),
+				SpendValue:           feeInXLM.Text('f', -1),
 				SpendValueInGasUnits: strconv.FormatUint(feeStroops, 10),
 				SpendUnit:            fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
 			},

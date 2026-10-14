@@ -142,6 +142,26 @@ func TestNewStellar(t *testing.T) {
 		require.NotNil(t, st)
 		require.NoError(t, st.Close())
 	})
+
+	t.Run("negative forwarder lookback ledgers", func(t *testing.T) {
+		t.Parallel()
+		lggr := logger.Test(t)
+		svc := mocks.NewStellarService(t)
+		_, err := NewStellar(
+			svc,
+			"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			-1,
+			lggr,
+			limits.Factory{Logger: lggr},
+			ts.TransmissionScheduler{},
+			1,
+			testConsensusHandler{handle: runVolatileHashableHandle},
+			monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+			nopBeholderProcessor{},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "forwarder lookback ledgers must be non-negative")
+	})
 }
 
 func TestGetLatestLedger(t *testing.T) {

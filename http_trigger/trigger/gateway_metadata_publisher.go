@@ -119,7 +119,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID", gateway_common.MethodPullWorkflowMetadata)
 		return errors.New("empty request ID")
 	}
-	methodName := strings.Split(req.ID, "/")[0]
+	methodName, _, _ := strings.Cut(req.ID, "/")
 	if methodName != gateway.MethodPullWorkflowMetadata {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull metadata", gateway_common.MethodPullWorkflowMetadata)
 		return fmt.Errorf("invalid request ID for workflow pull metadata: %s", req.ID)

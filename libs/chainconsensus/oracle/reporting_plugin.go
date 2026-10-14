@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 
@@ -26,12 +27,20 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
 
 const (
 	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of OCRBatchSize increase.
 	OCRRoundMaxBatchSize = 1000
+
+	// MaxAggregatableExponent bounds the base-10 exponent of an aggregatable value. Comparing
+	// decimals with different exponents rescales them to a common exponent, and that cost grows
+	// with the exponent gap. Every in-tree producer reports exponent 0; the symmetric window
+	// leaves room for scaled values.
+	MaxAggregatableExponent = 128
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
@@ -56,11 +65,12 @@ func (c Config) matchingThreshold() int {
 }
 
 type reportingPlugin struct {
-	config         Config
-	logger         logger.SugaredLogger
-	blocksProvider BlocksProvider
-	requestsStore  RequestsHandler
-	metrics        metrics.ConsensusMetrics
+	config                       Config
+	logger                       logger.SugaredLogger
+	blocksProvider               BlocksProvider
+	requestsStore                RequestsHandler
+	metrics                      metrics.ConsensusMetrics
+	enableMissingRequestRecovery limits.GateLimiter
 }
 
 func newReportingPlugin(
@@ -69,14 +79,22 @@ func newReportingPlugin(
 	blocksProvider BlocksProvider,
 	requestsStore RequestsHandler,
 	metrics metrics.ConsensusMetrics,
-) *reportingPlugin {
-	return &reportingPlugin{
+	limitsFactory limits.Factory,
+) (*reportingPlugin, error) {
+	rp := &reportingPlugin{
 		config:         config,
 		logger:         logger,
 		blocksProvider: blocksProvider,
 		requestsStore:  requestsStore,
 		metrics:        metrics,
 	}
+
+	var err error
+	rp.enableMissingRequestRecovery, err = limits.MakeGateLimiter(limitsFactory, cresettings.Default.MissingRequestRecoveryEnabled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create missing request recovery gate limiter: %w", err)
+	}
+	return rp, nil
 }
 
 func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
@@ -177,6 +195,12 @@ func (rp *reportingPlugin) Observation(
 	if err != nil {
 		return nil, fmt.Errorf("failed to add observations for missing requests from previous outcome: %w", err)
 	}
+
+	open, err := rp.enableMissingRequestRecovery.IsOpen(ctx)
+	if err != nil {
+		rp.logger.Errorw("error checking if enableMissingRequestRecovery is enabled", "error", err)
+	}
+	observation.EnableMissingRequestRecovery = open
 
 	// add observations for requests provided by the leader in the query
 	err = rp.addObservations(ctx, query.RequestIDs, observation)
@@ -287,6 +311,11 @@ func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{
 		}
 	}
 
+	if len(missingRequestIDs) > 0 {
+		rp.logger.Infow("Proposing missing request IDs: present in local store but absent from the leader's query",
+			"missingRequestIDs", missingRequestIDs)
+	}
+
 	return missingRequestIDs, nil
 }
 
@@ -317,6 +346,12 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 		}
 
 		switch tRequestOb := requestOb.Observation.(type) {
+		case *ctypes.RequestObservation_Aggregatable:
+			if value := tRequestOb.Aggregatable.GetValue(); value != nil &&
+				math.Abs(float64(value.Exponent)) > MaxAggregatableExponent {
+				return fmt.Errorf("aggregatable exponent out of range for request ID %s: got %d, allowed [-%d, %d]. OracleID: %d",
+					requestID, value.Exponent, MaxAggregatableExponent, MaxAggregatableExponent, ao.Observer)
+			}
 		case *ctypes.RequestObservation_Hashable:
 			if len(tRequestOb.Hashable) != ctypes.HashLength {
 				return fmt.Errorf("invalid hash length for request ID %s: got %d, expected %d. OracleID: %d", requestID, len(tRequestOb.Hashable), ctypes.HashLength, ao.Observer)
@@ -550,7 +585,32 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 	}
 
 	sort.Strings(result)
+	if len(result) > 0 {
+		rp.logger.Infow("Quorum agreed on missing request IDs: committing them to the outcome for recovery in the next round",
+			"missingRequestIDs", result)
+	}
 	return result, nil
+}
+
+// agreeOnFeatureEnableMissingRequestRecovery reaches DON-wide quorum, once per round, on
+// whether missing-request recovery is enabled. This is a per-node, per-round capability flag
+// unrelated to any specific request ID, so it is voted on independently of per-request
+// observation quorum (which the aggregation loop in Outcome enforces on its own).
+// TODO: clean up settings flag and logic when all nodes in all envs support missing-request recovery: https://smartcontract-it.atlassian.net/browse/PLEX-3461
+func (rp *reportingPlugin) agreeOnEnableMissingRequestRecovery(aos []attributedObservation) bool {
+	minMatching := byzQuorumSize(rp.config.N, rp.config.F)
+	counter := 0
+	for _, ob := range aos {
+		if ob.Observation.EnableMissingRequestRecovery {
+			counter++
+			if counter >= minMatching {
+				rp.logger.Infow("Quorum reached for enabling missing request recovery: recovered requests will be aggregated into this round's outcome",
+					"votes", counter, "required", minMatching)
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
@@ -773,7 +833,34 @@ func (rp *reportingPlugin) Outcome(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	for _, requestID := range query.RequestIDs {
+	requestIDs := query.RequestIDs
+	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil && rp.agreeOnEnableMissingRequestRecovery(aos) {
+		seen := make(map[string]struct{}, len(query.RequestIDs))
+		for _, requestID := range query.RequestIDs {
+			seen[requestID] = struct{}{}
+		}
+
+		// Requests that the leader's query omitted but that a quorum of nodes still supplied
+		// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
+		// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
+		recoveredRequestIDs := make([]string, 0, len(prevOutcome.MissingRequestIDs))
+		for _, requestID := range prevOutcome.MissingRequestIDs {
+			if _, ok := seen[requestID]; ok {
+				continue
+			}
+			seen[requestID] = struct{}{}
+			requestIDs = append(requestIDs, requestID)
+			recoveredRequestIDs = append(recoveredRequestIDs, requestID)
+		}
+
+		if len(recoveredRequestIDs) > 0 {
+			rp.logger.Infow("Missing request recovery: adding previously missing requests to this round's outcome "+
+				"(they were omitted by the leader's query but agreed upon by a quorum in the previous round)",
+				"recoveredRequestIDs", recoveredRequestIDs)
+		}
+	}
+
+	for _, requestID := range requestIDs {
 		observationType, err := rp.agreeOnObservationType(requestID, aos)
 		if err != nil {
 			rp.logger.Infow("Could not determine observation type", "requestID", requestID, "err", err)
@@ -956,5 +1043,5 @@ func (rp *reportingPlugin) ShouldTransmitAcceptedReport(
 }
 
 func (rp *reportingPlugin) Close() error {
-	return nil
+	return rp.enableMissingRequestRecovery.Close()
 }

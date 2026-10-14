@@ -99,22 +99,22 @@ func newTestGatewayFromConfig(t *testing.T, gatewayConfigStr string, c network.H
 	var gatewayConfig *config.GatewayConfig
 	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
 	require.NoError(t, err)
-	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr, limits.Factory{Logger: lggr}, nil), lggr, limits.Factory{Logger: lggr})
+	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr, limits.Factory{Logger: lggr}, nil, nil), lggr, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 	servicetest.Run(t, gateway)
 	return gateway
 }
 
-func parseConnectorConfig(t *testing.T, tomlConfig string, nodeAddress string, nodeURL string) *connector.ConnectorConfig {
+func parseConnectorConfig(t *testing.T, tomlConfig string, nodeAddress string, nodeURL string) *connector.Config {
 	nodeConfig := fmt.Sprintf(tomlConfig, nodeAddress, nodeURL)
-	var cfg connector.ConnectorConfig
+	var cfg connector.Config
 	require.NoError(t, toml.Unmarshal([]byte(nodeConfig), &cfg))
 	return &cfg
 }
 
 func newTestGatewayConnector(t *testing.T, publicKey, nodeURL string, signer connector.Signer, lggr logger.Logger) core.GatewayConnector {
 	cfg := parseConnectorConfig(t, nodeConfigTemplate, publicKey, nodeURL)
-	gc, err := connector.NewGatewayConnector(cfg, signer, clockwork.NewRealClock(), lggr)
+	gc, err := connector.NewGatewayConnector(cfg, signer, clockwork.NewRealClock(), lggr, publicKey)
 	require.NoError(t, err)
 	servicetest.Run(t, gc)
 	return gc

@@ -317,14 +317,18 @@ func (x *Query) GetRequestIDs() []string {
 }
 
 type RequestObservation struct {
-	state                                      protoimpl.MessageState     `protogen:"open.v1"`
-	Metadata                                   *RequestMetaData           `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Input                                      *sdk.SimpleConsensusInputs `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
-	ReceivedAt                                 *timestamppb.Timestamp     `protobuf:"bytes,3,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
-	RemoveLibUseInFailureMessageFormattingFlag bool                       `protobuf:"varint,4,opt,name=remove_lib_use_in_failure_message_formatting_flag,json=removeLibUseInFailureMessageFormattingFlag,proto3" json:"remove_lib_use_in_failure_message_formatting_flag,omitempty"` // remove use of libraries in failure message formatting; flag to be removed after rollout
-	UpdateErrorHandlingFlag                    bool                       `protobuf:"varint,5,opt,name=update_error_handling_flag,json=updateErrorHandlingFlag,proto3" json:"update_error_handling_flag,omitempty"`                                                                  // migrate system errors to user errors; flag to be removed after rollout
-	unknownFields                              protoimpl.UnknownFields
-	sizeCache                                  protoimpl.SizeCache
+	state      protoimpl.MessageState     `protogen:"open.v1"`
+	Metadata   *RequestMetaData           `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Input      *sdk.SimpleConsensusInputs `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	ReceivedAt *timestamppb.Timestamp     `protobuf:"bytes,3,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
+	// Deprecated: Marked as deprecated in value_consensus_types.proto.
+	RemoveLibUseInFailureMessageFormattingFlag bool `protobuf:"varint,4,opt,name=remove_lib_use_in_failure_message_formatting_flag,json=removeLibUseInFailureMessageFormattingFlag,proto3" json:"remove_lib_use_in_failure_message_formatting_flag,omitempty"` // remove use of libraries in failure message formatting
+	// Deprecated: Marked as deprecated in value_consensus_types.proto.
+	UpdateErrorHandlingFlag  bool `protobuf:"varint,5,opt,name=update_error_handling_flag,json=updateErrorHandlingFlag,proto3" json:"update_error_handling_flag,omitempty"` // migrate system errors to user errors
+	Median_2Fplus1QuorumFlag bool `protobuf:"varint,6,opt,name=median_2fplus1_quorum_flag,json=median2fplus1QuorumFlag,proto3" json:"median_2fplus1_quorum_flag,omitempty"`
+	IncludeAllTimestampsFlag bool `protobuf:"varint,7,opt,name=include_all_timestamps_flag,json=includeAllTimestampsFlag,proto3" json:"include_all_timestamps_flag,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *RequestObservation) Reset() {
@@ -378,6 +382,7 @@ func (x *RequestObservation) GetReceivedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in value_consensus_types.proto.
 func (x *RequestObservation) GetRemoveLibUseInFailureMessageFormattingFlag() bool {
 	if x != nil {
 		return x.RemoveLibUseInFailureMessageFormattingFlag
@@ -385,9 +390,24 @@ func (x *RequestObservation) GetRemoveLibUseInFailureMessageFormattingFlag() boo
 	return false
 }
 
+// Deprecated: Marked as deprecated in value_consensus_types.proto.
 func (x *RequestObservation) GetUpdateErrorHandlingFlag() bool {
 	if x != nil {
 		return x.UpdateErrorHandlingFlag
+	}
+	return false
+}
+
+func (x *RequestObservation) GetMedian_2Fplus1QuorumFlag() bool {
+	if x != nil {
+		return x.Median_2Fplus1QuorumFlag
+	}
+	return false
+}
+
+func (x *RequestObservation) GetIncludeAllTimestampsFlag() bool {
+	if x != nil {
+		return x.IncludeAllTimestampsFlag
 	}
 	return false
 }
@@ -828,14 +848,16 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05Query\x12\x1e\n" +
 	"\n" +
 	"requestIDs\x18\x01 \x03(\tR\n" +
-	"requestIDs\"\xf3\x02\n" +
+	"requestIDs\"\xf7\x03\n" +
 	"\x12RequestObservation\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x128\n" +
 	"\x05input\x18\x02 \x01(\v2\".sdk.v1alpha.SimpleConsensusInputsR\x05input\x12;\n" +
 	"\vreceived_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"receivedAt\x12e\n" +
-	"1remove_lib_use_in_failure_message_formatting_flag\x18\x04 \x01(\bR*removeLibUseInFailureMessageFormattingFlag\x12;\n" +
-	"\x1aupdate_error_handling_flag\x18\x05 \x01(\bR\x17updateErrorHandlingFlag\"\xd3\x01\n" +
+	"receivedAt\x12i\n" +
+	"1remove_lib_use_in_failure_message_formatting_flag\x18\x04 \x01(\bB\x02\x18\x01R*removeLibUseInFailureMessageFormattingFlag\x12?\n" +
+	"\x1aupdate_error_handling_flag\x18\x05 \x01(\bB\x02\x18\x01R\x17updateErrorHandlingFlag\x12;\n" +
+	"\x1amedian_2fplus1_quorum_flag\x18\x06 \x01(\bR\x17median2fplus1QuorumFlag\x12=\n" +
+	"\x1binclude_all_timestamps_flag\x18\a \x01(\bR\x18includeAllTimestampsFlag\"\xd3\x01\n" +
 	"\vObservation\x12X\n" +
 	"\fobservations\x18\x01 \x03(\v24.value_consensus_types.Observation.ObservationsEntryR\fobservations\x1aj\n" +
 	"\x11ObservationsEntry\x12\x10\n" +

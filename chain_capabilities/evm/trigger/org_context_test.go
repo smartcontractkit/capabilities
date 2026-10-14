@@ -62,10 +62,8 @@ func TestDeliverLogReliably_ResolvesOrgForRetransmit(t *testing.T) {
 	protoLog := &evmcappb.Log{}
 	log := &evmtypes.Log{BlockNumber: big.NewInt(1)}
 	telemetryContext := monitoring.TelemetryContext{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowOwner: "0xOwner",
-			WorkflowID:    "wf-1",
-		},
+		WorkflowOwner: "0xOwner",
+		WorkflowID:    "wf-1",
 	}
 
 	// Registration ctx without org (PropagateOrgID was off at register time).

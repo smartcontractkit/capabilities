@@ -27,7 +27,7 @@ func NewObservationBatch(ctx context.Context, lggr logger.Logger, maxObservation
 	messageSize := calculateMessageSize(obs)
 
 	return &ObservationBatch{
-		Observation:                oracletypes.Observation{Observations: observations},
+		Observations:               observations,
 		lggr:                       lggr,
 		currentSerialisedBatchSize: messageSize,
 		maxObservationLengthBytes:  maxObservationLengthBytes,

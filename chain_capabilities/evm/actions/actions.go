@@ -31,6 +31,7 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
@@ -44,6 +45,7 @@ type EVM struct {
 	types.EVMService
 	consensusHandler         chainconsensus.RequestHandler
 	chainSelector            uint64
+	gasMeter                 *gasmeter.Meter
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
@@ -93,6 +95,12 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 	}
 
 	return e, nil
+}
+
+// WithGasMeter enables cre:workflow:gas usage MeterRecords for write reports.
+// A nil meter disables emission.
+func (e *EVM) WithGasMeter(m *gasmeter.Meter) {
+	e.gasMeter = m
 }
 
 func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {

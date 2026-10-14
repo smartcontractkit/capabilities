@@ -578,7 +578,7 @@ func TestStartPolling(t *testing.T) {
 		var (
 			mu         sync.Mutex
 			captured   []query.LimitAndSort
-			callNumber int32
+			callNumber atomic.Int32
 		)
 
 		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
@@ -587,7 +587,7 @@ func TestStartPolling(t *testing.T) {
 				captured = append(captured, limit)
 				mu.Unlock()
 
-				n := atomic.AddInt32(&callNumber, 1)
+				n := callNumber.Add(1)
 				if n == 1 {
 					return []*solana.Log{firstLog}, nil
 				}
@@ -604,7 +604,7 @@ func TestStartPolling(t *testing.T) {
 		}
 
 		tests.AssertEventually(t, func() bool {
-			return atomic.LoadInt32(&callNumber) >= 2
+			return callNumber.Load() >= 2
 		})
 
 		mu.Lock()

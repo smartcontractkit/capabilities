@@ -6,7 +6,7 @@ linters:
     - depguard
     - errorlint
     - exhaustive
-    - gomodguard
+    - gomodguard_v2
     - gosec
     - loggercheck
     - misspell
@@ -88,9 +88,8 @@ linters:
       errorf: false
     exhaustive:
       default-signifies-exhaustive: true
-    gomodguard:
-      blocked:
-        local-replace-directives: false
+    gomodguard_v2:
+      local-replace-directives: false
     gosec:
       excludes:
         - G101

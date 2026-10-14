@@ -28,6 +28,8 @@ const (
 	defaultGatewayConnectionInitialIntervalMs = 100 // 100 milliseconds
 	defaultGatewayConnectionMaxElapsedTimeMs  = 5_000
 	defaultGatewayConnectionMultiplier        = 2.0
+	// Mirrors the gateway's own budget for delivering a response back to us.
+	defaultGatewayResponseGraceMs = 5_000
 )
 
 var (
@@ -110,6 +112,9 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 	if cfg.Multiplier == 0 {
 		cfg.Multiplier = defaultGatewayConnectionMultiplier
 	}
+	if cfg.ResponseGraceMs == 0 {
+		cfg.ResponseGraceMs = defaultGatewayResponseGraceMs
+	}
 	return cfg
 }
 
@@ -136,8 +141,9 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 	input = validatedInput
 
-	ctx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
-	defer cancel()
+	// Bounds delivery to a gateway only; the response wait gets its own deadline after the send.
+	sendCtx, cancelSend := context.WithTimeout(ctx, input.Timeout.AsDuration())
+	defer cancelSend()
 
 	// Set only one of Headers or MultiHeaders on the outgoing request (MultiHeaders if input has it, else Headers).
 	gatewayHeaders, gatewayMultiHeaders := gatewayHeadersFromInput(input)
@@ -190,13 +196,13 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	p.metrics.IncrementRequestCount(ctx, lggr)
 
-	donID, err := p.validator.ResolveGatewayProxyDonID(ctx)
+	donID, err := p.validator.ResolveGatewayProxyDonID(sendCtx)
 	if err != nil {
 		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
 		return nil, 0, fmt.Errorf("failed to resolve gateway proxy DON: %w", err)
 	}
 
-	selectedGateway, err := p.awaitConnection(ctx, lggr, donID, gatewayReq.Hash())
+	selectedGateway, err := p.awaitConnection(sendCtx, lggr, donID, gatewayReq.Hash())
 	if err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
 		return nil, 0, fmt.Errorf("failed to establish connection to gateway: %w", err)
@@ -205,13 +211,26 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	lggr.Debugw("sending request to gateway", "donID", donID, "selectedGateway", selectedGateway)
 
 	p.metrics.IncrementGatewaySendCount(ctx, selectedGateway, donID, lggr)
-	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
+	// The node-observed application round trip starts at the send: it covers
+	// delivery to the gateway, gateway processing, and response delivery back,
+	// including loop-plugin boundary latency when applicable. It is not pure
+	// websocket latency.
+	roundTripStart := time.Now()
+	if err := p.gatewayConnector.SendToGateway(sendCtx, selectedGateway, &gatewayResp); err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, donID, lggr)
+		p.metrics.IncrementGatewayRoundTripFailures(ctx, selectedGateway, common.RoundTripReasonSendError, lggr)
 		return nil, 0, fmt.Errorf("failed to send request to gateway: %w", err)
 	}
 
+	responseTimeout := input.Timeout.AsDuration() + time.Duration(p.gatewayConnectionConfig.ResponseGraceMs)*time.Millisecond
+	waitCtx, cancelWait := context.WithTimeout(ctx, responseTimeout)
+	defer cancelWait()
+
 	select {
 	case resp := <-responseCh:
+		// Record the round trip before inspecting the response so that received
+		// error responses are measured too. Failed waits produce no sample here.
+		p.metrics.RecordGatewayRoundTrip(ctx, selectedGateway, time.Since(roundTripStart).Milliseconds(), lggr)
 		lggr.Debugw("received response from gateway")
 		if resp.ErrorMessage != "" {
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
@@ -241,18 +260,34 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		}
 
 		return response, resp.ExternalEndpointLatency, nil
-	case <-ctx.Done():
-		p.metrics.IncrementExecutionTimeout(ctx, common.ProxyModeGateway, lggr)
+	case <-waitCtx.Done():
+		p.metrics.IncrementGatewayRoundTripFailures(ctx, selectedGateway, common.RoundTripReasonContextDone, lggr)
 		elapsedMs := time.Since(startTime).Milliseconds()
-		timeoutMs := input.Timeout.AsDuration().Milliseconds()
-		cause := context.Cause(ctx)
-		lggr.Debugw(ErrMsgGatewayResponseWait,
+		timeoutMs := responseTimeout.Milliseconds()
+
+		// A live parent means we hit our own deadline; otherwise the caller cancelled us.
+		if parentErr := ctx.Err(); parentErr != nil {
+			p.metrics.IncrementRequestCanceled(ctx, common.ProxyModeGateway, lggr)
+			cause := context.Cause(ctx)
+			lggr.Debugw(ErrMsgGatewayResponseWait,
+				"elapsedMs", elapsedMs,
+				"timeoutMs", timeoutMs,
+				"cause", cause,
+			)
+			return nil, 0, NewCanceledError(
+				fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause),
+			)
+		}
+
+		p.metrics.IncrementExecutionTimeout(ctx, common.ProxyModeGateway, lggr)
+		lggr.Errorw(ErrMsgGatewayResponseTimeout,
 			"elapsedMs", elapsedMs,
 			"timeoutMs", timeoutMs,
-			"cause", cause,
+			"selectedGateway", selectedGateway,
+			"donID", donID,
 		)
-		return nil, 0, NewUserError(
-			fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause),
+		return nil, 0, NewTimeoutError(
+			fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseTimeout, elapsedMs, timeoutMs, context.Cause(waitCtx)),
 		)
 	}
 }

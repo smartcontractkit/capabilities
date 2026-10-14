@@ -3,6 +3,7 @@ package batching
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -46,9 +47,7 @@ func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.O
 	initialOverhead := calculateMessageSize(&oracletypes.Outcome{HistoricalOutcomes: historicalOutcomes})
 
 	return &OutcomeBatch{
-		Outcome: oracletypes.Outcome{
-			HistoricalOutcomes: historicalOutcomes,
-		},
+		HistoricalOutcomes:             historicalOutcomes,
 		lggr:                           lggr,
 		outctx:                         outctx,
 		currentSerialisedBatchSize:     initialOverhead,
@@ -160,7 +159,9 @@ func (o *OutcomeBatch) truncateFailedRequestOutcome(failedRequestOutcome *oracle
 		return requestOutcomeWithoutFailureMessage
 	}
 
-	truncatedFailureMessage := failedRequestOutcome.FailureMessage[:allowedFailureMessageSize] + FailureMessageTruncated
+	// Slicing by byte can split a multi-byte rune, and proto3 strings must be valid UTF-8 to marshal.
+	// Drop invalid bytes rather than substituting U+FFFD, which could push the outcome back over the limit.
+	truncatedFailureMessage := strings.ToValidUTF8(failedRequestOutcome.FailureMessage[:allowedFailureMessageSize], "") + FailureMessageTruncated
 	o.lggr.Warnw("truncated failure message to fit within request outcome size limit", "requestID", failedRequestOutcome.RequestID,
 		"originalSize", len(failedRequestOutcome.FailureMessage), "truncatedSize", len(truncatedFailureMessage),
 		"maxRequestOutcomeSize", o.maxRequestOutcomeSize, "failure message", failedRequestOutcome.FailureMessage)

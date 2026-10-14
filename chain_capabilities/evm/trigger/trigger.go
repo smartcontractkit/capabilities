@@ -298,8 +298,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	if err = lts.EVMService.RegisterLogTracking(ctx, filterQuery); err != nil {
 		registerError := fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
 			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
-		var lpError caperrors.Error
-		if errors.As(err, &lpError) {
+		if lpError, ok := errors.AsType[caperrors.Error](err); ok {
 			if lpError.Origin() == caperrors.OriginUser {
 				return nil, caperrors.NewPublicUserError(registerError, lpError.Code())
 			}
@@ -324,11 +323,9 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 			cancelFunc:              cancel,
 			lastBlock:               fromBlock,
 			unfinalizedSentEventIDs: make(map[string]*big.Int),
-			filter: filter{
-				filterID:    filterID,
-				expressions: expressions,
-				confidence:  confidence,
-			},
+			filterID:                filterID,
+			expressions:             expressions,
+			confidence:              confidence,
 		})
 		ctx = meta.ContextWithCRE(ctx)
 		lts.startPolling(ctx, telemetryContext, triggerID, input, logCh)
@@ -479,11 +476,11 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 
 		workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
 		if execIDErr != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "isLegacyExecutionID", false, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
 			workflowExecutionID = ""
 		}
-		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID, "isLegacyExecutionID", false)
+		lts.lggr.Debugw("new log trigger event", "triggerEventID", response.Id, "triggerID", triggerID, "executionID", workflowExecutionID)
 
 		displayWorkflowName := telemetryContext.DecodedWorkflowName
 		if displayWorkflowName == "" {

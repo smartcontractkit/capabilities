@@ -3,6 +3,7 @@ package batching_test
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -273,4 +274,28 @@ func TestOutcomeTooLargeWithExistingHistoricalOutcomes(t *testing.T) {
 	require.True(t, added) // still added but a user erro, not the large outcome
 	require.Equal(t, oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE, outcome.Outcomes[len(outcome.Outcomes)-1].GetFailure().GetCode())
 	require.Equal(t, 1, testMetrics.batchCapacityExceeded)
+}
+
+func TestTruncatedFailureMessageRemainsValidUTF8(t *testing.T) {
+	ctx := t.Context()
+	const maxRequestOutcomeSize = 10000
+
+	for pad := 0; pad < 4; pad++ {
+		outcome, err := batching.NewOutcomeBatch(ctx, logger.Test(t), ocr3types.OutcomeContext{SeqNr: 1}, 1000,
+			1_000_000, "evm", newTestMetrics(t, "outcome"), maxRequestOutcomeSize, 100)
+		require.NoError(t, err)
+
+		failureMessage := strings.Repeat("a", pad) + strings.Repeat("\U0001F600", 5000)
+		added, err := outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, "req-1", failureMessage,
+			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS)
+		require.NoError(t, err)
+		require.True(t, added)
+
+		msg := outcome.Outcomes[0].GetFailure().GetFailureMessage()
+		require.True(t, utf8.ValidString(msg), "pad %d", pad)
+		require.True(t, strings.HasSuffix(msg, batching.FailureMessageTruncated), "pad %d", pad)
+
+		_, err = outcome.SerialiseOutcomeBatch(ctx)
+		require.NoError(t, err, "pad %d", pad)
+	}
 }

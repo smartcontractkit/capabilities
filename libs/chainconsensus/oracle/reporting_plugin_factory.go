@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 
@@ -21,6 +22,7 @@ type ReportingPluginFactory struct {
 	requestsStore  RequestsHandler
 	blocksProvider BlocksProvider
 	metrics        metrics.ConsensusMetrics
+	limitsFactory  limits.Factory
 }
 
 func NewReportingPluginFactory(
@@ -28,12 +30,14 @@ func NewReportingPluginFactory(
 	requestsStore RequestsHandler,
 	blocksProvider BlocksProvider,
 	metrics metrics.ConsensusMetrics,
+	limitsFactory limits.Factory,
 ) *ReportingPluginFactory {
 	return &ReportingPluginFactory{
 		logger:         logger,
 		requestsStore:  requestsStore,
 		blocksProvider: blocksProvider,
 		metrics:        metrics,
+		limitsFactory:  limitsFactory,
 	}
 }
 
@@ -69,7 +73,12 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 
 	pluginLogger := rpf.logger.Named("ChainReadReportingPlugin")
 
-	return newReportingPlugin(cfg, pluginLogger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics), ocr3types.ReportingPluginInfo{
+	plugin, err := newReportingPlugin(cfg, pluginLogger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics, rpf.limitsFactory)
+	if err != nil {
+		return nil, ocr3types.ReportingPluginInfo{}, fmt.Errorf("failed to create reporting plugin: %w", err)
+	}
+
+	return plugin, ocr3types.ReportingPluginInfo{
 		Name: rpf.logger.Name() + ".chain-reads-oracle",
 		Limits: ocr3types.ReportingPluginLimits{
 			MaxQueryLength:       int(offchainCfg.MaxQueryLengthBytes),

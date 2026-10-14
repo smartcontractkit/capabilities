@@ -696,11 +696,9 @@ func TestFetchLogsFromLogPoller(t *testing.T) {
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 	fromBlock := big.NewInt(10)
 	state := logTriggerState{
-		lastBlock: fromBlock,
-		filter: filter{
-			expressions: []query.Expression{},
-			confidence:  primitives.Finalized,
-		},
+		lastBlock:   fromBlock,
+		expressions: []query.Expression{},
+		confidence:  primitives.Finalized,
 	}
 
 	evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -748,12 +746,10 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 			lastBlock:               finalizedBlockNumber,
-			filter: filter{
-				expressions: []query.Expression{
-					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
-				},
-				confidence: primitives.Finalized,
+			expressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
 			},
+			confidence: primitives.Finalized,
 		})
 		state, _ := service.triggers.Read(triggerID)
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id", Owner: "0xowner"})
@@ -1224,7 +1220,7 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(nil).Once()
 
 		// mimicking there's a live trigger with the filter registered to log poller
-		store.Write("living-trigger-1", logTriggerState{filter: filter{filterID: liveFilterID}})
+		store.Write("living-trigger-1", logTriggerState{filterID: liveFilterID})
 		service.cleanUpStaleFilters(t.Context())
 		// must call UnregisterLogTracking for staleFilterID
 		mockEVM.AssertCalled(t, "UnregisterLogTracking", mock.Anything, staleFilterID)
@@ -1243,7 +1239,7 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(nil).Once()
 
 		// mimicking there's a live trigger with the filter registered to log poller
-		store.Write("living-trigger-1", logTriggerState{filter: filter{filterID: liveFilterID}})
+		store.Write("living-trigger-1", logTriggerState{filterID: liveFilterID})
 		service.cleanUpStaleFilters(t.Context())
 		mockEVM.AssertCalled(t, "UnregisterLogTracking", mock.Anything, staleFilterID)
 

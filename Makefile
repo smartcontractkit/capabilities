@@ -22,7 +22,7 @@ protoc: ## Install protoc and protoc-gen-go
 	./script/install-protoc.sh 29.3
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v$(PROTOC_GEN_GO_VERSION)
 
-MOCKERY_VERSION := 2.53.5
+MOCKERY_VERSION := 2.53.7
 .PHONY: mockery
 mockery: ## Install mockery at the version specified in .tool-versions
 	go install github.com/vektra/mockery/v2@v$(MOCKERY_VERSION)
@@ -32,9 +32,9 @@ generate: protoc mockery gomods ## Execute all go:generate commands (including p
 	## Updating PATH makes sure that go:generate uses the version of protoc installed by the protoc make command.
 	export PATH="$(HOME)/.local/bin:$(PATH)"; gomods -w go generate -x ./...
 
-.PHONY: update-common-capabilities
-update-common-capabilities: ## Update chain_capabilities/common in aptos/evm/solana. Usage: make update-common-capabilities REF=<branch-or-commit>
-	./script/update-common-capabilities.sh $(REF)
+.PHONY: update-chain-capabilities
+update-chain-capabilities: ## Update a Go module in aptos/evm/solana/stellar. Usage: make update-chain-capabilities MODULE=<module> REF=<branch-or-commit>
+	./script/update-chain-capabilities.sh "$(MODULE)" "$(REF)"
 
 .PHONY: help
 help: ## Display this help screen.

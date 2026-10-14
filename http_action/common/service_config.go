@@ -54,6 +54,8 @@ type GatewayConnectionConfig struct {
 	MaxElapsedTimeMs uint32 `json:"maxElapsedTimeMs"`
 	// Multiplier is the multiplier for the exponential backoff retry strategy.
 	Multiplier float64 `json:"multiplier"`
+	// ResponseGraceMs is the extra time the node waits for a gateway response beyond the request's own timeout.
+	ResponseGraceMs uint32 `json:"responseGraceMs"`
 }
 
 // HTTPClientConfig defines configuration options for the HTTP client used in "direct" mode.

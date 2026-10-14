@@ -20,11 +20,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
@@ -41,9 +44,10 @@ import (
 const (
 	CapabilityName = "solana"
 
-	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
-	versionRefsMain     = "refs/heads/main"
-	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/solana/monitoring"
+	repoCLLCapabilities                = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
+	versionRefsMain                    = "refs/heads/main"
+	schemaBasePath                     = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/solana/monitoring"
+	defaultMaxUnknownRequestsCacheSize = 1000
 )
 
 type capabilityGRPCService struct {
@@ -53,6 +57,12 @@ type capabilityGRPCService struct {
 	lggr           logger.Logger
 	limitsFactory  limits.Factory
 	triggerService *trigger.SolanaLogTriggerService
+
+	// meteringCfg comes from the LOOP environment ([Metering] on the host).
+	// gasMeter emits cre:workflow:gas usage records for write reports when
+	// MeterRecordsEnabled; nil otherwise.
+	meteringCfg resourcemanager.Config
+	gasMeter    *gasmeter.Meter
 }
 
 type capability struct {
@@ -67,7 +77,11 @@ var _ solcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return solcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
+		return solcapserver.NewClientServer(&capabilityGRPCService{
+			lggr:          s.Logger.Named(CapabilityName),
+			limitsFactory: s.LimitsFactory,
+			meteringCfg:   s.MeteringConfig(),
+		})
 	}, loop.WithOtelViews(append(consMetrics.MetricViews(), capmon.MetricViews()...)))
 }
 
@@ -106,6 +120,9 @@ func (c *capabilityGRPCService) Close() error {
 	}
 	if c.Solana != nil {
 		closers = append(closers, c.Solana)
+	}
+	if c.gasMeter != nil {
+		closers = append(closers, c.gasMeter)
 	}
 	return services.CloseAll(closers...)
 }
@@ -211,7 +228,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			return fmt.Errorf("failed to create solana consensus metrics: %w", err)
 		}
 		c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-		c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+		derivedUnknownTTL := capcommon.MaxRequestTimeoutWithMultiplier(ctx, dependencies.CapabilityRegistry, c.id, c.DON.ID, cfg.UnknownRequestsTTL, c.lggr)
+		c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, derivedUnknownTTL, cfg.MaxUnknownRequestsCacheSize)
 		c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 			LocalConfig: ocrtypes.LocalConfig{
 				BlockchainTimeout:                  time.Second * 20,
@@ -222,7 +240,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 				ContractConfigLoadTimeout:          time.Second * 10,
 				DefaultMaxDurationInitialization:   time.Second * 10,
 			},
-			ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics),
+			ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics, c.limitsFactory),
 			ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 		})
 		if err != nil {
@@ -236,6 +254,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector, c.consensusHandler)
 	if err != nil {
 		return err
+	}
+	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, dependencies.CapabilityDonID)
+	c.WithGasMeter(c.gasMeter)
+	if c.gasMeter != nil {
+		toStart = append(toStart, c.gasMeter)
 	}
 
 	c.triggerService, err = trigger.NewLogTriggerService(trigger.LogTriggerServiceOpts{
@@ -324,6 +347,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.UnknownRequestsTTL == 0 {
 		cfg.UnknownRequestsTTL = 10 * time.Second
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+	if cfg.MaxUnknownRequestsCacheSize == 0 {
+		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
+		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 
 	return &cfg, nil
