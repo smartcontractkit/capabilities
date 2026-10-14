@@ -14,12 +14,11 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
 // runArgs is the arguments of one run over settings a test can start: a real port, and everything
 // else off.
-func runArgs(t *testing.T, ctor any) (*config, constructor, uint16) {
+func runArgs(t *testing.T, ctor any) (*config, constructorFn, uint16) {
 	t.Helper()
 
 	c, err := newConstructor(ctor)
@@ -40,7 +39,7 @@ func runArgs(t *testing.T, ctor any) (*config, constructor, uint16) {
 // A run blocks until its context is cancelled, so a test that wants one to finish has to be the
 // thing that ends it - standing in for the signal an operator would send. A run that fails on the
 // way up never gets as far as serving and reports that instead.
-func runToCompletion(t *testing.T, cfg *config, c constructor, port uint16) error {
+func runToCompletion(t *testing.T, cfg *config, c constructorFn, port uint16) error {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -218,7 +217,7 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 // here - plugin.Serve takes over the process's stdio and handshake, so a test calling it would be
 // testing go-plugin rather than this.
 func TestUnderPluginHost(t *testing.T) {
-	h := loop.EmptyHandshakeConfig()
+	h := emptyHandshakeConfig()
 
 	t.Run("absent", func(t *testing.T) {
 		t.Setenv(h.MagicCookieKey, "")

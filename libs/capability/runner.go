@@ -14,7 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
-func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability constructor) error {
+func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability constructorFn) error {
 	defer func() { _ = lggr.Sync() }()
 
 	var svcs []services.Service
@@ -73,8 +73,8 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	if underPluginHost() {
 		lggr.Info("Serving the empty LOOP: this process is supervised by a go-plugin host")
 		plugin.Serve(&plugin.ServeConfig{
-			HandshakeConfig: loop.EmptyHandshakeConfig(),
-			Plugins:         map[string]plugin.Plugin{loop.PluginEmptyName: &loop.EmptyLoop{}},
+			HandshakeConfig: emptyHandshakeConfig(),
+			Plugins:         map[string]plugin.Plugin{emptyPluginName: &emptyLoop{}},
 			GRPCServer:      plugin.DefaultGRPCServer,
 		})
 		return nil
@@ -99,13 +99,13 @@ func servicesToHealthReporters(svcs []services.Service) []services.HealthReporte
 // The check is necessary rather than defensive: go-plugin's Serve refuses to run - and exits the
 // process - when the cookie is absent, so a standalone binary that called it would die on startup.
 func underPluginHost() bool {
-	h := loop.EmptyHandshakeConfig()
+	h := emptyHandshakeConfig()
 	return os.Getenv(h.MagicCookieKey) == h.MagicCookieValue
 }
 
 // startCapability builds the capability from its constructor and makes it reachable: started,
 // served and announced by the registry, and mounted via the debug UI if debug mode is turned on.
-func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor constructor, reg *registryService, settings *loop.AtomicSettings, mux *http.ServeMux) (Capability, error) {
+func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor constructorFn, reg *registryService, settings *loop.AtomicSettings, mux *http.ServeMux) (Capability, error) {
 	c, err := ctor.call(Dependencies{
 		Logger:             lggr,
 		CapabilityRegistry: reg,
