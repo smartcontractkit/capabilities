@@ -31,7 +31,7 @@ flowchart LR
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
-	capabilities/libs --> chainlink-common
+	capabilities/libs --> chainlink-common/x/config
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	ccip-contract-examples/chains/evm
 	click ccip-contract-examples/chains/evm href "https://github.com/smartcontractkit/ccip-contract-examples"
@@ -101,6 +101,8 @@ flowchart LR
 	click chainlink-common/pkg/chipingress href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-common/pkg/monitoring
 	click chainlink-common/pkg/monitoring href "https://github.com/smartcontractkit/chainlink-common"
+	chainlink-common/x/config --> chainlink-common
+	click chainlink-common/x/config href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-data-streams --> chainlink-common/keystore
 	chainlink-data-streams --> chainlink-evm/gethwrappers
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
@@ -265,6 +267,7 @@ flowchart LR
 		 chainlink-common/keystore
 		 chainlink-common/pkg/chipingress
 		 chainlink-common/pkg/monitoring
+		 chainlink-common/x/config
 	end
 	click chainlink-common-repo href "https://github.com/smartcontractkit/chainlink-common"
 
