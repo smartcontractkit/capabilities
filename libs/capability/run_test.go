@@ -162,6 +162,10 @@ func TestRunErrRejects(t *testing.T) {
 	t.Run("no logger", func(t *testing.T) {
 		require.ErrorContains(t, RunErr(context.Background(), nil, fakeConstructor), "must provide a logger")
 	})
+
+	t.Run("no constructor", func(t *testing.T) {
+		require.ErrorContains(t, RunErr(context.Background(), logger.Test(t), nil), "must provide a capability constructor")
+	})
 }
 
 func TestRunBuildsTheCapability(t *testing.T) {
@@ -179,6 +183,13 @@ func TestRunReportsAFailedConstructor(t *testing.T) {
 		return nil, errors.New("no schedule")
 	}, "run")
 	require.ErrorContains(t, err, "failed to instantiate capability: no schedule")
+}
+
+// TestRunRejectsANilCapability covers a constructor that reports success without building
+// anything: the run says so rather than starting a nil capability.
+func TestRunRejectsANilCapability(t *testing.T) {
+	err := execute(t, logger.Test(t), func(do.Injector) (Capability, error) { return nil, nil }, "run")
+	require.ErrorContains(t, err, "returned neither a capability nor an error")
 }
 
 // TestRunProvidesItsDependencies covers what the injector holds: this process's logger, the

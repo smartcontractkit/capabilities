@@ -39,6 +39,9 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injecto
 	if lggr == nil {
 		return errors.New("must provide a logger")
 	}
+	if constructor == nil {
+		return errors.New("must provide a capability constructor")
+	}
 
 	// TODO: Run should accept some kind of Info struct
 	root := &cobra.Command{

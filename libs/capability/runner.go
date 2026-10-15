@@ -2,6 +2,7 @@ package capability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -118,6 +119,9 @@ func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor 
 	c, err := ctor(i)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate capability: %w", err)
+	}
+	if c == nil {
+		return nil, errors.New("failed to instantiate capability: the constructor returned neither a capability nor an error")
 	}
 
 	if err := c.Start(ctx); err != nil {
