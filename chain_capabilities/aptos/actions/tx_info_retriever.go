@@ -55,6 +55,7 @@ type TxInfoRetriever struct {
 	forwarderClient    CREForwarderClient
 	lggr               logger.Logger
 	transmissionID     TransmissionID
+	forwarderAddress   aptos_sdk.AccountAddress
 	entryFunctionName  string
 	startingPointMicro int64
 	report             *sdk.ReportResponse
@@ -96,12 +97,13 @@ const (
 	LatestPagePoll TxRetrievalPhase = "LatestPagePoll"
 )
 
-func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time, txSearchStartingBuffer time.Duration, report *sdk.ReportResponse, opts ...TxInfoRetrieverOption) TxInfoRetriever {
+func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress aptos_sdk.AccountAddress, requestStartTime time.Time, txSearchStartingBuffer time.Duration, report *sdk.ReportResponse, opts ...TxInfoRetrieverOption) TxInfoRetriever {
 	retriever := TxInfoRetriever{
 		forwarderClient:    forwarderClient,
 		lggr:               logger.Named(lggr, "TxInfoRetriever"),
 		transmissionID:     transmissionID,
-		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress),
+		forwarderAddress:   forwarderAddress,
+		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress.String()),
 		startingPointMicro: requestStartTime.Add(-txSearchStartingBuffer).UnixMicro(),
 		report:             report,
 	}
@@ -178,7 +180,7 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 		}
 
 		// match function name
-		if payload.Inner.Function != thr.entryFunctionName {
+		if !thr.matchesEntryFunction(payload.Inner.Function) {
 			continue
 		}
 
@@ -455,6 +457,18 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	return TransmissionTxInfo{}, fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
 }
 
+// matchesEntryFunction checks whether a tx entry function id is the forwarder's
+// report function. The address segment is parsed rather than string-compared
+// because Aptos APIs omit leading zero hex digits (e.g. a forwarder at 0x07cd...
+// is returned as 0x7cd...::forwarder::report).
+func (thr *TxInfoRetriever) matchesEntryFunction(function string) bool {
+	addr, rest, ok := strings.Cut(function, "::")
+	if !ok || rest != "forwarder::report" {
+		return false
+	}
+	return aptosAddressesEqual(addr, thr.forwarderAddress)
+}
+
 // matchesTransmissionByReport checks if a transaction's receiver and raw_report
 // match exactly what this node would submit.
 func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []any) bool {
@@ -464,7 +478,7 @@ func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []any) bool {
 	}
 
 	receiverHex, ok := arguments[0].(string)
-	if !ok || !receiverAddressesEqual(receiverHex, thr.transmissionID.Receiver) {
+	if !ok || !aptosAddressesEqual(receiverHex, thr.transmissionID.Receiver) {
 		return false
 	}
 
@@ -473,15 +487,15 @@ func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []any) bool {
 	return strings.TrimPrefix(reportHex, "0x") == expectedReportHex
 }
 
-// receiverAddressesEqual compares a hex-encoded receiver from chain tx arguments
-// against the expected 32-byte address. Aptos APIs may omit leading zero hex
+// aptosAddressesEqual compares a hex-encoded address from chain tx data
+// (receiver argument, entry function id) against the expected 32-byte address. Aptos APIs may omit leading zero hex
 // digits (e.g. 0x0447... serializes as 0x4476...), so we parse both sides.
 // Incident: nodes 1-9 failed to match node 0's successful WriteReport tx because
 // arg[0] was returned without a leading zero hex digit. Example on-chain tx:
 // https://explorer.aptoslabs.com/txn/6208934644/userTxnOverview?network=mainnet
-func receiverAddressesEqual(receiverHex string, expected aptos_sdk.AccountAddress) bool {
+func aptosAddressesEqual(addrHex string, expected aptos_sdk.AccountAddress) bool {
 	var parsed aptos_sdk.AccountAddress
-	if err := parsed.ParseStringRelaxed(receiverHex); err != nil {
+	if err := parsed.ParseStringRelaxed(addrHex); err != nil {
 		return false
 	}
 	return parsed == expected

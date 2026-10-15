@@ -328,7 +328,7 @@ func TestPayloadMatching(t *testing.T) {
 	})
 }
 
-func TestReceiverAddressesEqual(t *testing.T) {
+func TestAptosAddressesEqual(t *testing.T) {
 	t.Parallel()
 
 	// Incident: node 0 submitted WriteReport successfully, but nodes 1-9 could not
@@ -342,7 +342,24 @@ func TestReceiverAddressesEqual(t *testing.T) {
 
 	shortOnChainHex := "0x4476bcdb448e33b69d2745f9509570e104caee1393da08d7d53becf570cffa7"
 
-	require.True(t, receiverAddressesEqual(shortOnChainHex, expected))
-	require.True(t, receiverAddressesEqual("0x04476bcdb448e33b69d2745f9509570e104caee1393da08d7d53becf570cffa7", expected))
-	require.False(t, receiverAddressesEqual("0xbb", expected))
+	require.True(t, aptosAddressesEqual(shortOnChainHex, expected))
+	require.True(t, aptosAddressesEqual("0x04476bcdb448e33b69d2745f9509570e104caee1393da08d7d53becf570cffa7", expected))
+	require.False(t, aptosAddressesEqual("0xbb", expected))
+}
+
+func TestMatchesEntryFunction(t *testing.T) {
+	t.Parallel()
+
+	// The forwarder address has a leading zero hex digit, which the Aptos API
+	// omits from the entry function id in returned transactions.
+	var forwarder aptos_sdk.AccountAddress
+	err := forwarder.ParseStringRelaxed("0x07cd20f64feabb51cde3196811ac98ded4f8c43df43f576bd3a3e00d0b9dae07")
+	require.NoError(t, err)
+	thr := TxInfoRetriever{forwarderAddress: forwarder}
+
+	require.True(t, thr.matchesEntryFunction("0x7cd20f64feabb51cde3196811ac98ded4f8c43df43f576bd3a3e00d0b9dae07::forwarder::report"))
+	require.True(t, thr.matchesEntryFunction(forwarder.String()+"::forwarder::report"))
+	require.False(t, thr.matchesEntryFunction("0x7cd20f64feabb51cde3196811ac98ded4f8c43df43f576bd3a3e00d0b9dae07::forwarder::other"))
+	require.False(t, thr.matchesEntryFunction("0xbb::forwarder::report"))
+	require.False(t, thr.matchesEntryFunction("not-a-function-id"))
 }
