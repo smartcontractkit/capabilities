@@ -22,7 +22,7 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
-func newRegistry(lggr logger.Logger, cfg capabilityConfig, grpcCfg grpcConfig) (*registryService, error) {
+func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig) (*registryService, error) {
 	r := &registryService{local: registry.NewRegistry(lggr)}
 
 	if cfg.ProxyURL != "" {
@@ -56,7 +56,7 @@ func dial(target string) (*grpc.ClientConn, error) {
 }
 
 // startRegistry builds the registry and starts it.
-func startRegistry(ctx context.Context, lggr logger.Logger, cfg capabilityConfig, grpcCfg grpcConfig) (*registryService, error) {
+func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig) (*registryService, error) {
 	r, err := newRegistry(lggr, cfg, grpcCfg)
 	if err != nil {
 		return nil, err

@@ -25,12 +25,20 @@ func settingsRoot(t *testing.T) (*cobra.Command, *config) {
 	t.Helper()
 
 	root := &cobra.Command{Use: "cron"}
-	root.PersistentFlags().String("config", "", "Path to config file")
 
 	// The production defaults, so what these read is what a binary gets rather than a zero value.
 	cfg := defaultConfig()
-	require.NoError(t, cfg.bind(root))
+	_, err := cfg.bind(root)
+	require.NoError(t, err)
 	return root, cfg
+}
+
+// TestEveryFlagIsDocumented fails when a config field has no doc comment, or doccomments_gen.go is
+// stale: run go generate.
+func TestEveryFlagIsDocumented(t *testing.T) {
+	b, err := defaultConfig().bind(&cobra.Command{Use: "cron"})
+	require.NoError(t, err)
+	require.Empty(t, b.Undocumented())
 }
 
 // decoded runs args through the command tree and returns the settings as they were decoded.

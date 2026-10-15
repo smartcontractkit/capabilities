@@ -28,19 +28,3 @@ func defaultObservability() *observability {
 		http:    HTTPConfig{Port: defaultHTTPPort},
 	}
 }
-
-type section struct {
-	namespace string
-	target    any
-}
-
-// namespaced pairs each config with its namespace, in the order the flags are registered.
-func (o *observability) namespaced() []section {
-	return []section{
-		{telemetryNamespace, &o.telemetry},
-		{tracingNamespace, &o.tracing},
-		{chipIngressNamespace, &o.chipIngress},
-		{pyroscopeNamespace, &o.pyroscope},
-		{httpNamespace, &o.http},
-	}
-}

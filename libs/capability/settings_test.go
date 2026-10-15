@@ -134,7 +134,7 @@ func (f *fakeBroadcaster) closeStream() {
 // TestSettingsServiceWithoutAURL covers a run the host pushes no settings to: it starts and stops
 // cleanly, and every limit stays at its compiled-in default.
 func TestSettingsServiceWithoutAURL(t *testing.T) {
-	s, err := startSettings(t.Context(), logger.Test(t), settingsConfig{})
+	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{})
 	require.NoError(t, err)
 	assert.Nil(t, s.conn)
 	require.NoError(t, s.Close())
@@ -151,7 +151,7 @@ func TestSettingsServiceFollowsTheHost(t *testing.T) {
 	go func() { _ = srv.Serve(l) }()
 	t.Cleanup(srv.Stop)
 
-	s, err := startSettings(t.Context(), logger.Test(t), settingsConfig{URL: l.Addr().String()})
+	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{URL: l.Addr().String()})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 
