@@ -85,6 +85,11 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportInsufficientGasRetry(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportInsufficientGasRetry metrics: %w", err)
 		}
+	case *WriteReportGasMismatch:
+		p.logMessage(msg)
+		if err := p.metrics.OnWriteReportGasMismatch(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportGasMismatch metrics: %w", err)
+		}
 	// -- LogTrigger --
 	case *LogTriggerSuccess:
 		p.logMessage(msg)
