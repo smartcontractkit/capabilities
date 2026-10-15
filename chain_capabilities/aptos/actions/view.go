@@ -6,6 +6,9 @@ import (
 	"math"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -63,9 +66,11 @@ func (s *Aptos) View(
 
 	data, err := chainconsensus.ReadType[[]byte](ctx, s.ConsensusHandler, request)
 	if err != nil {
+		// AptosService returns InvalidArgument when the node rejects the view call itself (e.g. module doesn't exist).
+		isUserError := status.Code(err) == codes.InvalidArgument
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
-			s.messageBuilder.BuildViewError(telemetryContext, input, "Failed to execute View request", err.Error(), false))
-		return nil, capcommon.GetError(err, false)
+			s.messageBuilder.BuildViewError(telemetryContext, input, "Failed to execute View request", err.Error(), isUserError))
+		return nil, capcommon.GetError(err, isUserError)
 	}
 	monitoring.LogAndEmitSuccess(ctx, "Successful View execution", s.lggr, s.beholderProcessor,
 		s.messageBuilder.BuildViewSuccess(telemetryContext, input, uint64(len(data))))
