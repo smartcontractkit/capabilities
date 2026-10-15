@@ -1,0 +1,78 @@
+name: CRE Audit
+
+# Optional AI security/correctness audit for CRE capabilities. Each enabled pack reports to its
+# own advisory `audit/<capability>` commit status. Audit logic, rubrics and findings live in
+# smartcontractkit/cre-docs (.agents/skills/cre-audit); nothing sensitive is posted here.
+#
+# Do NOT make audit/<capability> a required check or a merge-queue requirement: runs are
+# started by hand, take up to an hour, and do not run on merge_group commits.
+#
+#   /audit                         audit every enabled pack whose paths this PR touches
+#   /audit <pack>                  audit one pack
+#   /audit [<pack>] skip <reason>  record a skip (write access required)
+#   model=opus|sonnet|haiku effort=low|medium|high|xhigh|max   optional overrides
+#
+# A PR touching an enabled pack's paths gets one comment suggesting /audit. The pack→path map
+# is read from the base branch (pull_request_target).
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    # Invoked by cre-docs to stamp audit/<capability>; not meant to be run by hand.
+    inputs:
+      capability:
+        description: Pack name
+        required: true
+        type: string
+      pr_number:
+        description: PR number
+        required: true
+        type: string
+      head_sha:
+        description: Audited commit SHA
+        required: true
+        type: string
+      state:
+        description: pending | success | failure | error
+        required: true
+        type: string
+      description:
+        description: Status description
+        required: true
+        type: string
+      target_url:
+        description: Link to the audit report
+        required: false
+        type: string
+
+permissions: {}
+
+jobs:
+  audit:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request != null && startsWith(github.event.comment.body, '/audit'))
+    uses: smartcontractkit/.github/.github/workflows/cre-audit-consumer.yml@cre-audit/v1
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+      pull-requests: write
+      statuses: write
+    with:
+      # One `<pack>=<regex over changed file paths>` per line. No packs are written yet.
+      # To enable one: merge its pack to cre-docs (.agents/skills/cre-audit/packs/<pack>/, with
+      # smartcontractkit/capabilities in `consumers`), then uncomment its line here. The name
+      # must match the pack directory. chain_capabilities may be split per chain by its owners.
+      packs: |
+        # consensus=^consensus/
+        # cron=^cron/
+        # http_action=^http_action/
+        # http_trigger=^http_trigger/
+        # chain_capabilities=^(chain_capabilities/|libs/chainconsensus/)
+    secrets:
+      GATI_AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN_GATI_CRE_AUDIT }}
+      GATI_AWS_LAMBDA_URL: ${{ secrets.AWS_LAMBDA_URL_GATI }}
