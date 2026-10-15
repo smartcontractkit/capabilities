@@ -14,9 +14,12 @@ import (
 
 // PyroscopeConfig configures continuous profiling. An empty ServerAddress leaves profiling off.
 type PyroscopeConfig struct {
-	ServerAddress string                    `usage:"pyroscope server address; profiling is disabled when unset"`
-	AuthToken     commonconfig.SecretString `usage:"pyroscope auth token" flagdocs:"noexample"`
-	Environment   string                    `usage:"environment tag attached to profiles"`
+	// ServerAddress is the pyroscope server address. Profiling is disabled when unset.
+	ServerAddress string
+	// AuthToken is the pyroscope auth token.
+	AuthToken commonconfig.SecretString
+	// Environment is the environment tag attached to profiles.
+	Environment string
 }
 
 // newProfiler returns continuous profiling as a service, or nil when no pyroscope server is

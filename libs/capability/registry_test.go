@@ -16,7 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-var testGRPC = grpcConfig{AdvertiseHost: defaultHost}
+var testGRPC = GRPCConfig{AdvertiseHost: defaultHost}
 
 // TestNewRegistryDoesNotDial is the property the boot sequence rests on: the node starts this
 // process and the two race, so a registry proxy that is not up yet has to delay the first lookup
@@ -24,7 +24,7 @@ var testGRPC = grpcConfig{AdvertiseHost: defaultHost}
 //
 // Nothing is listening on the port below, and building the registry still succeeds.
 func TestNewRegistryDoesNotDial(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, testGRPC)
 
 	require.NoError(t, err, "an unreachable proxy should not fail construction")
 	require.NotNil(t, reg.fallback)
@@ -42,7 +42,7 @@ func TestNewRegistryDoesNotDial(t *testing.T) {
 func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 	for _, target := range []string{"!://not a target", "unknownscheme:///x"} {
 		t.Run(target, func(t *testing.T) {
-			reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: target}, testGRPC)
+			reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: target}, testGRPC)
 			require.NoError(t, err)
 			require.NoError(t, reg.Start(t.Context()))
 			assert.NoError(t, reg.Close())
@@ -56,7 +56,7 @@ func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 // The metadata calls failing is the point rather than a shortcoming. A process holding capability
 // values has no way to know which DONs exist, so saying so beats answering with something invented.
 func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{CapabilityDonID: 1}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{CapabilityDonID: 1}, testGRPC)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
 	require.NoError(t, reg.Start(t.Context()))
@@ -71,7 +71,7 @@ func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
 // TestRegistryAddHoldsUntilClose covers the local half: this process's registry resolves what was
 // added to it, and stops doing so once it closes.
 func TestRegistryAddHoldsUntilClose(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{}, testGRPC)
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 
@@ -98,7 +98,7 @@ func TestRegistryAddHoldsUntilClose(t *testing.T) {
 func TestRegistryAddAnnouncesToTheNode(t *testing.T) {
 	node := newSpyRegistry(t)
 
-	reg, err := newRegistry(logger.Test(t), capabilityConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC)
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 

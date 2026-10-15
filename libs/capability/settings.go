@@ -21,8 +21,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-type settingsConfig struct {
-	URL string `usage:"gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes settings updates to this process. Unset leaves every limit at its compiled-in default"`
+// SettingsConfig points this process at the host's CRE settings service.
+type SettingsConfig struct {
+	// URL is the gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes
+	// settings updates to this process. Unset leaves every limit at its compiled-in default.
+	URL string
 }
 
 // settingsService holds this process's CRE settings and, when the host serves them, keeps them
@@ -35,7 +38,7 @@ type settingsService struct {
 	conn   *grpc.ClientConn
 }
 
-func newSettingsService(lggr logger.Logger, cfg settingsConfig) (*settingsService, error) {
+func newSettingsService(lggr logger.Logger, cfg SettingsConfig) (*settingsService, error) {
 	s := &settingsService{values: newSettings(lggr)}
 	if cfg.URL != "" {
 		conn, err := dial(cfg.URL)
@@ -48,7 +51,7 @@ func newSettingsService(lggr logger.Logger, cfg settingsConfig) (*settingsServic
 	return s, nil
 }
 
-func startSettings(ctx context.Context, lggr logger.Logger, cfg settingsConfig) (*settingsService, error) {
+func startSettings(ctx context.Context, lggr logger.Logger, cfg SettingsConfig) (*settingsService, error) {
 	s, err := newSettingsService(lggr, cfg)
 	if err != nil {
 		return nil, err

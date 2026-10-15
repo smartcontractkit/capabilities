@@ -48,7 +48,6 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injecto
 		Use:   filepath.Base(os.Args[0]),
 		Short: "A CRE capability",
 	}
-	root.PersistentFlags().String("config", "", "Path to config file")
 
 	lggr = logger.Named(lggr, root.Name())
 
@@ -56,7 +55,7 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injecto
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	if err := cfg.bind(root); err != nil {
+	if _, err := cfg.bind(root); err != nil {
 		return err
 	}
 

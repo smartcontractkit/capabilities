@@ -27,35 +27,49 @@ const (
 // TelemetryConfig is the beholder client's configuration: an empty Endpoint leaves telemetry off, and the global noop client in place, so
 // instruments created by services record nothing.
 type TelemetryConfig struct {
-	Endpoint           string `usage:"OTLP gRPC endpoint telemetry is exported to; telemetry is disabled when unset"`
-	InsecureConnection bool   `usage:"export telemetry over an insecure connection"`
-	CACertFile         string `usage:"CA certificate file used to verify the telemetry endpoint"`
+	// Endpoint is the OTLP gRPC endpoint telemetry is exported to. Telemetry is disabled when unset.
+	Endpoint string
+	// InsecureConnection exports telemetry over an insecure connection.
+	InsecureConnection bool
+	// CACertFile is the CA certificate file used to verify the telemetry endpoint.
+	CACertFile string
 
-	// Attributes and AuthHeaders are key=value pairs ("env=staging") rather than maps, since
-	// flags cannot bind a map field. Entries from the legacy CL_TELEMETRY_ATTRIBUTE_<KEY> and
-	// CL_TELEMETRY_AUTH_HEADER_<KEY> env vars are merged in on top of these, so a plugin host
-	// setting one env var per entry keeps working.
-	Attributes  []string `usage:"extra telemetry resource attributes, as key=value pairs" example:"['env=staging']"`
-	AuthHeaders []string `usage:"telemetry auth headers, as key=value pairs" flagdocs:"noexample"`
+	// Attributes and AuthHeaders are key=value pairs ("env=staging") rather than maps. Entries from
+	// the legacy CL_TELEMETRY_ATTRIBUTE_<KEY> and CL_TELEMETRY_AUTH_HEADER_<KEY> env vars are merged
+	// in on top of these, so a plugin host setting one env var per entry keeps working.
 
-	AuthPubKeyHex           string                `usage:"public key the telemetry auth headers are derived from"`
-	AuthHeadersTTL          commonconfig.Duration `usage:"how long generated telemetry auth headers are valid for"`
-	PrometheusBridgeEnabled bool                  `usage:"feed metrics registered on the prometheus registry into the telemetry pipeline"`
+	// Attributes are extra telemetry resource attributes, as key=value pairs.
+	Attributes []string
+	// AuthHeaders are telemetry auth headers, as key=value pairs.
+	AuthHeaders []string
+
+	// AuthPubKeyHex is the public key the telemetry auth headers are derived from.
+	AuthPubKeyHex string
+	// AuthHeadersTTL is how long generated telemetry auth headers are valid for.
+	AuthHeadersTTL commonconfig.Duration
+	// PrometheusBridgeEnabled feeds metrics registered on the prometheus registry into the telemetry
+	// pipeline.
+	PrometheusBridgeEnabled bool
 }
 
 // TracingConfig is the OTLP tracing configuration. Traces go to the telemetry endpoint, so Enabled
 // does nothing unless TelemetryConfig.Endpoint is set too.
 type TracingConfig struct {
-	Enabled       bool    `usage:"export traces to the telemetry endpoint"`
-	SamplingRatio float64 `usage:"fraction of traces sampled, from 0 to 1"`
-	TLSCertFile   string  `usage:"TLS certificate file used by the trace exporter"`
+	// Enabled exports traces to the telemetry endpoint.
+	Enabled bool
+	// SamplingRatio is the fraction of traces sampled, from 0 to 1.
+	SamplingRatio float64
+	// TLSCertFile is the TLS certificate file used by the trace exporter.
+	TLSCertFile string
 }
 
 // ChipIngressConfig points the beholder client's chip ingress emitter at an endpoint. Emitting is
 // enabled by setting one.
 type ChipIngressConfig struct {
-	Endpoint           string `usage:"chip ingress gRPC endpoint; the emitter is disabled when unset"`
-	InsecureConnection bool   `usage:"connect to chip ingress over an insecure connection"`
+	// Endpoint is the chip ingress gRPC endpoint. The emitter is disabled when unset.
+	Endpoint string
+	// InsecureConnection connects to chip ingress over an insecure connection.
+	InsecureConnection bool
 }
 
 // newTelemetry builds the beholder client and the service that owns it.
