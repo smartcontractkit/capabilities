@@ -8,26 +8,57 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"reflect"
 	"syscall"
 
+	"github.com/hashicorp/go-plugin"
+	"github.com/samber/do/v2"
 	"github.com/spf13/cobra"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/x/config/cli"
+	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 )
 
-// Run builds and runs the capability constructor makes, and does not return until ctx is cancelled or the
-// process is signalled.
+// Constructor builds the capability from the injector of the instance it is built for, which
+// provides everything registered with Provide and ProvideConfig - for embed, ProvideForEmbed and
+// ProvideConfigForEmbed - along with what the run provides: the logger, the registry, the limits
+// factory, the config binder, and the capability's own config, as the T its ConfigProvider
+// declared.
+type Constructor func(do.Injector) (Capability, error)
+
+// ConfigProvider is the capability's own config: its default, which flags, env vars and config
+// files decode over, and how to register it - a profile, say. Run registers it with ProvideConfig
+// under the binary's name.
+type ConfigProvider[T any] struct {
+	defaultConfig T
+	opts          []cli.RegisterOption[T]
+}
+
+// NewConfigProvider declares a T, defaulting to defaultConfig, as the capability's own config.
+// Run binds its fields as flags on the root command, namespaced by the binary's name - cron's are
+// --cron.fastest-schedule-interval-seconds, CRE_CRON_FASTEST_SCHEDULE_INTERVAL_SECONDS, or the
+// same key in a cron section of the config file - and provides the decoded T to the capability's
+// container. A capability with no config passes NewConfigProvider(struct{}{}).
+func NewConfigProvider[T any](defaultConfig T, opts ...cli.RegisterOption[T]) ConfigProvider[T] {
+	return ConfigProvider[T]{defaultConfig: defaultConfig, opts: opts}
+}
+
+// Run builds and runs the capability ctor builds, once per instance, and does not return until ctx
+// is cancelled or the process is signalled.
 //
-//	func main() { capability.Run(context.Background(), trigger.NewCron) }
-func Run(ctx context.Context, constructor any, opts ...Option) {
+//	func main() {
+//		capability.Run(ctx, trigger.NewCron, capability.NewConfigProvider(trigger.DefaultConfig),
+//			capability.WithOtelViews(trigger.MetricViews()...))
+//	}
+func Run[T any](ctx context.Context, ctor Constructor, config ConfigProvider[T], opts ...Option) {
 	lggr, err := NewLogger()
 	if err != nil {
+		// lggr is nil when building it failed.
 		log.Fatal(err)
 	}
 
-	if err := RunErr(ctx, lggr, constructor, opts...); err != nil {
+	if err = RunErr(ctx, lggr, ctor, config, opts...); err != nil {
 		lggr.Fatal(err)
 	}
 }
@@ -36,15 +67,12 @@ func Run(ctx context.Context, constructor any, opts ...Option) {
 //
 // A run blocks until it is told to stop, which is either ctx being cancelled or this process being
 // signalled - see below.
-func RunErr(ctx context.Context, lggr logger.Logger, constructor any, opts ...Option) error {
+func RunErr[T any](ctx context.Context, lggr logger.Logger, ctor Constructor, config ConfigProvider[T], opts ...Option) error {
 	if lggr == nil {
 		return errors.New("must provide a logger")
 	}
-
-	// We instantiate this up-front so we can bubble up an error message about an invalid `constructor` early.
-	c, err := newConstructor(constructor)
-	if err != nil {
-		return err
+	if ctor == nil {
+		return errors.New("must provide a capability constructor")
 	}
 
 	// TODO: Run should accept some kind of Info struct
@@ -52,44 +80,73 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor any, opts ...Op
 		Use:   filepath.Base(os.Args[0]),
 		Short: "A CRE capability",
 	}
-	root.PersistentFlags().String("config", "", "Path to config file")
 
 	lggr = logger.Named(lggr, root.Name())
 
-	cfg := defaultConfig()
-	for _, opt := range opts {
-		opt(cfg)
-	}
-	if err := cfg.bind(root); err != nil {
+	b, err := cli.New(cli.Options{Markup: tomlmarkup.New(), Prefixes: []string{"CRE", "CL"}})
+	if err != nil {
 		return err
 	}
 
-	// Bind the capability's config if the constructor function declares a config struct.
-	// This will be namespaced using the name of the root command.
-	// eg. --cron.fastest-schedule-interval-seconds
-	if err := c.bindCapabilityConfig(root); err != nil {
+	// The run's own settings, then the capability's own config under the binary's name - after
+	// every dependency's init, so a dependency registering one of these first is a duplicate.
+	if err = registerAll(root.Name(), config); err != nil {
 		return err
 	}
 
-	root.AddCommand(&cobra.Command{
+	// serve starts total instances from r and blocks until ctx is done. Only run hands the process
+	// to a go-plugin host: a host supervises one plugin, and an embed run is not one.
+	serve := func(cmd *cobra.Command, r *registrations, total int, pluginHost bool) error {
+		defer func() { _ = lggr.Sync() }()
+
+		stop, err := start(cmd.Context(), lggr, cmd.Root().Name(), options(opts), r, b, total, ctor)
+		if err != nil {
+			return err
+		}
+		defer stop()
+
+		if pluginHost && underPluginHost() {
+			lggr.Info("Serving the empty LOOP: this process is supervised by a go-plugin host")
+			plugin.Serve(&plugin.ServeConfig{
+				HandshakeConfig: emptyHandshakeConfig(),
+				Plugins:         map[string]plugin.Plugin{emptyPluginName: &emptyLoop{}},
+				GRPCServer:      plugin.DefaultGRPCServer,
+			})
+			return nil
+		}
+
+		<-cmd.Context().Done()
+		lggr.Info("Shutting down")
+		return nil
+	}
+
+	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the capability",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO: pass in constructors here for our runnable/embeddable dependencies?
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, c)
+			return serve(cmd, runRegistrations, 1, true)
 		},
-	})
+	}
 
-	// TODO: embed command
-	root.AddCommand(&cobra.Command{
+	embedCmd := &cobra.Command{
 		Use:   "embed",
-		Short: "Embed the capability",
+		Short: "Run several instances of the capability in this process",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO: pass in constructors here for our runnable/embeddable dependencies?
-			// Something else here
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, c)
+			cfg := embedRegistrations.configs[""].value.(*embedConfig)
+			return serve(cmd, embedRegistrations, cfg.Instances, false)
 		},
-	})
+	}
+
+	root.AddCommand(runCmd, embedCmd, docsCommand())
+
+	// Each command binds what was registered for it. They are siblings, so a config registered for
+	// both is bound on both without clashing.
+	if err = runRegistrations.bind(b, runCmd); err != nil {
+		return err
+	}
+	if err = embedRegistrations.bind(b, embedCmd); err != nil {
+		return err
+	}
 
 	// Wire up SIGTERM + SIGINT to the context
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -98,125 +155,40 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor any, opts ...Op
 	return root.ExecuteContext(ctx)
 }
 
-type constructorFn struct {
-	fn  reflect.Value
-	typ reflect.Type
-
-	// configIn is the index of the parameter that is the capability's own config, or -1 when the
-	// constructor declares none.
-	configIn int
-	// config is the instance of that parameter the flags decode fills. Kept here rather than
-	// passed to run because the decode hook fills it in place when the command runs: call has to
-	// read that same memory, not a copy made when it was bound. Valid only when configIn >= 0.
-	config reflect.Value
-}
-
-var capabilityType = reflect.TypeFor[Capability]()
-
-// newConstructor validates that constructor has the right shape, i.e.:
-// - it's a function
-// - and the function returns a capability and optionally an error
-func newConstructor(ctor any) (constructorFn, error) {
-	t := reflect.TypeOf(ctor)
-	if t == nil || t.Kind() != reflect.Func {
-		return constructorFn{}, fmt.Errorf("a capability constructor must be a function, got %T", ctor)
-	}
-
-	switch t.NumOut() {
-	case 1:
-	case 2:
-		if t.Out(1) != reflect.TypeFor[error]() {
-			return constructorFn{}, fmt.Errorf(
-				"a capability constructor returning two values must return an error second, got %s", t)
+// registerAll registers the run's own settings and the capability's config, recovering the panic a
+// duplicate registration raises into an error - here it is the operator's binary, not init, that
+// would be crashing.
+func registerAll[T any](name string, config ConfigProvider[T]) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("failed to register the run's settings: %v", r)
 		}
-	default:
-		return constructorFn{}, fmt.Errorf(
-			"a capability constructor must return the capability, and optionally an error, got %s", t)
-	}
-
-	if out := t.Out(0); !out.Implements(capabilityType) {
-		return constructorFn{}, fmt.Errorf("%s does not implement capability.Capability", out)
-	}
-
-	configIn := -1
-	for i := range t.NumIn() {
-		if !isConfig(t.In(i)) {
-			continue
-		}
-		if configIn >= 0 {
-			return constructorFn{}, fmt.Errorf("a capability constructor takes its config once, got %s", t)
-		}
-		configIn = i
-	}
-	return constructorFn{fn: reflect.ValueOf(ctor), typ: t, configIn: configIn}, nil
-}
-
-var isConfigType = reflect.TypeFor[Config]()
-
-// isConfig reports whether t declares itself a capability's config by embedding Config. The
-// embedding has to be direct: the marker declares the struct it is embedded in, not the structs
-// that embed that one.
-func isConfig(t reflect.Type) bool {
-	if t.Kind() != reflect.Struct {
-		return false
-	}
-	for i := range t.NumField() {
-		if f := t.Field(i); f.Anonymous && f.Type == isConfigType {
-			return true
-		}
-	}
-	return false
-}
-
-// bindCapabilityConfig creates the config the constructor declares, if any, and binds its fields as flags
-// on root, under root's name.
-func (c *constructorFn) bindCapabilityConfig(root *cobra.Command) error {
-	if c.configIn < 0 {
-		return nil
-	}
-
-	v := reflect.New(c.typ.In(c.configIn))
-	if err := bindFlags(root, root.Name(), v.Interface()); err != nil {
-		return fmt.Errorf("failed to register the capability's config: %w", err)
-	}
-	c.config = v.Elem()
+	}()
+	registerSettings()
+	ProvideConfig(name, config.defaultConfig, config.opts...)
 	return nil
 }
 
-// call builds the capability by calling the contstructor.
-// The constructor's parameters are scanned, and type matched against the dependency set.
-// The config parameter is treated exceptionally and hydrated from the configuration that was passed in.
-func (c constructorFn) call(deps Dependencies) (Capability, error) {
-	args := make([]reflect.Value, c.typ.NumIn())
-	for i := range args {
-		if i == c.configIn {
-			args[i] = c.config
-			continue
-		}
-
-		want := c.typ.In(i)
-
-		v, ok := deps.resolve(want)
-		if !ok {
-			return nil, fmt.Errorf("the capability constructor asks for a %s, and nothing in this run "+
-				"provides one: %s", want, c.typ)
-		}
-		args[i] = v
-	}
-
-	out := c.fn.Call(args)
-	if len(out) == 2 && !out[1].IsNil() {
-		return nil, fmt.Errorf("failed to build the capability: %w", out[1].Interface().(error))
-	}
-	return out[0].Interface().(Capability), nil
+// runOptions is what a binary passes Run that is not a setting an operator can change.
+type runOptions struct {
+	otelViews []sdkmetric.View
 }
 
-type Option func(*config)
+type Option func(*runOptions)
+
+func options(opts []Option) runOptions {
+	var o runOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
+}
 
 // WithOtelViews sets otel metric views - histogram bucket boundaries, typically - on the beholder
 // client this process reports through.
 //
-//	capability.Run(ctx, trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
+//	capability.Run(ctx, trigger.NewCron, capability.NewConfigProvider(trigger.DefaultConfig),
+//		capability.WithOtelViews(trigger.MetricViews()...))
 func WithOtelViews(views ...sdkmetric.View) Option {
-	return func(c *config) { c.observability.otelViews = append(c.observability.otelViews, views...) }
+	return func(o *runOptions) { o.otelViews = append(o.otelViews, views...) }
 }

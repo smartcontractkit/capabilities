@@ -15,6 +15,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
@@ -42,7 +43,7 @@ func TestFollowHostSettingsAppliesUpdates(t *testing.T) {
 	require.NoError(t, err)
 
 	host := newFakeBroadcaster()
-	go followHostSettings(t.Context(), logger.Test(t), host, s)
+	follow(t, host, s)
 
 	host.send(t, core.SettingsUpdate{Settings: "[global]\nTriggerRegistrationStatusUpdateTimeout = \"15s\"\n", Hash: "a"})
 
@@ -60,7 +61,7 @@ func TestFollowHostSettingsKeepsThePreviousSettingsOnFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	host := newFakeBroadcaster()
-	go followHostSettings(t.Context(), logger.Test(t), host, s)
+	follow(t, host, s)
 
 	host.send(t, core.SettingsUpdate{Settings: "[global]\nTriggerRegistrationStatusUpdateTimeout = \"15s\"\n", Hash: "a"})
 	host.send(t, core.SettingsUpdate{Settings: "not a settings payload", Hash: "b"})
@@ -79,13 +80,30 @@ func TestFollowHostSettingsResubscribes(t *testing.T) {
 	host := newFakeBroadcaster()
 	host.failFirst.Store(true)
 
-	go followHostSettings(t.Context(), logger.Test(t), host, s)
+	follow(t, host, s)
 
 	host.send(t, core.SettingsUpdate{Settings: "[global]\n", Hash: "a"})
 	host.closeStream()
 	host.send(t, core.SettingsUpdate{Settings: "[global]\n", Hash: "b"})
 
 	assert.GreaterOrEqual(t, host.subscriptions.Load(), int32(3))
+}
+
+// follow runs followHostSettings for the test, and waits for it to return before the test ends:
+// it logs through the test's logger, which must not be written to once the test is done.
+func follow(t *testing.T, host core.SettingsBroadcaster, s *loop.AtomicSettings) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		followHostSettings(ctx, logger.Test(t), host, s)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 }
 
 // fakeBroadcaster hands out one stream per subscription, and sends on whichever is current.
@@ -100,14 +118,39 @@ func newFakeBroadcaster() *fakeBroadcaster {
 	return &fakeBroadcaster{streams: make(chan chan core.SettingsUpdate, 1)}
 }
 
-func (f *fakeBroadcaster) Subscribe(context.Context) (<-chan core.SettingsUpdate, error) {
+// Subscribe hands out a stream that, like a real one, ends when the subscription's ctx does.
+func (f *fakeBroadcaster) Subscribe(ctx context.Context) (<-chan core.SettingsUpdate, error) {
 	f.subscriptions.Add(1)
 	if f.failFirst.CompareAndSwap(true, false) {
 		return nil, errors.New("host unavailable")
 	}
 	ch := make(chan core.SettingsUpdate)
-	f.streams <- ch
-	return ch, nil
+	select {
+	case f.streams <- ch:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	out := make(chan core.SettingsUpdate)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case u, ok := <-ch:
+				if !ok {
+					return
+				}
+				select {
+				case out <- u:
+				case <-ctx.Done():
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
 }
 
 func (f *fakeBroadcaster) send(t *testing.T, u core.SettingsUpdate) {

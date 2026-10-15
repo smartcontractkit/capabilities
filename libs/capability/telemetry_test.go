@@ -3,10 +3,13 @@ package capability
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -15,41 +18,51 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/x/config/cli"
+	"github.com/smartcontractkit/chainlink-common/x/config/commentparsing"
+	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 )
 
-// settingsRoot builds the command tree the way RunErr does, through the same registration, and
-// returns what the flags are bound to.
+// settingsRoot builds the command tree the way RunErr does, through the same registration and
+// binding, and returns its run command and how to read the settings back once it has run.
 //
 // The registration is the production one, so what these tests read is what a binary gets.
-func settingsRoot(t *testing.T) (*cobra.Command, *config) {
+func settingsRoot(t *testing.T) (root, runCmd *cobra.Command, settings func() runSettings) {
 	t.Helper()
 
-	root := &cobra.Command{Use: "cron"}
-	root.PersistentFlags().String("config", "", "Path to config file")
+	resetWithSettings(t)
 
-	// The production defaults, so what these read is what a binary gets rather than a zero value.
-	cfg := defaultConfig()
-	require.NoError(t, cfg.bind(root))
-	return root, cfg
+	root = &cobra.Command{Use: "cron", SilenceUsage: true, SilenceErrors: true}
+	runCmd = &cobra.Command{Use: "run", RunE: func(*cobra.Command, []string) error { return nil }}
+	embedCmd := &cobra.Command{Use: "embed", RunE: func(*cobra.Command, []string) error { return nil }}
+	root.AddCommand(runCmd, embedCmd)
+
+	b, err := cli.New(cli.Options{Markup: tomlmarkup.New(), Prefixes: []string{"CRE", "CL"}})
+	require.NoError(t, err)
+	require.NoError(t, runRegistrations.bind(b, runCmd))
+	require.NoError(t, embedRegistrations.bind(b, embedCmd))
+
+	return root, runCmd, func() runSettings {
+		cfg, err := resolveSettings(runRegistrations.injector())
+		require.NoError(t, err)
+		return cfg
+	}
 }
 
-// decoded runs args through the command tree and returns the settings as they were decoded.
-func decoded(t *testing.T, args ...string) config {
+// decoded runs args through the run command and returns the settings as they were decoded.
+func decoded(t *testing.T, args ...string) runSettings {
 	t.Helper()
 
-	root, cfg := settingsRoot(t)
-	root.AddCommand(&cobra.Command{Use: "run", RunE: func(*cobra.Command, []string) error { return nil }})
-
-	args = append([]string{"run"}, args...)
-	root.SetArgs(args)
+	root, _, settings := settingsRoot(t)
+	root.SetArgs(append([]string{"run"}, args...))
 	require.NoError(t, root.Execute())
-	return *cfg
+	return settings()
 }
 
 // TestTelemetryFlags pins the surface the beholder client's settings have: a flag per field, named
 // after the service that owns it. A binary gets these without asking, because every binary has them.
 func TestObservabilityFlags(t *testing.T) {
-	root, _ := settingsRoot(t)
+	_, runCmd, _ := settingsRoot(t)
 
 	for _, name := range []string{
 		"telemetry.endpoint",
@@ -77,7 +90,7 @@ func TestObservabilityFlags(t *testing.T) {
 		"capabilities.proxy-url",
 		"capabilities.capability-don-id",
 	} {
-		assert.NotNil(t, root.PersistentFlags().Lookup(name), "missing flag --%s", name)
+		assert.NotNil(t, runCmd.PersistentFlags().Lookup(name), "missing flag --%s", name)
 	}
 }
 
@@ -96,11 +109,7 @@ func TestCapabilitiesDecodeFromFlags(t *testing.T) {
 //
 // --http.port is the one thing a run still cannot do without, which is what the args below are.
 func TestCapabilitiesAreOptional(t *testing.T) {
-	root, cfg := settingsRoot(t)
-	root.AddCommand(&cobra.Command{Use: "run", RunE: func(*cobra.Command, []string) error { return nil }})
-	root.SetArgs([]string{"run", "--http.port", "1"})
-
-	require.NoError(t, root.Execute())
+	cfg := decoded(t, "--http.port", "1")
 	assert.Empty(t, cfg.capabilities.ProxyURL)
 	assert.Zero(t, cfg.capabilities.CapabilityDonID)
 }
@@ -108,13 +117,13 @@ func TestCapabilitiesAreOptional(t *testing.T) {
 // TestObservabilityDefaults pins the settings that are not their zero value, since those are the
 // ones an operator gets without asking.
 func TestObservabilityDefaults(t *testing.T) {
-	root, _ := settingsRoot(t)
+	_, runCmd, _ := settingsRoot(t)
 
-	sampling := root.PersistentFlags().Lookup("tracing.sampling-ratio")
+	sampling := runCmd.PersistentFlags().Lookup("tracing.sampling-ratio")
 	require.NotNil(t, sampling)
 	assert.Equal(t, "1", sampling.DefValue, "sampling every trace is the default")
 
-	port := root.PersistentFlags().Lookup("http.port")
+	port := runCmd.PersistentFlags().Lookup("http.port")
 	require.NotNil(t, port)
 	assert.Equal(t, "8080", port.DefValue)
 }
@@ -125,13 +134,8 @@ func TestObservabilityDefaults(t *testing.T) {
 // It is the whole surface in one assertion - every setting this binary has is now either defaulted
 // or genuinely optional - so a flag gaining `validate:"required"` fails here.
 func TestBinaryStartsWithNoSettingsAtAll(t *testing.T) {
-	root, cfg := settingsRoot(t)
-	root.AddCommand(&cobra.Command{Use: "run", RunE: func(*cobra.Command, []string) error { return nil }})
-	root.SetArgs([]string{"run"})
-	root.SilenceUsage, root.SilenceErrors = true, true
-
-	require.NoError(t, root.Execute())
-	assert.Equal(t, uint16(defaultHTTPPort), cfg.observability.http.Port)
+	cfg := decoded(t)
+	assert.Equal(t, uint16(defaultHTTPPort), cfg.http.Port)
 }
 
 // TestTelemetryDecodesFromFlags is the point of registering them: what an operator types reaches the
@@ -165,8 +169,8 @@ func TestObservabilityDecodesFromFlags(t *testing.T) {
 	assert.Equal(t, "chip:9000", cfg.observability.chipIngress.Endpoint)
 	assert.True(t, cfg.observability.chipIngress.InsecureConnection)
 
-	assert.Equal(t, "pyro:4040", cfg.observability.pyroscope.ServerAddress)
-	assert.Equal(t, "staging", cfg.observability.pyroscope.Environment)
+	assert.Equal(t, "pyro:4040", cfg.pyroscope.ServerAddress)
+	assert.Equal(t, "staging", cfg.pyroscope.Environment)
 }
 
 // TestChipIngressFoldsIntoTheBeholderClient covers the shape of these three: chip ingress and
@@ -275,11 +279,9 @@ func TestWithOtelViewsReachesTheClient(t *testing.T) {
 		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{Boundaries: []float64{1, 2, 3}}},
 	)
 
-	cfg := defaultConfig()
-	cfg.observability.telemetry.Endpoint = "otel:4317"
-	WithOtelViews(view)(cfg)
+	obs := observability{telemetry: TelemetryConfig{Endpoint: "otel:4317"}, otelViews: options([]Option{WithOtelViews(view)}).otelViews}
 
-	bcfg, err := beholderConfig(logger.Test(t), &cfg.observability)
+	bcfg, err := beholderConfig(logger.Test(t), &obs)
 	require.NoError(t, err)
 	assert.Len(t, bcfg.MetricViews, 1, "the view should be on the config the client is built from")
 }
@@ -287,8 +289,7 @@ func TestWithOtelViewsReachesTheClient(t *testing.T) {
 // TestWithOtelViewsDefaultsToNone covers a binary that passes none: the client keeps whatever
 // beholder's own defaults are rather than being handed an empty list to mean something.
 func TestWithOtelViewsDefaultsToNone(t *testing.T) {
-	obs := defaultObservability()
-	obs.telemetry.Endpoint = "otel:4317"
+	obs := &observability{telemetry: TelemetryConfig{Endpoint: "otel:4317"}}
 
 	cfg, err := beholderConfig(logger.Test(t), obs)
 	require.NoError(t, err)
@@ -302,7 +303,7 @@ func TestWithOtelViewsDefaultsToNone(t *testing.T) {
 // config fails before a client is ever created - and an unregistered flag would have failed
 // earlier, with cobra's "unknown flag" instead.
 func TestRunUsesTheDecodedTelemetrySettings(t *testing.T) {
-	err := execute(t, logger.Test(t), newFake, "run",
+	err := execute(t, logger.Test(t), providesFake(newFake), nil, "run",
 		"--telemetry.endpoint", "otel:4317", "--telemetry.attributes", "nope")
 
 	require.ErrorContains(t, err, `invalid telemetry.attributes entry "nope": expected key=value`)
@@ -385,7 +386,7 @@ func TestInstallGloballyNests(t *testing.T) {
 func TestRunLeavesTelemetryAsItFoundIt(t *testing.T) {
 	before := beholder.GetClient()
 
-	require.NoError(t, execute(t, logger.Test(t), newFake, "run"))
+	require.NoError(t, execute(t, logger.Test(t), providesFake(newFake), nil, "run"))
 
 	assert.Same(t, before, beholder.GetClient())
 }
@@ -398,4 +399,31 @@ func TestRunLeavesTelemetryAsItFoundIt(t *testing.T) {
 func detachedLogger() (logger.Logger, *observer.ObservedLogs) {
 	core, logs := observer.New(zapcore.ErrorLevel)
 	return logger.NewWithCores(core), logs
+}
+
+// TestEveryConfigIsDocumented guards what docs generates: every config either container
+// registers has DocComments, including those embed replaces and so are not among its Configs.
+func TestEveryConfigIsDocumented(t *testing.T) {
+	resetWithSettings(t)
+	for _, r := range []*registrations{runRegistrations, embedRegistrations} {
+		for namespace, cfg := range r.configs {
+			_, err := commentparsing.Lookup(reflect.TypeOf(cfg.value))
+			assert.NoError(t, err, "config %q; run go generate", namespace)
+		}
+	}
+}
+
+// TestEveryFlagIsDocumented guards doccomments_gen.go: a field added without regenerating binds
+// with only its env vars as help. Fix with `go generate` in this package.
+func TestEveryFlagIsDocumented(t *testing.T) {
+	root, _, _ := settingsRoot(t)
+
+	for _, cmd := range root.Commands() {
+		cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+			if f.Name == "config" {
+				return
+			}
+			assert.False(t, strings.HasPrefix(f.Usage, "[env"), "--%s has no help text; run go generate", f.Name)
+		})
+	}
 }

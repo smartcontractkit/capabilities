@@ -26,7 +26,8 @@ const defaultHTTPPort = 8080
 // routes a service registers on the mux while it is being built - it is not only prometheus's, so
 // it is named for the transport it serves rather than for one of its handlers.
 type HTTPConfig struct {
-	Port uint16 `usage:"port serving /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers"`
+	// Port serves /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers.
+	Port uint16
 }
 
 // newWebServer returns the shared HTTP server as a service.

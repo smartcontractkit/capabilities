@@ -1,10 +1,8 @@
 package capability
 
-import (
-	"fmt"
+//go:generate go run ./internal/docgen docs
 
-	"github.com/spf13/cobra"
-)
+import "github.com/samber/do/v2"
 
 const capabilitiesNamespace = "capabilities"
 
@@ -14,41 +12,31 @@ const settingsNamespace = "settings"
 
 const defaultHost = "localhost"
 
+// grpcConfig is where the gRPC listener the registry serves this process's capabilities on binds.
 type grpcConfig struct {
-	AdvertiseHost string `usage:"host the gRPC servers this process opens bind to and are advertised at; empty binds every interface"`
+	// AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.
+	// Empty binds every interface.
+	AdvertiseHost string
 }
 
-// the standard configuration for a capability; does not include the config that a capability may request via its constructor.
-type config struct {
-	observability observability
-	capabilities  capabilityConfig
-	grpc          grpcConfig
-	settings      settingsConfig
-}
+// registerSettings registers the run's own settings, as any dependency registers its config, for
+// RunErr to bind and start to resolve. capabilities differs between the commands: embed's has no
+// proxy to dial and defaults the DON, and capabilityConfig is built from it.
+func registerSettings() {
+	ProvideConfig(telemetryNamespace, TelemetryConfig{})
+	ProvideConfig(tracingNamespace, TracingConfig{SamplingRatio: 1})
+	ProvideConfig(chipIngressNamespace, ChipIngressConfig{})
+	ProvideConfig(pyroscopeNamespace, PyroscopeConfig{})
+	ProvideConfig(httpNamespace, HTTPConfig{Port: defaultHTTPPort})
+	ProvideConfig(grpcNamespace, grpcConfig{AdvertiseHost: defaultHost})
+	ProvideConfig(settingsNamespace, settingsConfig{})
 
-func defaultConfig() *config {
-	return &config{
-		observability: *defaultObservability(),
-		grpc:          grpcConfig{AdvertiseHost: defaultHost},
-	}
-}
+	ProvideConfigForRun(capabilitiesNamespace, capabilityConfig{})
 
-// namespaced pairs every config with the namespace it is registered under, in the order the flags
-// are registered.
-func (c *config) namespaced() []section {
-	return append(c.observability.namespaced(),
-		section{capabilitiesNamespace, &c.capabilities},
-		section{grpcNamespace, &c.grpc},
-		section{settingsNamespace, &c.settings},
-	)
-}
-
-// bind binds every config to root, each under the namespace that owns it.
-func (c *config) bind(root *cobra.Command) error {
-	for _, s := range c.namespaced() {
-		if err := bindFlags(root, s.namespace, s.target); err != nil {
-			return fmt.Errorf("failed to register the %s settings: %w", s.namespace, err)
-		}
-	}
-	return nil
+	ProvideConfigForEmbed("", embedConfig{Instances: 1})
+	ProvideConfigForEmbed(capabilitiesNamespace, embeddedCapabilityConfig{CapabilityDonID: defaultEmbeddedDonID})
+	ProvideForEmbed(func(i do.Injector) (capabilityConfig, error) {
+		cfg, err := do.Invoke[embeddedCapabilityConfig](i)
+		return capabilityConfig{CapabilityDonID: cfg.CapabilityDonID}, err
+	})
 }

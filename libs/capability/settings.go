@@ -21,8 +21,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
+// settingsConfig is where this process's CRE settings come from.
 type settingsConfig struct {
-	URL string `usage:"gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes settings updates to this process. Unset leaves every limit at its compiled-in default"`
+	// URL is the gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes
+	// settings updates to this process. Unset leaves every limit at its compiled-in default.
+	URL string
 }
 
 // settingsService holds this process's CRE settings and, when the host serves them, keeps them
