@@ -11,6 +11,7 @@ require (
 	github.com/hashicorp/go-plugin v1.8.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/prometheus/client_golang v1.23.2
+	github.com/samber/do/v2 v2.1.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261005132539-b7d63d5fd549
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260804191526-b7a850ae7648
@@ -90,6 +91,7 @@ require (
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
+	github.com/samber/go-type-to-string v1.8.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.104 // indirect

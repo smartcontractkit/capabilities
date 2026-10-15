@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -80,7 +81,7 @@ func newFake() *fake {
 // A run blocks until its context is cancelled, so this waits until the binary is serving and then
 // cancels - which is a test standing in for the signal an operator would send. A run that fails on
 // the way up never gets there and reports that instead.
-func execute(t *testing.T, lggr logger.Logger, ctor any, args ...string) error {
+func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capability, error), args ...string) error {
 	t.Helper()
 
 	// A free port rather than the default, since tests share a machine and run alongside each
@@ -154,212 +155,61 @@ func freePort(t *testing.T) int {
 	return port
 }
 
+// fakeConstructor builds a fake and asks the injector for nothing.
+func fakeConstructor(do.Injector) (Capability, error) { return newFake(), nil }
+
 func TestRunErrRejects(t *testing.T) {
-	lggr := logger.Test(t)
-
 	t.Run("no logger", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), nil, newFake), "must provide a logger")
-	})
-
-	t.Run("something that is not a function", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), lggr, "cron"), "must be a function, got string")
-	})
-
-	t.Run("nothing at all", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), lggr, nil), "must be a function")
-	})
-
-	t.Run("a function returning something that cannot be hosted", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), lggr, func() string { return "" }),
-			"string does not implement capability.Capability")
-	})
-
-	t.Run("a function returning nothing", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), lggr, func() {}), "must return the capability")
-	})
-
-	t.Run("a function whose second result is not an error", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), lggr, func() (*fake, string) { return nil, "" }),
-			"must return an error second")
+		require.ErrorContains(t, RunErr(context.Background(), nil, fakeConstructor), "must provide a logger")
 	})
 }
 
 func TestRunBuildsTheCapability(t *testing.T) {
 	built := 0
 
-	require.NoError(t, execute(t, logger.Test(t), func() *fake { built++; return newFake() }, "run"))
+	require.NoError(t, execute(t, logger.Test(t), func(do.Injector) (Capability, error) {
+		built++
+		return newFake(), nil
+	}, "run"))
 	assert.Equal(t, 1, built, "the constructor should have been called exactly once")
 }
 
 func TestRunReportsAFailedConstructor(t *testing.T) {
-	err := execute(t, logger.Test(t), func() (*fake, error) { return nil, errors.New("no schedule") }, "run")
-	require.ErrorContains(t, err, "failed to build the capability: no schedule")
+	err := execute(t, logger.Test(t), func(do.Injector) (Capability, error) {
+		return nil, errors.New("no schedule")
+	}, "run")
+	require.ErrorContains(t, err, "failed to instantiate capability: no schedule")
 }
 
-// TestRunNamesWhatItCannotProvide covers a parameter nothing answers: it is reported before
-// anything starts, and names the type that went unmatched rather than the position it was in.
-func TestRunNamesWhatItCannotProvide(t *testing.T) {
-	err := execute(t, logger.Test(t), func(string) *fake { return newFake() }, "run")
-	require.ErrorContains(t, err, "asks for a string, and nothing in this run provides one")
-}
-
-// TestRunPassesTheLoggerToTheConstructor covers the first dependency: this process's logger, so a
-// capability names its own from it rather than building one the operator cannot configure.
-func TestRunPassesTheLoggerToTheConstructor(t *testing.T) {
-	var got logger.Logger
-
-	require.NoError(t, execute(t, logger.Test(t), func(l logger.Logger) *fake {
-		got = l
-		return newFake()
-	}, "run"))
-
-	assert.NotNil(t, got, "the constructor should have been handed the run's logger")
-}
-
-// TestRunPassesTheRegistryToTheConstructor covers the registry a capability resolves other
-// capabilities through.
-//
-// By type rather than by position, so a constructor asks for what it needs and takes nothing it
-// does not - which is what lets the one below coexist with the no-argument constructors elsewhere
-// in these tests.
-func TestRunPassesTheRegistryToTheConstructor(t *testing.T) {
-	var got core.CapabilitiesRegistry
-
-	require.NoError(t, execute(t, logger.Test(t), func(r core.CapabilitiesRegistry) *fake {
-		got = r
-		return newFake()
-	}, "run"))
-
-	assert.NotNil(t, got, "the constructor should have been handed the run's registry")
-}
-
-// TestRunPassesTheLimitsFactoryToTheConstructor covers the second dependency: what a capability
-// bounds a workflow's requests with.
-//
-// A struct rather than an interface, which the type matching handles the same way - what a
-// constructor asks for is a type, not a kind of type.
-func TestRunPassesTheLimitsFactoryToTheConstructor(t *testing.T) {
-	var got limits.Factory
-
-	require.NoError(t, execute(t, logger.Test(t), func(f limits.Factory) *fake {
-		got = f
-		return newFake()
-	}, "run"))
-
-	assert.NotNil(t, got.Settings, "the factory should be built over this run's settings")
-	assert.NotNil(t, got.Meter)
-}
-
-// TestRunPassesEveryDependencyItHas covers a constructor asking for more than one, in an order of
-// its own: matching is by type, so the order it lists them in is its business.
-func TestRunPassesEveryDependencyItHas(t *testing.T) {
+// TestRunProvidesItsDependencies covers what the injector holds: this process's logger, the
+// registry capabilities are resolved through, and the factory a workflow's requests are bounded by.
+func TestRunProvidesItsDependencies(t *testing.T) {
 	var (
-		gotLimits   limits.Factory
+		gotLogger   logger.Logger
 		gotRegistry core.CapabilitiesRegistry
+		gotLimits   limits.Factory
 	)
 
-	require.NoError(t, execute(t, logger.Test(t), func(f limits.Factory, r core.CapabilitiesRegistry) *fake {
-		gotLimits, gotRegistry = f, r
-		return newFake()
+	require.NoError(t, execute(t, logger.Test(t), func(i do.Injector) (Capability, error) {
+		gotLogger = do.MustInvoke[logger.Logger](i)
+		gotRegistry = do.MustInvoke[core.CapabilitiesRegistry](i)
+		gotLimits = do.MustInvoke[limits.Factory](i)
+		return newFake(), nil
 	}, "run"))
 
-	assert.NotNil(t, gotLimits.Settings)
+	assert.NotNil(t, gotLogger)
 	assert.NotNil(t, gotRegistry)
-}
-
-// testConfig is a capability's own config, declared by embedding Config: the one parameter an
-// operator supplies rather than the run resolves.
-type testConfig struct {
-	Config
-	Shout string `usage:"what the fake says"`
-}
-
-// TestRunHandsTheConstructorItsConfig covers the parameter that is not a dependency: the
-// capability's own settings, bound under the binary's name and handed over decoded. The binary is
-// named cron - execute's argv[0] - so its flag is --cron.shout.
-func TestRunHandsTheConstructorItsConfig(t *testing.T) {
-	var got testConfig
-
-	require.NoError(t, execute(t, logger.Test(t), func(cfg testConfig) *fake {
-		got = cfg
-		return newFake()
-	}, "run", "--cron.shout", "hello"))
-
-	assert.Equal(t, "hello", got.Shout)
-}
-
-// TestRunReadsTheCapabilityConfigFromTheEnvironment is the same binding from the other direction:
-// CRE_, then the binary's name, as every other section's settings are.
-func TestRunReadsTheCapabilityConfigFromTheEnvironment(t *testing.T) {
-	t.Setenv("CRE_CRON_SHOUT", "from the environment")
-
-	var got testConfig
-
-	require.NoError(t, execute(t, logger.Test(t), func(cfg testConfig) *fake {
-		got = cfg
-		return newFake()
-	}, "run"))
-
-	assert.Equal(t, "from the environment", got.Shout)
-}
-
-// TestRunHandsTheConstructorItsConfigAndItsDependencies covers the two kinds of parameter side by
-// side: the config from the flags, the dependencies from the run, and neither answered by the
-// other.
-func TestRunHandsTheConstructorItsConfigAndItsDependencies(t *testing.T) {
-	var (
-		gotCfg    testConfig
-		gotLimits limits.Factory
-	)
-
-	require.NoError(t, execute(t, logger.Test(t), func(cfg testConfig, f limits.Factory) *fake {
-		gotCfg, gotLimits = cfg, f
-		return newFake()
-	}, "run", "--cron.shout", "hello"))
-
-	assert.Equal(t, "hello", gotCfg.Shout)
 	assert.NotNil(t, gotLimits.Settings)
-}
-
-// TestRunRejectsTwoConfigs pins the one-config rule: the struct is bound under the binary's name,
-// so two of them would share one namespace and which setting belonged to which would be anyone's
-// guess.
-func TestRunRejectsTwoConfigs(t *testing.T) {
-	err := execute(t, logger.Test(t), func(a, b testConfig) *fake { return newFake() }, "run")
-	require.ErrorContains(t, err, "takes its config once")
-}
-
-// TestRunRejectsTheDependenciesStruct pins the rule the other way round: a constructor declares the
-// things it uses, not the bag they came in.
-//
-// Taking the struct would be a dependency on everything a run has, and adding a field to it would
-// silently widen what every capability appeared to need.
-func TestRunRejectsTheDependenciesStruct(t *testing.T) {
-	err := execute(t, logger.Test(t), func(Dependencies) *fake { return newFake() }, "run")
-
-	require.ErrorContains(t, err, "asks for a capability.Dependencies, and nothing in this run provides one")
-}
-
-// TestRunPassesTheRegistryAsANarrowerInterface covers matching by assignability: a capability that
-// only needs to resolve capabilities can say so, without naming the wider type the run holds.
-func TestRunPassesTheRegistryAsANarrowerInterface(t *testing.T) {
-	var got core.CapabilitiesRegistry
-
-	require.NoError(t, execute(t, logger.Test(t), func(r core.CapabilitiesRegistry) *fake {
-		got = r
-		return newFake()
-	}, "run"))
-
-	assert.NotNil(t, got)
+	assert.NotNil(t, gotLimits.Meter)
 }
 
 // TestRunHasARunCommand is the shape of the binary rather than what it does: a root that runs
 // nothing itself, and a way to start it hanging off it.
 func TestRunHasARunCommand(t *testing.T) {
 	// A bare invocation prints help and does nothing, rather than starting the capability.
-	require.NoError(t, execute(t, logger.Test(t), func() *fake {
+	require.NoError(t, execute(t, logger.Test(t), func(do.Injector) (Capability, error) {
 		t.Error("the root command should not build the capability")
-		return newFake()
+		return newFake(), nil
 	}))
 }
 
@@ -372,8 +222,7 @@ func TestRunServesAndAnnouncesTheCapability(t *testing.T) {
 	node := newSpyRegistry(t)
 	proxyURL := serveNodeRegistry(t, node)
 
-	require.NoError(t, execute(t, logger.Test(t), func() *fake { return newFake() },
-		"run", "--capabilities.proxy-url", proxyURL))
+	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run", "--capabilities.proxy-url", proxyURL))
 
 	assert.Equal(t, []string{fakeID}, node.addedIDs(), "the run should have announced the capability to the node's registry")
 	assert.Equal(t, []string{fakeID}, node.removedIDs(), "and deregistered it on the way out")

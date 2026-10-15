@@ -7,14 +7,16 @@ import (
 	"os"
 
 	"github.com/hashicorp/go-plugin"
+	"github.com/samber/do/v2"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability constructorFn) error {
+func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error)) error {
 	defer func() { _ = lggr.Sync() }()
 
 	var svcs []services.Service
@@ -105,12 +107,15 @@ func underPluginHost() bool {
 
 // startCapability builds the capability from its constructor and makes it reachable: started,
 // served and announced by the registry, and mounted via the debug UI if debug mode is turned on.
-func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor constructorFn, reg *registryService, settings *loop.AtomicSettings, mux *http.ServeMux) (Capability, error) {
-	c, err := ctor.call(Dependencies{
-		Logger:             lggr,
-		CapabilityRegistry: reg,
-		LimitsFactory:      newLimitsFactory(lggr, settings),
-	})
+func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor func(do.Injector) (Capability, error), reg *registryService, settings *loop.AtomicSettings, mux *http.ServeMux) (Capability, error) {
+	// The run supervises the services it provides, so the injector is never shut down: doing so
+	// would close them a second time.
+	i := do.New()
+	do.ProvideValue(i, lggr)
+	do.ProvideValue[core.CapabilitiesRegistry](i, reg)
+	do.ProvideValue(i, newLimitsFactory(lggr, settings))
+
+	c, err := ctor(i)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instantiate capability: %w", err)
 	}
