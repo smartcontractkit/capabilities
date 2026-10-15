@@ -27,10 +27,11 @@ var (
 	ErrDecimalExponentOutOfRange                         = errors.New("decimal exponent out of range")
 )
 
-// Comparing decimals rescales them to a common exponent, which costs time and memory
-// proportional to the exponent gap, so a single observation with an extreme exponent
-// could stall every node computing the median.
-const maxDecimalExponent = 1000
+// MaxAggregatableExponent bounds the base-10 exponent of an aggregatable value.
+// Comparing decimals with different exponents rescales them to a common exponent,
+// and that cost grows with the exponent gap. Every in-tree producer reports
+// exponent 0; the symmetric window leaves room for scaled values.
+const MaxAggregatableExponent = 128
 
 // Constants for type names used in aggregation logic.
 var (
@@ -258,7 +259,7 @@ func handleMedianAggregation(
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
-				if exp := val.GetDecimalValue().GetExponent(); exp > maxDecimalExponent || exp < -maxDecimalExponent {
+				if exp := val.GetDecimalValue().GetExponent(); exp > MaxAggregatableExponent || exp < -MaxAggregatableExponent {
 					return d, fmt.Errorf("%w: %d", ErrDecimalExponentOutOfRange, exp)
 				}
 				v, err := values.FromProto(val)
