@@ -302,7 +302,7 @@ func TestWithOtelViewsDefaultsToNone(t *testing.T) {
 // config fails before a client is ever created - and an unregistered flag would have failed
 // earlier, with cobra's "unknown flag" instead.
 func TestRunUsesTheDecodedTelemetrySettings(t *testing.T) {
-	err := execute(t, logger.Test(t), newFake, "run",
+	err := execute(t, logger.Test(t), fakeConstructor, "run",
 		"--telemetry.endpoint", "otel:4317", "--telemetry.attributes", "nope")
 
 	require.ErrorContains(t, err, `invalid telemetry.attributes entry "nope": expected key=value`)
@@ -385,7 +385,7 @@ func TestInstallGloballyNests(t *testing.T) {
 func TestRunLeavesTelemetryAsItFoundIt(t *testing.T) {
 	before := beholder.GetClient()
 
-	require.NoError(t, execute(t, logger.Test(t), newFake, "run"))
+	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run"))
 
 	assert.Same(t, before, beholder.GetClient())
 }

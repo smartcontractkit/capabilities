@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,11 +19,8 @@ import (
 
 // runArgs is the arguments of one run over settings a test can start: a real port, and everything
 // else off.
-func runArgs(t *testing.T, ctor any) (*config, constructorFn, uint16) {
+func runArgs(t *testing.T) (*config, uint16) {
 	t.Helper()
-
-	c, err := newConstructor(ctor)
-	require.NoError(t, err)
 
 	port := uint16(freePort(t))
 	cfg := defaultConfig()
@@ -31,7 +29,7 @@ func runArgs(t *testing.T, ctor any) (*config, constructorFn, uint16) {
 	// proxy, so it has to be a real listener rather than merely a lazy one.
 	cfg.capabilities.ProxyURL = serveNodeRegistry(t, newSpyRegistry(t))
 
-	return cfg, c, port
+	return cfg, port
 }
 
 // runToCompletion starts a run and stops it once it is serving, returning what run returned.
@@ -39,7 +37,7 @@ func runArgs(t *testing.T, ctor any) (*config, constructorFn, uint16) {
 // A run blocks until its context is cancelled, so a test that wants one to finish has to be the
 // thing that ends it - standing in for the signal an operator would send. A run that fails on the
 // way up never gets as far as serving and reports that instead.
-func runToCompletion(t *testing.T, cfg *config, c constructorFn, port uint16) error {
+func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability, error), port uint16) error {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -73,9 +71,9 @@ func runToCompletion(t *testing.T, cfg *config, c constructorFn, port uint16) er
 // one that gave the port back, which nothing else in the run reports.
 func TestRunRunsAndUnwinds(t *testing.T) {
 	built := 0
-	cfg, c, port := runArgs(t, func() *fake { built++; return newFake() })
+	cfg, port := runArgs(t)
 
-	require.NoError(t, runToCompletion(t, cfg, c, port))
+	require.NoError(t, runToCompletion(t, cfg, func(do.Injector) (Capability, error) { built++; return newFake(), nil }, port))
 	assert.Equal(t, 1, built)
 
 	assertPortFree(t, port)
@@ -85,9 +83,9 @@ func TestRunRunsAndUnwinds(t *testing.T) {
 // is running - which is what makes a health check mean anything.
 func TestRunStartsTheCapability(t *testing.T) {
 	f := newFake()
-	cfg, c, port := runArgs(t, func() *fake { return f })
+	cfg, port := runArgs(t)
 
-	require.NoError(t, runToCompletion(t, cfg, c, port))
+	require.NoError(t, runToCompletion(t, cfg, func(do.Injector) (Capability, error) { return f, nil }, port))
 
 	assert.True(t, f.started, "the run should have started the capability")
 	assert.True(t, f.closed, "and closed it again on the way out")
@@ -110,16 +108,15 @@ func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 		t.Skip("builds a real beholder client; ~20s of export timeouts on close")
 	}
 
-	cfg, _, port := runArgs(t, newFake)
+	cfg, port := runArgs(t)
 	// Nothing is listening there, which is fine: the client is built and installed without dialling.
 	cfg.observability.telemetry.Endpoint = fmt.Sprintf("localhost:%d", freePort(t))
 
 	var duringBuild *beholder.Client
-	c, err := newConstructor(func() *fake {
+	c := func(do.Injector) (Capability, error) {
 		duringBuild = beholder.GetClient()
-		return newFake()
-	})
-	require.NoError(t, err)
+		return newFake(), nil
+	}
 
 	before := beholder.GetClient()
 	require.NoError(t, runToCompletion(t, cfg, c, port))
@@ -139,7 +136,8 @@ func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 // telemetry is built, and the undo only works once the root has started it.
 func TestRunUnwindsWhatStartedBeforeAFailure(t *testing.T) {
 	before := beholder.GetClient()
-	cfg, c, port := runArgs(t, func() (*fake, error) { return nil, errors.New("no schedule") })
+	cfg, port := runArgs(t)
+	c := func(do.Injector) (Capability, error) { return nil, errors.New("no schedule") }
 	require.Empty(t, cfg.observability.telemetry.Endpoint, "these settings leave telemetry off")
 
 	require.ErrorContains(t, runToCompletion(t, cfg, c, port), "no schedule")
@@ -154,14 +152,14 @@ func TestRunUnwindsWhatStartedBeforeAFailure(t *testing.T) {
 //
 // It is also what proves run gets as far as the web server on the configured port at all.
 func TestRunReportsWhereItFailed(t *testing.T) {
-	cfg, c, port := runArgs(t, newFake)
+	cfg, port := runArgs(t)
 
 	// Something else already has the port the web server is configured for.
 	taken, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = taken.Close() })
 
-	require.ErrorContains(t, runToCompletion(t, cfg, c, port),
+	require.ErrorContains(t, runToCompletion(t, cfg, fakeConstructor, port),
 		fmt.Sprintf("failed to listen on port %d", port))
 }
 
@@ -171,11 +169,11 @@ func TestRunReportsWhereItFailed(t *testing.T) {
 // It is also the only test that looks at a run from outside while it is up: everything is still
 // serving when the assertions below are made.
 func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
-	cfg, c, port := runArgs(t, newFake)
+	cfg, port := runArgs(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c) }()
+	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor) }()
 
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
 		"the run should be serving while it is up")
