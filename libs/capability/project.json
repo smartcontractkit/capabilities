@@ -25,7 +25,7 @@
         "command": "go test ./... -coverpkg=./... -coverprofile=coverage.txt"
       }
     },
-    "tidy": 
+    "tidy": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
