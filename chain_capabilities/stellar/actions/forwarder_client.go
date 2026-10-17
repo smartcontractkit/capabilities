@@ -20,11 +20,14 @@ import (
 const (
 	forwarderReportFunction              = "report"
 	forwarderGetTransmissionInfoFunction = "get_transmission_info"
-	defaultLedgerBoundsOffset            = uint32(20)
 	reportProcessedEventPageLimit        = uint32(100)
 	reportProcessedEventMaxPages         = 10
 	// DefaultForwarderLookbackLedgers is how many ledgers back to search for ReportProcessed events.
 	DefaultForwarderLookbackLedgers = int64(100)
+	// DefaultLedgerBoundsOffset makes the report() tx valid for the next 3 ledgers (MaxLedger is
+	// exclusive). stellar-core drops an unincluded tx from its queue after 4 ledgers and never
+	// re-floods the same hash, so a short validity lets the TXM resend a fresh envelope sooner.
+	DefaultLedgerBoundsOffset = uint32(4)
 )
 
 type TransmissionState uint32
@@ -119,6 +122,7 @@ type forwarderClient struct {
 	forwarderCodec           CREForwarderCodec
 	forwarderAddress         string
 	forwarderLookbackLedgers int64
+	ledgerBoundsOffset       uint32
 }
 
 type ReportProcessedEvent struct {
@@ -127,9 +131,12 @@ type ReportProcessedEvent struct {
 	Success bool
 }
 
-func newForwarderClient(service types.StellarService, lggr logger.Logger, forwarderAddress string, forwarderLookbackLedgers int64) CREForwarderClient {
+func newForwarderClient(service types.StellarService, lggr logger.Logger, forwarderAddress string, forwarderLookbackLedgers int64, ledgerBoundsOffset uint32) CREForwarderClient {
 	if forwarderLookbackLedgers <= 0 {
 		forwarderLookbackLedgers = DefaultForwarderLookbackLedgers
+	}
+	if ledgerBoundsOffset == 0 {
+		ledgerBoundsOffset = DefaultLedgerBoundsOffset
 	}
 	return &forwarderClient{
 		StellarService:           service,
@@ -137,6 +144,7 @@ func newForwarderClient(service types.StellarService, lggr logger.Logger, forwar
 		forwarderCodec:           NewCREForwarderCodec(),
 		forwarderAddress:         forwarderAddress,
 		forwarderLookbackLedgers: forwarderLookbackLedgers,
+		ledgerBoundsOffset:       ledgerBoundsOffset,
 	}
 }
 
@@ -183,7 +191,7 @@ func (fc *forwarderClient) InvokeOnReport(
 		FromAddress:        transmitter,
 		IdempotencyKey:     transmissionID.idempotencyKey(),
 		MaxResourceFee:     maxResourceFee,
-		LedgerBoundsOffset: defaultLedgerBoundsOffset,
+		LedgerBoundsOffset: fc.ledgerBoundsOffset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit forwarder report transaction: %w", err)

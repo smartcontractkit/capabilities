@@ -11,7 +11,9 @@ import (
 type Config struct {
 	CREForwarderAddress string `json:"creForwarderAddress"`
 	// ForwarderLookbackLedgers is how many ledgers back to search for ReportProcessed events (default 100).
-	ForwarderLookbackLedgers      int64         `json:"forwarderLookbackLedgers"`
+	ForwarderLookbackLedgers int64 `json:"forwarderLookbackLedgers"`
+	// LedgerBoundsOffset makes a report tx valid for the next offset-1 ledgers (default 4).
+	LedgerBoundsOffset            uint32        `json:"ledgerBoundsOffset"`
 	DeltaStage                    time.Duration `json:"deltaStage"`
 	Network                       string        `json:"network"`
 	ChainID                       string        `json:"chainId"`
@@ -42,6 +44,9 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	}
 	if cfg.ForwarderLookbackLedgers < 0 {
 		return fmt.Errorf("forwarderLookbackLedgers must be non-negative")
+	}
+	if cfg.LedgerBoundsOffset == 1 {
+		return fmt.Errorf("ledgerBoundsOffset must be 0 (default) or at least 2: MaxLedger is exclusive, so 1 leaves no valid ledger")
 	}
 	*c = Config(cfg)
 	return nil

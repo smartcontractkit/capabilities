@@ -232,6 +232,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		stellarService,
 		cfg.CREForwarderAddress,
 		cfg.ForwarderLookbackLedgers,
+		cfg.LedgerBoundsOffset,
 		c.lggr,
 		c.limitsFactory,
 		scheduler,
@@ -289,6 +290,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.ForwarderLookbackLedgers == 0 {
 		cfg.ForwarderLookbackLedgers = actions.DefaultForwarderLookbackLedgers
 		c.lggr.Infof("ForwarderLookbackLedgers is zero, setting to %d.", cfg.ForwarderLookbackLedgers)
+	}
+	if cfg.LedgerBoundsOffset == 0 {
+		cfg.LedgerBoundsOffset = actions.DefaultLedgerBoundsOffset
+		c.lggr.Infof("LedgerBoundsOffset is zero, setting to %d.", cfg.LedgerBoundsOffset)
 	}
 	if cfg.MaxUnknownRequestsCacheSize == 0 {
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
