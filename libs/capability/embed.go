@@ -115,6 +115,7 @@ func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *I
 
 	if err := errors.Join(
 		i.ProvideValue(info),
+		i.ProvideValue(cfg.capabilities),
 		i.ProvideValue(lggr),
 		i.ProvideValue[registry.CapabilitiesRegistry](reg),
 		i.ProvideValue(newLimitsFactory(lggr, cfg.settings)),

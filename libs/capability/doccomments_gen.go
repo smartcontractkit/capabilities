@@ -15,6 +15,7 @@ func (CapabilitiesConfig) DocComments() map[string]commentparsing.FieldDoc {
 		"CapabilityDonID": {Comment: "CapabilityDonID is the on-chain DON ID of the capability DON this process was spawned for."},
 		"HTTPDebug":       {Comment: "HTTPDebug serves the capability debug UI on the shared HTTP server, under /debug/capabilities."},
 		"ProxyURL":        {Comment: "ProxyURL is the gRPC target of the node's capability registry proxy (e.g. localhost:9000), used\nto resolve capabilities this binary does not host. Unset resolves only the capabilities this\nbinary hosts."},
+		"ShardIndex":      {Comment: "ShardIndex is the shard of the node this process was spawned for, from the node's [Sharding] config. Zero for\nunsharded nodes."},
 	}
 }
 
