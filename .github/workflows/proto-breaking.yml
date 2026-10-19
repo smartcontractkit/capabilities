@@ -1,0 +1,69 @@
+name: Production protos
+
+# Production protos are what the SDKs use, so they are only ever added to. A production package can only be retired
+# whole, by listing it in retired_protos.txt.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOPRIVATE: github.com/smartcontractkit/capabilities
+
+jobs:
+  breaking:
+    name: No breaking changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: libs/go.mod
+
+      - name: Get buf version
+        id: buf
+        run: echo "version=$(awk '$1 == "buf" { print $2 }' .tool-versions)" >> "$GITHUB_OUTPUT"
+
+      - uses: bufbuild/buf-action@c231a1aa9281e5db706c970f468f0744a37561fd # v1
+        with:
+          setup_only: true
+          version: ${{ steps.buf.outputs.version }}
+
+      - name: Setup nodejs and install protofetch
+        uses: smartcontractkit/.github/actions/setup-nodejs@setup-nodejs/v1
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
+
+      - name: Check out the base branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$BASE_SHA" | tar -x -C "$RUNNER_TEMP/base"
+
+      - name: Fetch the protos each module imports
+        env:
+          # The runner has no SSH key, which protofetch fetches with by default.
+          PROTOFETCH_GIT_PROTOCOL: https
+        run: |
+          export PATH="$GITHUB_WORKSPACE/node_modules/.bin:$PATH"
+          set -euo pipefail
+          for root in "$GITHUB_WORKSPACE" "$RUNNER_TEMP/base"; do
+            find "$root" -name protofetch.lock -not -path '*/node_modules/*' -print0 |
+              while IFS= read -r -d '' lock; do
+                (cd "$(dirname "$lock")" && protofetch fetch --locked)
+              done
+          done
+
+      - name: Check the production protos
+        working-directory: libs
+        run: go run ./capability/cmd/protobreaking --against "$RUNNER_TEMP/base" "$GITHUB_WORKSPACE"

@@ -19,8 +19,6 @@ flowchart LR
 	capabilities/consensus --> capabilities/libs
 	capabilities/consensus --> cre-sdk-go
 	click capabilities/consensus href "https://github.com/smartcontractkit/capabilities"
-	capabilities/cron --> capabilities/libs
-	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_action --> capabilities/libs
 	click capabilities/http_action href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_trigger --> capabilities/libs
@@ -33,6 +31,8 @@ flowchart LR
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common/x/config
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
+	capabilities/scheduler/cron --> capabilities/libs
+	click capabilities/scheduler/cron href "https://github.com/smartcontractkit/capabilities"
 	ccip-contract-examples/chains/evm
 	click ccip-contract-examples/chains/evm href "https://github.com/smartcontractkit/ccip-contract-examples"
 	ccip-owner-contracts
@@ -239,11 +239,11 @@ flowchart LR
 		 capabilities/chain_capabilities/solana
 		 capabilities/chain_capabilities/stellar
 		 capabilities/consensus
-		 capabilities/cron
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests
 		 capabilities/libs
+		 capabilities/scheduler/cron
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 

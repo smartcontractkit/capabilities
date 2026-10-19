@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package capabilities.test.zero.x.v1;
+
+import "capability/feature/feature.proto";
+
+enum Level {
+  LEVEL_UNSPECIFIED = 0 [(cre.feature.v1.value) = "new_field"];
+  LEVEL_HIGH = 1 [(cre.feature.v1.value) = "launch"];
+}
+
+message Request {
+  Level level = 1 [(cre.feature.v1.field) = "launch"];
+}
+
+service Zero {
+  option (cre.feature.v1.released) = "launch";
+  option (cre.feature.v1.in_progress) = "new_field";
+}

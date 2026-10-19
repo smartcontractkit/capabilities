@@ -47,6 +47,8 @@ type fake struct {
 
 func (f *fake) Info(context.Context) (capabilities.CapabilityInfo, error) { return f.info, nil }
 
+func (f *fake) Methods() []Method { return nil }
+
 // fakeID is what the fake registers and announces itself as.
 const fakeID = "fake@1.0.0"
 

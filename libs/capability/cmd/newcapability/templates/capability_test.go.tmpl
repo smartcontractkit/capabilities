@@ -1,0 +1,89 @@
+package {{.Package}}
+
+import (
+	"testing"
+{{- if .Trigger}}
+	"time"
+{{- end}}
+
+	"github.com/samber/do/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/capabilities/libs/capability"
+	"github.com/smartcontractkit/capabilities/libs/capability/capabilitytest"
+	"{{.Module}}/protos"
+	"{{.Module}}/protos/protostest"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+)
+
+var metadata = capabilities.RequestMetadata{WorkflowID: "workflow-id"}
+
+// start starts n instances of the capability as capability.Run would, with cfg in place of what the node
+// operator sets. The instances it returns call every instance at once and fail if they disagree.
+func start(t *testing.T, cfg Config, n int) protostest.{{.Service}}Instances {
+	t.Helper()
+
+	return capabilitytest.Start(t, New, n, capability.WithProvider(func(i *capability.Injector) error {
+		return i.ProvideValue(&cfg)
+	}))
+}
+
+func TestNew(t *testing.T) {
+	c := start(t, Config{}, 1)[0]
+
+	info, err := c.Info(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, protos.{{.Service}}ID, info.ID)
+	assert.NotEmpty(t, info.Description)
+	assert.NoError(t, c.Ready())
+}
+
+// TestLifecycle checks that readiness and health follow Start and Close: a node routes work to a capability
+// that reports ready and healthy, so one that always does hides a capability that is down.
+func TestLifecycle(t *testing.T) {
+	s := newService(dependencies{Logger: logger.Test(t), Config: &Config{}})
+	require.Error(t, s.Ready())
+	require.Error(t, s.HealthReport()[s.Name()])
+
+	require.NoError(t, s.Start(t.Context()))
+	require.NoError(t, s.Ready())
+	require.NoError(t, s.HealthReport()[s.Name()])
+
+	require.NoError(t, s.Close())
+	require.Error(t, s.Ready())
+	require.Error(t, s.HealthReport()[s.Name()])
+}
+
+func TestNewWithoutDependencies(t *testing.T) {
+	_, err := New(do.New())
+	assert.Error(t, err)
+}
+{{if .Trigger}}
+func TestTrigger(t *testing.T) {
+	caps := start(t, Config{}, 2)
+	input := &protos.TriggerConfig{Message: "hello"}
+
+	events, err := caps.RegisterTrigger(t.Context(), "trigger-id", metadata, input)
+	require.NoError(t, err)
+
+	select {
+	case e := <-events:
+		require.Nil(t, e.Mismatch)
+		require.NoError(t, e.Err)
+		assert.Equal(t, input.Message, e.Trigger.Message)
+	case <-time.After(10 * time.Second):
+		t.Fatal("no event")
+	}
+
+	require.NoError(t, caps.UnregisterTrigger(t.Context(), "trigger-id", metadata, input))
+}
+{{end}}{{if .Action}}
+func TestExecute(t *testing.T) {
+	reply, err := start(t, Config{}, 2).Execute(t.Context(), metadata, &protos.Request{Message: "hello"})
+	require.NoError(t, err)
+	assert.Equal(t, "hello", reply.Response.Message)
+}
+{{end}}

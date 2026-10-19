@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{.Title}}</title>
+<style>
+  body { font-family: sans-serif; margin: 2em; max-width: 80em; }
+  small { color: #666; }
+  pre { background: #f4f4f4; padding: .5em; margin: .25em 0; white-space: pre-wrap; }
+  fieldset, .message .message, .list { border: 1px solid #ddd; padding: .25em .5em; margin: .25em 0; }
+  .field { margin: .25em 0; }
+  .field > label { display: inline-block; min-width: 14em; vertical-align: top; }
+  input[type=text] { width: 24em; }
+  textarea { width: 30em; font-family: monospace; }
+  .error { color: #c00; }
+  .result { border-left: 4px solid #8c8; padding-left: .5em; margin: .5em 0; }
+  .result.failed { border-color: #c00; background: #fee; }
+  summary { cursor: pointer; margin: .25em 0; }
+  #subscriptions > details, #responses > details { border: 1px solid #ccc; padding: 0 .5em; margin: .5em 0; }
+</style>
+</head>
+<body>
+<h1>{{.Title}} <small>({{.Instances}} instances)</small></h1>
+
+<p>
+  <label>Method <select id="method"></select></label>
+  <small id="types"></small>
+</p>
+<div id="input"></div>
+<details>
+  <summary>Request metadata</summary>
+  <small>Anything left blank is filled in for each request, with new IDs every time.</small>
+  <div id="metadata"></div>
+</details>
+<p>
+  <button id="invoke">Invoke</button>
+  <label>Show bytes as <select id="bytes"><option>hex</option><option>base64</option></select></label>
+</p>
+<details open>
+  <summary><b>Responses <span id="response-count"></span></b> <button id="clear" type="button">Clear</button></summary>
+  <div id="responses"></div>
+</details>
+
+<details open>
+  <summary><b>Subscriptions <span id="subscription-count"></span></b></summary>
+  <div id="subscriptions"></div>
+</details>
+
+<script>
+const page = {{.Page}};
+const $ = id => document.getElementById(id);
+const h = (tag, props = {}, ...children) => {
+  const e = Object.assign(document.createElement(tag), props);
+  e.append(...children);
+  return e;
+};
+const button = (textContent, onclick) => h('button', {type: 'button', textContent, onclick});
+const post = (path, body) => fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+
+// An editor's get returns undefined to leave its field unset.
+
+const placeholders = {
+  int: 'integer', float: 'number', number: 'number', bytes: '0x… hex, or base64',
+  bigint: 'integer, e.g. -1000', decimal: 'e.g. 1.50', timestamp: 'RFC 3339, e.g. 2026-01-02T15:04:05Z',
+  duration: 'e.g. 1.5s',
+};
+
+const zero = f => ({message: {}, bool: false, float: 0, number: 0, int: '0', bigint: '0', decimal: '0', enum: f.Enum && f.Enum[0]})[f.Kind] ?? '';
+
+const typeOf = f => (f.List ? 'repeated ' : '') + f.Type;
+const label = f => h('label', {}, h('b', {textContent: f.Name}), ' ', h('small', {textContent: typeOf(f)}));
+
+function scalar(f, initial) {
+  switch (f.Kind) {
+    case 'bool': {
+      const e = h('input', {type: 'checkbox', checked: !!initial});
+      return {el: e, get: () => e.checked || undefined};
+    }
+    case 'enum': {
+      const e = h('select', {}, ...f.Enum.map(v => h('option', {textContent: v})));
+      if (initial !== undefined) e.value = initial;
+      return {el: e, get: () => e.value};
+    }
+    case 'json': {
+      const e = h('textarea', {rows: 3, placeholder: 'JSON', value: initial === undefined ? '' : JSON.stringify(initial)});
+      return {el: e, get: () => e.value.trim() ? JSON.parse(e.value) : undefined};
+    }
+    default: {
+      const e = h('input', {type: 'text', placeholder: placeholders[f.Kind] || '', value: initial ?? ''});
+      return {el: e, get: () => e.value === '' ? undefined : (f.Kind === 'float' || f.Kind === 'number') ? Number(e.value) : e.value};
+    }
+  }
+}
+
+const single = (f, initial) => f.Kind === 'message' ? message(f.Message, initial) : scalar(f, initial);
+const editor = (f, initial) => f.Kind === 'map' ? map(f, initial) : f.List ? list(f, initial) : single(f, initial);
+
+function rows(addLabel, make) {
+  const entries = [];
+  const box = h('div', {className: 'list'});
+  const add = (...initial) => {
+    const entry = make(...initial);
+    const row = h('div', {}, ...entry.els, ' ', button('remove', () => {
+      entries.splice(entries.indexOf(entry), 1);
+      row.remove();
+    }));
+    entries.push(entry);
+    box.insertBefore(row, addButton);
+  };
+  const addButton = button(addLabel, () => add());
+  box.append(addButton);
+  return {box, add, entries};
+}
+
+function list(f, initial) {
+  const r = rows('+ add', v => {
+    const e = single(f, v);
+    return {els: [e.el], get: () => e.get() ?? zero(f)};
+  });
+  (initial || []).forEach(v => r.add(v));
+  return {el: r.box, get: () => r.entries.length ? r.entries.map(e => e.get()) : undefined};
+}
+
+function map(f, initial) {
+  const r = rows('+ add entry', (k, v) => {
+    const key = h('input', {type: 'text', placeholder: f.Key + ' key', value: k ?? ''});
+    const value = single(f.Value, v);
+    return {els: [key, ' → ', value.el], get: () => [key.value, value.get() ?? zero(f.Value)]};
+  });
+  Object.entries(initial || {}).forEach(([k, v]) => r.add(k, v));
+  return {el: r.box, get: () => r.entries.length ? Object.fromEntries(r.entries.map(e => e.get())) : undefined};
+}
+
+// Message fields are optional too, which keeps a message that holds itself, such as values.v1.Value, from
+// being drawn forever.
+function optional(f, initial) {
+  const set = h('input', {type: 'checkbox', checked: initial !== undefined && initial !== null});
+  const slot = h('div');
+  let e;
+  set.onchange = () => {
+    e = set.checked ? editor(f, initial) : undefined;
+    slot.replaceChildren(...(e ? [e.el] : []));
+  };
+  set.onchange();
+  return {el: h('span', {}, h('label', {}, set, ' set'), slot), get: () => e && (e.get() ?? zero(f))};
+}
+
+function oneof(name) {
+  const group = 'oneof-' + Math.random().toString(36).slice(2);
+  const options = h('div');
+  const slot = h('div');
+  let chosen;
+  const choose = (f, initial) => {
+    chosen = f && {f, e: editor(f, initial)};
+    slot.replaceChildren(...(chosen ? [chosen.e.el] : []));
+  };
+  options.append(h('label', {}, h('input', {type: 'radio', name: group, checked: true, onchange: () => choose()}), ' none '));
+  return {
+    el: h('fieldset', {}, h('legend', {}, h('b', {textContent: name}), ' ', h('small', {textContent: 'one of'})), options, slot),
+    add(f, initial) {
+      const radio = h('input', {type: 'radio', name: group, onchange: () => choose(f)});
+      options.append(h('label', {}, radio, ' ' + f.Name + ' ', h('small', {textContent: typeOf(f)})), ' ');
+      if (initial !== undefined) {
+        radio.checked = true;
+        choose(f, initial);
+      }
+    },
+    get: () => chosen ? {[chosen.f.Name]: chosen.e.get() ?? zero(chosen.f)} : {},
+  };
+}
+
+function message(name, initial) {
+  initial = initial || {};
+  const box = h('div', {className: 'message'});
+  const parts = [];
+  const oneofs = {};
+  for (const f of page.Schema[name]) {
+    if (f.Oneof) {
+      if (!oneofs[f.Oneof]) {
+        oneofs[f.Oneof] = oneof(f.Oneof);
+        box.append(oneofs[f.Oneof].el);
+        parts.push(oneofs[f.Oneof].get);
+      }
+      oneofs[f.Oneof].add(f, initial[f.Name]);
+      continue;
+    }
+    const e = (f.Optional ? optional : editor)(f, initial[f.Name]);
+    box.append(h('div', {className: 'field'}, label(f), e.el));
+    parts.push(() => {
+      const v = e.get();
+      return v === undefined ? {} : {[f.Name]: v};
+    });
+  }
+  if (!page.Schema[name].length) box.append(h('small', {textContent: 'no fields'}));
+  return {el: box, get: () => Object.assign({}, ...parts.map(p => p()))};
+}
+
+
+const methods = Object.fromEntries(page.Methods.map(m => [m.Name, m]));
+const forms = {};
+for (const m of page.Methods) {
+  $('method').append(h('option', {value: m.Name, textContent: m.Name + (m.Trigger ? ' (trigger)' : '')}));
+}
+$('method').onchange = () => {
+  const m = methods[$('method').value];
+  forms[m.Name] ??= message(m.Input);
+  $('input').replaceChildren(forms[m.Name].el);
+  $('types').textContent = `${m.Input} → ${m.Trigger ? 'stream ' : ''}${m.Output}`;
+};
+$('method').onchange();
+
+const metadata = message(page.Metadata);
+$('metadata').append(metadata.el);
+
+
+function render(r) {
+  const div = h('div', {className: 'result' + (r.Error || r.Instances ? ' failed' : '')});
+  if (r.ID) div.append(h('b', {textContent: 'Event ' + r.ID}));
+  if (r.Error) div.append(h('div', {className: 'error', textContent: r.Error}));
+  if (r.Output) div.append(h('pre', {textContent: JSON.stringify(r.Output, null, 2)}));
+  (r.Instances || []).forEach((each, i) => div.append('Instance ' + i, render(each)));
+  return div;
+}
+
+// Each call is listed when it is sent and filled in when it returns, so overlapping calls stay in order.
+let calls = 0;
+const count = () => $('response-count').textContent = `(${$('responses').children.length})`;
+$('clear').onclick = e => {
+  e.preventDefault();
+  $('responses').replaceChildren();
+  count();
+};
+
+$('invoke').onclick = async () => {
+  const method = $('method').value;
+  const status = h('span', {textContent: 'waiting…'});
+  const slot = h('div');
+  const entry = h('details', {open: true});
+  $('responses').prepend(entry);
+  count();
+  const show = r => {
+    slot.replaceChildren(render(r));
+    status.replaceChildren(r.Error || r.Instances ? h('span', {className: 'error', textContent: r.Instances ? 'instances disagree' : 'failed'}) : 'ok');
+  };
+
+  let body;
+  try {
+    body = {method, metadata: metadata.get(), input: forms[method].get(), hexBytes: $('bytes').value === 'hex'};
+  } catch (e) {
+    body = {method};
+    show({Error: e.message});
+  }
+  entry.append(
+    h('summary', {}, h('b', {textContent: `#${++calls} ${method}`}), ' ', h('small', {textContent: new Date().toLocaleTimeString()}), ' ', status),
+    h('details', {}, h('summary', {textContent: 'Input'}), h('pre', {textContent: JSON.stringify(body.input, null, 2)})),
+    slot);
+  if (!body.input) return;
+
+  try {
+    const res = await post('invoke', body);
+    if (!res.ok) return show({Error: await res.text()});
+    const r = await res.json();
+    if (!r.TriggerID) return show(r);
+    slot.replaceChildren(h('p', {textContent: 'Subscribed as ' + r.TriggerID + ', under Subscriptions.'}));
+    status.replaceChildren('subscribed');
+  } catch (e) {
+    show({Error: e.message});
+  }
+};
+
+
+const subscriptions = {};
+new EventSource('events').onmessage = message => {
+  const v = JSON.parse(message.data);
+  let s = subscriptions[v.TriggerID];
+  const recount = () => $('subscription-count').textContent = `(${Object.keys(subscriptions).length})`;
+  if (v.Deleted) {
+    if (s) s.el.remove();
+    delete subscriptions[v.TriggerID];
+    return recount();
+  }
+  if (!s) {
+    s = subscriptions[v.TriggerID] = {events: h('div'), status: h('span'), total: 0, failed: 0};
+    const action = path => e => {
+      e.preventDefault();
+      post(path, {triggerId: v.TriggerID});
+    };
+    s.stop = button('Stop', action('unsubscribe'));
+    s.delete = button('Delete', action('delete'));
+    s.el = h('details', {open: true},
+      h('summary', {}, h('b', {textContent: v.Method}), ' ', v.TriggerID, ' ', s.status, ' ', s.stop, s.delete),
+      h('details', {}, h('summary', {textContent: 'Input'}), h('pre', {textContent: JSON.stringify(v.Input, null, 2)})),
+      s.events);
+    $('subscriptions').prepend(s.el);
+    recount();
+  }
+
+  // A reconnected stream starts again from the first event, so skip those already shown.
+  const events = v.Events || [];
+  const first = v.Total - events.length;
+  for (const e of events.slice(Math.max(0, s.total - first))) {
+    s.events.prepend(render(e));
+    if (e.Error || e.Instances) s.failed++;
+  }
+  s.total = v.Total;
+  s.status.replaceChildren(`${v.Total} events`, ...(s.failed ? [', ', h('span', {className: 'error', textContent: `${s.failed} failed`})] : []), v.Closed ? ', stopped' : '');
+  s.stop.hidden = v.Closed;
+  s.delete.hidden = !v.Closed;
+};
+</script>
+</body>
+</html>

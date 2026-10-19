@@ -1,0 +1,10 @@
+name = "capabilities"
+description = "Protos the capabilities in this repo import, shared by every module, and by what fetches their production protos"
+proto_out_dir = ".deps"
+
+[chainlink-protos]
+url = "github.com/smartcontractkit/chainlink-protos"
+revision = "e622e8b83b6b28c99a9c12270e4d5a39c87381af"
+content_roots = ["/cre"]
+# Capabilities' protos are their own, not chainlink-protos' copies, which are at the same paths.
+deny_policies = ["/capabilities/*"]

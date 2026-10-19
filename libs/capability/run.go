@@ -94,7 +94,7 @@ func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error)
 	if err := errors.Join(RunInjector.RegisterConfig(runCmd, b), EmbedInjector.RegisterConfig(embedCmd, b)); err != nil {
 		return err
 	}
-	root.AddCommand(runCmd, embedCmd)
+	root.AddCommand(runCmd, embedCmd, newDocgenCmd())
 
 	// Wire up SIGTERM + SIGINT to the context
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

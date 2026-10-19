@@ -1,0 +1,8 @@
+module {{.Module}}
+
+go {{.GoVersion}}
+
+require github.com/smartcontractkit/capabilities/libs v0.0.0
+
+// TODO: depend on a released libs once the capability stops needing changes to it.
+replace github.com/smartcontractkit/capabilities/libs => {{.Libs}}

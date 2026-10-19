@@ -228,6 +228,9 @@ jobs:
         run: go install github.com/vektra/mockery/v2@v2.53.8
 
       - name: Run "tidy" and "generate"
+        env:
+          # The runner has no SSH key, which protofetch fetches with by default.
+          PROTOFETCH_GIT_PROTOCOL: https
         run: |
           ./nx run ${{ matrix.projects }}:tidy
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate

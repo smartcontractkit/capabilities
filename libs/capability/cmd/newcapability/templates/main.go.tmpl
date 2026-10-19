@@ -1,0 +1,14 @@
+package main
+{{if not .NoModule}}
+//go:generate go run . docgen
+{{end}}
+import (
+	"context"
+
+	"github.com/smartcontractkit/capabilities/libs/capability"
+	"{{.Module}}/{{.Package}}"
+)
+
+func main() {
+	capability.Run(context.Background(), {{.Package}}.New)
+}

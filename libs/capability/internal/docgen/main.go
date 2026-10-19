@@ -1,5 +1,5 @@
-// Command docgen generates the DocComments for this package's config sections, which the flags'
-// help text is read from.
+// Command docgen generates the DocComments for every config in this module, which the flags' help text is
+// read from.
 package main
 
 import (
@@ -9,6 +9,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 
 	"github.com/smartcontractkit/capabilities/libs/capability"
+	"github.com/smartcontractkit/capabilities/libs/capability/cmd/newcapability/options"
+	"github.com/smartcontractkit/capabilities/libs/capability/internal/example/capability/service"
 )
 
 func main() {
@@ -19,6 +21,9 @@ func main() {
 			&capability.HTTPConfig{},
 			&capability.CapabilitiesConfig{},
 			&capability.SettingsConfig{},
+			&options.Options{},
+			// The example is scaffolded into this module, so its config's doc comments are generated with it.
+			&service.Config{},
 		},
 		Tool:        "github.com/smartcontractkit/capabilities/libs/capability/internal/docgen",
 		LocalPrefix: "github.com/smartcontractkit",

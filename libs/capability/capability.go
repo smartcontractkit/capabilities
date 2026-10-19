@@ -8,6 +8,8 @@ import (
 type Capability interface {
 	services.Service
 	capabilities.ExecutableAndTriggerCapability
+	// Methods are the methods the capability serves, which generated servers list.
+	Methods() []Method
 }
 
 // CapabilitiesConfig is what a capability binary needs from the node it runs beside.

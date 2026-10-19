@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+// The development package: its production protos are released as capabilities.{{.Category}}.{{.Name}}.v1,
+// which never changes. Every field, method and enum value is tagged with the feature it belongs to, which the service
+// lists as in progress. Release a feature by moving it to released, option (cre.feature.v1.released) = "example";,
+// then generate, which writes it to the production protos, in production.
+package capabilities.{{.Category}}.{{.Name}}.x.v1;
+
+import "capability/feature/feature.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+{{if .Trigger}}
+message TriggerConfig {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+
+message TriggerEvent {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+{{end}}{{if .Action}}
+message Request {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+
+message Reply {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+{{end}}
+service {{.Service}} {
+  option (tools.generator.v1alpha.capability) = {
+    mode: MODE_DON
+    capability_id: "{{.CapabilityID}}"
+  };
+  option (cre.feature.v1.in_progress) = "example";
+{{if .Trigger}}
+  rpc Trigger(TriggerConfig) returns (stream TriggerEvent) {
+    option (cre.feature.v1.method) = "example";
+  }
+{{end}}{{if .Action}}
+  rpc Execute(Request) returns (Reply) {
+    option (cre.feature.v1.method) = "example";
+  }
+{{end}}}

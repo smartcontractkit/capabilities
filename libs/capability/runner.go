@@ -21,7 +21,8 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 
 	// Started first and closed last, so probes get an answer while the run starts and stops.
 	p := &probes{}
-	ws, err := startWebServer(ctx, lggr, cfg.observability.http, http.NewServeMux(), p)
+	mux := http.NewServeMux()
+	ws, err := startWebServer(ctx, lggr, cfg.observability.http, mux, p)
 	if err != nil {
 		return fmt.Errorf("failed to start web server: %w", err)
 	}
@@ -75,10 +76,16 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	}
 	started(settings)
 
-	_, caps, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, &grpcOpts, settings.values))
-	started(caps...)
+	caps, capSvcs, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, &grpcOpts, settings.values))
+	started(capSvcs...)
 	if err != nil {
 		return err
+	}
+
+	if capabilities.HTTPDebug {
+		if err = ServeDebugUI(ctx, mux, caps); err != nil {
+			return fmt.Errorf("failed to build the debug UI: %w", err)
+		}
 	}
 
 	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(svcs))
