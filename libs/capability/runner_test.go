@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/capabilities/libs/capability/di"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
@@ -32,6 +34,12 @@ func runArgs(t *testing.T) (*config, uint16) {
 	return cfg, port
 }
 
+// runInstance is the one instance the run command builds, from an injector of the test's own.
+func runInstance(t *testing.T, cfg *config) instance {
+	t.Helper()
+	return instance{lggr: logger.Test(t), injector: di.NewInjector(), capabilities: cfg.capabilities}
+}
+
 // runToCompletion starts a run and stops it once it is serving, returning what run returned.
 //
 // A run blocks until its context is cancelled, so a test that wants one to finish has to be the
@@ -44,7 +52,7 @@ func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability,
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c) }()
+	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c, runInstance(t, cfg)) }()
 
 	deadline := time.After(30 * time.Second)
 	for {
@@ -173,7 +181,7 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor) }()
+	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor, runInstance(t, cfg)) }()
 
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
 		"the run should be serving while it is up")

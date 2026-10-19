@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,14 +63,18 @@ const fakeID = "fake@1.0.0"
 
 // newFake builds one with a real service behind it, since the health checker asks the capability
 // its name and whether it is ready.
-func newFake() *fake {
+func newFake() *fake { return newFakeNamed(logger.Nop()) }
+
+// newFakeNamed is a fake whose service is named from lggr, as a real capability's is from the logger
+// it is given.
+func newFakeNamed(lggr logger.Logger) *fake {
 	f := &fake{}
 	f.info, _ = capabilities.NewCapabilityInfo(fakeID, capabilities.CapabilityTypeCombined, "a fake")
 	f.runnable.Service, _ = services.Config{
 		Name:  "FakeCapability",
 		Start: func(context.Context) error { f.started = true; return nil },
 		Close: func() error { f.closed = true; return nil },
-	}.NewServiceEngine(logger.Nop())
+	}.NewServiceEngine(lggr)
 	return f
 }
 
@@ -87,7 +92,7 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	// A free port rather than the default, since tests share a machine and run alongside each
 	// other - two of them on 8080 would collide. It is also how this tells that the binary is up.
 	port := 0
-	if slices.Contains(args, "run") && !slices.Contains(args, "--http.port") {
+	if (slices.Contains(args, "run") || slices.Contains(args, "embed")) && !slices.Contains(args, "--http.port") {
 		port = freePort(t)
 		args = append(args, "--http.port", strconv.Itoa(port))
 
@@ -193,18 +198,21 @@ func TestRunRejectsANilCapability(t *testing.T) {
 }
 
 // TestRunProvidesItsDependencies covers what the injector holds: this process's logger, the
-// registry capabilities are resolved through, and the factory a workflow's requests are bounded by.
+// registry capabilities are resolved through, the factory a workflow's requests are bounded by, and
+// the clock.
 func TestRunProvidesItsDependencies(t *testing.T) {
 	var (
 		gotLogger   logger.Logger
 		gotRegistry core.CapabilitiesRegistry
 		gotLimits   limits.Factory
+		gotClock    clockwork.Clock
 	)
 
 	require.NoError(t, execute(t, logger.Test(t), func(i do.Injector) (Capability, error) {
 		gotLogger = do.MustInvoke[logger.Logger](i)
 		gotRegistry = do.MustInvoke[core.CapabilitiesRegistry](i)
 		gotLimits = do.MustInvoke[limits.Factory](i)
+		gotClock = do.MustInvoke[clockwork.Clock](i)
 		return newFake(), nil
 	}, "run"))
 
@@ -212,6 +220,7 @@ func TestRunProvidesItsDependencies(t *testing.T) {
 	assert.NotNil(t, gotRegistry)
 	assert.NotNil(t, gotLimits.Settings)
 	assert.NotNil(t, gotLimits.Meter)
+	assert.NotNil(t, gotClock)
 }
 
 // TestRunHasARunCommand is the shape of the binary rather than what it does: a root that runs
@@ -237,4 +246,21 @@ func TestRunServesAndAnnouncesTheCapability(t *testing.T) {
 
 	assert.Equal(t, []string{fakeID}, node.addedIDs(), "the run should have announced the capability to the node's registry")
 	assert.Equal(t, []string{fakeID}, node.removedIDs(), "and deregistered it on the way out")
+}
+
+// TestRunInjectorConfigIsOnlyOnTheRunCommand covers which command each injector's configs are registered on.
+func TestRunInjectorConfigIsOnlyOnTheRunCommand(t *testing.T) {
+	type runOnly struct{ Name string }
+	conf := &runOnly{}
+
+	runInjector := RunInjector
+	t.Cleanup(func() { RunInjector = runInjector })
+	RunInjector = runInjector.Clone()
+	require.NoError(t, RunInjector.ProvideConfig("runonly", conf))
+
+	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run", "--runonly.name", "set"))
+	assert.Equal(t, "set", conf.Name)
+
+	require.ErrorContains(t, execute(t, logger.Test(t), fakeConstructor, "embed", "1", "--runonly.name", "set"),
+		"unknown flag: --runonly.name")
 }
