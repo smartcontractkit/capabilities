@@ -635,6 +635,10 @@ func decodeObservationType(lggr logger.Logger, input *sdk.SimpleConsensusInputs)
 			lggr.Debugw("failed to decode observation value", "err", err)
 			return fmt.Errorf("failed to decode observation value: %w", err)
 		}
+		if err := oracle.ValidateAggregatableValue(obs.Value); err != nil {
+			lggr.Debugw("observation value has an unsupported decimal exponent", "err", err)
+			return fmt.Errorf("invalid observation value: %w", err)
+		}
 		lggr.Debugw("received observation value")
 	case *sdk.SimpleConsensusInputs_Error:
 		lggr.Debugw("observation is an error")

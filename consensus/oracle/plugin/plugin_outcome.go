@@ -69,38 +69,9 @@ func (r *reportingPlugin) ValidateObservation(ctx context.Context, outctx ocr3ty
 		}
 
 		if valueInput, ok := reqObs.Input.GetObservation().(*sdk.SimpleConsensusInputs_Value); ok {
-			if err := validateAggregatableValue(valueInput.Value); err != nil {
+			if err := oracle.ValidateAggregatableValue(valueInput.Value); err != nil {
 				lggr.Warnw("observation contains an aggregatable value outside the supported exponent range", "requestID", requestID, "error", err)
 				return fmt.Errorf("observation from observer %d has invalid value for request %s: %w", ao.Observer, requestID, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// validateAggregatableValue rejects decimal exponents that could make decimal
-// comparisons allocate unbounded amounts of memory during aggregation.
-func validateAggregatableValue(value *valuespb.Value) error {
-	if value == nil {
-		return nil
-	}
-
-	switch v := value.Value.(type) {
-	case *valuespb.Value_DecimalValue:
-		if exponent := v.DecimalValue.GetExponent(); exponent > oracle.MaxAggregatableExponent || exponent < -oracle.MaxAggregatableExponent {
-			return fmt.Errorf("decimal exponent out of range: got %d, allowed [%d, %d]", exponent, -oracle.MaxAggregatableExponent, oracle.MaxAggregatableExponent)
-		}
-	case *valuespb.Value_MapValue:
-		for _, field := range v.MapValue.GetFields() {
-			if err := validateAggregatableValue(field); err != nil {
-				return err
-			}
-		}
-	case *valuespb.Value_ListValue:
-		for _, field := range v.ListValue.GetFields() {
-			if err := validateAggregatableValue(field); err != nil {
-				return err
 			}
 		}
 	}

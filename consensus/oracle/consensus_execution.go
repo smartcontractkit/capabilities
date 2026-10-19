@@ -33,6 +33,35 @@ var (
 // exponent 0; the symmetric window leaves room for scaled values.
 const MaxAggregatableExponent = 128
 
+// ValidateAggregatableValue rejects decimal exponents that could make decimal
+// comparisons allocate unbounded amounts of memory during aggregation.
+func ValidateAggregatableValue(value *valuespb.Value) error {
+	if value == nil {
+		return nil
+	}
+
+	switch v := value.Value.(type) {
+	case *valuespb.Value_DecimalValue:
+		if exponent := v.DecimalValue.GetExponent(); exponent > MaxAggregatableExponent || exponent < -MaxAggregatableExponent {
+			return fmt.Errorf("decimal exponent out of range: got %d, allowed [%d, %d]", exponent, -MaxAggregatableExponent, MaxAggregatableExponent)
+		}
+	case *valuespb.Value_MapValue:
+		for _, field := range v.MapValue.GetFields() {
+			if err := ValidateAggregatableValue(field); err != nil {
+				return err
+			}
+		}
+	case *valuespb.Value_ListValue:
+		for _, field := range v.ListValue.GetFields() {
+			if err := ValidateAggregatableValue(field); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // Constants for type names used in aggregation logic.
 var (
 	typeInt64   = reflect.TypeFor[*valuespb.Value_Int64Value]()
