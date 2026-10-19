@@ -55,6 +55,12 @@ type WriteReport struct {
 	executionTimestamp     time.Time
 
 	gasMeter *gasmeter.Meter
+
+	// observed collects every transaction this request saw on chain; ownTx is the transaction
+	// this node sent, if it made a new transmission attempt. Both feed ChainTransactionObserved
+	// emission once the outcome is decided.
+	observed txObservations
+	ownTx    *evmtypes.TransactionResult
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -103,7 +109,10 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		gasMeter:               e.gasMeter,
 	}
 
-	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
+	reply, responseMetadata, err := wr.executeWriteReport(ctx, request, metadata, telemetryContext)
+	wr.observed.recordOwnTx(wr.ownTx)
+	e.emitTxEvents(ctx, wr.lggr, metadata, wr.observed.list)
+	return reply, responseMetadata, err
 }
 
 func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
@@ -216,6 +225,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		e.lggr.Errorw("Transaction failed", "error", err.Error())
 		return nil, capabilities.ResponseMetadata{}, err
 	}
+	e.ownTx = transactionResult
 
 	newTransmissionInfo, err := capcommon.WithPollingRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
@@ -482,11 +492,25 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		})
 	})
 	if err != nil {
+		// The transaction is on chain even though its receipt is not reachable; record what is
+		// known so the Transactions Viewer still learns about it.
+		e.observed.record(txObservation{
+			hash:           txHash,
+			receiverStatus: receiverStatusFromReply(receiverStatus),
+			errorMessage:   derefString(errorMessage),
+		})
 		// txHash is the final hash carried by this reply (set as reply.TxHash below), so it is safe
 		// to surface here: it lets users locate the tx on-chain when the RPC is flaky, and lets us
 		// filter logs per node by hash. Callers add the user-facing reason (e.g. invalid receiver).
 		return nil, fmt.Errorf("failed to get transaction receipt for tx hash 0x%x: %w", txHash[:], err)
 	}
+	e.observed.record(txObservation{
+		hash:           txHash,
+		txStatus:       txStatusFromReceipt(txReceipt.Status),
+		receiverStatus: receiverStatusFromReply(receiverStatus),
+		blockNumber:    blockNumberFromReceipt(txReceipt.BlockNumber),
+		errorMessage:   derefString(errorMessage),
+	})
 	receiptGasInfo := evmtypes.ReceiptGasInfo{
 		GasUsed:           txReceipt.GasUsed,
 		EffectiveGasPrice: txReceipt.EffectiveGasPrice,
@@ -512,6 +536,7 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 	if txReceipt.Status == 0 {
 		txStatus = evm.TxStatus_TX_STATUS_REVERTED
 	}
+	e.observed.record(txObservation{hash: txHash, fee: transactionFee.TransactionFee, errorMessage: derefString(message)})
 
 	e.lggr.Infow("Successfully fetched tx receipt",
 		"txHash", hex.EncodeToString(txHash[:]),
@@ -527,6 +552,13 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
 	}, nil
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain transaction fee contained

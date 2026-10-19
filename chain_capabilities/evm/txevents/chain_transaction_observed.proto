@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+// Package txevents defines the chain-agnostic transaction event every chain capability emits
+// for the CRE Transactions Viewer. The package name is intentionally free of the chain family so
+// Aptos, Solana and Stellar can emit the same schema; the file lives in the EVM module only until
+// the ChIP domain and schema registration are settled with Data Platform (PLEX-3409).
+package chain_capabilities.txevents.v1;
+
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/txevents;txevents";
+
+// TxStatus is the on-chain outcome of the transaction itself, taken from its receipt.
+enum TxStatus {
+  // The receipt was not available when the event was emitted. Consumers fetch it by hash.
+  TX_STATUS_UNSPECIFIED = 0;
+  TX_STATUS_SUCCESS = 1;
+  TX_STATUS_REVERTED = 2;
+}
+
+// ReceiverStatus is the outcome of the receiver (user) contract call made by the forwarder. A
+// transaction can succeed on chain while the receiver call reverted ("internally reverted").
+enum ReceiverStatus {
+  RECEIVER_STATUS_UNSPECIFIED = 0;
+  RECEIVER_STATUS_SUCCESS = 1;
+  RECEIVER_STATUS_REVERTED = 2;
+}
+
+// ChainTransactionObserved records one transaction a chain capability saw land on chain while
+// serving a WriteReport. One event is emitted per mined transaction, including reverted and
+// duplicate ones. The Blockchain Finality Service dedups events by (chain_selector, tx_hash),
+// fetches the receipt and tracks finality, so the body is kept minimal: no report payload,
+// signatures or request data are included.
+message ChainTransactionObserved {
+  // Attribution, copied from the capability request metadata.
+  string workflow_execution_id = 1;
+  string workflow_id = 2;
+  string workflow_owner = 3;
+  // Workflow step reference that issued the write.
+  string reference_id = 4;
+  uint32 workflow_don_id = 5;
+  // Informational only. Consumers must resolve the organization from the execution record.
+  string org_id = 6;
+
+  // Transaction identity.
+  uint64 chain_selector = 7;
+  // Chain-native encoding. EVM: 0x-prefixed lowercase hex.
+  string tx_hash = 8;
+  string capability_id = 9;
+
+  // Outcome as observed by the emitting node.
+  TxStatus tx_status = 10;
+  ReceiverStatus receiver_status = 11;
+  // Decimal string in the chain's base unit (wei). Empty when unknown.
+  string transaction_fee = 12;
+  // 0 when unknown.
+  uint64 block_number = 13;
+  // User-facing revert reason, when the receiver reverted.
+  string error_message = 14;
+
+  // Emission context.
+  // Unix milliseconds at which the node observed the outcome.
+  int64 observed_at_ms = 15;
+  // True when the emitting node sent this transaction.
+  bool transmitter = 16;
+  // True when this transaction reverted because another node's transmission of the same report
+  // had already landed. Such transactions still cost gas and must be visible to the user.
+  bool duplicate = 17;
+}

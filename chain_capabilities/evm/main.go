@@ -29,6 +29,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/txevents"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -178,7 +179,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
-	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler)
+	txEventsOpt, err := c.txEventsOption(cfg)
+	if err != nil {
+		return err
+	}
+	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler, txEventsOpt)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
@@ -227,6 +232,32 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	return nil
 }
 
+// txEventsOption wires ChainTransactionObserved emission. Events go to ChIP through the LOOP's
+// durable emitter, the same handle the gas meter uses (injected via MeteringConfig rather than
+// the process-global); when the LOOP has none they are dropped and counted.
+func (c *capabilityGRPCService) txEventsOption(cfg *config.Config) (actions.Option, error) {
+	opts := actions.TxEventsOptions{
+		Emitter:         txevents.NopEmitter{},
+		TransmitterOnly: cfg.TxEvents.TransmitterOnly,
+		CapabilityID:    c.id,
+	}
+	if cfg.TxEvents.Enabled {
+		var sink txevents.Sink
+		if rmEmitter := c.meteringCfg.ResourceManagerConfig.Emitter; rmEmitter != nil {
+			sink = rmEmitter
+		} else {
+			c.lggr.Errorw("Transaction events enabled but this LOOP has no durable emitter; events will not be delivered")
+		}
+		emitter, err := txevents.NewDurableEmitter(c.lggr, cfg.TxEvents.Domain, sink)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create tx events emitter: %w", err)
+		}
+		opts.Emitter = emitter
+		c.lggr.Infow("Transaction events enabled", "domain", cfg.TxEvents.Domain, "transmitterOnly", cfg.TxEvents.TransmitterOnly)
+	}
+	return actions.WithTxEvents(opts), nil
+}
+
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
 	var cfg config.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
@@ -268,6 +299,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.MaxUnknownRequestsCacheSize == 0 {
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
+	}
+
+	if cfg.TxEvents.Domain == "" {
+		cfg.TxEvents.Domain = txevents.DefaultDomain
 	}
 
 	// DeltaStage is optional - if not set, transmission scheduling will be disabled
