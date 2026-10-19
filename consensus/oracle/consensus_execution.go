@@ -24,6 +24,7 @@ var (
 	ErrMoreThanOneValidOutcomeForIdenticalConsensus      = errors.New("not identical, multiple values with f+1 occurrences")
 	ErrInsufficientObservations                          = errors.New("insufficient observations to reach consensus")
 	ErrNoSingleValueTypeMeetsThreshold                   = errors.New("no single value type meets the minimum observation threshold")
+	ErrDecimalExponentOutOfRange                         = errors.New("decimal exponent out of range")
 )
 
 // MaxAggregatableExponent bounds the base-10 exponent of an aggregatable value.
@@ -287,6 +288,9 @@ func handleMedianAggregation(
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
+				if exp := val.GetDecimalValue().GetExponent(); exp > MaxAggregatableExponent || exp < -MaxAggregatableExponent {
+					return d, fmt.Errorf("%w: %d", ErrDecimalExponentOutOfRange, exp)
+				}
 				v, err := values.FromProto(val)
 				if err != nil {
 					return d, err

@@ -441,6 +441,17 @@ func Test_handleMedianAggregation(t *testing.T) {
 			f:               1,
 		},
 		{
+			name: "decimal median: extreme exponent is excluded",
+			observations: []*valuespb.Value{
+				valuespb.NewDecimalValue(decimal.New(1, 0)),
+				valuespb.NewDecimalValue(decimal.New(2, 0)),
+				valuespb.NewDecimalValue(decimal.New(3, 0)),
+				{Value: &valuespb.Value_DecimalValue{DecimalValue: &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(1)), Exponent: math.MaxInt32}}},
+			},
+			expectedOutcome: valuespb.NewDecimalValue(decimal.New(2, 0)),
+			f:               1,
+		},
+		{
 			name: "bigint median: basic five values",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewBigInt(big.NewInt(300))), values.Proto(values.NewBigInt(big.NewInt(400))),
