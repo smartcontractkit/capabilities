@@ -1,4 +1,4 @@
 nodejs 20.18.1
 pnpm 10.6.5
 golang 1.27.3
-golangci-lint 2.13.2
+golangci-lint 2.15.0
