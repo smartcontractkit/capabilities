@@ -141,6 +141,20 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 		var cfg Config
 		err := json.Unmarshal([]byte(input), &cfg)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "ledgerBoundsOffset must be 0 (default) or at least 2")
+		require.Contains(t, err.Error(), "ledgerBoundsOffset must be 0 (default) or at least 3")
+	})
+
+	t.Run("ledgerBoundsOffset leaving a single valid ledger", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"chainId":"stellar-testnet",
+			"network":"stellar",
+			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"ledgerBoundsOffset":2
+		}`
+		var cfg Config
+		err := json.Unmarshal([]byte(input), &cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "2 leaves 1 valid ledger(s)")
 	})
 }
