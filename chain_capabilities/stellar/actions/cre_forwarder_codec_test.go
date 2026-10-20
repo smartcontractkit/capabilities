@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"testing"
 
+	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/stretchr/testify/require"
 
@@ -414,5 +415,74 @@ func TestDecodeReportProcessedEvent(t *testing.T) {
 			reportProcessedEventXDR(t, otherTransmissionID, true), testForwarderAddress, transmissionID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "receiver mismatch")
+	})
+}
+
+func TestAddressFromScVal(t *testing.T) {
+	t.Parallel()
+
+	addressVal := func(addr xdr.ScAddress) xdr.ScVal {
+		return xdr.ScVal{Type: xdr.ScValTypeScvAddress, Address: &addr}
+	}
+	contractRaw, err := strkey.Decode(strkey.VersionByteContract, testReceiverAddress)
+	require.NoError(t, err)
+	var contractID xdr.ContractId
+	copy(contractID[:], contractRaw)
+	accountRaw, err := strkey.Decode(strkey.VersionByteAccountID, testNodeAddress)
+	require.NoError(t, err)
+	var accountKey xdr.Uint256
+	copy(accountKey[:], accountRaw)
+
+	t.Run("account address", func(t *testing.T) {
+		t.Parallel()
+		got, ok := addressFromScVal(addressVal(xdr.ScAddress{
+			Type:      xdr.ScAddressTypeScAddressTypeAccount,
+			AccountId: &xdr.AccountId{Type: xdr.PublicKeyTypePublicKeyTypeEd25519, Ed25519: &accountKey},
+		}))
+		require.True(t, ok)
+		require.Equal(t, testNodeAddress, got)
+	})
+
+	t.Run("contract address", func(t *testing.T) {
+		t.Parallel()
+		got, ok := addressFromScVal(addressVal(xdr.ScAddress{Type: xdr.ScAddressTypeScAddressTypeContract, ContractId: &contractID}))
+		require.True(t, ok)
+		require.Equal(t, testReceiverAddress, got)
+	})
+
+	t.Run("muxed contract address renders the W-address", func(t *testing.T) {
+		t.Parallel()
+		var want strkey.MuxedContract
+		want.SetID(42)
+		require.NoError(t, want.SetContractID(testReceiverAddress))
+		wantAddr, err := want.Address()
+		require.NoError(t, err)
+
+		got, ok := addressFromScVal(addressVal(xdr.ScAddress{
+			Type:          xdr.ScAddressTypeScAddressTypeMuxedContract,
+			MuxedContract: &xdr.MuxedContract{Id: 42, ContractId: contractID},
+		}))
+		require.True(t, ok)
+		require.Equal(t, wantAddr, got)
+		require.Equal(t, byte('W'), got[0])
+
+		decoded, err := strkey.DecodeMuxedContract(got)
+		require.NoError(t, err)
+		require.Equal(t, uint64(42), decoded.ID())
+		require.Equal(t, [32]byte(contractID), decoded.Contract())
+	})
+
+	t.Run("nil muxed contract is not an address", func(t *testing.T) {
+		t.Parallel()
+		_, ok := addressFromScVal(addressVal(xdr.ScAddress{Type: xdr.ScAddressTypeScAddressTypeMuxedContract}))
+		require.False(t, ok)
+	})
+
+	t.Run("other address types and non-address values are rejected", func(t *testing.T) {
+		t.Parallel()
+		_, ok := addressFromScVal(addressVal(xdr.ScAddress{Type: xdr.ScAddressTypeScAddressTypeLiquidityPool, LiquidityPoolId: &xdr.PoolId{}}))
+		require.False(t, ok)
+		_, ok = addressFromScVal(xdr.ScVal{Type: xdr.ScValTypeScvVoid})
+		require.False(t, ok)
 	})
 }
