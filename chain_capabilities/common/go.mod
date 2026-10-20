@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/jpillora/backoff v1.0.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261006175240-29594528f464
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261020150550-9da3322e3af0
 	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
 	github.com/stretchr/testify v1.12.1
@@ -53,7 +53,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.104 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20261005132539-b7d63d5fd549 // indirect
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260804191526-b7a850ae7648 // indirect
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261013212015-e622e8b83b6b // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
