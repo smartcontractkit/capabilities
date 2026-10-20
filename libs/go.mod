@@ -8,8 +8,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/hashicorp/go-plugin v1.8.0
+	github.com/jonboulle/clockwork v0.5.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/samber/do/v2 v2.1.0
+	github.com/samber/go-type-to-string v1.8.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261005132539-b7d63d5fd549
 	github.com/smartcontractkit/chainlink-common/x/config v0.0.0-20261014172408-e5560b3eeb33
@@ -66,7 +68,6 @@ require (
 	github.com/jhump/protoreflect v1.18.1 // indirect
 	github.com/jhump/protoreflect/v2 v2.0.0-beta.2 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
-	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
@@ -86,7 +87,6 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
-	github.com/samber/go-type-to-string v1.8.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.104 // indirect

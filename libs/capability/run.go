@@ -3,10 +3,12 @@ package capability
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"github.com/samber/do/v2"
@@ -55,35 +57,67 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injecto
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	if _, err := cfg.bind(root); err != nil {
+	b, err := cfg.bind(root)
+	if err != nil {
 		return err
 	}
 
-	root.AddCommand(&cobra.Command{
+	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the capability",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO: pass in constructors here for our runnable/embeddable dependencies?
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor)
+			// Cloning the RunInjector allows re-running which enables testing.
+			i := instance{lggr: lggr, injector: RunInjector.Clone(), capabilities: cfg.capabilities}
+			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, i)
 		},
-	})
+	}
 
-	// TODO: embed command
-	root.AddCommand(&cobra.Command{
-		Use:   "embed",
-		Short: "Embed the capability",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO: pass in constructors here for our runnable/embeddable dependencies?
-			// Something else here
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor)
+	embedCmd := &cobra.Command{
+		Use:   "embed <instances>",
+		Short: "Run instances of the capability in this process, with no node behind them",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			instances, err := embeddedInstances(lggr, cfg.capabilities, args[0])
+			if err != nil {
+				return err
+			}
+			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, instances...)
 		},
-	})
+	}
+
+	if err := errors.Join(RunInjector.RegisterConfig(runCmd, b), EmbedInjector.RegisterConfig(embedCmd, b)); err != nil {
+		return err
+	}
+	root.AddCommand(runCmd, embedCmd)
 
 	// Wire up SIGTERM + SIGINT to the context
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	return root.ExecuteContext(ctx)
+}
+
+func embeddedInstances(lggr logger.Logger, capCfg CapabilitiesConfig, arg string) ([]instance, error) {
+	total, err := strconv.Atoi(arg)
+	if err != nil || total < 1 {
+		return nil, fmt.Errorf("instances must be a positive integer, got %q", arg)
+	}
+
+	capCfg.ProxyURL = ""
+	instances := make([]instance, total)
+	for id := range instances {
+		injector := EmbedInjector.Clone()
+		if err := injector.ProvideValue(EmbeddedInfo{InstanceID: id, TotalInstances: total}); err != nil {
+			return nil, err
+		}
+		instances[id] = instance{
+			lggr:         logger.Named(lggr, fmt.Sprintf("Instance%d", id)),
+			injector:     injector,
+			capabilities: capCfg,
+		}
+	}
+	return instances, nil
 }
 
 type Option func(*config)
