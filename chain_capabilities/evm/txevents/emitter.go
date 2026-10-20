@@ -62,11 +62,13 @@ type NopEmitter struct{}
 // Emit implements Emitter.
 func (NopEmitter) Emit(context.Context, *ChainTransactionObserved) error { return nil }
 
-// IdempotencyKey identifies an observed outcome independently of the node that observed it, so
-// that every node emitting the same transaction with the same status produces the same key and
-// ChIP or the Blockchain Finality Service can dedup on it.
+// IdempotencyKey identifies a transaction at a detail level independently of the node that
+// observed it, so that every node that learnt the same about a transaction produces the same key
+// and ChIP or the Blockchain Finality Service can dedup on it. A node whose receipt lookup failed
+// produces a different key than its peers, so its basic event does not shadow their receipt
+// detail; the finality service dedups by (chain selector, hash) regardless.
 func IdempotencyKey(ev *ChainTransactionObserved) string {
-	return fmt.Sprintf("%d:%s:%s", ev.GetChainSelector(), ev.GetTxHash(), ev.GetTxStatus().String())
+	return fmt.Sprintf("%d:%s:%s", ev.GetChainSelector(), ev.GetTxHash(), ev.GetDetail().String())
 }
 
 // Subject identifies the transaction itself and is set as the CloudEvent subject.
@@ -79,6 +81,7 @@ func LogKVs(ev *ChainTransactionObserved) []any {
 	return []any{
 		"txHash", ev.GetTxHash(),
 		"chainSelector", ev.GetChainSelector(),
+		"detail", ev.GetDetail().String(),
 		"txStatus", ev.GetTxStatus().String(),
 		"receiverStatus", ev.GetReceiverStatus().String(),
 		"transmitter", ev.GetTransmitter(),
@@ -184,6 +187,7 @@ func (m *emitterMetrics) recordError(ctx context.Context, ev *ChainTransactionOb
 func eventAttrs(ev *ChainTransactionObserved) []attribute.KeyValue {
 	return []attribute.KeyValue{
 		attribute.String("chain_selector", strconv.FormatUint(ev.GetChainSelector(), 10)),
+		attribute.String("detail", ev.GetDetail().String()),
 		attribute.String("tx_status", ev.GetTxStatus().String()),
 		attribute.String("receiver_status", ev.GetReceiverStatus().String()),
 		attribute.Bool("transmitter", ev.GetTransmitter()),

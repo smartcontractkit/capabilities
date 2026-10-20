@@ -8,9 +8,23 @@ package chain_capabilities.txevents.v1;
 
 option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/txevents;txevents";
 
-// TxStatus is the on-chain outcome of the transaction itself, taken from its receipt.
+// TxDetail says how much the emitting node learnt about the transaction. A node emits exactly
+// one event per transaction it saw land while serving a request: RECEIPT once it resolved the
+// receipt, BASIC otherwise (the receipt lookup failed, the request failed after the hash was
+// known, or the transaction is the node's own duplicate, whose receipt is not fetched).
+enum TxDetail {
+  TX_DETAIL_UNSPECIFIED = 0;
+  // Hash, attribution and the statuses known from the transaction manager or the forwarder.
+  // Receipt-derived fields (gas, fee) are not set.
+  TX_DETAIL_BASIC = 1;
+  // Receipt-derived status, gas used, effective gas price, fee and block number are set.
+  TX_DETAIL_RECEIPT = 2;
+}
+
+// TxStatus is the on-chain outcome of the transaction itself, as reported by the transaction
+// manager or the forwarder log at BASIC detail and by the receipt at RECEIPT detail.
 enum TxStatus {
-  // The receipt was not available when the event was emitted. Consumers fetch it by hash.
+  // Not known when the event was emitted. Consumers fetch the receipt by hash.
   TX_STATUS_UNSPECIFIED = 0;
   TX_STATUS_SUCCESS = 1;
   TX_STATUS_REVERTED = 2;
@@ -25,10 +39,10 @@ enum ReceiverStatus {
 }
 
 // ChainTransactionObserved records one transaction a chain capability saw land on chain while
-// serving a WriteReport. One event is emitted per mined transaction, including reverted and
-// duplicate ones. The Blockchain Finality Service dedups events by (chain_selector, tx_hash),
-// fetches the receipt and tracks finality, so the body is kept minimal: no report payload,
-// signatures or request data are included.
+// serving a WriteReport, including reverted and duplicate ones. Each node emits it once per
+// transaction, see TxDetail. The Blockchain Finality Service dedups events by
+// (chain_selector, tx_hash), fetches the receipt and tracks finality, so the body is kept
+// minimal: no report payload, signatures or request data are included.
 message ChainTransactionObserved {
   // Attribution, copied from the capability request metadata.
   string workflow_execution_id = 1;
@@ -49,7 +63,8 @@ message ChainTransactionObserved {
   // Outcome as observed by the emitting node.
   TxStatus tx_status = 10;
   ReceiverStatus receiver_status = 11;
-  // Decimal string in the chain's base unit (wei). Empty when unknown.
+  // Total cost in the chain's base unit (wei) as a decimal string, including the L1 data fee on
+  // rollups when the capability accounts for it. Empty when unknown.
   string transaction_fee = 12;
   // 0 when unknown.
   uint64 block_number = 13;
@@ -57,11 +72,18 @@ message ChainTransactionObserved {
   string error_message = 14;
 
   // Emission context.
-  // Unix milliseconds at which the node observed the outcome.
+  // Unix milliseconds at which the node emitted the event.
   int64 observed_at_ms = 15;
   // True when the emitting node sent this transaction.
   bool transmitter = 16;
   // True when this transaction reverted because another node's transmission of the same report
   // had already landed. Such transactions still cost gas and must be visible to the user.
   bool duplicate = 17;
+
+  // How much the node learnt about the transaction; see TxDetail.
+  TxDetail detail = 18;
+  // Gas spent, from the receipt. 0 when unknown.
+  uint64 gas_used = 19;
+  // Price paid per gas unit in wei as a decimal string, from the receipt. Empty when unknown.
+  string effective_gas_price = 20;
 }

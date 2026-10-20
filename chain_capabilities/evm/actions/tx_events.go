@@ -27,29 +27,96 @@ type TxEventsOptions struct {
 	CapabilityID string
 }
 
-// txObservation is one transaction a WriteReport request saw on chain.
+func (o TxEventsOptions) enabled() bool {
+	if o.Emitter == nil {
+		return false
+	}
+	_, nop := o.Emitter.(txevents.NopEmitter)
+	return !nop
+}
+
+// txObservation is what a WriteReport request knows about one transaction.
 type txObservation struct {
-	hash           evmtypes.Hash
-	txStatus       txevents.TxStatus
-	receiverStatus txevents.ReceiverStatus
-	fee            *big.Int
-	blockNumber    uint64
-	errorMessage   string
-	// transmitter is true when this node sent the transaction.
-	transmitter bool
+	hash              evmtypes.Hash
+	txStatus          txevents.TxStatus
+	receiverStatus    txevents.ReceiverStatus
+	gasUsed           uint64
+	effectiveGasPrice *big.Int
+	fee               *big.Int
+	blockNumber       uint64
+	errorMessage      string
 	// duplicate is true when this node's transaction reverted because another node's
 	// transmission of the same report had already landed.
 	duplicate bool
 }
 
-// txObservations accumulates the observations of one request, one entry per transaction hash,
-// in the order the hashes were first seen.
-type txObservations struct {
-	list []*txObservation
+// merge fills the fields unset in o from in and keeps the duplicate flag once set.
+func (o *txObservation) merge(in txObservation) {
+	if o.txStatus == txevents.TxStatus_TX_STATUS_UNSPECIFIED {
+		o.txStatus = in.txStatus
+	}
+	if o.receiverStatus == txevents.ReceiverStatus_RECEIVER_STATUS_UNSPECIFIED {
+		o.receiverStatus = in.receiverStatus
+	}
+	if o.gasUsed == 0 {
+		o.gasUsed = in.gasUsed
+	}
+	if o.effectiveGasPrice == nil {
+		o.effectiveGasPrice = in.effectiveGasPrice
+	}
+	if o.fee == nil {
+		o.fee = in.fee
+	}
+	if o.blockNumber == 0 {
+		o.blockNumber = in.blockNumber
+	}
+	if o.errorMessage == "" {
+		o.errorMessage = in.errorMessage
+	}
+	o.duplicate = o.duplicate || in.duplicate
 }
 
-func (o *txObservations) find(hash evmtypes.Hash) *txObservation {
-	for _, obs := range o.list {
+// txEventReporter emits exactly one ChainTransactionObserved per transaction a WriteReport
+// request saw on chain. Transactions are recorded the moment their hash is known (record,
+// ownTransaction). The event carries receipt detail when the receipt is resolved (resolved);
+// otherwise it carries the basic information recorded so far and is emitted when the node's own
+// transaction turns out to be a duplicate (duplicateOf) or when the request ends (flush).
+// Emission never changes the outcome of the write: failures are counted by the emitter and
+// logged here. A nil reporter is a no-op.
+type txEventReporter struct {
+	emitter         txevents.Emitter
+	transmitterOnly bool
+	capabilityID    string
+	chainSelector   uint64
+	metadata        capabilities.RequestMetadata
+	lggr            logger.SugaredLogger
+	now             func() time.Time
+
+	// ownTx is the transaction this node sent in a new transmission attempt, nil otherwise.
+	ownTx *evmtypes.TransactionResult
+	// known lists the transactions recorded so far, in first-seen order.
+	known   []*txObservation
+	emitted map[evmtypes.Hash]struct{}
+}
+
+func (e *EVM) newTxEventReporter(lggr logger.SugaredLogger, md capabilities.RequestMetadata) *txEventReporter {
+	if !e.txEvents.enabled() {
+		return nil
+	}
+	return &txEventReporter{
+		emitter:         e.txEvents.Emitter,
+		transmitterOnly: e.txEvents.TransmitterOnly,
+		capabilityID:    e.txEvents.CapabilityID,
+		chainSelector:   e.chainSelector,
+		metadata:        md,
+		lggr:            lggr,
+		now:             time.Now,
+		emitted:         map[evmtypes.Hash]struct{}{},
+	}
+}
+
+func (r *txEventReporter) find(hash evmtypes.Hash) *txObservation {
+	for _, obs := range r.known {
 		if obs.hash == hash {
 			return obs
 		}
@@ -57,50 +124,106 @@ func (o *txObservations) find(hash evmtypes.Hash) *txObservation {
 	return nil
 }
 
-// record merges obs into the entry for its hash: unset fields are filled in and flags are OR'd,
-// so a hash-only observation taken before the receipt lookup is enriched by a later one.
-func (o *txObservations) record(obs txObservation) {
-	cur := o.find(obs.hash)
-	if cur == nil {
-		c := obs
-		o.list = append(o.list, &c)
+// record merges obs into the entry for its hash, creating the entry on first sight. Nothing is
+// emitted: the transaction is reported once its receipt is resolved or when the request ends.
+func (r *txEventReporter) record(obs txObservation) {
+	if r == nil || obs.hash == (evmtypes.Hash{}) {
 		return
 	}
-	if cur.txStatus == txevents.TxStatus_TX_STATUS_UNSPECIFIED {
-		cur.txStatus = obs.txStatus
+	if cur := r.find(obs.hash); cur != nil {
+		cur.merge(obs)
+		return
 	}
-	if cur.receiverStatus == txevents.ReceiverStatus_RECEIVER_STATUS_UNSPECIFIED {
-		cur.receiverStatus = obs.receiverStatus
-	}
-	if cur.fee == nil {
-		cur.fee = obs.fee
-	}
-	if cur.blockNumber == 0 {
-		cur.blockNumber = obs.blockNumber
-	}
-	if cur.errorMessage == "" {
-		cur.errorMessage = obs.errorMessage
-	}
-	cur.transmitter = cur.transmitter || obs.transmitter
-	cur.duplicate = cur.duplicate || obs.duplicate
+	c := obs
+	r.known = append(r.known, &c)
 }
 
-// recordOwnTx records the transaction this node sent in a new transmission attempt. When the
-// reply was built from a different transaction, ours reverted as a duplicate of a transmission
-// that had already landed; it still cost gas and is recorded as such. When no reply transaction
-// is known (the request failed after sending), the transaction is recorded with the status the
-// transaction manager reported and no duplicate flag.
-func (o *txObservations) recordOwnTx(result *evmtypes.TransactionResult) {
-	if result == nil || result.TxStatus == evmtypes.TxFatal || result.TxHash == (evmtypes.Hash{}) {
+// ownTransaction records the transaction this node just sent with the status the transaction
+// manager reported. The manager only returns once the transaction is mined, so this is the
+// earliest the hash exists. Fatal results carry no usable hash.
+func (r *txEventReporter) ownTransaction(result *evmtypes.TransactionResult) {
+	if r == nil || result == nil || result.TxStatus == evmtypes.TxFatal || result.TxHash == (evmtypes.Hash{}) {
 		return
 	}
-	obs := txObservation{
-		hash:        result.TxHash,
-		txStatus:    txStatusFromTxmgr(result.TxStatus),
-		transmitter: true,
-		duplicate:   len(o.list) > 0 && o.find(result.TxHash) == nil,
+	r.ownTx = result
+	r.record(txObservation{hash: result.TxHash, txStatus: txStatusFromTxmgr(result.TxStatus)})
+}
+
+// resolved emits the transaction with receipt detail, completed with whatever was recorded
+// about it before.
+func (r *txEventReporter) resolved(ctx context.Context, obs txObservation) {
+	if r == nil {
+		return
 	}
-	o.record(obs)
+	if cur := r.find(obs.hash); cur != nil {
+		obs.merge(*cur)
+	}
+	r.emit(ctx, txevents.TxDetail_TX_DETAIL_RECEIPT, obs)
+}
+
+// duplicateOf emits this node's own transaction as a duplicate when the transmission that landed
+// is a different transaction: ours reverted because the report had already been delivered, yet it
+// cost gas and must be visible to the user. Its receipt is not fetched, so the detail is basic.
+func (r *txEventReporter) duplicateOf(ctx context.Context, landed evmtypes.Hash) {
+	if r == nil || r.ownTx == nil || r.ownTx.TxHash == landed {
+		return
+	}
+	r.record(txObservation{hash: r.ownTx.TxHash, duplicate: true})
+	r.emit(ctx, txevents.TxDetail_TX_DETAIL_BASIC, *r.find(r.ownTx.TxHash))
+}
+
+// flush emits, with basic detail, every recorded transaction not emitted yet. It runs when the
+// request ends, so a transaction whose receipt lookup failed, or that was sent by a request that
+// failed afterwards, is still reported.
+func (r *txEventReporter) flush(ctx context.Context) {
+	if r == nil {
+		return
+	}
+	for _, obs := range r.known {
+		r.emit(ctx, txevents.TxDetail_TX_DETAIL_BASIC, *obs)
+	}
+}
+
+func (r *txEventReporter) isOwn(hash evmtypes.Hash) bool {
+	return r.ownTx != nil && r.ownTx.TxHash == hash
+}
+
+func (r *txEventReporter) emit(ctx context.Context, detail txevents.TxDetail, obs txObservation) {
+	if r == nil || obs.hash == (evmtypes.Hash{}) {
+		return
+	}
+	transmitter := r.isOwn(obs.hash)
+	if r.transmitterOnly && !transmitter {
+		return
+	}
+	if _, done := r.emitted[obs.hash]; done {
+		return
+	}
+	r.emitted[obs.hash] = struct{}{}
+
+	ev := buildTxEvent(detail, obs, transmitter, r.metadata, r.chainSelector, r.capabilityID, r.now())
+	// The request context may already be done (the write failed or timed out); the event must
+	// still go out, bounded by the emitter's own timeout.
+	if err := r.emitter.Emit(context.WithoutCancel(ctx), ev); err != nil {
+		if errors.Is(err, txevents.ErrEmitterUnavailable) {
+			return // logged once per process by the emitter
+		}
+		r.lggr.Errorw("Failed to emit ChainTransactionObserved", append(txevents.LogKVs(ev), "error", err.Error())...)
+	}
+}
+
+// observeLandedTx records a transaction found through the forwarder's ReportProcessed log, which
+// is the earliest point a node that did not send it learns its hash. Such a log can only exist
+// for a transaction that succeeded on chain, so the status is known before the receipt is
+// fetched; the receiver outcome comes from the forwarder state.
+func (e *WriteReport) observeLandedTx(retriever *TxHashRetriever, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage string) {
+	e.txReporter.record(txObservation{
+		hash:           txHash,
+		txStatus:       txevents.TxStatus_TX_STATUS_SUCCESS,
+		receiverStatus: receiverStatusFromReply(receiverStatus),
+		blockNumber:    retriever.BlockNumber(txHash),
+		errorMessage:   errorMessage,
+	})
 }
 
 func txStatusFromTxmgr(s evmtypes.TransactionStatus) txevents.TxStatus {
@@ -144,8 +267,15 @@ func formatTxHash(h evmtypes.Hash) string {
 	return "0x" + hex.EncodeToString(h[:])
 }
 
-func buildTxEvent(obs *txObservation, md capabilities.RequestMetadata, chainSelector uint64, capabilityID string, observedAt time.Time) *txevents.ChainTransactionObserved {
-	ev := &txevents.ChainTransactionObserved{
+func bigIntString(v *big.Int) string {
+	if v == nil {
+		return ""
+	}
+	return v.String()
+}
+
+func buildTxEvent(detail txevents.TxDetail, obs txObservation, transmitter bool, md capabilities.RequestMetadata, chainSelector uint64, capabilityID string, at time.Time) *txevents.ChainTransactionObserved {
+	return &txevents.ChainTransactionObserved{
 		WorkflowExecutionId: md.WorkflowExecutionID,
 		WorkflowId:          md.WorkflowID,
 		WorkflowOwner:       md.WorkflowOwner,
@@ -157,45 +287,17 @@ func buildTxEvent(obs *txObservation, md capabilities.RequestMetadata, chainSele
 		TxHash:        formatTxHash(obs.hash),
 		CapabilityId:  capabilityID,
 
-		TxStatus:       obs.txStatus,
-		ReceiverStatus: obs.receiverStatus,
-		BlockNumber:    obs.blockNumber,
-		ErrorMessage:   obs.errorMessage,
+		Detail:            detail,
+		TxStatus:          obs.txStatus,
+		ReceiverStatus:    obs.receiverStatus,
+		TransactionFee:    bigIntString(obs.fee),
+		GasUsed:           obs.gasUsed,
+		EffectiveGasPrice: bigIntString(obs.effectiveGasPrice),
+		BlockNumber:       obs.blockNumber,
+		ErrorMessage:      obs.errorMessage,
 
-		ObservedAtMs: observedAt.UnixMilli(),
-		Transmitter:  obs.transmitter,
+		ObservedAtMs: at.UnixMilli(),
+		Transmitter:  transmitter,
 		Duplicate:    obs.duplicate,
-	}
-	if obs.fee != nil {
-		ev.TransactionFee = obs.fee.String()
-	}
-	return ev
-}
-
-// emitTxEvents publishes one ChainTransactionObserved per observed transaction. It runs after
-// the WriteReport outcome is decided, regardless of whether the request succeeded, and never
-// changes that outcome: failures are counted by the emitter and logged here. The request context
-// may already be done when the request failed, so emission uses a detached context bounded by
-// the emitter's own timeout.
-func (e *EVM) emitTxEvents(ctx context.Context, lggr logger.SugaredLogger, md capabilities.RequestMetadata, observed []*txObservation) {
-	if e.txEvents.Emitter == nil || len(observed) == 0 {
-		return
-	}
-	if _, nop := e.txEvents.Emitter.(txevents.NopEmitter); nop {
-		return
-	}
-	emitCtx := context.WithoutCancel(ctx)
-	now := time.Now()
-	for _, obs := range observed {
-		if e.txEvents.TransmitterOnly && !obs.transmitter {
-			continue
-		}
-		ev := buildTxEvent(obs, md, e.chainSelector, e.txEvents.CapabilityID, now)
-		if err := e.txEvents.Emitter.Emit(emitCtx, ev); err != nil {
-			if errors.Is(err, txevents.ErrEmitterUnavailable) {
-				continue // logged once per process by the emitter
-			}
-			lggr.Errorw("Failed to emit ChainTransactionObserved", append(txevents.LogKVs(ev), "error", err.Error())...)
-		}
 	}
 }

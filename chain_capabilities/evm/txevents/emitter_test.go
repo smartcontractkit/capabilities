@@ -16,6 +16,7 @@ func testEvent() *ChainTransactionObserved {
 		WorkflowExecutionId: "exec-1",
 		ChainSelector:       16015286601757825753,
 		TxHash:              "0xabc",
+		Detail:              TxDetail_TX_DETAIL_RECEIPT,
 		TxStatus:            TxStatus_TX_STATUS_REVERTED,
 		ReceiverStatus:      ReceiverStatus_RECEIVER_STATUS_UNSPECIFIED,
 		Transmitter:         true,
@@ -29,15 +30,22 @@ func TestEntityType(t *testing.T) {
 
 func TestIdempotencyKeyAndSubject(t *testing.T) {
 	ev := testEvent()
-	require.Equal(t, "16015286601757825753:0xabc:TX_STATUS_REVERTED", IdempotencyKey(ev))
+	require.Equal(t, "16015286601757825753:0xabc:TX_DETAIL_RECEIPT", IdempotencyKey(ev))
 	require.Equal(t, "16015286601757825753:0xabc", Subject(ev))
 
-	// The key does not depend on who observed the transaction.
+	// The key does not depend on who observed the transaction or on the values it reported.
 	other := proto.Clone(ev).(*ChainTransactionObserved)
 	other.Transmitter = false
 	other.Duplicate = false
 	other.ObservedAtMs = 42
+	other.TxStatus = TxStatus_TX_STATUS_SUCCESS
+	other.TransactionFee = "2000"
 	require.Equal(t, IdempotencyKey(ev), IdempotencyKey(other))
+
+	// A basic event from a node that could not resolve the receipt is a distinct delivery.
+	other.Detail = TxDetail_TX_DETAIL_BASIC
+	require.NotEqual(t, IdempotencyKey(ev), IdempotencyKey(other))
+	require.Equal(t, Subject(ev), Subject(other))
 }
 
 type sinkFunc func(ctx context.Context, body []byte, attrKVs ...any) error

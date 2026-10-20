@@ -26,11 +26,68 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// TxStatus is the on-chain outcome of the transaction itself, taken from its receipt.
+// TxDetail says how much the emitting node learnt about the transaction. A node emits exactly
+// one event per transaction it saw land while serving a request: RECEIPT once it resolved the
+// receipt, BASIC otherwise (the receipt lookup failed, the request failed after the hash was
+// known, or the transaction is the node's own duplicate, whose receipt is not fetched).
+type TxDetail int32
+
+const (
+	TxDetail_TX_DETAIL_UNSPECIFIED TxDetail = 0
+	// Hash, attribution and the statuses known from the transaction manager or the forwarder.
+	// Receipt-derived fields (gas, fee) are not set.
+	TxDetail_TX_DETAIL_BASIC TxDetail = 1
+	// Receipt-derived status, gas used, effective gas price, fee and block number are set.
+	TxDetail_TX_DETAIL_RECEIPT TxDetail = 2
+)
+
+// Enum value maps for TxDetail.
+var (
+	TxDetail_name = map[int32]string{
+		0: "TX_DETAIL_UNSPECIFIED",
+		1: "TX_DETAIL_BASIC",
+		2: "TX_DETAIL_RECEIPT",
+	}
+	TxDetail_value = map[string]int32{
+		"TX_DETAIL_UNSPECIFIED": 0,
+		"TX_DETAIL_BASIC":       1,
+		"TX_DETAIL_RECEIPT":     2,
+	}
+)
+
+func (x TxDetail) Enum() *TxDetail {
+	p := new(TxDetail)
+	*p = x
+	return p
+}
+
+func (x TxDetail) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TxDetail) Descriptor() protoreflect.EnumDescriptor {
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0].Descriptor()
+}
+
+func (TxDetail) Type() protoreflect.EnumType {
+	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0]
+}
+
+func (x TxDetail) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TxDetail.Descriptor instead.
+func (TxDetail) EnumDescriptor() ([]byte, []int) {
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{0}
+}
+
+// TxStatus is the on-chain outcome of the transaction itself, as reported by the transaction
+// manager or the forwarder log at BASIC detail and by the receipt at RECEIPT detail.
 type TxStatus int32
 
 const (
-	// The receipt was not available when the event was emitted. Consumers fetch it by hash.
+	// Not known when the event was emitted. Consumers fetch the receipt by hash.
 	TxStatus_TX_STATUS_UNSPECIFIED TxStatus = 0
 	TxStatus_TX_STATUS_SUCCESS     TxStatus = 1
 	TxStatus_TX_STATUS_REVERTED    TxStatus = 2
@@ -61,11 +118,11 @@ func (x TxStatus) String() string {
 }
 
 func (TxStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0].Descriptor()
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[1].Descriptor()
 }
 
 func (TxStatus) Type() protoreflect.EnumType {
-	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0]
+	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[1]
 }
 
 func (x TxStatus) Number() protoreflect.EnumNumber {
@@ -74,7 +131,7 @@ func (x TxStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TxStatus.Descriptor instead.
 func (TxStatus) EnumDescriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{0}
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{1}
 }
 
 // ReceiverStatus is the outcome of the receiver (user) contract call made by the forwarder. A
@@ -112,11 +169,11 @@ func (x ReceiverStatus) String() string {
 }
 
 func (ReceiverStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[1].Descriptor()
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[2].Descriptor()
 }
 
 func (ReceiverStatus) Type() protoreflect.EnumType {
-	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[1]
+	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[2]
 }
 
 func (x ReceiverStatus) Number() protoreflect.EnumNumber {
@@ -125,14 +182,14 @@ func (x ReceiverStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ReceiverStatus.Descriptor instead.
 func (ReceiverStatus) EnumDescriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{1}
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{2}
 }
 
 // ChainTransactionObserved records one transaction a chain capability saw land on chain while
-// serving a WriteReport. One event is emitted per mined transaction, including reverted and
-// duplicate ones. The Blockchain Finality Service dedups events by (chain_selector, tx_hash),
-// fetches the receipt and tracks finality, so the body is kept minimal: no report payload,
-// signatures or request data are included.
+// serving a WriteReport, including reverted and duplicate ones. Each node emits it once per
+// transaction, see TxDetail. The Blockchain Finality Service dedups events by
+// (chain_selector, tx_hash), fetches the receipt and tracks finality, so the body is kept
+// minimal: no report payload, signatures or request data are included.
 type ChainTransactionObserved struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Attribution, copied from the capability request metadata.
@@ -152,22 +209,29 @@ type ChainTransactionObserved struct {
 	// Outcome as observed by the emitting node.
 	TxStatus       TxStatus       `protobuf:"varint,10,opt,name=tx_status,json=txStatus,proto3,enum=chain_capabilities.txevents.v1.TxStatus" json:"tx_status,omitempty"`
 	ReceiverStatus ReceiverStatus `protobuf:"varint,11,opt,name=receiver_status,json=receiverStatus,proto3,enum=chain_capabilities.txevents.v1.ReceiverStatus" json:"receiver_status,omitempty"`
-	// Decimal string in the chain's base unit (wei). Empty when unknown.
+	// Total cost in the chain's base unit (wei) as a decimal string, including the L1 data fee on
+	// rollups when the capability accounts for it. Empty when unknown.
 	TransactionFee string `protobuf:"bytes,12,opt,name=transaction_fee,json=transactionFee,proto3" json:"transaction_fee,omitempty"`
 	// 0 when unknown.
 	BlockNumber uint64 `protobuf:"varint,13,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
 	// User-facing revert reason, when the receiver reverted.
 	ErrorMessage string `protobuf:"bytes,14,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	// Emission context.
-	// Unix milliseconds at which the node observed the outcome.
+	// Unix milliseconds at which the node emitted the event.
 	ObservedAtMs int64 `protobuf:"varint,15,opt,name=observed_at_ms,json=observedAtMs,proto3" json:"observed_at_ms,omitempty"`
 	// True when the emitting node sent this transaction.
 	Transmitter bool `protobuf:"varint,16,opt,name=transmitter,proto3" json:"transmitter,omitempty"`
 	// True when this transaction reverted because another node's transmission of the same report
 	// had already landed. Such transactions still cost gas and must be visible to the user.
-	Duplicate     bool `protobuf:"varint,17,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Duplicate bool `protobuf:"varint,17,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
+	// How much the node learnt about the transaction; see TxDetail.
+	Detail TxDetail `protobuf:"varint,18,opt,name=detail,proto3,enum=chain_capabilities.txevents.v1.TxDetail" json:"detail,omitempty"`
+	// Gas spent, from the receipt. 0 when unknown.
+	GasUsed uint64 `protobuf:"varint,19,opt,name=gas_used,json=gasUsed,proto3" json:"gas_used,omitempty"`
+	// Price paid per gas unit in wei as a decimal string, from the receipt. Empty when unknown.
+	EffectiveGasPrice string `protobuf:"bytes,20,opt,name=effective_gas_price,json=effectiveGasPrice,proto3" json:"effective_gas_price,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ChainTransactionObserved) Reset() {
@@ -319,11 +383,32 @@ func (x *ChainTransactionObserved) GetDuplicate() bool {
 	return false
 }
 
+func (x *ChainTransactionObserved) GetDetail() TxDetail {
+	if x != nil {
+		return x.Detail
+	}
+	return TxDetail_TX_DETAIL_UNSPECIFIED
+}
+
+func (x *ChainTransactionObserved) GetGasUsed() uint64 {
+	if x != nil {
+		return x.GasUsed
+	}
+	return 0
+}
+
+func (x *ChainTransactionObserved) GetEffectiveGasPrice() string {
+	if x != nil {
+		return x.EffectiveGasPrice
+	}
+	return ""
+}
+
 var File_chain_capabilities_evm_txevents_chain_transaction_observed_proto protoreflect.FileDescriptor
 
 const file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDesc = "" +
 	"\n" +
-	"@chain_capabilities/evm/txevents/chain_transaction_observed.proto\x12\x1echain_capabilities.txevents.v1\"\xd4\x05\n" +
+	"@chain_capabilities/evm/txevents/chain_transaction_observed.proto\x12\x1echain_capabilities.txevents.v1\"\xe1\x06\n" +
 	"\x18ChainTransactionObserved\x122\n" +
 	"\x15workflow_execution_id\x18\x01 \x01(\tR\x13workflowExecutionId\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -343,7 +428,14 @@ const file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawD
 	"\rerror_message\x18\x0e \x01(\tR\ferrorMessage\x12$\n" +
 	"\x0eobserved_at_ms\x18\x0f \x01(\x03R\fobservedAtMs\x12 \n" +
 	"\vtransmitter\x18\x10 \x01(\bR\vtransmitter\x12\x1c\n" +
-	"\tduplicate\x18\x11 \x01(\bR\tduplicate*T\n" +
+	"\tduplicate\x18\x11 \x01(\bR\tduplicate\x12@\n" +
+	"\x06detail\x18\x12 \x01(\x0e2(.chain_capabilities.txevents.v1.TxDetailR\x06detail\x12\x19\n" +
+	"\bgas_used\x18\x13 \x01(\x04R\agasUsed\x12.\n" +
+	"\x13effective_gas_price\x18\x14 \x01(\tR\x11effectiveGasPrice*Q\n" +
+	"\bTxDetail\x12\x19\n" +
+	"\x15TX_DETAIL_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fTX_DETAIL_BASIC\x10\x01\x12\x15\n" +
+	"\x11TX_DETAIL_RECEIPT\x10\x02*T\n" +
 	"\bTxStatus\x12\x19\n" +
 	"\x15TX_STATUS_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11TX_STATUS_SUCCESS\x10\x01\x12\x16\n" +
@@ -365,21 +457,23 @@ func file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDe
 	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescData
 }
 
-var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_goTypes = []any{
-	(TxStatus)(0),                    // 0: chain_capabilities.txevents.v1.TxStatus
-	(ReceiverStatus)(0),              // 1: chain_capabilities.txevents.v1.ReceiverStatus
-	(*ChainTransactionObserved)(nil), // 2: chain_capabilities.txevents.v1.ChainTransactionObserved
+	(TxDetail)(0),                    // 0: chain_capabilities.txevents.v1.TxDetail
+	(TxStatus)(0),                    // 1: chain_capabilities.txevents.v1.TxStatus
+	(ReceiverStatus)(0),              // 2: chain_capabilities.txevents.v1.ReceiverStatus
+	(*ChainTransactionObserved)(nil), // 3: chain_capabilities.txevents.v1.ChainTransactionObserved
 }
 var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_depIdxs = []int32{
-	0, // 0: chain_capabilities.txevents.v1.ChainTransactionObserved.tx_status:type_name -> chain_capabilities.txevents.v1.TxStatus
-	1, // 1: chain_capabilities.txevents.v1.ChainTransactionObserved.receiver_status:type_name -> chain_capabilities.txevents.v1.ReceiverStatus
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1, // 0: chain_capabilities.txevents.v1.ChainTransactionObserved.tx_status:type_name -> chain_capabilities.txevents.v1.TxStatus
+	2, // 1: chain_capabilities.txevents.v1.ChainTransactionObserved.receiver_status:type_name -> chain_capabilities.txevents.v1.ReceiverStatus
+	0, // 2: chain_capabilities.txevents.v1.ChainTransactionObserved.detail:type_name -> chain_capabilities.txevents.v1.TxDetail
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_init() }
@@ -392,7 +486,7 @@ func file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_init(
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDesc), len(file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
