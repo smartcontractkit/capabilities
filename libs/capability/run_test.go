@@ -14,25 +14,23 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/samber/do/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
 // fake stands in for a generated capability server, which is what a real constructor returns. Only
 // its type matters here: nothing calls it, because building it is as far as this step goes.
 //
 // The interfaces are embedded rather than implemented so that this says what a capability is - a
-// service, a capability, and the proto service behind it - without a page of methods saying it.
+// service and a capability - without a page of methods saying it.
 type fake struct {
-	runnable
+	services.Service
 	capabilities.ExecutableAndTriggerCapability
 
 	// info is what the fake reports itself as, which is what the registrar serves and announces
@@ -44,16 +42,6 @@ type fake struct {
 	// is what orders them.
 	started bool
 	closed  bool
-}
-
-// runnable holds the services.Service half. It is a type of its own so that the field it embeds is
-// not called Service, which would collide with the method below.
-type runnable struct{ services.Service }
-
-// Service is the base capability's descriptor rather than nil: the debug UI builds its page from
-// what this returns and refuses a capability without one.
-func (fake) Service() protoreflect.ServiceDescriptor {
-	return capabilitiespb.File_capabilities_proto.Services().ByName("BaseCapability")
 }
 
 func (f *fake) Info(context.Context) (capabilities.CapabilityInfo, error) { return f.info, nil }
@@ -70,7 +58,7 @@ func newFake() *fake { return newFakeNamed(logger.Nop()) }
 func newFakeNamed(lggr logger.Logger) *fake {
 	f := &fake{}
 	f.info, _ = capabilities.NewCapabilityInfo(fakeID, capabilities.CapabilityTypeCombined, "a fake")
-	f.runnable.Service, _ = services.Config{
+	f.Service, _ = services.Config{
 		Name:  "FakeCapability",
 		Start: func(context.Context) error { f.started = true; return nil },
 		Close: func() error { f.closed = true; return nil },
@@ -169,7 +157,7 @@ func TestRunErrRejects(t *testing.T) {
 	})
 
 	t.Run("no constructor", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), logger.Test(t), nil), "must provide a capability constructor")
+		require.ErrorContains(t, RunErr[Capability](context.Background(), logger.Test(t), nil), "must provide a capability constructor")
 	})
 }
 
@@ -203,14 +191,14 @@ func TestRunRejectsANilCapability(t *testing.T) {
 func TestRunProvidesItsDependencies(t *testing.T) {
 	var (
 		gotLogger   logger.Logger
-		gotRegistry core.CapabilitiesRegistry
+		gotRegistry registry.CapabilitiesRegistry
 		gotLimits   limits.Factory
 		gotClock    clockwork.Clock
 	)
 
 	require.NoError(t, execute(t, logger.Test(t), func(i do.Injector) (Capability, error) {
 		gotLogger = do.MustInvoke[logger.Logger](i)
-		gotRegistry = do.MustInvoke[core.CapabilitiesRegistry](i)
+		gotRegistry = do.MustInvoke[registry.CapabilitiesRegistry](i)
 		gotLimits = do.MustInvoke[limits.Factory](i)
 		gotClock = do.MustInvoke[clockwork.Clock](i)
 		return newFake(), nil

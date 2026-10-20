@@ -2,33 +2,21 @@ package capability
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/jonboulle/clockwork"
 	"github.com/samber/do/v2"
 
 	"github.com/smartcontractkit/capabilities/libs/capability/di"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-// instance is one capability a run builds: the injector it is built from, the logger it is given, and
-// the registry it resolves other capabilities through.
-type instance struct {
-	lggr         logger.Logger
-	injector     *di.Injector
-	capabilities CapabilitiesConfig
-}
-
-func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error), instances ...instance) error {
+func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error), base *di.Injector, total int, capabilities CapabilitiesConfig) error {
 	defer func() { _ = lggr.Sync() }()
 
 	var svcs []services.Service
@@ -60,18 +48,10 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	}
 	svcs = append(svcs, settings)
 
-	for _, inst := range instances {
-		reg, err := startRegistry(ctx, inst.lggr, inst.capabilities, cfg.grpc)
-		if err != nil {
-			return fmt.Errorf("failed to start registry: %w", err)
-		}
-		svcs = append(svcs, reg)
-
-		capability, err := startCapability(ctx, inst.lggr, inst.injector, newCapability, reg, settings.values)
-		if err != nil {
-			return err
-		}
-		svcs = append(svcs, capability)
+	_, started, err := Embed(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, settings.values))
+	svcs = append(svcs, started...)
+	if err != nil {
+		return err
 	}
 
 	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(svcs))
@@ -117,39 +97,4 @@ func servicesToHealthReporters(svcs []services.Service) []services.HealthReporte
 func underPluginHost() bool {
 	h := emptyHandshakeConfig()
 	return os.Getenv(h.MagicCookieKey) == h.MagicCookieValue
-}
-
-// startCapability builds the capability from its constructor and makes it reachable: started,
-// served and announced by the registry, and mounted via the debug UI if debug mode is turned on.
-func startCapability(ctx context.Context, lggr logger.Logger, i *di.Injector, ctor func(do.Injector) (Capability, error), reg *registryService, settings *loop.AtomicSettings) (Capability, error) {
-	// The run supervises the services it provides, so the injector is never shut down: doing so
-	// would close them a second time.
-	if err := errors.Join(
-		i.ProvideValue(lggr),
-		i.ProvideValue[core.CapabilitiesRegistry](reg),
-		i.ProvideValue(newLimitsFactory(lggr, settings)),
-		i.ProvideValue(clockwork.NewRealClock()),
-	); err != nil {
-		return nil, fmt.Errorf("failed to provide the run's dependencies: %w", err)
-	}
-
-	c, err := ctor(i.Do())
-	if err != nil {
-		return nil, fmt.Errorf("failed to instantiate capability: %w", err)
-	}
-	if c == nil {
-		return nil, errors.New("failed to instantiate capability: the constructor returned neither a capability nor an error")
-	}
-
-	if err := c.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start capability: %w", err)
-	}
-
-	if err := reg.Add(ctx, c); err != nil {
-		// Not yet on the caller's list, so the deferred close would never reach it.
-		_ = c.Close()
-		return nil, err
-	}
-
-	return c, nil
 }
