@@ -1231,6 +1231,61 @@ func TestCronTrigger_ExecutionIDWithTriggerIndex(t *testing.T) {
 	require.NoError(t, ts.Close())
 }
 
+// TestCronTrigger_Deterministic covers every event carrying its own run's scheduled time, tick after
+// tick, which is what lets every node in a DON agree on each event's ID.
+func TestCronTrigger_Deterministic(t *testing.T) {
+	const ticks = 100
+
+	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	fakeClock := clockwork.NewFakeClockAt(start)
+
+	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
+	require.NoError(t, err)
+	require.NoError(t, ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{Config: string(triggerConfig)}))
+
+	metadata := capabilities.RequestMetadata{WorkflowID: workflowID1}
+	input := &crontypedapi.Config{Schedule: everySecond}
+	ch, capErr := ts.RegisterTrigger(t.Context(), triggerID1, metadata, input)
+	require.Nil(t, capErr)
+
+	for i := 1; i <= ticks; i++ {
+		fakeClock.Advance(time.Second)
+
+		var e capabilities.TriggerAndId[*crontypedapi.Payload]
+		select {
+		case e = <-ch:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("tick %d: timed out waiting for an event", i)
+		}
+
+		want := start.Add(time.Duration(i) * time.Second)
+		require.Equal(t, want, e.Trigger.ScheduledExecutionTime.AsTime(), "tick %d", i)
+		require.Equal(t, want.Format(time.RFC3339), e.Id, "tick %d", i)
+	}
+
+	require.Nil(t, ts.UnregisterTrigger(t.Context(), triggerID1, metadata, input))
+	require.NoError(t, ts.Close())
+}
+
+// TestCronTrigger_NoLogsAfterClose covers gocron, which keeps logging for a moment after Shutdown returns:
+// none of it may reach the service's logger once Close has returned.
+func TestCronTrigger_NoLogsAfterClose(t *testing.T) {
+	for range 20 {
+		lggr, observedLogs := logger.TestObserved(t, zap.DebugLevel)
+		ts, err := NewTriggerService(lggr, clockwork.NewFakeClock(), limits.Factory{})
+		require.NoError(t, err)
+		require.NoError(t, ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{}))
+
+		require.NoError(t, ts.Close())
+		closed := observedLogs.Len()
+
+		time.Sleep(10 * time.Millisecond)
+		require.Equal(t, closed, observedLogs.Len(), "logged after Close returned: %v", observedLogs.All()[closed:])
+	}
+}
+
 func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
 	t.Parallel()
 	// a schedule that has a bunch of 5s gaps followed by a bunch of 1s gaps
