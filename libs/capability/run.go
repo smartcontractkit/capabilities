@@ -22,7 +22,7 @@ import (
 // process is signalled.
 //
 //	func main() { capability.Run(context.Background(), trigger.NewCron) }
-func Run(ctx context.Context, constructor func(do.Injector) (Capability, error), opts ...Option) {
+func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, error), opts ...Option) {
 	lggr, err := NewLogger()
 	if err != nil {
 		log.Fatal(err)
@@ -37,13 +37,14 @@ func Run(ctx context.Context, constructor func(do.Injector) (Capability, error),
 //
 // A run blocks until it is told to stop, which is either ctx being cancelled or this process being
 // signalled - see below.
-func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injector) (Capability, error), opts ...Option) error {
+func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.Injector) (T, error), opts ...Option) error {
 	if lggr == nil {
 		return errors.New("must provide a logger")
 	}
-	if constructor == nil {
+	if ctor == nil {
 		return errors.New("must provide a capability constructor")
 	}
+	constructor := func(i do.Injector) (Capability, error) { return ctor(i) }
 
 	// TODO: Run should accept some kind of Info struct
 	root := &cobra.Command{
@@ -67,9 +68,7 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injecto
 		Short: "Run the capability",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// Cloning the RunInjector allows re-running which enables testing.
-			i := instance{lggr: lggr, injector: RunInjector.Clone(), capabilities: cfg.capabilities}
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, i)
+			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities)
 		},
 	}
 
@@ -78,11 +77,13 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injecto
 		Short: "Run instances of the capability in this process, with no node behind them",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			instances, err := embeddedInstances(lggr, cfg.capabilities, args[0])
-			if err != nil {
-				return err
+			total, err := strconv.Atoi(args[0])
+			if err != nil || total < 1 {
+				return fmt.Errorf("instances must be a positive integer, got %q", args[0])
 			}
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, instances...)
+			capCfg := cfg.capabilities
+			capCfg.ProxyURL = ""
+			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, EmbedInjector, total, capCfg)
 		},
 	}
 
@@ -96,28 +97,6 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor func(do.Injecto
 	defer stop()
 
 	return root.ExecuteContext(ctx)
-}
-
-func embeddedInstances(lggr logger.Logger, capCfg CapabilitiesConfig, arg string) ([]instance, error) {
-	total, err := strconv.Atoi(arg)
-	if err != nil || total < 1 {
-		return nil, fmt.Errorf("instances must be a positive integer, got %q", arg)
-	}
-
-	capCfg.ProxyURL = ""
-	instances := make([]instance, total)
-	for id := range instances {
-		injector := EmbedInjector.Clone()
-		if err := injector.ProvideValue(EmbeddedInfo{InstanceID: id, TotalInstances: total}); err != nil {
-			return nil, err
-		}
-		instances[id] = instance{
-			lggr:         logger.Named(lggr, fmt.Sprintf("Instance%d", id)),
-			injector:     injector,
-			capabilities: capCfg,
-		}
-	}
-	return instances, nil
 }
 
 type Option func(*config)
