@@ -26,9 +26,7 @@ const (
 	DefaultForwarderLookbackLedgers = int64(100)
 	// DefaultLedgerBoundsOffset keeps the report() tx valid for the next 4 ledgers (MaxLedger is
 	// exclusive). stellar-core drops an unincluded tx from its queue after 4 ledgers and never
-	// re-floods the same hash, so a longer validity only delays the TXM's fresh envelope; the old
-	// value was 20. Jobs can set ledgerBoundsOffset down to 3, or 4 once the relayer compensates
-	// ledger bounds for RPC lag.
+	// re-floods the same hash, so a longer validity only delays the TXM's fresh envelope.
 	DefaultLedgerBoundsOffset = uint32(5)
 )
 
