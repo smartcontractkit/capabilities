@@ -12,13 +12,6 @@ func (CapabilitiesConfig) DocComments() map[string]commentparsing.FieldDoc {
 	}
 }
 
-func (ChipIngressConfig) DocComments() map[string]commentparsing.FieldDoc {
-	return map[string]commentparsing.FieldDoc{
-		"Endpoint":           {Comment: "Endpoint is the chip ingress gRPC endpoint. The emitter is disabled when unset."},
-		"InsecureConnection": {Comment: "InsecureConnection connects to chip ingress over an insecure connection."},
-	}
-}
-
 func (GRPCConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
 		"AdvertiseHost": {Comment: "AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.\nEmpty binds every interface."},
@@ -42,26 +35,5 @@ func (PyroscopeConfig) DocComments() map[string]commentparsing.FieldDoc {
 func (SettingsConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
 		"URL": {Comment: "URL is the gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes\nsettings updates to this process. Unset leaves every limit at its compiled-in default."},
-	}
-}
-
-func (TelemetryConfig) DocComments() map[string]commentparsing.FieldDoc {
-	return map[string]commentparsing.FieldDoc{
-		"Attributes":              {Comment: "Attributes are extra telemetry resource attributes, as key=value pairs."},
-		"AuthHeaders":             {Comment: "AuthHeaders are telemetry auth headers, as key=value pairs."},
-		"AuthHeadersTTL":          {Comment: "AuthHeadersTTL is how long generated telemetry auth headers are valid for."},
-		"AuthPubKeyHex":           {Comment: "AuthPubKeyHex is the public key the telemetry auth headers are derived from."},
-		"CACertFile":              {Comment: "CACertFile is the CA certificate file used to verify the telemetry endpoint."},
-		"Endpoint":                {Comment: "Endpoint is the OTLP gRPC endpoint telemetry is exported to. Telemetry is disabled when unset."},
-		"InsecureConnection":      {Comment: "InsecureConnection exports telemetry over an insecure connection."},
-		"PrometheusBridgeEnabled": {Comment: "PrometheusBridgeEnabled feeds metrics registered on the prometheus registry into the telemetry\npipeline."},
-	}
-}
-
-func (TracingConfig) DocComments() map[string]commentparsing.FieldDoc {
-	return map[string]commentparsing.FieldDoc{
-		"Enabled":       {Comment: "Enabled exports traces to the telemetry endpoint."},
-		"SamplingRatio": {Comment: "SamplingRatio is the fraction of traces sampled, from 0 to 1."},
-		"TLSCertFile":   {Comment: "TLSCertFile is the TLS certificate file used by the trace exporter."},
 	}
 }

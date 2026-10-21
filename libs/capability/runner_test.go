@@ -101,7 +101,7 @@ func TestRunStartsTheCapability(t *testing.T) {
 //
 // Slow, and unavoidably so: it is the only test that builds a real beholder client, and closing one
 // flushes to a collector that is not there - about 20s of export timeouts. The timeouts are on
-// beholder.Config, which beholderConfig builds from the settings, so shortening them would mean a
+// beholder.Config, which telemetry.NewTelemetry builds from the settings, so shortening them would mean a
 // knob in production code that exists only for this.
 func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 	if testing.Short() {
@@ -110,7 +110,7 @@ func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 
 	cfg, port := runArgs(t)
 	// Nothing is listening there, which is fine: the client is built and installed without dialling.
-	cfg.observability.telemetry.Endpoint = fmt.Sprintf("localhost:%d", freePort(t))
+	cfg.observability.TelemetryEndpoint = fmt.Sprintf("localhost:%d", freePort(t))
 
 	var duringBuild *beholder.Client
 	c := func(do.Injector) (Capability, error) {
@@ -138,7 +138,7 @@ func TestRunUnwindsWhatStartedBeforeAFailure(t *testing.T) {
 	before := beholder.GetClient()
 	cfg, port := runArgs(t)
 	c := func(do.Injector) (Capability, error) { return nil, errors.New("no schedule") }
-	require.Empty(t, cfg.observability.telemetry.Endpoint, "these settings leave telemetry off")
+	require.Empty(t, cfg.observability.TelemetryEndpoint, "these settings leave telemetry off")
 
 	require.ErrorContains(t, runToCompletion(t, cfg, c, port), "no schedule")
 
