@@ -973,6 +973,7 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 				Success:   true,
 				EventsXDR: []string{reportProcessedEventXDR(t, transmissionID, false)},
 			}, nil).Once()
+		h.expectTransmissionInfoReread(t, notAttemptedXDR(t))
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
@@ -1016,6 +1017,11 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 			return req.Function == forwarderReportFunction
 		})).
 			Return(stellartypes.SimulateTransactionResponse{Error: "HostError: Error(Contract, #13)"}, nil).Once()
+		// The re-read goes through the shared retry helper: a transient RPC error is retried.
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(r stellartypes.SimulateTransactionRequest) bool {
+			return r.Function == forwarderGetTransmissionInfoFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc down")).Once()
 		h.expectTransmissionInfoReread(t, succeededXDR(t))
 		h.expectObservedTxHashLookup(t, rm, req.ContractId, true)
 
@@ -1050,6 +1056,7 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 				EventsXDR:      []string{reportProcessedEventXDR(t, transmissionID, true)},
 				MinResourceFee: 2_000_000,
 			}, nil).Once()
+		h.expectTransmissionInfoReread(t, notAttemptedXDR(t))
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
@@ -1116,6 +1123,7 @@ func TestWriteReport_NoSigningAccount(t *testing.T) {
 		Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 	h.svc.EXPECT().GetSigningAccount(mock.Anything).
 		Return(stellartypes.GetSigningAccountResponse{}, errors.New("keystore has no accounts")).Once()
+	h.expectTransmissionInfoReread(t, notAttemptedXDR(t))
 
 	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 	require.NotNil(t, capErr)
@@ -2028,21 +2036,4 @@ func TestMeteringFromSubmitResponse(t *testing.T) {
 		})
 		validateWRMetering(t, meta, testWRChainSelector, 0)
 	})
-}
-
-func TestWriteReport_RecordedOutcomeReReadRetriesTransientErrors(t *testing.T) {
-	t.Parallel()
-
-	wr, mockSvc, transmissionID, req := newPollTransmissionInfoHarness(t, time.Second)
-	isInfoRead := mock.MatchedBy(func(r stellartypes.SimulateTransactionRequest) bool {
-		return r.Function == forwarderGetTransmissionInfoFunction
-	})
-	mockSvc.EXPECT().SimulateTransaction(mock.Anything, isInfoRead).
-		Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc down")).Once()
-	mockSvc.EXPECT().SimulateTransaction(mock.Anything, isInfoRead).
-		Return(transmissionResp(buildTransmissionInfoXDR(t, TransmissionStateNotAttempted)), nil).Once()
-
-	localErr := errors.New("local failure")
-	_, _, err := wr.recordedOutcomeOr(t.Context(), req, monitoring.TelemetryContext{}, transmissionID, &TxHashRetriever{}, localErr)
-	require.Equal(t, localErr, err, "nothing recorded yet, so the local error stands")
 }
