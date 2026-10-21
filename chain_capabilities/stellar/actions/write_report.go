@@ -457,9 +457,6 @@ func (wr *writeReport) replyFromRecordedOutcome(
 	}
 }
 
-// recordedOutcomeReadTimeout bounds the get_transmission_info re-read after a local failure.
-const recordedOutcomeReadTimeout = 15 * time.Second
-
 // recordedOutcomeOr returns the recorded outcome when a peer's transmission landed after the
 // pre-submit poll, which makes the forwarder reject this node's report() as already processed.
 // Otherwise it returns localErr.
@@ -471,11 +468,9 @@ func (wr *writeReport) recordedOutcomeOr(
 	txHashRetriever *TxHashRetriever,
 	localErr error,
 ) (*stellarcap.WriteReportReply, capabilities.ResponseMetadata, error) {
-	// The local attempt often failed because the caller's deadline passed, so the re-read runs on
-	// its own deadline; on the caller's context it would fail exactly when it is needed.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordedOutcomeReadTimeout)
-	defer cancel()
-	info, err := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	info, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
+		return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	})
 	if err != nil {
 		wr.lggr.Debugw("Failed to re-read transmission info after a local failure", "error", err, "localError", localErr)
 		return nil, capabilities.ResponseMetadata{}, localErr

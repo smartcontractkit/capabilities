@@ -2030,26 +2030,19 @@ func TestMeteringFromSubmitResponse(t *testing.T) {
 	})
 }
 
-func TestWriteReport_RecordedOutcomeReReadSurvivesCancelledContext(t *testing.T) {
+func TestWriteReport_RecordedOutcomeReReadRetriesTransientErrors(t *testing.T) {
 	t.Parallel()
 
 	wr, mockSvc, transmissionID, req := newPollTransmissionInfoHarness(t, time.Second)
-	var reReadCtxLive bool
-	mockSvc.EXPECT().
-		SimulateTransaction(
-			mock.MatchedBy(func(ctx context.Context) bool { reReadCtxLive = ctx.Err() == nil; return true }),
-			mock.MatchedBy(func(r stellartypes.SimulateTransactionRequest) bool {
-				return r.Function == forwarderGetTransmissionInfoFunction
-			}),
-		).
-		Return(transmissionResp(buildTransmissionInfoXDR(t, TransmissionStateNotAttempted)), nil).
-		Once()
+	isInfoRead := mock.MatchedBy(func(r stellartypes.SimulateTransactionRequest) bool {
+		return r.Function == forwarderGetTransmissionInfoFunction
+	})
+	mockSvc.EXPECT().SimulateTransaction(mock.Anything, isInfoRead).
+		Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc down")).Once()
+	mockSvc.EXPECT().SimulateTransaction(mock.Anything, isInfoRead).
+		Return(transmissionResp(buildTransmissionInfoXDR(t, TransmissionStateNotAttempted)), nil).Once()
 
-	// The caller's deadline has passed, which is the usual reason the local attempt failed.
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
 	localErr := errors.New("local failure")
-	_, _, err := wr.recordedOutcomeOr(ctx, req, monitoring.TelemetryContext{}, transmissionID, &TxHashRetriever{}, localErr)
+	_, _, err := wr.recordedOutcomeOr(t.Context(), req, monitoring.TelemetryContext{}, transmissionID, &TxHashRetriever{}, localErr)
 	require.Equal(t, localErr, err, "nothing recorded yet, so the local error stands")
-	require.True(t, reReadCtxLive, "the re-read must not run on the caller's cancelled context")
 }
