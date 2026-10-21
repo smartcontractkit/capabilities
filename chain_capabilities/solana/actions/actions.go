@@ -34,6 +34,7 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -55,6 +56,13 @@ type Solana struct {
 	transmissionScheduler    ts.TransmissionScheduler
 	handler                  chainconsensus.RequestHandler
 	forwarderState           solgo.PublicKey
+	gasMeter                 *gasmeter.Meter
+}
+
+// WithGasMeter enables cre:workflow:gas usage MeterRecords for write reports.
+// A nil meter disables emission.
+func (s *Solana) WithGasMeter(m *gasmeter.Meter) {
+	s.gasMeter = m
 }
 
 func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder,

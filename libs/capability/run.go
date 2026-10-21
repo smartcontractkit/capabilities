@@ -1,0 +1,110 @@
+package capability
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"syscall"
+
+	"github.com/samber/do/v2"
+	"github.com/spf13/cobra"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+)
+
+// Run builds and runs the capability constructor makes, and does not return until ctx is cancelled or the
+// process is signalled.
+//
+//	func main() { capability.Run(context.Background(), trigger.NewCron) }
+func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, error), opts ...Option) {
+	lggr, err := NewLogger()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := RunErr(ctx, lggr, constructor, opts...); err != nil {
+		lggr.Fatal(err)
+	}
+}
+
+// RunErr is Run, returning the error rather than exiting on it.
+//
+// A run blocks until it is told to stop, which is either ctx being cancelled or this process being
+// signalled - see below.
+func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.Injector) (T, error), opts ...Option) error {
+	if lggr == nil {
+		return errors.New("must provide a logger")
+	}
+	if ctor == nil {
+		return errors.New("must provide a capability constructor")
+	}
+	constructor := func(i do.Injector) (Capability, error) { return ctor(i) }
+
+	// TODO: Run should accept some kind of Info struct
+	root := &cobra.Command{
+		Use:   filepath.Base(os.Args[0]),
+		Short: "A CRE capability",
+	}
+
+	lggr = logger.Named(lggr, root.Name())
+
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	b, err := cfg.bind(root)
+	if err != nil {
+		return err
+	}
+
+	runCmd := &cobra.Command{
+		Use:   "run",
+		Short: "Run the capability",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities)
+		},
+	}
+
+	embedCmd := &cobra.Command{
+		Use:   "embed <instances>",
+		Short: "Run instances of the capability in this process, with no node behind them",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			total, err := strconv.Atoi(args[0])
+			if err != nil || total < 1 {
+				return fmt.Errorf("instances must be a positive integer, got %q", args[0])
+			}
+			capCfg := cfg.capabilities
+			capCfg.ProxyURL = ""
+			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, EmbedInjector, total, capCfg)
+		},
+	}
+
+	if err := errors.Join(RunInjector.RegisterConfig(runCmd, b), EmbedInjector.RegisterConfig(embedCmd, b)); err != nil {
+		return err
+	}
+	root.AddCommand(runCmd, embedCmd)
+
+	// Wire up SIGTERM + SIGINT to the context
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	return root.ExecuteContext(ctx)
+}
+
+type Option func(*config)
+
+// WithOtelViews sets otel metric views - histogram bucket boundaries, typically - on the beholder
+// client this process reports through.
+//
+//	capability.Run(ctx, trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
+func WithOtelViews(views ...sdkmetric.View) Option {
+	return func(c *config) { c.observability.otelViews = append(c.observability.otelViews, views...) }
+}
