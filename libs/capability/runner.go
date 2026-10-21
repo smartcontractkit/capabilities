@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/samber/do/v2"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -20,6 +18,16 @@ import (
 func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error)) error {
 	defer func() { _ = lggr.Sync() }()
 
+	// Deferred first so it runs last: the beholder client loop.Server owns has to outlive every
+	// service that reports through it.
+	var srv *loop.Server
+	defer restoreBeholder()()
+	defer func() {
+		if srv != nil {
+			srv.Stop()
+		}
+	}()
+
 	var svcs []services.Service
 	defer func() {
 		if err := services.MultiCloser(svcs).Close(); err != nil {
@@ -27,51 +35,35 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 		}
 	}()
 
-	mux := http.NewServeMux()
-
-	profiler, err := startProfiler(ctx, lggr, name, cfg.observability.pyroscope)
-	if err != nil {
-		return fmt.Errorf("failed to start profiler: %w", err)
-	}
-	if profiler != nil {
-		svcs = append(svcs, profiler)
-	}
-
-	telemetry, err := startTelemetry(ctx, lggr, &cfg.observability)
-	if err != nil {
-		return fmt.Errorf("failed to build telemetry: %w", err)
-	}
-	svcs = append(svcs, telemetry)
-
-	reg, err := startRegistry(ctx, lggr, cfg.capabilities, cfg.grpc)
-	if err != nil {
-		return fmt.Errorf("failed to start registry: %w", err)
-	}
-	svcs = append(svcs, reg)
-
+	// Before the server, which takes the settings as its limits' getter.
 	settings, err := startSettings(ctx, lggr, cfg.settings)
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
 	svcs = append(svcs, settings)
 
-	capability, err := startCapability(ctx, lggr, cfg, newCapability, reg, settings.values, mux)
+	srv, err = startLoopServer(name, cfg, settings.values)
+	if err != nil {
+		return fmt.Errorf("failed to start loop server: %w", err)
+	}
+
+	reg, err := startRegistry(ctx, lggr, cfg.capabilities, cfg.grpc, srv.GRPCOpts)
+	if err != nil {
+		return fmt.Errorf("failed to start registry: %w", err)
+	}
+	svcs = append(svcs, reg)
+
+	capability, err := startCapability(ctx, lggr, newCapability, reg, settings.values)
 	if err != nil {
 		return err
 	}
 	svcs = append(svcs, capability)
 
-	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(svcs))
-	if err != nil {
-		return fmt.Errorf("failed to start health checker: %w", err)
+	for _, s := range svcs {
+		if err := srv.Register(s); err != nil {
+			return fmt.Errorf("failed to register %s with the health checker: %w", s.Name(), err)
+		}
 	}
-	svcs = append(svcs, health)
-
-	ws, err := startWebServer(ctx, lggr, cfg.observability.http, mux, health.checker)
-	if err != nil {
-		return fmt.Errorf("failed to start web server: %w", err)
-	}
-	svcs = append(svcs, ws)
 
 	if underPluginHost() {
 		lggr.Info("Serving the empty LOOP: this process is supervised by a go-plugin host")
@@ -88,14 +80,6 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	return nil
 }
 
-func servicesToHealthReporters(svcs []services.Service) []services.HealthReporter {
-	reporters := make([]services.HealthReporter, 0, len(svcs))
-	for _, s := range svcs {
-		reporters = append(reporters, s)
-	}
-	return reporters
-}
-
 // underPluginHost reports whether this process was launched by a go-plugin host, detected via the
 // empty plugin's handshake magic cookie.
 //
@@ -106,9 +90,9 @@ func underPluginHost() bool {
 	return os.Getenv(h.MagicCookieKey) == h.MagicCookieValue
 }
 
-// startCapability builds the capability from its constructor and makes it reachable: started,
-// served and announced by the registry, and mounted via the debug UI if debug mode is turned on.
-func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor func(do.Injector) (Capability, error), reg *registryService, settings *loop.AtomicSettings, mux *http.ServeMux) (Capability, error) {
+// startCapability builds the capability from its constructor and makes it reachable: started, and
+// served and announced by the registry.
+func startCapability(ctx context.Context, lggr logger.Logger, ctor func(do.Injector) (Capability, error), reg *registryService, settings *loop.AtomicSettings) (Capability, error) {
 	// The run supervises the services it provides, so the injector is never shut down: doing so
 	// would close them a second time.
 	i := do.New()

@@ -9,9 +9,11 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,6 +85,7 @@ func newFake() *fake {
 // the way up never gets there and reports that instead.
 func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capability, error), args ...string) error {
 	t.Helper()
+	ctor, registered := whenRegistered(ctor)
 
 	// A free port rather than the default, since tests share a machine and run alongside each
 	// other - two of them on 8080 would collide. It is also how this tells that the binary is up.
@@ -94,6 +97,8 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 		// No --capabilities.proxy-url: it is optional, and leaving it out is the simpler run - the
 		// registry then resolves only what this binary hosts, and dials nothing.
 	}
+
+	isolateLoopServer(t)
 
 	previous := os.Args
 	t.Cleanup(func() { os.Args = previous })
@@ -120,7 +125,7 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 			t.Fatal("the run never started serving")
 			return nil
 		case <-time.After(5 * time.Millisecond):
-			if serving(port) {
+			if serving(port) && registered() {
 				cancel()
 				return <-done
 			}
@@ -142,6 +147,50 @@ func serving(port int) bool {
 	}
 	_ = res.Body.Close()
 	return res.StatusCode == http.StatusOK
+}
+
+// whenRegistered wraps ctor so that registered reports when its capability has joined the health
+// checker, which a run does last, once the capability is announced.
+//
+// Serving alone does not say a run is up: loop.Server's web server is the first thing it starts
+// rather than the last, so a run cancelled as soon as it serves can be cut off mid-announcement.
+func whenRegistered(ctor func(do.Injector) (Capability, error)) (func(do.Injector) (Capability, error), func() bool) {
+	var reported atomic.Bool
+	wrapped := func(i do.Injector) (Capability, error) {
+		c, err := ctor(i)
+		if c == nil || err != nil {
+			return c, err
+		}
+		return &reportsRegistration{Capability: c, reported: &reported}, nil
+	}
+	return wrapped, reported.Load
+}
+
+type reportsRegistration struct {
+	Capability
+	reported *atomic.Bool
+}
+
+func (r *reportsRegistration) HealthReport() map[string]error {
+	r.reported.Store(true)
+	return r.Capability.HealthReport()
+}
+
+// isolateLoopServer gives a run fresh copies of the process globals loop.Server registers on, which
+// it can only do once per process: /metrics on http.DefaultServeMux, and its gRPC metrics on
+// prometheus.DefaultRegisterer. A second run in the same test binary would otherwise panic.
+//
+// The fresh mux has no /debug/pprof, which net/http/pprof registers on the original at init.
+func isolateLoopServer(t *testing.T) {
+	t.Helper()
+
+	mux, registerer, gatherer := http.DefaultServeMux, prometheus.DefaultRegisterer, prometheus.DefaultGatherer
+	t.Cleanup(func() {
+		http.DefaultServeMux, prometheus.DefaultRegisterer, prometheus.DefaultGatherer = mux, registerer, gatherer
+	})
+
+	registry := prometheus.NewRegistry()
+	http.DefaultServeMux, prometheus.DefaultRegisterer, prometheus.DefaultGatherer = http.NewServeMux(), registry, registry
 }
 
 // freePort is a port nothing is listening on, found by listening on one and stopping again.
@@ -190,6 +239,14 @@ func TestRunReportsAFailedConstructor(t *testing.T) {
 func TestRunRejectsANilCapability(t *testing.T) {
 	err := execute(t, logger.Test(t), func(do.Injector) (Capability, error) { return nil, nil }, "run")
 	require.ErrorContains(t, err, "returned neither a capability nor an error")
+}
+
+// TestRunIgnoresTheDatabaseInItsEnv covers the env the shim leaves alone: loop.Server would read a
+// CL_DATABASE_URL already set and connect to it, which this config never asked for.
+func TestRunIgnoresTheDatabaseInItsEnv(t *testing.T) {
+	t.Setenv("CL_DATABASE_URL", "postgres://nobody@localhost:1/none")
+
+	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run"))
 }
 
 // TestRunProvidesItsDependencies covers what the injector holds: this process's logger, the

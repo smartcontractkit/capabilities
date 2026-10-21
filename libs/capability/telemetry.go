@@ -1,31 +1,28 @@
 package capability
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 
-	prombridge "go.opentelemetry.io/contrib/bridges/prometheus"
-	"go.opentelemetry.io/otel/attribute"
+	"go.uber.org/zap/zapcore"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	commonconfig "github.com/smartcontractkit/chainlink-common/pkg/config"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
 const (
-	// Legacy env prefixes for the two map-valued telemetry settings. pkg/config/flags has no map
-	// support, so those are []string of key=value pairs here; a host sets one env var per entry
-	// instead, and envPairs still picks those up. See TelemetryConfig.Attributes.
+	// Legacy env prefixes for the map-valued settings. pkg/config/flags has no map support, so
+	// those are []string of key=value pairs here; a host sets one env var per entry instead, and
+	// envPairs still picks those up. See TelemetryConfig.Attributes.
 	envTelemetryAttributePrefix  = "CL_TELEMETRY_ATTRIBUTE_"
 	envTelemetryAuthHeaderPrefix = "CL_TELEMETRY_AUTH_HEADER_"
+	envTracingAttributePrefix    = "CL_TRACING_ATTRIBUTE_"
 )
 
 // TelemetryConfig is the beholder client's configuration: an empty Endpoint leaves telemetry off, and the global noop client in place, so
 // instruments created by services record nothing.
+//
+// Field names follow loop.EnvConfig's, so each flag's env var is the one a plugin host already sets.
 type TelemetryConfig struct {
 	// Endpoint is the OTLP gRPC endpoint telemetry is exported to. Telemetry is disabled when unset.
 	Endpoint string
@@ -33,6 +30,8 @@ type TelemetryConfig struct {
 	InsecureConnection bool
 	// CACertFile is the CA certificate file used to verify the telemetry endpoint.
 	CACertFile string
+	// AppID identifies this process in traces, as their service.instance.id.
+	AppID string
 
 	// Attributes and AuthHeaders are key=value pairs ("env=staging") rather than maps. Entries from
 	// the legacy CL_TELEMETRY_ATTRIBUTE_<KEY> and CL_TELEMETRY_AUTH_HEADER_<KEY> env vars are merged
@@ -50,17 +49,66 @@ type TelemetryConfig struct {
 	// PrometheusBridgeEnabled feeds metrics registered on the prometheus registry into the telemetry
 	// pipeline.
 	PrometheusBridgeEnabled bool
+	// PrometheusBridgePrefixes limits the bridged prometheus metrics to those with these name prefixes.
+	PrometheusBridgePrefixes []string
+
+	// TraceSampleRatio is the fraction of traces the beholder client samples, from 0 to 1.
+	TraceSampleRatio float64
+	// TraceCompressor is the compression used when exporting traces.
+	TraceCompressor string
+
+	// EmitterBatchProcessor batches emitted messages rather than exporting each one.
+	EmitterBatchProcessor bool
+	// EmitterExportTimeout bounds each export of emitted messages.
+	EmitterExportTimeout commonconfig.Duration
+	// EmitterExportInterval is how often batched messages are exported.
+	EmitterExportInterval commonconfig.Duration
+	// EmitterExportMaxBatchSize is the most messages exported at once.
+	EmitterExportMaxBatchSize int
+	// EmitterMaxQueueSize is the most messages queued for export before new ones are dropped.
+	EmitterMaxQueueSize int
+
+	// LogStreamingEnabled streams logs to the telemetry endpoint as well as writing them to stderr.
+	LogStreamingEnabled bool
+	// LogLevel is the lowest level of log streamed.
+	LogLevel zapcore.Level
+	// LogBatchProcessor batches streamed logs rather than exporting each one.
+	LogBatchProcessor bool
+	// LogExportTimeout bounds each export of streamed logs.
+	LogExportTimeout commonconfig.Duration
+	// LogExportInterval is how often batched logs are exported.
+	LogExportInterval commonconfig.Duration
+	// LogExportMaxBatchSize is the most logs exported at once.
+	LogExportMaxBatchSize int
+	// LogMaxQueueSize is the most logs queued for export before new ones are dropped.
+	LogMaxQueueSize int
+	// LogCompressor is the compression used when exporting logs.
+	LogCompressor string
+
+	// MetricCompressor is the compression used when exporting metrics.
+	MetricCompressor string
+	// MetricExportBatchSize is the most data points per metric export. Zero disables batching.
+	MetricExportBatchSize int
+	// MetricCardinalityLimit is the most attribute sets per metric before overflow aggregation. Zero
+	// disables the limit.
+	MetricCardinalityLimit int
+	// MetricViewsDenyAttributes are attribute keys dropped from every metric.
+	MetricViewsDenyAttributes []string
 }
 
-// TracingConfig is the OTLP tracing configuration. Traces go to the telemetry endpoint, so Enabled
-// does nothing unless TelemetryConfig.Endpoint is set too.
+// TracingConfig is the OTLP tracing configuration.
 type TracingConfig struct {
-	// Enabled exports traces to the telemetry endpoint.
+	// Enabled exports traces.
 	Enabled bool
+	// CollectorTarget is where traces are exported. Defaults to the telemetry endpoint.
+	CollectorTarget string
 	// SamplingRatio is the fraction of traces sampled, from 0 to 1.
 	SamplingRatio float64
 	// TLSCertFile is the TLS certificate file used by the trace exporter.
 	TLSCertFile string
+	// Attributes are extra trace resource attributes, as key=value pairs. Entries from the legacy
+	// CL_TRACING_ATTRIBUTE_<KEY> env vars are merged in on top of these.
+	Attributes []string
 }
 
 // ChipIngressConfig points the beholder client's chip ingress emitter at an endpoint. Emitting is
@@ -70,166 +118,22 @@ type ChipIngressConfig struct {
 	Endpoint string
 	// InsecureConnection connects to chip ingress over an insecure connection.
 	InsecureConnection bool
-}
-
-// newTelemetry builds the beholder client and the service that owns it.
-func newTelemetry(lggr logger.Logger, obs *observability) (*telemetryService, error) {
-	if obs.telemetry.Endpoint == "" {
-		return noopTelemetry(lggr), nil
-	}
-
-	cfg, err := beholderConfig(lggr, obs)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := beholder.NewClient(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create beholder client: %w", err)
-	}
-
-	return newTelemetryService(lggr, client, installGlobally(client)), nil
-}
-
-func startTelemetry(ctx context.Context, lggr logger.Logger, obs *observability) (*telemetryService, error) {
-	telemetry, err := newTelemetry(lggr, obs)
-	if err != nil {
-		return nil, err
-	}
-
-	return telemetry, telemetry.Start(ctx)
-}
-
-// telemetryService is the beholder client and the process-global it is installed as, as one service
-// - so that everything starting telemetry changes is undone by closing it.
-//
-// Installing happens when this is built rather than when it starts - see newTelemetry - so what
-// closing undoes is something that was already done. The two are not symmetric, and cannot be: a
-// capability binds its instruments while it is being constructed, which is before the root that
-// starts this exists.
-//
-// The client is a sub-service rather than something this closes itself, which is what gets the
-// order right. Sub-services start before the Start hook and close after the Close hook, so the
-// client is running by the time it becomes the process's, and is still open when the globals are
-// pointed back at the previous one - a late measurement reaches a live pipeline rather than a
-// closed one.
-type telemetryService struct {
-	services.Service
-
-	// client is the beholder client this owns. The health checker mirrors itself through the same
-	// meter, so it has to be reachable from outside - which is the only reason it is a field.
-	client *beholder.Client
-}
-
-// noopTelemetry is telemetry nobody configured: nothing to start, nothing to close, and no client
-// behind it. The process keeps the noop beholder client it already had.
-func noopTelemetry(lggr logger.Logger) *telemetryService {
-	t := &telemetryService{}
-	t.Service, _ = services.Config{Name: "Telemetry"}.NewServiceEngine(lggr)
-	return t
-}
-
-func newTelemetryService(lggr logger.Logger, client *beholder.Client, restore func()) *telemetryService {
-	t := &telemetryService{client: client}
-	t.Service, _ = services.Config{
-		Name:  "Telemetry",
-		Close: func() error { restore(); return nil },
-		NewSubServices: func(logger.Logger) []services.Service {
-			return []services.Service{client}
-		},
-	}.NewServiceEngine(lggr)
-	return t
-}
-
-// installGlobally makes client the process's beholder client, and returns what puts back the one
-// that was there before.
-//
-// The global is the only lasting change starting telemetry makes - everything else it touches is
-// owned by the client itself - so this is where reversing it has to be expressed. The otel
-// providers are re-pointed on the way back as well as on the way in, since they are derived from
-// whichever client is global and would otherwise keep pointing at the one being taken away.
-func installGlobally(client *beholder.Client) func() {
-	previous := beholder.GetClient()
-
-	beholder.SetClient(client)
-	beholder.SetGlobalOtelProviders()
-
-	return func() {
-		beholder.SetClient(previous)
-		beholder.SetGlobalOtelProviders()
-	}
-}
-
-// beholderConfig is the telemetry, tracing and chip ingress settings as the one client takes them.
-func beholderConfig(lggr logger.Logger, obs *observability) (beholder.Config, error) {
-	cfg := beholder.DefaultConfig()
-	cfg.OtelExporterGRPCEndpoint = obs.telemetry.Endpoint
-	cfg.InsecureConnection = obs.telemetry.InsecureConnection
-	cfg.CACertFile = obs.telemetry.CACertFile
-
-	attributes, err := envPairs(envTelemetryAttributePrefix, "telemetry.attributes", obs.telemetry.Attributes)
-	if err != nil {
-		return beholder.Config{}, err
-	}
-	for k, v := range attributes {
-		cfg.ResourceAttributes = append(cfg.ResourceAttributes, attribute.String(k, v))
-	}
-
-	cfg.AuthHeaders, err = envPairs(envTelemetryAuthHeaderPrefix, "telemetry.auth-headers", obs.telemetry.AuthHeaders)
-	if err != nil {
-		return beholder.Config{}, err
-	}
-	cfg.AuthPublicKeyHex = obs.telemetry.AuthPubKeyHex
-	cfg.AuthHeadersTTL = obs.telemetry.AuthHeadersTTL.Duration()
-
-	// Logs already reach their destination via stderr (parsed by the plugin host when under one);
-	// don't stream them a second time.
-	cfg.LogStreamingEnabled = false
-
-	if obs.telemetry.PrometheusBridgeEnabled {
-		// Feeds metrics already registered on the global prometheus registry (e.g. via promauto,
-		// like the health checker's) into the same OTLP pipeline, so they don't need a separate
-		// scrape target.
-		cfg.MetricProducers = append(cfg.MetricProducers, prombridge.NewMetricProducer())
-	}
-
-	cfg.ChipIngressEmitterGRPCEndpoint = obs.chipIngress.Endpoint
-	cfg.ChipIngressEmitterEnabled = obs.chipIngress.Endpoint != ""
-	cfg.ChipIngressInsecureConnection = obs.chipIngress.InsecureConnection
-
-	if obs.tracing.Enabled {
-		tracing := loop.TracingConfig{
-			Enabled:         true,
-			CollectorTarget: obs.telemetry.Endpoint,
-			SamplingRatio:   obs.tracing.SamplingRatio,
-			TLSCertPath:     obs.tracing.TLSCertFile,
-			// Not optional, despite reading like it. The exporter's dialer calls this on every
-			// failed dial without checking it is set, so leaving it nil turns an unreachable
-			// collector - a network blip, a collector restarting - into a nil dereference on a
-			// background goroutine, which takes the process with it.
-			OnDialError: func(err error) {
-				logger.Sugared(lggr).Errorw("Failed to dial the tracing collector",
-					"err", err, "target", obs.telemetry.Endpoint)
-			},
-		}
-		if cfg.AuthHeaders != nil {
-			tracing.AuthHeaders = cfg.AuthHeaders
-		}
-
-		exporter, err := tracing.NewSpanExporter()
-		if err != nil {
-			return beholder.Config{}, fmt.Errorf("failed to setup tracing exporter: %w", err)
-		}
-		cfg.TraceSpanExporter = exporter
-		cfg.TraceSampleRatio = tracing.SamplingRatio
-	}
-
-	// Per the OTEL specification, histogram buckets must be defined when the client is created, so
-	// the views cannot be applied any later than this - which is why they are handed to the binary
-	// rather than asked of the capability, whose constructor has not run yet. See WithOtelViews.
-	cfg.MetricViews = obs.otelViews
-
-	return cfg, nil
+	// BatchEmitterEnabled batches events sent to chip ingress rather than sending each one.
+	BatchEmitterEnabled bool
+	// BufferSize is the most events buffered for sending before new ones are dropped.
+	BufferSize uint
+	// MaxBatchSize is the most events sent at once.
+	MaxBatchSize uint
+	// MaxConcurrentSends is the most batches in flight at once.
+	MaxConcurrentSends int
+	// SendInterval is how often buffered events are sent.
+	SendInterval commonconfig.Duration
+	// SendTimeout bounds each send.
+	SendTimeout commonconfig.Duration
+	// DrainTimeout bounds sending what is still buffered on shutdown.
+	DrainTimeout commonconfig.Duration
+	// MaxGRPCRequestSize is the largest request sent to chip ingress, in bytes.
+	MaxGRPCRequestSize int
 }
 
 // envPairs merges the key=value pairs of a []string setting with the legacy one-env-var-per-entry

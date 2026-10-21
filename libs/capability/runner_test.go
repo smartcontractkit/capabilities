@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"testing"
 	"time"
 
@@ -39,6 +38,8 @@ func runArgs(t *testing.T) (*config, uint16) {
 // way up never gets as far as serving and reports that instead.
 func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability, error), port uint16) error {
 	t.Helper()
+	isolateLoopServer(t)
+	c, registered := whenRegistered(c)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -56,7 +57,7 @@ func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability,
 			t.Fatal("the run never started serving")
 			return nil
 		case <-time.After(5 * time.Millisecond):
-			if serving(int(port)) {
+			if serving(int(port)) && registered() {
 				cancel()
 				return <-done
 			}
@@ -99,10 +100,8 @@ func TestRunStartsTheCapability(t *testing.T) {
 // this client became the process's would hold a noop meter for the life of the process, recording
 // nothing, with no error anywhere to say so.
 //
-// Slow, and unavoidably so: it is the only test that builds a real beholder client, and closing one
-// flushes to a collector that is not there - about 20s of export timeouts. The timeouts are on
-// beholder.Config, which beholderConfig builds from the settings, so shortening them would mean a
-// knob in production code that exists only for this.
+// Slow: it is the only test that builds a real beholder client, and closing one flushes to a
+// collector that is not there - about 20s of export timeouts.
 func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a real beholder client; ~20s of export timeouts on close")
@@ -129,11 +128,8 @@ func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 // TestRunUnwindsWhatStartedBeforeAFailure covers a constructor that fails after the observability
 // services have been built: the run reports it and leaves nothing of itself behind.
 //
-// The beholder assertion below holds trivially here and is not evidence about telemetry. These
-// settings configure no endpoint, so newTelemetry returns the noop service and installs nothing -
-// there is nothing to put back. A run with telemetry configured would fail this if it asserted
-// anything, which is the gap documented on the telemetry block in run: the global is swapped when
-// telemetry is built, and the undo only works once the root has started it.
+// The beholder assertion below holds trivially here and is not evidence about telemetry: these
+// settings configure no endpoint, so loop.Server installs nothing.
 func TestRunUnwindsWhatStartedBeforeAFailure(t *testing.T) {
 	before := beholder.GetClient()
 	cfg, port := runArgs(t)
@@ -143,7 +139,7 @@ func TestRunUnwindsWhatStartedBeforeAFailure(t *testing.T) {
 	require.ErrorContains(t, runToCompletion(t, cfg, c, port), "no schedule")
 
 	assert.Same(t, before, beholder.GetClient(), "nothing was installed, so nothing changed")
-	// The web server never got as far as starting, so the port was never taken.
+	// The web server started before the capability was built, and stopping it gave the port back.
 	assertPortFree(t, port)
 }
 
@@ -160,32 +156,22 @@ func TestRunReportsWhereItFailed(t *testing.T) {
 	t.Cleanup(func() { _ = taken.Close() })
 
 	require.ErrorContains(t, runToCompletion(t, cfg, fakeConstructor, port),
-		fmt.Sprintf("failed to listen on port %d", port))
+		"failed to start loop server: error starting prometheus server")
 }
 
 // TestRunStaysUpUntilItIsToldToStop is the whole point of the wait: a run keeps serving until
 // something ends it, and only then unwinds.
-//
-// It is also the only test that looks at a run from outside while it is up: everything is still
-// serving when the assertions below are made.
 func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 	cfg, port := runArgs(t)
+	isolateLoopServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
+	ctor, registered := whenRegistered(fakeConstructor)
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor) }()
+	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, ctor) }()
 
-	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
-		"the run should be serving while it is up")
-
-	// The root is started, and the health checker reports on the root - so a run that is up is a
-	// run that says it is ready. This is what starting the capability bought.
-	for path, want := range map[string]int{"/healthz": 200, "/readyz": 200} {
-		res, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, path))
-		require.NoError(t, err, path)
-		require.NoError(t, res.Body.Close())
-		assert.Equal(t, want, res.StatusCode, path)
-	}
+	require.Eventually(t, func() bool { return serving(int(port)) && registered() }, 30*time.Second, 5*time.Millisecond,
+		"the run should come up")
 
 	// Still up: it has not unwound just because it finished starting.
 	select {

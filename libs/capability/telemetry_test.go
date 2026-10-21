@@ -1,8 +1,7 @@
 package capability
 
 import (
-	"context"
-	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -68,22 +66,40 @@ func TestObservabilityFlags(t *testing.T) {
 		"telemetry.auth-pub-key-hex",
 		"telemetry.auth-headers-ttl",
 		"telemetry.prometheus-bridge-enabled",
+		"telemetry.prometheus-bridge-prefixes",
+		"telemetry.app-id",
+		"telemetry.trace-sample-ratio",
+		"telemetry.emitter-batch-processor",
+		"telemetry.emitter-export-timeout",
+		"telemetry.log-streaming-enabled",
+		"telemetry.log-level",
+		"telemetry.metric-cardinality-limit",
+		"telemetry.metric-views-deny-attributes",
 
 		"tracing.enabled",
 		"tracing.sampling-ratio",
 		"tracing.tls-cert-file",
+		"tracing.collector-target",
+		"tracing.attributes",
 
 		"chip-ingress.endpoint",
 		"chip-ingress.insecure-connection",
+		"chip-ingress.batch-emitter-enabled",
+		"chip-ingress.max-grpc-request-size",
 
 		"pyroscope.server-address",
 		"pyroscope.auth-token",
 		"pyroscope.environment",
+		"pyroscope.link-traces-to-profiles",
+		"pyroscope.pprof-block-profile-rate",
+		"pyroscope.pprof-mutex-profile-fraction",
 
 		"http.port",
 
 		"capabilities.proxy-url",
 		"capabilities.capability-don-id",
+
+		"grpc.server-max-recv-msg-size",
 	} {
 		assert.NotNil(t, root.PersistentFlags().Lookup(name), "missing flag --%s", name)
 	}
@@ -125,6 +141,15 @@ func TestObservabilityDefaults(t *testing.T) {
 	port := root.PersistentFlags().Lookup("http.port")
 	require.NotNil(t, port)
 	assert.Equal(t, "8080", port.DefValue)
+
+	streaming := root.PersistentFlags().Lookup("telemetry.log-streaming-enabled")
+	require.NotNil(t, streaming)
+	assert.Empty(t, streaming.DefValue, "logs already reach stderr, so streaming them is off")
+
+	timeout := root.PersistentFlags().Lookup("telemetry.emitter-export-timeout")
+	require.NotNil(t, timeout)
+	assert.Equal(t, beholder.DefaultConfig().EmitterExportTimeout.String(), timeout.DefValue,
+		"the beholder client's own defaults, since loop.Server does not apply them")
 }
 
 // TestBinaryStartsWithNoSettingsAtAll is what defaulting the port bought: nothing has to be
@@ -177,71 +202,45 @@ func TestObservabilityDecodesFromFlags(t *testing.T) {
 	assert.Equal(t, "staging", cfg.observability.pyroscope.Environment)
 }
 
-// TestChipIngressFoldsIntoTheBeholderClient covers the shape of these three: chip ingress and
-// tracing are configured separately but exported through the one client, so what turns them on is
-// a field on its config rather than a service of their own.
-func TestChipIngressFoldsIntoTheBeholderClient(t *testing.T) {
-	off, err := beholderConfig(logger.Test(t), &observability{telemetry: TelemetryConfig{Endpoint: "otel:4317"}})
+// TestEnvConfigEnablesTelemetryWithAnEndpoint covers the gate loop.Server's env parsing has and this
+// config does not: CL_TELEMETRY_ENDPOINT is ignored unless CL_TELEMETRY_ENABLED is set too.
+func TestEnvConfigEnablesTelemetryWithAnEndpoint(t *testing.T) {
+	off, err := envConfig(defaultObservability(), GRPCConfig{})
 	require.NoError(t, err)
-	assert.False(t, off.ChipIngressEmitterEnabled, "an unset endpoint leaves the emitter off")
+	assert.False(t, off.TelemetryEnabled)
 
-	on, err := beholderConfig(logger.Test(t), &observability{
-		telemetry:   TelemetryConfig{Endpoint: "otel:4317"},
-		chipIngress: ChipIngressConfig{Endpoint: "chip:9000", InsecureConnection: true},
-	})
+	obs := defaultObservability()
+	obs.telemetry.Endpoint = "otel:4317"
+	on, err := envConfig(obs, GRPCConfig{})
 	require.NoError(t, err)
-	assert.True(t, on.ChipIngressEmitterEnabled, "setting an endpoint is what enables it")
-	assert.Equal(t, "chip:9000", on.ChipIngressEmitterGRPCEndpoint)
-	assert.True(t, on.ChipIngressInsecureConnection)
+	assert.True(t, on.TelemetryEnabled)
+	assert.Equal(t, "otel:4317", on.TelemetryEndpoint)
 }
 
-// TestTracingFoldsIntoTheBeholderClient is the same for traces: they go to the telemetry endpoint,
-// so enabling them adds an exporter to the client rather than standing anything else up.
-func TestTracingFoldsIntoTheBeholderClient(t *testing.T) {
-	lggr, _ := detachedLogger()
+// TestEnvConfigTracesToTheTelemetryEndpointByDefault keeps what this binary did before it ran on
+// loop.Server, which has a collector of its own: traces go to the telemetry endpoint unless told
+// otherwise.
+func TestEnvConfigTracesToTheTelemetryEndpointByDefault(t *testing.T) {
+	obs := defaultObservability()
+	obs.telemetry.Endpoint = "otel:4317"
 
-	off, err := beholderConfig(lggr, &observability{telemetry: TelemetryConfig{Endpoint: "otel:4317"}})
+	env, err := envConfig(obs, GRPCConfig{})
 	require.NoError(t, err)
-	assert.Nil(t, off.TraceSpanExporter)
+	assert.Equal(t, "otel:4317", env.TracingCollectorTarget)
 
-	on, err := beholderConfig(lggr, &observability{
-		telemetry: TelemetryConfig{Endpoint: "otel:4317"},
-		tracing:   TracingConfig{Enabled: true, SamplingRatio: 0.25},
-	})
+	obs.tracing.CollectorTarget = "traces:4317"
+	env, err = envConfig(obs, GRPCConfig{})
 	require.NoError(t, err)
-	require.NotNil(t, on.TraceSpanExporter, "enabling tracing should add an exporter")
-	assert.InDelta(t, 0.25, on.TraceSampleRatio, 0)
-
-	// The exporter dials its collector on a goroutine of its own, so it has to be shut down or it
-	// outlives the test that made it.
-	require.NoError(t, on.TraceSpanExporter.Shutdown(context.Background()))
+	assert.Equal(t, "traces:4317", env.TracingCollectorTarget)
 }
 
-// TestTracingSurvivesAnUnreachableCollector covers the dialer's error path, which is not optional:
-// loop.TracingConfig calls OnDialError without checking it is set, so an exporter built without one
-// turns an unreachable collector into a nil dereference that takes the process with it.
-func TestTracingSurvivesAnUnreachableCollector(t *testing.T) {
-	lggr, logs := detachedLogger()
-
-	// A port nothing is listening on, so the dial is guaranteed to fail.
-	cfg, err := beholderConfig(lggr, &observability{
-		telemetry: TelemetryConfig{Endpoint: fmt.Sprintf("localhost:%d", freePort(t))},
-		tracing:   TracingConfig{Enabled: true, SamplingRatio: 1},
-	})
+// TestEnvConfigSetsTheCardinalityLimit covers the one pointer loop.Server dereferences unchecked:
+// left nil, a run with telemetry configured panics on the way up.
+func TestEnvConfigSetsTheCardinalityLimit(t *testing.T) {
+	env, err := envConfig(defaultObservability(), GRPCConfig{})
 	require.NoError(t, err)
-	require.NotNil(t, cfg.TraceSpanExporter)
-
-	// Exporting is what makes it dial, and the dial is asynchronous - so the failure is waited for
-	// rather than asserted straight away. Reaching this log at all is the point: without
-	// OnDialError the same path is a nil dereference, which would take the test binary with it
-	// rather than failing this assertion.
-	_ = cfg.TraceSpanExporter.ExportSpans(context.Background(), nil)
-
-	require.Eventually(t, func() bool {
-		return len(logs.FilterMessage("Failed to dial the tracing collector").All()) > 0
-	}, 10*time.Second, 10*time.Millisecond, "the dial failure should be reported rather than swallowed")
-
-	require.NoError(t, cfg.TraceSpanExporter.Shutdown(context.Background()))
+	require.NotNil(t, env.TelemetryMetricCardinalityLimit)
+	assert.Equal(t, beholder.DefaultMetricCardinalityLimit, *env.TelemetryMetricCardinalityLimit)
 }
 
 // TestTelemetryDecodesFromEnv covers why the namespace and field names are what they are: a
@@ -253,54 +252,78 @@ func TestObservabilityDecodesFromEnv(t *testing.T) {
 	assert.Equal(t, "from-env:4317", decoded(t).observability.telemetry.Endpoint)
 }
 
-// TestBeholderConfigMergesLegacyEnvPairs covers the other half of that contract: a host encodes a
-// map as one env var per entry, and the setting wins where both name the same key.
-func TestBeholderConfigMergesLegacyEnvPairs(t *testing.T) {
+// TestEnvConfigMergesLegacyEnvPairs covers the other half of that contract: a host encodes a map as
+// one env var per entry, and the setting wins where both name the same key.
+func TestEnvConfigMergesLegacyEnvPairs(t *testing.T) {
 	t.Setenv(envTelemetryAttributePrefix+"region", "us-east")
 	t.Setenv(envTelemetryAttributePrefix+"env", "from-env")
+	t.Setenv(envTracingAttributePrefix+"zone", "a")
 
-	cfg, err := beholderConfig(logger.Test(t), &observability{
-		telemetry: TelemetryConfig{Endpoint: "otel:4317", Attributes: []string{"env=from-setting"}},
-	})
+	obs := defaultObservability()
+	obs.telemetry.Attributes = []string{"env=from-setting"}
+	env, err := envConfig(obs, GRPCConfig{})
 	require.NoError(t, err)
 
-	attributes := map[string]string{}
-	for _, a := range cfg.ResourceAttributes {
-		attributes[string(a.Key)] = a.Value.AsString()
-	}
-	assert.Equal(t, "us-east", attributes["region"], "the env-only entry should survive")
-	assert.Equal(t, "from-setting", attributes["env"], "the setting should win over the env var")
+	assert.Equal(t, "us-east", env.TelemetryAttributes["region"], "the env-only entry should survive")
+	assert.Equal(t, "from-setting", env.TelemetryAttributes["env"], "the setting should win over the env var")
+	assert.Equal(t, "a", env.TracingAttributes["zone"])
 }
 
-// TestWithOtelViewsReachesTheClient is the whole of what the option is for: the views a binary
-// passes are on the config the beholder client is built from.
-//
-// They cannot arrive any later - the OTEL specification requires histogram buckets at client
-// creation - which is why this is an option on Run rather than something the capability declares.
-func TestWithOtelViewsReachesTheClient(t *testing.T) {
+// TestEnvNamesMatchTheHost is why the fields are named after loop.EnvConfig's: each flag's env var
+// is the one a plugin host already sets, so the host needs no new names for these.
+func TestEnvNamesMatchTheHost(t *testing.T) {
+	for name, value := range map[string]string{
+		"CL_TELEMETRY_EMITTER_EXPORT_MAX_BATCH_SIZE": "7",
+		"CL_TELEMETRY_METRIC_CARDINALITY_LIMIT":      "8",
+		"CL_TELEMETRY_LOG_LEVEL":                     "warn",
+		"CL_TRACING_COLLECTOR_TARGET":                "traces:4317",
+		"CL_CHIP_INGRESS_MAX_GRPC_REQUEST_SIZE":      "9",
+		"CL_CHIP_INGRESS_SEND_TIMEOUT":               "3s",
+		"CL_PYROSCOPE_PPROF_BLOCK_PROFILE_RATE":      "10",
+		"CL_GRPC_SERVER_MAX_RECV_MSG_SIZE":           "11",
+	} {
+		t.Setenv(name, value)
+	}
+
+	cfg := decoded(t)
+	assert.Equal(t, 7, cfg.observability.telemetry.EmitterExportMaxBatchSize)
+	assert.Equal(t, 8, cfg.observability.telemetry.MetricCardinalityLimit)
+	assert.Equal(t, zapcore.WarnLevel, cfg.observability.telemetry.LogLevel)
+	assert.Equal(t, "traces:4317", cfg.observability.tracing.CollectorTarget)
+	assert.Equal(t, 9, cfg.observability.chipIngress.MaxGRPCRequestSize)
+	assert.Equal(t, 3*time.Second, cfg.observability.chipIngress.SendTimeout.Duration())
+	assert.Equal(t, 10, cfg.observability.pyroscope.PPROFBlockProfileRate)
+	assert.Equal(t, 11, cfg.grpc.ServerMaxRecvMsgSize)
+}
+
+// TestSetEnvRestores is what keeps the shim from leaking: the env loop.Server reads is the
+// process's only while it reads it.
+func TestSetEnvRestores(t *testing.T) {
+	t.Setenv("CL_TEST_SET", "before")
+	require.NoError(t, os.Unsetenv("CL_TEST_UNSET"))
+
+	restore, err := setEnv([]string{"CL_TEST_SET=during", "CL_TEST_UNSET=during"})
+	require.NoError(t, err)
+	assert.Equal(t, "during", os.Getenv("CL_TEST_SET"))
+	assert.Equal(t, "during", os.Getenv("CL_TEST_UNSET"))
+
+	restore()
+	assert.Equal(t, "before", os.Getenv("CL_TEST_SET"))
+	_, set := os.LookupEnv("CL_TEST_UNSET")
+	assert.False(t, set)
+}
+
+// TestWithOtelViewsReachesTheConfig is the whole of what the option is for: the views a binary
+// passes are what the run hands loop.Server, which builds the beholder client with them.
+func TestWithOtelViewsReachesTheConfig(t *testing.T) {
 	view := sdkmetric.NewView(
 		sdkmetric.Instrument{Name: "cron_capability_*"},
 		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{Boundaries: []float64{1, 2, 3}}},
 	)
 
 	cfg := defaultConfig()
-	cfg.observability.telemetry.Endpoint = "otel:4317"
 	WithOtelViews(view)(cfg)
-
-	bcfg, err := beholderConfig(logger.Test(t), &cfg.observability)
-	require.NoError(t, err)
-	assert.Len(t, bcfg.MetricViews, 1, "the view should be on the config the client is built from")
-}
-
-// TestWithOtelViewsDefaultsToNone covers a binary that passes none: the client keeps whatever
-// beholder's own defaults are rather than being handed an empty list to mean something.
-func TestWithOtelViewsDefaultsToNone(t *testing.T) {
-	obs := defaultObservability()
-	obs.telemetry.Endpoint = "otel:4317"
-
-	cfg, err := beholderConfig(logger.Test(t), obs)
-	require.NoError(t, err)
-	assert.Empty(t, cfg.MetricViews)
+	assert.Len(t, cfg.observability.otelViews, 1)
 }
 
 // TestRunUsesTheDecodedTelemetrySettings is the whole path in one: a flag on the command line
@@ -316,78 +339,6 @@ func TestRunUsesTheDecodedTelemetrySettings(t *testing.T) {
 	require.ErrorContains(t, err, `invalid telemetry.attributes entry "nope": expected key=value`)
 }
 
-// TestStartTelemetryWithoutAnEndpointChangesNothing is the off case: no endpoint means no client,
-// so nothing is installed, nothing joins the root, and there is nothing to undo.
-func TestStartTelemetryWithoutAnEndpointChangesNothing(t *testing.T) {
-	before := beholder.GetClient()
-
-	telemetry, err := newTelemetry(logger.Test(t), &observability{})
-	require.NoError(t, err)
-
-	// A service that does nothing rather than a nil, so the caller has one thing to hand the root
-	// either way. No client behind it: the process keeps the noop beholder client it already had.
-	require.NotNil(t, telemetry)
-	assert.Nil(t, telemetry.client, "there is no client when telemetry is off")
-	assert.Same(t, before, beholder.GetClient(), "nothing should have been installed")
-
-	require.NoError(t, telemetry.Start(t.Context()))
-	require.NoError(t, telemetry.Close())
-	assert.Same(t, before, beholder.GetClient(), "and starting or closing it changes nothing")
-}
-
-// TestTelemetryServiceRestoresTheGlobalWhenClosed is what making telemetry a service bought: what
-// starting it changed about the process is undone by closing it, rather than by the run remembering
-// to.
-// TestTelemetryServiceRestoresTheGlobalWhenClosed is what making telemetry a service bought: the
-// run hands it to the root and forgets about it, and closing it is what puts the process back.
-func TestTelemetryServiceRestoresTheGlobalWhenClosed(t *testing.T) {
-	original := beholder.GetClient()
-	client := beholder.NewNoopClient()
-	require.NotSame(t, original, client)
-
-	svc := newTelemetryService(logger.Test(t), client, installGlobally(client))
-	require.Same(t, client, beholder.GetClient(), "installing happens when it is built, not when it starts")
-
-	require.NoError(t, svc.Start(t.Context()))
-	require.NoError(t, svc.Close())
-	assert.Same(t, original, beholder.GetClient(), "closing should put the previous client back")
-}
-
-// TestInstallGloballyIsReversible is the reversibility itself: installing a client replaces the
-// process's, and what comes back puts the previous one in its place.
-//
-// This is the only lasting change starting telemetry makes - everything else belongs to the client
-// - so it is the thing worth pinning. It is tested here rather than through startBeholder because
-// that would need a live OTLP endpoint to get as far as installing anything.
-func TestInstallGloballyIsReversible(t *testing.T) {
-	original := beholder.GetClient()
-	client := beholder.NewNoopClient()
-	require.NotSame(t, original, client)
-
-	restore := installGlobally(client)
-	assert.Same(t, client, beholder.GetClient(), "the new client should be the process's")
-
-	restore()
-	assert.Same(t, original, beholder.GetClient(), "the previous client should be back")
-}
-
-// TestInstallGloballyNests covers a second install on top of a first: each restore puts back what
-// that install replaced, so unwinding in reverse arrives where it started.
-func TestInstallGloballyNests(t *testing.T) {
-	original := beholder.GetClient()
-	first, second := beholder.NewNoopClient(), beholder.NewNoopClient()
-
-	restoreFirst := installGlobally(first)
-	restoreSecond := installGlobally(second)
-	assert.Same(t, second, beholder.GetClient())
-
-	restoreSecond()
-	assert.Same(t, first, beholder.GetClient())
-
-	restoreFirst()
-	assert.Same(t, original, beholder.GetClient())
-}
-
 // TestRunLeavesTelemetryAsItFoundIt is the same guarantee seen from the binary: a run that started
 // telemetry and finished has put the process back the way it was.
 func TestRunLeavesTelemetryAsItFoundIt(t *testing.T) {
@@ -396,14 +347,4 @@ func TestRunLeavesTelemetryAsItFoundIt(t *testing.T) {
 	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run"))
 
 	assert.Same(t, before, beholder.GetClient())
-}
-
-// detachedLogger is an observed logger that is not bound to t.
-//
-// A trace exporter dials its collector on a goroutine of its own and keeps retrying, so it outlives
-// the test that made it - and logger.Test panics on anything logged after t has finished, which
-// would make these tests fail for a reason that has nothing to do with what they check.
-func detachedLogger() (logger.Logger, *observer.ObservedLogs) {
-	core, logs := observer.New(zapcore.ErrorLevel)
-	return logger.NewWithCores(core), logs
 }

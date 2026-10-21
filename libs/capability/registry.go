@@ -17,16 +17,17 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/remote"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
-func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig) (*registryService, error) {
+func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
 	r := &registryService{local: registry.NewRegistry(lggr)}
 
 	if cfg.ProxyURL != "" {
-		conn, err := dial(cfg.ProxyURL)
+		conn, err := dial(cfg.ProxyURL, grpcOpts.DialOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create registry proxy client for %s: %w", cfg.ProxyURL, err)
 		}
@@ -36,7 +37,10 @@ func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig)
 			Listen: func() (net.Listener, error) {
 				return net.Listen("tcp", net.JoinHostPort(grpcCfg.AdvertiseHost, strconv.Itoa(int(0))))
 			},
-			Connect: dial,
+			Connect: func(target string) (*grpc.ClientConn, error) {
+				return dial(target, grpcOpts.DialOpts...)
+			},
+			ServerFactory: serverFactory(grpcOpts),
 		})
 		if err != nil {
 			_ = conn.Close()
@@ -51,13 +55,21 @@ func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig)
 	return r, nil
 }
 
-func dial(target string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func dial(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return grpc.NewClient(target, append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, opts...)...)
+}
+
+// serverFactory is nil without a NewServer, which leaves the transport on its own default.
+func serverFactory(grpcOpts loop.GRPCOpts) func() *grpc.Server {
+	if grpcOpts.NewServer == nil {
+		return nil
+	}
+	return func() *grpc.Server { return grpcOpts.NewServer(nil) }
 }
 
 // startRegistry builds the registry and starts it.
-func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig) (*registryService, error) {
-	r, err := newRegistry(lggr, cfg, grpcCfg)
+func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
+	r, err := newRegistry(lggr, cfg, grpcCfg, grpcOpts)
 	if err != nil {
 		return nil, err
 	}

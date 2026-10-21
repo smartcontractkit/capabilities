@@ -24,6 +24,9 @@ type GRPCConfig struct {
 	// AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.
 	// Empty binds every interface.
 	AdvertiseHost string
+	// ServerMaxRecvMsgSize is the largest message the gRPC servers this process opens accept, in
+	// bytes. Zero keeps gRPC's default.
+	ServerMaxRecvMsgSize int
 }
 
 // the standard configuration for a capability; does not include the config that a capability may request via its constructor.

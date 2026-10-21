@@ -14,28 +14,40 @@ func (CapabilitiesConfig) DocComments() map[string]commentparsing.FieldDoc {
 
 func (ChipIngressConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
-		"Endpoint":           {Comment: "Endpoint is the chip ingress gRPC endpoint. The emitter is disabled when unset."},
-		"InsecureConnection": {Comment: "InsecureConnection connects to chip ingress over an insecure connection."},
+		"BatchEmitterEnabled": {Comment: "BatchEmitterEnabled batches events sent to chip ingress rather than sending each one."},
+		"BufferSize":          {Comment: "BufferSize is the most events buffered for sending before new ones are dropped."},
+		"DrainTimeout":        {Comment: "DrainTimeout bounds sending what is still buffered on shutdown."},
+		"Endpoint":            {Comment: "Endpoint is the chip ingress gRPC endpoint. The emitter is disabled when unset."},
+		"InsecureConnection":  {Comment: "InsecureConnection connects to chip ingress over an insecure connection."},
+		"MaxBatchSize":        {Comment: "MaxBatchSize is the most events sent at once."},
+		"MaxConcurrentSends":  {Comment: "MaxConcurrentSends is the most batches in flight at once."},
+		"MaxGRPCRequestSize":  {Comment: "MaxGRPCRequestSize is the largest request sent to chip ingress, in bytes."},
+		"SendInterval":        {Comment: "SendInterval is how often buffered events are sent."},
+		"SendTimeout":         {Comment: "SendTimeout bounds each send."},
 	}
 }
 
 func (GRPCConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
-		"AdvertiseHost": {Comment: "AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.\nEmpty binds every interface."},
+		"AdvertiseHost":        {Comment: "AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.\nEmpty binds every interface."},
+		"ServerMaxRecvMsgSize": {Comment: "ServerMaxRecvMsgSize is the largest message the gRPC servers this process opens accept, in\nbytes. Zero keeps gRPC's default."},
 	}
 }
 
 func (HTTPConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
-		"Port": {Comment: "Port serves /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers."},
+		"Port": {Comment: "Port serves /metrics and /debug/pprof."},
 	}
 }
 
 func (PyroscopeConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
-		"AuthToken":     {Comment: "AuthToken is the pyroscope auth token."},
-		"Environment":   {Comment: "Environment is the environment tag attached to profiles."},
-		"ServerAddress": {Comment: "ServerAddress is the pyroscope server address. Profiling is disabled when unset."},
+		"AuthToken":                 {Comment: "AuthToken is the pyroscope auth token."},
+		"Environment":               {Comment: "Environment is the environment tag attached to profiles."},
+		"LinkTracesToProfiles":      {Comment: "LinkTracesToProfiles tags spans with the profile they were recorded in. Needs tracing enabled."},
+		"PPROFBlockProfileRate":     {Comment: "PPROFBlockProfileRate is runtime.SetBlockProfileRate's rate. Zero leaves block profiling off."},
+		"PPROFMutexProfileFraction": {Comment: "PPROFMutexProfileFraction is runtime.SetMutexProfileFraction's rate. Zero leaves mutex\nprofiling off."},
+		"ServerAddress":             {Comment: "ServerAddress is the pyroscope server address. Profiling is disabled when unset."},
 	}
 }
 
@@ -47,21 +59,44 @@ func (SettingsConfig) DocComments() map[string]commentparsing.FieldDoc {
 
 func (TelemetryConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
-		"Attributes":              {Comment: "Attributes are extra telemetry resource attributes, as key=value pairs."},
-		"AuthHeaders":             {Comment: "AuthHeaders are telemetry auth headers, as key=value pairs."},
-		"AuthHeadersTTL":          {Comment: "AuthHeadersTTL is how long generated telemetry auth headers are valid for."},
-		"AuthPubKeyHex":           {Comment: "AuthPubKeyHex is the public key the telemetry auth headers are derived from."},
-		"CACertFile":              {Comment: "CACertFile is the CA certificate file used to verify the telemetry endpoint."},
-		"Endpoint":                {Comment: "Endpoint is the OTLP gRPC endpoint telemetry is exported to. Telemetry is disabled when unset."},
-		"InsecureConnection":      {Comment: "InsecureConnection exports telemetry over an insecure connection."},
-		"PrometheusBridgeEnabled": {Comment: "PrometheusBridgeEnabled feeds metrics registered on the prometheus registry into the telemetry\npipeline."},
+		"AppID":                     {Comment: "AppID identifies this process in traces, as their service.instance.id."},
+		"Attributes":                {Comment: "Attributes are extra telemetry resource attributes, as key=value pairs."},
+		"AuthHeaders":               {Comment: "AuthHeaders are telemetry auth headers, as key=value pairs."},
+		"AuthHeadersTTL":            {Comment: "AuthHeadersTTL is how long generated telemetry auth headers are valid for."},
+		"AuthPubKeyHex":             {Comment: "AuthPubKeyHex is the public key the telemetry auth headers are derived from."},
+		"CACertFile":                {Comment: "CACertFile is the CA certificate file used to verify the telemetry endpoint."},
+		"EmitterBatchProcessor":     {Comment: "EmitterBatchProcessor batches emitted messages rather than exporting each one."},
+		"EmitterExportInterval":     {Comment: "EmitterExportInterval is how often batched messages are exported."},
+		"EmitterExportMaxBatchSize": {Comment: "EmitterExportMaxBatchSize is the most messages exported at once."},
+		"EmitterExportTimeout":      {Comment: "EmitterExportTimeout bounds each export of emitted messages."},
+		"EmitterMaxQueueSize":       {Comment: "EmitterMaxQueueSize is the most messages queued for export before new ones are dropped."},
+		"Endpoint":                  {Comment: "Endpoint is the OTLP gRPC endpoint telemetry is exported to. Telemetry is disabled when unset."},
+		"InsecureConnection":        {Comment: "InsecureConnection exports telemetry over an insecure connection."},
+		"LogBatchProcessor":         {Comment: "LogBatchProcessor batches streamed logs rather than exporting each one."},
+		"LogCompressor":             {Comment: "LogCompressor is the compression used when exporting logs."},
+		"LogExportInterval":         {Comment: "LogExportInterval is how often batched logs are exported."},
+		"LogExportMaxBatchSize":     {Comment: "LogExportMaxBatchSize is the most logs exported at once."},
+		"LogExportTimeout":          {Comment: "LogExportTimeout bounds each export of streamed logs."},
+		"LogLevel":                  {Comment: "LogLevel is the lowest level of log streamed."},
+		"LogMaxQueueSize":           {Comment: "LogMaxQueueSize is the most logs queued for export before new ones are dropped."},
+		"LogStreamingEnabled":       {Comment: "LogStreamingEnabled streams logs to the telemetry endpoint as well as writing them to stderr."},
+		"MetricCardinalityLimit":    {Comment: "MetricCardinalityLimit is the most attribute sets per metric before overflow aggregation. Zero\ndisables the limit."},
+		"MetricCompressor":          {Comment: "MetricCompressor is the compression used when exporting metrics."},
+		"MetricExportBatchSize":     {Comment: "MetricExportBatchSize is the most data points per metric export. Zero disables batching."},
+		"MetricViewsDenyAttributes": {Comment: "MetricViewsDenyAttributes are attribute keys dropped from every metric."},
+		"PrometheusBridgeEnabled":   {Comment: "PrometheusBridgeEnabled feeds metrics registered on the prometheus registry into the telemetry\npipeline."},
+		"PrometheusBridgePrefixes":  {Comment: "PrometheusBridgePrefixes limits the bridged prometheus metrics to those with these name prefixes."},
+		"TraceCompressor":           {Comment: "TraceCompressor is the compression used when exporting traces."},
+		"TraceSampleRatio":          {Comment: "TraceSampleRatio is the fraction of traces the beholder client samples, from 0 to 1."},
 	}
 }
 
 func (TracingConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
-		"Enabled":       {Comment: "Enabled exports traces to the telemetry endpoint."},
-		"SamplingRatio": {Comment: "SamplingRatio is the fraction of traces sampled, from 0 to 1."},
-		"TLSCertFile":   {Comment: "TLSCertFile is the TLS certificate file used by the trace exporter."},
+		"Attributes":      {Comment: "Attributes are extra trace resource attributes, as key=value pairs. Entries from the legacy\nCL_TRACING_ATTRIBUTE_<KEY> env vars are merged in on top of these."},
+		"CollectorTarget": {Comment: "CollectorTarget is where traces are exported. Defaults to the telemetry endpoint."},
+		"Enabled":         {Comment: "Enabled exports traces."},
+		"SamplingRatio":   {Comment: "SamplingRatio is the fraction of traces sampled, from 0 to 1."},
+		"TLSCertFile":     {Comment: "TLSCertFile is the TLS certificate file used by the trace exporter."},
 	}
 }
