@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/chain_capabilities/solana
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/gagliardetto/solana-go v1.23.0
