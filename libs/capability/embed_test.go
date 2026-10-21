@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/capabilities/libs/capability/di"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
@@ -75,38 +73,38 @@ func TestEmbedRejectsABadInstanceCount(t *testing.T) {
 }
 
 // embedFakes embeds total fakes from base, closing what started when the test ends.
-func embedFakes(t *testing.T, base *di.Injector, total int, ctor func(do.Injector) (*fake, error), opts ...EmbedOption) ([]*fake, error) {
+func embedFakes(t *testing.T, base *Injector, total int, ctor func(do.Injector) (*fake, error), opts ...StartOption) ([]*fake, error) {
 	t.Helper()
 
-	fakes, started, err := Embed(t.Context(), logger.Test(t), base, total, ctor, opts...)
+	fakes, started, err := StartCapabilities(t.Context(), logger.Test(t), base, total, ctor, opts...)
 	t.Cleanup(func() { assert.NoError(t, services.MultiCloser(started).Close()) })
 	return fakes, err
 }
 
 func TestEmbedWithProvider(t *testing.T) {
 	first, second := clockwork.NewFakeClock(), clockwork.NewFakeClock()
-	base := di.NewInjector()
+	base := NewInjector()
 
 	var clocks []clockwork.Clock
 	_, err := embedFakes(t, base, 2, func(i do.Injector) (*fake, error) {
 		clocks = append(clocks, do.MustInvoke[clockwork.Clock](i))
 		return newFakeNamed(do.MustInvoke[logger.Logger](i)), nil
 	},
-		WithProvider(func(i *di.Injector) error { return i.ProvideValue[clockwork.Clock](first) }),
-		WithProvider(func(i *di.Injector) error { return i.ProvideValue[clockwork.Clock](second) }),
+		WithProvider(func(i *Injector) error { return i.ProvideValue[clockwork.Clock](first) }),
+		WithProvider(func(i *Injector) error { return i.ProvideValue[clockwork.Clock](second) }),
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, []clockwork.Clock{second, second}, clocks, "a provider overrides Embed's clock, and a later one wins")
+	assert.Equal(t, []clockwork.Clock{second, second}, clocks, "a provider overrides StartCapabilities's clock, and a later one wins")
 	_, err = do.Invoke[clockwork.Clock](base.Do())
 	assert.Error(t, err, "overrides are made on clones, never on base")
 }
 
 func TestEmbedReturnsWhatStartedWhenAnOverrideFails(t *testing.T) {
 	calls := 0
-	_, started, err := Embed(t.Context(), logger.Test(t), di.NewInjector(), 2, func(i do.Injector) (*fake, error) {
+	_, started, err := StartCapabilities(t.Context(), logger.Test(t), NewInjector(), 2, func(i do.Injector) (*fake, error) {
 		return newFakeNamed(do.MustInvoke[logger.Logger](i)), nil
-	}, WithProvider(func(*di.Injector) error {
+	}, WithProvider(func(*Injector) error {
 		if calls++; calls == 2 {
 			return errors.New("no clock")
 		}
@@ -120,7 +118,7 @@ func TestEmbedReturnsWhatStartedWhenAnOverrideFails(t *testing.T) {
 
 func TestEmbedRejectsANonPositiveCount(t *testing.T) {
 	for _, total := range []int{0, -1} {
-		_, err := embedFakes(t, di.NewInjector(), total, func(do.Injector) (*fake, error) { return newFake(), nil })
+		_, err := embedFakes(t, NewInjector(), total, func(do.Injector) (*fake, error) { return newFake(), nil })
 		require.ErrorContains(t, err, "instances must be positive", total)
 	}
 }

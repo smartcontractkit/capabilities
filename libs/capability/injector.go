@@ -1,4 +1,4 @@
-package di
+package capability
 
 import (
 	"fmt"
@@ -16,10 +16,10 @@ type Injector struct {
 	injector         *do.RootScope
 	directlyProvided map[string]bool
 	// configs is a slice of items over map to keep ordering.
-	configs []config
+	configs []injectedConfig
 }
 
-type config struct {
+type injectedConfig struct {
 	name     string
 	register func(cmd *cobra.Command, b *cli.Binder) error
 }
@@ -78,14 +78,14 @@ func (s *Injector) ProvideNamedConfig[T any](namespace, diName string, conf *T, 
 		return err
 	}
 
-	c := config{
+	c := injectedConfig{
 		name: diName,
 		register: func(cmd *cobra.Command, b *cli.Binder) error {
 			return b.RegisterInNamespace(cmd, namespace, conf, opts...)
 		},
 	}
 
-	i := slices.IndexFunc(s.configs, func(c config) bool { return c.name == diName })
+	i := slices.IndexFunc(s.configs, func(c injectedConfig) bool { return c.name == diName })
 	if i < 0 {
 		s.configs = append(s.configs, c)
 	} else {

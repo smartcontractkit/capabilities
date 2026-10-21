@@ -13,8 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/capabilities/libs/capability/di"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
@@ -46,7 +44,7 @@ func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability,
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c, di.NewInjector(), 1, cfg.capabilities) }()
+	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities) }()
 
 	deadline := time.After(30 * time.Second)
 	for {
@@ -176,7 +174,7 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor, di.NewInjector(), 1, cfg.capabilities)
+		done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor, NewInjector(), 1, cfg.capabilities)
 	}()
 
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,

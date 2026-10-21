@@ -10,8 +10,6 @@ import (
 	"github.com/samber/do/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 
-	"github.com/smartcontractkit/capabilities/libs/capability/di"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -19,16 +17,16 @@ import (
 
 // RunInjector is what the run command builds a capability from. Register what a capability needs on it
 // before calling Run; the run adds its own dependencies to it.
-var RunInjector = di.NewInjector()
+var RunInjector = NewInjector()
 
 // EmbedInjector is what the embed command builds each of its instances from. Every instance gets a clone
 // of it, so each resolves its providers itself and can override them. A clone is not a deep copy: a value
 // or config provided here is the same object in every instance, so provide a constructor for anything an
 // instance must not share.
-var EmbedInjector = di.NewInjector()
+var EmbedInjector = NewInjector()
 
 // Injectors provides to both RunInjector and EmbedInjector, for what a capability needs however it is run.
-var Injectors = di.MultiInjector{RunInjector, EmbedInjector}
+var Injectors = MultiInjector{RunInjector, EmbedInjector}
 
 // InstanceInfo is which of a run's instances a capability is. A run command has one.
 type InstanceInfo struct {
@@ -38,39 +36,40 @@ type InstanceInfo struct {
 	Total int
 }
 
-type embedConfig struct {
+type startConfig struct {
 	capabilities CapabilitiesConfig
 	grpc         GRPCConfig
 	settings     *loop.AtomicSettings
-	overrides    []func(*di.Injector) error
+	overrides    []func(*Injector) error
 }
 
-type EmbedOption func(*embedConfig)
+type StartOption func(*startConfig)
 
 // WithProvider calls provide on a clone of each instance's injector just before the capability is built,
-// so what it provides overrides what Embed provides, and a later WithProvider overrides it in turn.
-func WithProvider(provide func(*di.Injector) error) EmbedOption {
-	return func(c *embedConfig) { c.overrides = append(c.overrides, provide) }
+// so what it provides overrides what StartCapabilities provides, and a later WithProvider overrides it in
+// turn.
+func WithProvider(provide func(*Injector) error) StartOption {
+	return func(c *startConfig) { c.overrides = append(c.overrides, provide) }
 }
 
-func withNode(capabilities CapabilitiesConfig, grpc GRPCConfig, settings *loop.AtomicSettings) EmbedOption {
-	return func(c *embedConfig) {
+func withNode(capabilities CapabilitiesConfig, grpc GRPCConfig, settings *loop.AtomicSettings) StartOption {
+	return func(c *startConfig) {
 		c.capabilities = capabilities
 		c.grpc = grpc
 		c.settings = settings
 	}
 }
 
-// Embed builds and starts total instances of the capability ctor builds, each from a clone of base, without
-// the process around them. It also returns every service it started, in the order it started them; the
-// caller closes them, even when Embed fails.
-func Embed[T Capability](ctx context.Context, lggr logger.Logger, base *di.Injector, total int,
-	ctor func(do.Injector) (T, error), opts ...EmbedOption) ([]T, []services.Service, error) {
+// StartCapabilities builds and starts total instances of the capability ctor builds, each from a clone of
+// base, without the process around them. It also returns every service it started, in the order it started
+// them; the caller closes them, even when StartCapabilities fails.
+func StartCapabilities[T Capability](ctx context.Context, lggr logger.Logger, base *Injector, total int,
+	ctor func(do.Injector) (T, error), opts ...StartOption) ([]T, []services.Service, error) {
 	if total < 1 {
 		return nil, nil, fmt.Errorf("instances must be positive, got %d", total)
 	}
 
-	cfg := &embedConfig{grpc: defaultConfig().grpc, settings: newSettings(lggr)}
+	cfg := &startConfig{grpc: defaultConfig().grpc, settings: newSettings(lggr)}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -100,8 +99,8 @@ func Embed[T Capability](ctx context.Context, lggr logger.Logger, base *di.Injec
 }
 
 // startCapability builds the capability from its constructor and makes it reachable.
-func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *di.Injector, info InstanceInfo,
-	ctor func(do.Injector) (T, error), reg *registryService, cfg *embedConfig) (T, error) {
+func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *Injector, info InstanceInfo,
+	ctor func(do.Injector) (T, error), reg *registryService, cfg *startConfig) (T, error) {
 	var zero T
 
 	if err := errors.Join(

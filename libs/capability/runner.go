@@ -9,14 +9,12 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"github.com/samber/do/v2"
 
-	"github.com/smartcontractkit/capabilities/libs/capability/di"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
-func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error), base *di.Injector, total int, capabilities CapabilitiesConfig) error {
+func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error), base *Injector, total int, capabilities CapabilitiesConfig) error {
 	defer func() { _ = lggr.Sync() }()
 
 	var svcs []services.Service
@@ -48,7 +46,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	}
 	svcs = append(svcs, settings)
 
-	_, started, err := Embed(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, settings.values))
+	_, started, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, settings.values))
 	svcs = append(svcs, started...)
 	if err != nil {
 		return err
