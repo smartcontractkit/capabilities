@@ -12,8 +12,8 @@ type Config struct {
 	CREForwarderAddress string `json:"creForwarderAddress"`
 	// ForwarderLookbackLedgers is how many ledgers back to search for ReportProcessed events (default 100).
 	ForwarderLookbackLedgers int64 `json:"forwarderLookbackLedgers"`
-	// LedgerBoundsOffset makes a report tx valid for the next offset-1 ledgers (default 20; 4 is
-	// the short validity, 5 without lag-compensated bounds in the relayer).
+	// LedgerBoundsOffset makes a report tx valid for the next offset-1 ledgers (default 5, at
+	// least 3; 4 once the relayer compensates ledger bounds for RPC lag).
 	LedgerBoundsOffset            uint32        `json:"ledgerBoundsOffset"`
 	DeltaStage                    time.Duration `json:"deltaStage"`
 	Network                       string        `json:"network"`

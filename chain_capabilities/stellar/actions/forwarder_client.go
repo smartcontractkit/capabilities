@@ -24,12 +24,12 @@ const (
 	reportProcessedEventMaxPages         = 10
 	// DefaultForwarderLookbackLedgers is how many ledgers back to search for ReportProcessed events.
 	DefaultForwarderLookbackLedgers = int64(100)
-	// DefaultLedgerBoundsOffset keeps the report() tx valid for the next 19 ledgers (MaxLedger is
-	// exclusive), as before. stellar-core drops an unincluded tx from its queue after 4 ledgers and
-	// never re-floods the same hash, so a short validity (ledgerBoundsOffset 4 or 5 in the job
-	// config) lets the TXM resend a fresh envelope sooner. The code default stays long so the
-	// change is enabled per job, canaried by zone, and rolled back by config.
-	DefaultLedgerBoundsOffset = uint32(20)
+	// DefaultLedgerBoundsOffset keeps the report() tx valid for the next 4 ledgers (MaxLedger is
+	// exclusive). stellar-core drops an unincluded tx from its queue after 4 ledgers and never
+	// re-floods the same hash, so a longer validity only delays the TXM's fresh envelope; the old
+	// value was 20. Jobs can set ledgerBoundsOffset down to 3, or 4 once the relayer compensates
+	// ledger bounds for RPC lag.
+	DefaultLedgerBoundsOffset = uint32(5)
 )
 
 type TransmissionState uint32
