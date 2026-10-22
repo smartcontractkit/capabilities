@@ -32,9 +32,6 @@ type TxEventsConfig struct {
 	// Enabled turns emission on. The node must also run with CL_CHIP_INGRESS_DURABLE_EMITTER_ENABLED
 	// for the events to leave the process; otherwise they are counted as dropped.
 	Enabled bool `json:"enabled"`
-	// TransmitterOnly restricts emission to transactions this node sent. By default every node
-	// that observed a transaction emits it and the consumer dedups by (chain selector, tx hash).
-	TransmitterOnly bool `json:"transmitterOnly"`
 	// Domain is the ChIP source domain the events are published to. Defaults to txevents.DefaultDomain.
 	Domain string `json:"domain"`
 }

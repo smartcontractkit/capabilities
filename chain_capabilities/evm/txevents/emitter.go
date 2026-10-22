@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/chainlink-common/pkg/durableemitter"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
@@ -39,16 +40,40 @@ func EntityType() string {
 	return string(proto.MessageName(&ChainTransactionObserved{}))
 }
 
-// ErrEmitterUnavailable is returned when the LOOP has no durable emitter, which is the case when
-// the node runs without CL_CHIP_INGRESS_DURABLE_EMITTER_ENABLED. Events are dropped and counted.
+// ErrEmitterUnavailable is returned when the process has no durable emitter, which is the case
+// when the node runs without CL_CHIP_INGRESS_DURABLE_EMITTER_ENABLED. Events are dropped and
+// counted.
 var ErrEmitterUnavailable = errors.New("durable emitter not available in this process")
 
-// Sink delivers an encoded event with its routing attributes. chainlink-common's
-// durableemitter.DurableEmitter satisfies it; the LOOP server injects that instance through
-// resourcemanager.Config (loop.Server.MeteringConfig) so capabilities never reach for the
-// process-global emitter.
+// Sink delivers an encoded event with its routing attributes. Production uses GlobalSink; tests
+// substitute a fake.
 type Sink interface {
 	Emit(ctx context.Context, body []byte, attrKVs ...any) error
+}
+
+// SinkFunc adapts a function to Sink.
+type SinkFunc func(ctx context.Context, body []byte, attrKVs ...any) error
+
+// Emit implements Sink.
+func (f SinkFunc) Emit(ctx context.Context, body []byte, attrKVs ...any) error {
+	return f(ctx, body, attrKVs...)
+}
+
+// GlobalSink delivers events through the process-global durable emitter, the same path the
+// platform uses for its own ChIP events (workflow trigger events, relayer config). In a LOOP
+// that emitter is set up by loop.Server when the node runs with
+// CL_CHIP_INGRESS_DURABLE_EMITTER_ENABLED; it persists events in the node database and the host
+// delivers them to ChIP Ingress at least once. The emitter is resolved on every call, so the
+// sink can be built before the LOOP has finished starting. Without a durable emitter it returns
+// ErrEmitterUnavailable.
+func GlobalSink() Sink {
+	return SinkFunc(func(ctx context.Context, body []byte, attrKVs ...any) error {
+		err := durableemitter.GlobalEmit(ctx, body, attrKVs...)
+		if errors.Is(err, durableemitter.ErrNotInitialized) {
+			return ErrEmitterUnavailable
+		}
+		return err
+	})
 }
 
 // Emitter publishes ChainTransactionObserved events.
@@ -62,17 +87,10 @@ type NopEmitter struct{}
 // Emit implements Emitter.
 func (NopEmitter) Emit(context.Context, *ChainTransactionObserved) error { return nil }
 
-// IdempotencyKey identifies a transaction at a detail level independently of the node that
-// observed it, so that every node that learnt the same about a transaction produces the same key
-// and ChIP or the Blockchain Finality Service can dedup on it. A node whose receipt lookup failed
-// produces a different key than its peers, so its basic event does not shadow their receipt
-// detail; the finality service dedups by (chain selector, hash) regardless.
-func IdempotencyKey(ev *ChainTransactionObserved) string {
-	return fmt.Sprintf("%d:%s:%s", ev.GetChainSelector(), ev.GetTxHash(), ev.GetDetail().String())
-}
-
-// Subject identifies the transaction itself and is set as the CloudEvent subject.
-func Subject(ev *ChainTransactionObserved) string {
+// Key identifies the transaction independently of the node that observed it. Every node that
+// saw the same transaction produces the same key, so ChIP and the Blockchain Finality Service
+// can dedup on it. It is used both as the CloudEvent subject and as the idempotency key.
+func Key(ev *ChainTransactionObserved) string {
 	return fmt.Sprintf("%d:%s", ev.GetChainSelector(), ev.GetTxHash())
 }
 
@@ -81,18 +99,14 @@ func LogKVs(ev *ChainTransactionObserved) []any {
 	return []any{
 		"txHash", ev.GetTxHash(),
 		"chainSelector", ev.GetChainSelector(),
-		"detail", ev.GetDetail().String(),
 		"txStatus", ev.GetTxStatus().String(),
-		"receiverStatus", ev.GetReceiverStatus().String(),
-		"transmitter", ev.GetTransmitter(),
-		"duplicate", ev.GetDuplicate(),
 		"workflowExecutionID", ev.GetWorkflowExecutionId(),
-		"referenceID", ev.GetReferenceId(),
+		"workflowID", ev.GetWorkflowId(),
 	}
 }
 
-// DurableEmitter publishes events through the LOOP's durable emitter, which persists them in the
-// node database and delivers them to ChIP Ingress at least once.
+// DurableEmitter encodes events as ChIP CloudEvents and hands them to a Sink, counting the
+// outcome.
 type DurableEmitter struct {
 	lggr    logger.Logger
 	domain  string
@@ -103,9 +117,10 @@ type DurableEmitter struct {
 }
 
 // NewDurableEmitter returns an emitter publishing to the given ChIP source domain through sink.
-// A nil sink means the LOOP has no durable emitter: events are dropped, counted and the
-// condition is logged once.
 func NewDurableEmitter(lggr logger.Logger, domain string, sink Sink) (*DurableEmitter, error) {
+	if sink == nil {
+		return nil, errors.New("nil tx events sink")
+	}
 	if domain == "" {
 		domain = DefaultDomain
 	}
@@ -121,17 +136,11 @@ func NewDurableEmitter(lggr logger.Logger, domain string, sink Sink) (*DurableEm
 	}, nil
 }
 
-// Emit implements Emitter.
+// Emit implements Emitter. When the sink reports ErrEmitterUnavailable the event is counted as
+// dropped and the condition is logged once per process.
 func (d *DurableEmitter) Emit(ctx context.Context, ev *ChainTransactionObserved) error {
 	if ev == nil {
 		return errors.New("nil ChainTransactionObserved")
-	}
-	if d.sink == nil {
-		d.metrics.recordError(ctx, ev, "unavailable")
-		if d.unavailableLogged.CompareAndSwap(false, true) {
-			d.lggr.Warnw("Transaction events are enabled but this LOOP has no durable emitter; events are dropped", "domain", d.domain)
-		}
-		return ErrEmitterUnavailable
 	}
 	body, err := proto.Marshal(ev)
 	if err != nil {
@@ -141,13 +150,21 @@ func (d *DurableEmitter) Emit(ctx context.Context, ev *ChainTransactionObserved)
 
 	emitCtx, cancel := context.WithTimeout(ctx, emitTimeout)
 	defer cancel()
+	key := Key(ev)
 	err = d.sink.Emit(emitCtx, body,
 		attrSource, d.domain,
 		attrType, EntityType(),
-		attrIdempotencyKey, IdempotencyKey(ev),
-		attrSubject, Subject(ev),
+		attrIdempotencyKey, key,
+		attrSubject, key,
 	)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrEmitterUnavailable):
+		d.metrics.recordError(ctx, ev, "unavailable")
+		if d.unavailableLogged.CompareAndSwap(false, true) {
+			d.lggr.Warnw("Transaction events are enabled but this process has no durable emitter; events are dropped", "domain", d.domain)
+		}
+		return ErrEmitterUnavailable
+	case err != nil:
 		d.metrics.recordError(ctx, ev, "emit")
 		return fmt.Errorf("emit ChainTransactionObserved: %w", err)
 	}
@@ -187,10 +204,6 @@ func (m *emitterMetrics) recordError(ctx context.Context, ev *ChainTransactionOb
 func eventAttrs(ev *ChainTransactionObserved) []attribute.KeyValue {
 	return []attribute.KeyValue{
 		attribute.String("chain_selector", strconv.FormatUint(ev.GetChainSelector(), 10)),
-		attribute.String("detail", ev.GetDetail().String()),
 		attribute.String("tx_status", ev.GetTxStatus().String()),
-		attribute.String("receiver_status", ev.GetReceiverStatus().String()),
-		attribute.Bool("transmitter", ev.GetTransmitter()),
-		attribute.Bool("duplicate", ev.GetDuplicate()),
 	}
 }

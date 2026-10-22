@@ -2249,7 +2249,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		beholderProcessor:        test.NopBeholderProcessor{},
 		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler:    transmissionScheduler,
-		txEvents:                 TxEventsOptions{Emitter: &recordingTxEventEmitter{}, CapabilityID: testCapabilityID},
+		txEvents:                 &recordingTxEventEmitter{},
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
 	t.Cleanup(func() { assert.NoError(t, service.Close()) })
@@ -2276,7 +2276,7 @@ func createMocksAndCapabilityWithScheduler(
 		beholderProcessor:        test.NopBeholderProcessor{},
 		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler:    scheduler,
-		txEvents:                 TxEventsOptions{Emitter: &recordingTxEventEmitter{}, CapabilityID: testCapabilityID},
+		txEvents:                 &recordingTxEventEmitter{},
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
 	t.Cleanup(func() { assert.NoError(t, service.Close()) })

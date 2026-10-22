@@ -56,8 +56,8 @@ type WriteReport struct {
 
 	gasMeter *gasmeter.Meter
 
-	// txReporter emits ChainTransactionObserved the moment each transaction hash, and later its
-	// receipt, becomes known. Nil when transaction events are disabled.
+	// txReporter emits ChainTransactionObserved the moment a transaction is known to be mined.
+	// Nil when transaction events are disabled.
 	txReporter *txEventReporter
 }
 
@@ -109,11 +109,7 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		txReporter:             e.newTxEventReporter(lggr, metadata),
 	}
 
-	reply, responseMetadata, err := wr.executeWriteReport(ctx, request, metadata, telemetryContext)
-	// Transactions whose receipt was not resolved (the lookup failed, or the request failed after
-	// the hash was known) are reported with basic detail now that the outcome is decided.
-	wr.txReporter.flush(ctx)
-	return reply, responseMetadata, err
+	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
 }
 
 func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
@@ -157,7 +153,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission succeeded", "txHash", common.Bytes2Hex(txHash[:]))
-		e.observeLandedTx(&txHashRetriever, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, "")
+		e.txReporter.landed(ctx, *txHash)
 		reply, err := e.buildSuccessReply(ctx, *txHash)
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
@@ -175,7 +171,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission marked receiver invalid", "txHash", common.Bytes2Hex(txHash[:]))
-		e.observeLandedTx(&txHashRetriever, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, revertReason(transmissionInfo, transmissionID))
+		e.txReporter.landed(ctx, *txHash)
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 		if err != nil {
 			// Surface the known revert reason so the user learns their receiver is invalid even
@@ -201,7 +197,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				"receiverGasBudget", calculatedReceiverGasBudget,
 				"transmissionReceiverGasBudget", transmissionInfo.GasLimit,
 			)
-			e.observeLandedTx(&txHashRetriever, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, revertReason(transmissionInfo, transmissionID))
+			e.txReporter.landed(ctx, *txHash)
 			reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 			if err != nil {
 				// The receiver reverted despite sufficient gas (user contract fault); surface the
@@ -229,7 +225,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		e.lggr.Errorw("Transaction failed", "error", err.Error())
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	e.txReporter.ownTransaction(transactionResult)
+	e.txReporter.sent(ctx, transactionResult)
 
 	newTransmissionInfo, err := capcommon.WithPollingRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
@@ -254,8 +250,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		e.observeLandedTx(&txHashRetriever, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, "")
-		e.txReporter.duplicateOf(ctx, *txHash)
+		e.txReporter.landed(ctx, *txHash)
 		switch transactionResult.TxStatus {
 		case evmtypes.TxReverted:
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
@@ -287,7 +282,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			txHash = originalTxHash
 		}
 		e.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", common.Bytes2Hex(txHash[:]), "transmissionState", newTransmissionInfo.State.String())
-		e.observeLandedTx(&txHashRetriever, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, revertReason(newTransmissionInfo, transmissionID))
+		e.txReporter.landed(ctx, *txHash)
 
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, newTransmissionInfo, transmissionID)
 		if err != nil {
@@ -492,10 +487,6 @@ func revertReplyBuildError(transmissionInfo contracts.TransmissionInfo, transmis
 }
 
 func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
-	// Callers record the hash as soon as they learn it; this is a safety net so the transaction is
-	// still reported with basic detail if the lookups below fail.
-	e.txReporter.record(txObservation{hash: txHash, receiverStatus: receiverStatusFromReply(receiverStatus), errorMessage: derefString(errorMessage)})
-
 	txReceipt, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Receipt, error) {
 		return e.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
 			Hash:       txHash,
@@ -507,15 +498,6 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		// to surface here: it lets users locate the tx on-chain when the RPC is flaky, and lets us
 		// filter logs per node by hash. Callers add the user-facing reason (e.g. invalid receiver).
 		return nil, fmt.Errorf("failed to get transaction receipt for tx hash 0x%x: %w", txHash[:], err)
-	}
-	resolvedTx := txObservation{
-		hash:              txHash,
-		txStatus:          txStatusFromReceipt(txReceipt.Status),
-		receiverStatus:    receiverStatusFromReply(receiverStatus),
-		gasUsed:           txReceipt.GasUsed,
-		effectiveGasPrice: txReceipt.EffectiveGasPrice,
-		blockNumber:       blockNumberFromReceipt(txReceipt.BlockNumber),
-		errorMessage:      derefString(errorMessage),
 	}
 	receiptGasInfo := evmtypes.ReceiptGasInfo{
 		GasUsed:           txReceipt.GasUsed,
@@ -531,8 +513,6 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		return e.CalculateTransactionFee(ctx, receiptGasInfo)
 	})
 	if err != nil {
-		// The gas spent is known from the receipt even though it could not be priced.
-		e.txReporter.resolved(ctx, resolvedTx)
 		return nil, fmt.Errorf("failed to calculate transaction fee for tx hash 0x%x: %w", txHash[:], err)
 	}
 	message := errorMessage
@@ -544,10 +524,6 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 	if txReceipt.Status == 0 {
 		txStatus = evm.TxStatus_TX_STATUS_REVERTED
 	}
-	resolvedTx.fee = transactionFee.TransactionFee
-	resolvedTx.errorMessage = derefString(message)
-	e.txReporter.resolved(ctx, resolvedTx)
-
 	e.lggr.Infow("Successfully fetched tx receipt",
 		"txHash", hex.EncodeToString(txHash[:]),
 		"txStatus", txReceipt.Status,
@@ -562,13 +538,6 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
 	}, nil
-}
-
-func derefString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
@@ -625,21 +594,6 @@ type TxHashRetriever struct {
 	transmissionID          contracts.TransmissionID
 	keystoneForwarderClient contracts.CREForwarderClient
 	lggr                    logger.Logger
-
-	// logs caches the ReportProcessed logs of the last fetch so a hash can be reported with its
-	// block number as soon as it is known, before its receipt is fetched.
-	logs logDetailsList
-}
-
-// BlockNumber returns the block holding the ReportProcessed log for txHash in the last fetched
-// logs, or 0 when unknown.
-func (thr *TxHashRetriever) BlockNumber(txHash evmtypes.Hash) uint64 {
-	for _, d := range thr.logs {
-		if d.TxHash == txHash {
-			return blockNumberFromReceipt(d.BlockNumber)
-		}
-	}
-	return 0
 }
 
 func NewTxHashRetriever(forwarderClient contracts.CREForwarderClient, lggr logger.Logger, transmissionID contracts.TransmissionID) TxHashRetriever {
@@ -741,8 +695,6 @@ func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsLi
 	if err != nil {
 		return nil, fmt.Errorf("malformed log data for transmission %s: %w", thr.transmissionID.String(), err)
 	}
-	thr.logs = details
-
 	return details, nil
 }
 

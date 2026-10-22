@@ -65,15 +65,17 @@ type EVM struct {
 
 	transmissionScheduler ts.TransmissionScheduler
 
-	txEvents TxEventsOptions
+	// txEvents publishes ChainTransactionObserved events for the Transactions Viewer.
+	txEvents txevents.Emitter
 }
 
 // Option configures optional behaviour of the EVM capability.
 type Option func(*EVM)
 
-// WithTxEvents enables emission of ChainTransactionObserved events for the Transactions Viewer.
-func WithTxEvents(opts TxEventsOptions) Option {
-	return func(e *EVM) { e.txEvents = opts }
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func WithTxEvents(emitter txevents.Emitter) Option {
+	return func(e *EVM) { e.txEvents = emitter }
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
@@ -99,7 +101,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		consensusHandler:         handler,
 		chainSelector:            chainSelector,
 		transmissionScheduler:    transmissionScheduler,
-		txEvents:                 TxEventsOptions{Emitter: txevents.NopEmitter{}},
+		txEvents:                 txevents.NopEmitter{},
 	}
 	for _, opt := range opts {
 		opt(e)

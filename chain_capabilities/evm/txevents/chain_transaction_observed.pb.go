@@ -4,10 +4,10 @@
 // 	protoc        v5.29.3
 // source: chain_capabilities/evm/txevents/chain_transaction_observed.proto
 
-// Package txevents defines the chain-agnostic transaction event every chain capability emits
-// for the CRE Transactions Viewer. The package name is intentionally free of the chain family so
-// Aptos, Solana and Stellar can emit the same schema; the file lives in the EVM module only until
-// the ChIP domain and schema registration are settled with Data Platform (PLEX-3409).
+// Package txevents defines the transaction event every chain capability emits for the CRE
+// Transactions Viewer. The package name is intentionally free of the chain family so Aptos,
+// Solana and Stellar can emit the same schema; the file lives in the EVM module only until the
+// ChIP domain and schema registration are settled with Data Platform (PLEX-3409).
 
 package txevents
 
@@ -26,68 +26,13 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// TxDetail says how much the emitting node learnt about the transaction. A node emits exactly
-// one event per transaction it saw land while serving a request: RECEIPT once it resolved the
-// receipt, BASIC otherwise (the receipt lookup failed, the request failed after the hash was
-// known, or the transaction is the node's own duplicate, whose receipt is not fetched).
-type TxDetail int32
-
-const (
-	TxDetail_TX_DETAIL_UNSPECIFIED TxDetail = 0
-	// Hash, attribution and the statuses known from the transaction manager or the forwarder.
-	// Receipt-derived fields (gas, fee) are not set.
-	TxDetail_TX_DETAIL_BASIC TxDetail = 1
-	// Receipt-derived status, gas used, effective gas price, fee and block number are set.
-	TxDetail_TX_DETAIL_RECEIPT TxDetail = 2
-)
-
-// Enum value maps for TxDetail.
-var (
-	TxDetail_name = map[int32]string{
-		0: "TX_DETAIL_UNSPECIFIED",
-		1: "TX_DETAIL_BASIC",
-		2: "TX_DETAIL_RECEIPT",
-	}
-	TxDetail_value = map[string]int32{
-		"TX_DETAIL_UNSPECIFIED": 0,
-		"TX_DETAIL_BASIC":       1,
-		"TX_DETAIL_RECEIPT":     2,
-	}
-)
-
-func (x TxDetail) Enum() *TxDetail {
-	p := new(TxDetail)
-	*p = x
-	return p
-}
-
-func (x TxDetail) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (TxDetail) Descriptor() protoreflect.EnumDescriptor {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0].Descriptor()
-}
-
-func (TxDetail) Type() protoreflect.EnumType {
-	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0]
-}
-
-func (x TxDetail) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use TxDetail.Descriptor instead.
-func (TxDetail) EnumDescriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{0}
-}
-
-// TxStatus is the on-chain outcome of the transaction itself, as reported by the transaction
-// manager or the forwarder log at BASIC detail and by the receipt at RECEIPT detail.
+// TxStatus is the on-chain outcome of the transaction as known at the moment it was observed:
+// from the transaction manager for the node's own transaction, or implied by the forwarder's
+// ReportProcessed log (which only exists for successful transactions) for transactions sent by
+// other nodes. Consumers fetch the receipt for anything beyond that.
 type TxStatus int32
 
 const (
-	// Not known when the event was emitted. Consumers fetch the receipt by hash.
 	TxStatus_TX_STATUS_UNSPECIFIED TxStatus = 0
 	TxStatus_TX_STATUS_SUCCESS     TxStatus = 1
 	TxStatus_TX_STATUS_REVERTED    TxStatus = 2
@@ -118,11 +63,11 @@ func (x TxStatus) String() string {
 }
 
 func (TxStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[1].Descriptor()
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0].Descriptor()
 }
 
 func (TxStatus) Type() protoreflect.EnumType {
-	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[1]
+	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[0]
 }
 
 func (x TxStatus) Number() protoreflect.EnumNumber {
@@ -131,107 +76,26 @@ func (x TxStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TxStatus.Descriptor instead.
 func (TxStatus) EnumDescriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{1}
+	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{0}
 }
 
-// ReceiverStatus is the outcome of the receiver (user) contract call made by the forwarder. A
-// transaction can succeed on chain while the receiver call reverted ("internally reverted").
-type ReceiverStatus int32
-
-const (
-	ReceiverStatus_RECEIVER_STATUS_UNSPECIFIED ReceiverStatus = 0
-	ReceiverStatus_RECEIVER_STATUS_SUCCESS     ReceiverStatus = 1
-	ReceiverStatus_RECEIVER_STATUS_REVERTED    ReceiverStatus = 2
-)
-
-// Enum value maps for ReceiverStatus.
-var (
-	ReceiverStatus_name = map[int32]string{
-		0: "RECEIVER_STATUS_UNSPECIFIED",
-		1: "RECEIVER_STATUS_SUCCESS",
-		2: "RECEIVER_STATUS_REVERTED",
-	}
-	ReceiverStatus_value = map[string]int32{
-		"RECEIVER_STATUS_UNSPECIFIED": 0,
-		"RECEIVER_STATUS_SUCCESS":     1,
-		"RECEIVER_STATUS_REVERTED":    2,
-	}
-)
-
-func (x ReceiverStatus) Enum() *ReceiverStatus {
-	p := new(ReceiverStatus)
-	*p = x
-	return p
-}
-
-func (x ReceiverStatus) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (ReceiverStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[2].Descriptor()
-}
-
-func (ReceiverStatus) Type() protoreflect.EnumType {
-	return &file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes[2]
-}
-
-func (x ReceiverStatus) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use ReceiverStatus.Descriptor instead.
-func (ReceiverStatus) EnumDescriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescGZIP(), []int{2}
-}
-
-// ChainTransactionObserved records one transaction a chain capability saw land on chain while
-// serving a WriteReport, including reverted and duplicate ones. Each node emits it once per
-// transaction, see TxDetail. The Blockchain Finality Service dedups events by
-// (chain_selector, tx_hash), fetches the receipt and tracks finality, so the body is kept
-// minimal: no report payload, signatures or request data are included.
+// ChainTransactionObserved is emitted by a chain capability as soon as it learns that a
+// transaction belonging to a workflow execution was mined, including reverted and duplicate
+// ones. It carries only what is needed to attribute the transaction to the execution; the
+// Blockchain Finality Service dedups events by (chain_selector, tx_hash) and resolves the
+// receipt, fee and finality itself.
 type ChainTransactionObserved struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Attribution, copied from the capability request metadata.
-	WorkflowExecutionId string `protobuf:"bytes,1,opt,name=workflow_execution_id,json=workflowExecutionId,proto3" json:"workflow_execution_id,omitempty"`
-	WorkflowId          string `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
-	WorkflowOwner       string `protobuf:"bytes,3,opt,name=workflow_owner,json=workflowOwner,proto3" json:"workflow_owner,omitempty"`
-	// Workflow step reference that issued the write.
-	ReferenceId   string `protobuf:"bytes,4,opt,name=reference_id,json=referenceId,proto3" json:"reference_id,omitempty"`
-	WorkflowDonId uint32 `protobuf:"varint,5,opt,name=workflow_don_id,json=workflowDonId,proto3" json:"workflow_don_id,omitempty"`
-	// Informational only. Consumers must resolve the organization from the execution record.
-	OrgId string `protobuf:"bytes,6,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	// Transaction identity.
-	ChainSelector uint64 `protobuf:"varint,7,opt,name=chain_selector,json=chainSelector,proto3" json:"chain_selector,omitempty"`
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	WorkflowExecutionId string                 `protobuf:"bytes,1,opt,name=workflow_execution_id,json=workflowExecutionId,proto3" json:"workflow_execution_id,omitempty"`
+	WorkflowId          string                 `protobuf:"bytes,2,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	ChainSelector       uint64                 `protobuf:"varint,3,opt,name=chain_selector,json=chainSelector,proto3" json:"chain_selector,omitempty"`
 	// Chain-native encoding. EVM: 0x-prefixed lowercase hex.
-	TxHash       string `protobuf:"bytes,8,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	CapabilityId string `protobuf:"bytes,9,opt,name=capability_id,json=capabilityId,proto3" json:"capability_id,omitempty"`
-	// Outcome as observed by the emitting node.
-	TxStatus       TxStatus       `protobuf:"varint,10,opt,name=tx_status,json=txStatus,proto3,enum=chain_capabilities.txevents.v1.TxStatus" json:"tx_status,omitempty"`
-	ReceiverStatus ReceiverStatus `protobuf:"varint,11,opt,name=receiver_status,json=receiverStatus,proto3,enum=chain_capabilities.txevents.v1.ReceiverStatus" json:"receiver_status,omitempty"`
-	// Total cost in the chain's base unit (wei) as a decimal string, including the L1 data fee on
-	// rollups when the capability accounts for it. Empty when unknown.
-	TransactionFee string `protobuf:"bytes,12,opt,name=transaction_fee,json=transactionFee,proto3" json:"transaction_fee,omitempty"`
-	// 0 when unknown.
-	BlockNumber uint64 `protobuf:"varint,13,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
-	// User-facing revert reason, when the receiver reverted.
-	ErrorMessage string `protobuf:"bytes,14,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	// Emission context.
-	// Unix milliseconds at which the node emitted the event.
-	ObservedAtMs int64 `protobuf:"varint,15,opt,name=observed_at_ms,json=observedAtMs,proto3" json:"observed_at_ms,omitempty"`
-	// True when the emitting node sent this transaction.
-	Transmitter bool `protobuf:"varint,16,opt,name=transmitter,proto3" json:"transmitter,omitempty"`
-	// True when this transaction reverted because another node's transmission of the same report
-	// had already landed. Such transactions still cost gas and must be visible to the user.
-	Duplicate bool `protobuf:"varint,17,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
-	// How much the node learnt about the transaction; see TxDetail.
-	Detail TxDetail `protobuf:"varint,18,opt,name=detail,proto3,enum=chain_capabilities.txevents.v1.TxDetail" json:"detail,omitempty"`
-	// Gas spent, from the receipt. 0 when unknown.
-	GasUsed uint64 `protobuf:"varint,19,opt,name=gas_used,json=gasUsed,proto3" json:"gas_used,omitempty"`
-	// Price paid per gas unit in wei as a decimal string, from the receipt. Empty when unknown.
-	EffectiveGasPrice string `protobuf:"bytes,20,opt,name=effective_gas_price,json=effectiveGasPrice,proto3" json:"effective_gas_price,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	TxHash   string   `protobuf:"bytes,4,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	TxStatus TxStatus `protobuf:"varint,5,opt,name=tx_status,json=txStatus,proto3,enum=chain_capabilities.txevents.v1.TxStatus" json:"tx_status,omitempty"`
+	// Unix milliseconds at which the node observed the transaction.
+	ObservedAtMs  int64 `protobuf:"varint,6,opt,name=observed_at_ms,json=observedAtMs,proto3" json:"observed_at_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ChainTransactionObserved) Reset() {
@@ -278,34 +142,6 @@ func (x *ChainTransactionObserved) GetWorkflowId() string {
 	return ""
 }
 
-func (x *ChainTransactionObserved) GetWorkflowOwner() string {
-	if x != nil {
-		return x.WorkflowOwner
-	}
-	return ""
-}
-
-func (x *ChainTransactionObserved) GetReferenceId() string {
-	if x != nil {
-		return x.ReferenceId
-	}
-	return ""
-}
-
-func (x *ChainTransactionObserved) GetWorkflowDonId() uint32 {
-	if x != nil {
-		return x.WorkflowDonId
-	}
-	return 0
-}
-
-func (x *ChainTransactionObserved) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
-}
-
 func (x *ChainTransactionObserved) GetChainSelector() uint64 {
 	if x != nil {
 		return x.ChainSelector
@@ -320,46 +156,11 @@ func (x *ChainTransactionObserved) GetTxHash() string {
 	return ""
 }
 
-func (x *ChainTransactionObserved) GetCapabilityId() string {
-	if x != nil {
-		return x.CapabilityId
-	}
-	return ""
-}
-
 func (x *ChainTransactionObserved) GetTxStatus() TxStatus {
 	if x != nil {
 		return x.TxStatus
 	}
 	return TxStatus_TX_STATUS_UNSPECIFIED
-}
-
-func (x *ChainTransactionObserved) GetReceiverStatus() ReceiverStatus {
-	if x != nil {
-		return x.ReceiverStatus
-	}
-	return ReceiverStatus_RECEIVER_STATUS_UNSPECIFIED
-}
-
-func (x *ChainTransactionObserved) GetTransactionFee() string {
-	if x != nil {
-		return x.TransactionFee
-	}
-	return ""
-}
-
-func (x *ChainTransactionObserved) GetBlockNumber() uint64 {
-	if x != nil {
-		return x.BlockNumber
-	}
-	return 0
-}
-
-func (x *ChainTransactionObserved) GetErrorMessage() string {
-	if x != nil {
-		return x.ErrorMessage
-	}
-	return ""
 }
 
 func (x *ChainTransactionObserved) GetObservedAtMs() int64 {
@@ -369,81 +170,23 @@ func (x *ChainTransactionObserved) GetObservedAtMs() int64 {
 	return 0
 }
 
-func (x *ChainTransactionObserved) GetTransmitter() bool {
-	if x != nil {
-		return x.Transmitter
-	}
-	return false
-}
-
-func (x *ChainTransactionObserved) GetDuplicate() bool {
-	if x != nil {
-		return x.Duplicate
-	}
-	return false
-}
-
-func (x *ChainTransactionObserved) GetDetail() TxDetail {
-	if x != nil {
-		return x.Detail
-	}
-	return TxDetail_TX_DETAIL_UNSPECIFIED
-}
-
-func (x *ChainTransactionObserved) GetGasUsed() uint64 {
-	if x != nil {
-		return x.GasUsed
-	}
-	return 0
-}
-
-func (x *ChainTransactionObserved) GetEffectiveGasPrice() string {
-	if x != nil {
-		return x.EffectiveGasPrice
-	}
-	return ""
-}
-
 var File_chain_capabilities_evm_txevents_chain_transaction_observed_proto protoreflect.FileDescriptor
 
 const file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDesc = "" +
 	"\n" +
-	"@chain_capabilities/evm/txevents/chain_transaction_observed.proto\x12\x1echain_capabilities.txevents.v1\"\xe1\x06\n" +
+	"@chain_capabilities/evm/txevents/chain_transaction_observed.proto\x12\x1echain_capabilities.txevents.v1\"\x9c\x02\n" +
 	"\x18ChainTransactionObserved\x122\n" +
 	"\x15workflow_execution_id\x18\x01 \x01(\tR\x13workflowExecutionId\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
 	"workflowId\x12%\n" +
-	"\x0eworkflow_owner\x18\x03 \x01(\tR\rworkflowOwner\x12!\n" +
-	"\freference_id\x18\x04 \x01(\tR\vreferenceId\x12&\n" +
-	"\x0fworkflow_don_id\x18\x05 \x01(\rR\rworkflowDonId\x12\x15\n" +
-	"\x06org_id\x18\x06 \x01(\tR\x05orgId\x12%\n" +
-	"\x0echain_selector\x18\a \x01(\x04R\rchainSelector\x12\x17\n" +
-	"\atx_hash\x18\b \x01(\tR\x06txHash\x12#\n" +
-	"\rcapability_id\x18\t \x01(\tR\fcapabilityId\x12E\n" +
-	"\ttx_status\x18\n" +
-	" \x01(\x0e2(.chain_capabilities.txevents.v1.TxStatusR\btxStatus\x12W\n" +
-	"\x0freceiver_status\x18\v \x01(\x0e2..chain_capabilities.txevents.v1.ReceiverStatusR\x0ereceiverStatus\x12'\n" +
-	"\x0ftransaction_fee\x18\f \x01(\tR\x0etransactionFee\x12!\n" +
-	"\fblock_number\x18\r \x01(\x04R\vblockNumber\x12#\n" +
-	"\rerror_message\x18\x0e \x01(\tR\ferrorMessage\x12$\n" +
-	"\x0eobserved_at_ms\x18\x0f \x01(\x03R\fobservedAtMs\x12 \n" +
-	"\vtransmitter\x18\x10 \x01(\bR\vtransmitter\x12\x1c\n" +
-	"\tduplicate\x18\x11 \x01(\bR\tduplicate\x12@\n" +
-	"\x06detail\x18\x12 \x01(\x0e2(.chain_capabilities.txevents.v1.TxDetailR\x06detail\x12\x19\n" +
-	"\bgas_used\x18\x13 \x01(\x04R\agasUsed\x12.\n" +
-	"\x13effective_gas_price\x18\x14 \x01(\tR\x11effectiveGasPrice*Q\n" +
-	"\bTxDetail\x12\x19\n" +
-	"\x15TX_DETAIL_UNSPECIFIED\x10\x00\x12\x13\n" +
-	"\x0fTX_DETAIL_BASIC\x10\x01\x12\x15\n" +
-	"\x11TX_DETAIL_RECEIPT\x10\x02*T\n" +
+	"\x0echain_selector\x18\x03 \x01(\x04R\rchainSelector\x12\x17\n" +
+	"\atx_hash\x18\x04 \x01(\tR\x06txHash\x12E\n" +
+	"\ttx_status\x18\x05 \x01(\x0e2(.chain_capabilities.txevents.v1.TxStatusR\btxStatus\x12$\n" +
+	"\x0eobserved_at_ms\x18\x06 \x01(\x03R\fobservedAtMs*T\n" +
 	"\bTxStatus\x12\x19\n" +
 	"\x15TX_STATUS_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11TX_STATUS_SUCCESS\x10\x01\x12\x16\n" +
-	"\x12TX_STATUS_REVERTED\x10\x02*l\n" +
-	"\x0eReceiverStatus\x12\x1f\n" +
-	"\x1bRECEIVER_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
-	"\x17RECEIVER_STATUS_SUCCESS\x10\x01\x12\x1c\n" +
-	"\x18RECEIVER_STATUS_REVERTED\x10\x02BSZQgithub.com/smartcontractkit/capabilities/chain_capabilities/evm/txevents;txeventsb\x06proto3"
+	"\x12TX_STATUS_REVERTED\x10\x02BSZQgithub.com/smartcontractkit/capabilities/chain_capabilities/evm/txevents;txeventsb\x06proto3"
 
 var (
 	file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescOnce sync.Once
@@ -457,23 +200,19 @@ func file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDe
 	return file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDescData
 }
 
-var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_goTypes = []any{
-	(TxDetail)(0),                    // 0: chain_capabilities.txevents.v1.TxDetail
-	(TxStatus)(0),                    // 1: chain_capabilities.txevents.v1.TxStatus
-	(ReceiverStatus)(0),              // 2: chain_capabilities.txevents.v1.ReceiverStatus
-	(*ChainTransactionObserved)(nil), // 3: chain_capabilities.txevents.v1.ChainTransactionObserved
+	(TxStatus)(0),                    // 0: chain_capabilities.txevents.v1.TxStatus
+	(*ChainTransactionObserved)(nil), // 1: chain_capabilities.txevents.v1.ChainTransactionObserved
 }
 var file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_depIdxs = []int32{
-	1, // 0: chain_capabilities.txevents.v1.ChainTransactionObserved.tx_status:type_name -> chain_capabilities.txevents.v1.TxStatus
-	2, // 1: chain_capabilities.txevents.v1.ChainTransactionObserved.receiver_status:type_name -> chain_capabilities.txevents.v1.ReceiverStatus
-	0, // 2: chain_capabilities.txevents.v1.ChainTransactionObserved.detail:type_name -> chain_capabilities.txevents.v1.TxDetail
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 0: chain_capabilities.txevents.v1.ChainTransactionObserved.tx_status:type_name -> chain_capabilities.txevents.v1.TxStatus
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_init() }
@@ -486,7 +225,7 @@ func file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_init(
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDesc), len(file_chain_capabilities_evm_txevents_chain_transaction_observed_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      1,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,

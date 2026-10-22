@@ -8,19 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/durableemitter"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 func testEvent() *ChainTransactionObserved {
 	return &ChainTransactionObserved{
 		WorkflowExecutionId: "exec-1",
+		WorkflowId:          "wf-1",
 		ChainSelector:       16015286601757825753,
 		TxHash:              "0xabc",
-		Detail:              TxDetail_TX_DETAIL_RECEIPT,
 		TxStatus:            TxStatus_TX_STATUS_REVERTED,
-		ReceiverStatus:      ReceiverStatus_RECEIVER_STATUS_UNSPECIFIED,
-		Transmitter:         true,
-		Duplicate:           true,
+		ObservedAtMs:        1,
 	}
 }
 
@@ -28,40 +27,42 @@ func TestEntityType(t *testing.T) {
 	require.Equal(t, "chain_capabilities.txevents.v1.ChainTransactionObserved", EntityType())
 }
 
-func TestIdempotencyKeyAndSubject(t *testing.T) {
+func TestKey(t *testing.T) {
 	ev := testEvent()
-	require.Equal(t, "16015286601757825753:0xabc:TX_DETAIL_RECEIPT", IdempotencyKey(ev))
-	require.Equal(t, "16015286601757825753:0xabc", Subject(ev))
+	require.Equal(t, "16015286601757825753:0xabc", Key(ev))
 
-	// The key does not depend on who observed the transaction or on the values it reported.
+	// The key depends only on the transaction, not on who observed it, when, or what it reported.
 	other := proto.Clone(ev).(*ChainTransactionObserved)
-	other.Transmitter = false
-	other.Duplicate = false
 	other.ObservedAtMs = 42
 	other.TxStatus = TxStatus_TX_STATUS_SUCCESS
-	other.TransactionFee = "2000"
-	require.Equal(t, IdempotencyKey(ev), IdempotencyKey(other))
+	other.WorkflowExecutionId = "exec-2"
+	require.Equal(t, Key(ev), Key(other))
 
-	// A basic event from a node that could not resolve the receipt is a distinct delivery.
-	other.Detail = TxDetail_TX_DETAIL_BASIC
-	require.NotEqual(t, IdempotencyKey(ev), IdempotencyKey(other))
-	require.Equal(t, Subject(ev), Subject(other))
+	other.TxHash = "0xdef"
+	require.NotEqual(t, Key(ev), Key(other))
 }
 
-type sinkFunc func(ctx context.Context, body []byte, attrKVs ...any) error
-
-func (f sinkFunc) Emit(ctx context.Context, body []byte, attrKVs ...any) error {
-	return f(ctx, body, attrKVs...)
+func TestGlobalSink(t *testing.T) {
+	// The test process never sets up a durable emitter, which is exactly the situation of a node
+	// running without CL_CHIP_INGRESS_DURABLE_EMITTER_ENABLED.
+	require.Nil(t, durableemitter.GetGlobalEmitter())
+	err := GlobalSink().Emit(t.Context(), []byte("body"), "source", DefaultDomain)
+	require.ErrorIs(t, err, ErrEmitterUnavailable)
 }
 
 func TestDurableEmitter_Emit(t *testing.T) {
-	newEmitter := func(t *testing.T, emit sinkFunc) *DurableEmitter {
+	newEmitter := func(t *testing.T, emit SinkFunc) *DurableEmitter {
 		t.Helper()
 		d, err := NewDurableEmitter(logger.Test(t), "", emit)
 		require.NoError(t, err)
 		require.Equal(t, DefaultDomain, d.domain)
 		return d
 	}
+
+	t.Run("requires a sink", func(t *testing.T) {
+		_, err := NewDurableEmitter(logger.Test(t), "", nil)
+		require.Error(t, err)
+	})
 
 	t.Run("passes source, type, keys and the marshalled body", func(t *testing.T) {
 		var gotBody []byte
@@ -79,8 +80,8 @@ func TestDurableEmitter_Emit(t *testing.T) {
 		require.Equal(t, []any{
 			"source", DefaultDomain,
 			"type", EntityType(),
-			"idempotencykey", IdempotencyKey(ev),
-			"subject", Subject(ev),
+			"idempotencykey", Key(ev),
+			"subject", Key(ev),
 		}, gotAttrs)
 	})
 
@@ -93,8 +94,8 @@ func TestDurableEmitter_Emit(t *testing.T) {
 		require.NoError(t, d.Emit(t.Context(), testEvent()))
 	})
 
-	t.Run("reports ErrEmitterUnavailable when the LOOP has no durable emitter", func(t *testing.T) {
-		d, err := NewDurableEmitter(logger.Test(t), "custom-domain", nil)
+	t.Run("reports ErrEmitterUnavailable when the process has no durable emitter", func(t *testing.T) {
+		d, err := NewDurableEmitter(logger.Test(t), "custom-domain", GlobalSink())
 		require.NoError(t, err)
 		require.Equal(t, "custom-domain", d.domain)
 		require.ErrorIs(t, d.Emit(t.Context(), testEvent()), ErrEmitterUnavailable)
@@ -108,6 +109,7 @@ func TestDurableEmitter_Emit(t *testing.T) {
 		err := d.Emit(t.Context(), testEvent())
 		require.ErrorIs(t, err, cause)
 		require.NotErrorIs(t, err, ErrEmitterUnavailable)
+		require.False(t, d.unavailableLogged.Load())
 	})
 
 	t.Run("rejects a nil event", func(t *testing.T) {

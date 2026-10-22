@@ -35,6 +35,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/durableemitter"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
@@ -232,30 +233,23 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	return nil
 }
 
-// txEventsOption wires ChainTransactionObserved emission. Events go to ChIP through the LOOP's
-// durable emitter, the same handle the gas meter uses (injected via MeteringConfig rather than
-// the process-global); when the LOOP has none they are dropped and counted.
+// txEventsOption wires ChainTransactionObserved emission. Events go to ChIP through the
+// process-global durable emitter (txevents.GlobalSink), the path the platform uses for its own
+// ChIP events; the LOOP server sets it up when the node runs with
+// CL_CHIP_INGRESS_DURABLE_EMITTER_ENABLED. Without it the events are dropped and counted.
 func (c *capabilityGRPCService) txEventsOption(cfg *config.Config) (actions.Option, error) {
-	opts := actions.TxEventsOptions{
-		Emitter:         txevents.NopEmitter{},
-		TransmitterOnly: cfg.TxEvents.TransmitterOnly,
-		CapabilityID:    c.id,
+	if !cfg.TxEvents.Enabled {
+		return actions.WithTxEvents(txevents.NopEmitter{}), nil
 	}
-	if cfg.TxEvents.Enabled {
-		var sink txevents.Sink
-		if rmEmitter := c.meteringCfg.ResourceManagerConfig.Emitter; rmEmitter != nil {
-			sink = rmEmitter
-		} else {
-			c.lggr.Errorw("Transaction events enabled but this LOOP has no durable emitter; events will not be delivered")
-		}
-		emitter, err := txevents.NewDurableEmitter(c.lggr, cfg.TxEvents.Domain, sink)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create tx events emitter: %w", err)
-		}
-		opts.Emitter = emitter
-		c.lggr.Infow("Transaction events enabled", "domain", cfg.TxEvents.Domain, "transmitterOnly", cfg.TxEvents.TransmitterOnly)
+	if durableemitter.GetGlobalEmitter() == nil {
+		c.lggr.Errorw("Transaction events enabled but this LOOP has no durable emitter; events will not be delivered", "domain", cfg.TxEvents.Domain)
 	}
-	return actions.WithTxEvents(opts), nil
+	emitter, err := txevents.NewDurableEmitter(c.lggr, cfg.TxEvents.Domain, txevents.GlobalSink())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tx events emitter: %w", err)
+	}
+	c.lggr.Infow("Transaction events enabled", "domain", cfg.TxEvents.Domain)
+	return actions.WithTxEvents(emitter), nil
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
