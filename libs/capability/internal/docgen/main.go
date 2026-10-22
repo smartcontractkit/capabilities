@@ -17,7 +17,6 @@ func main() {
 		Roots: []any{
 			&capability.HTTPConfig{},
 			&capability.CapabilitiesConfig{},
-			&capability.GRPCConfig{},
 			&capability.SettingsConfig{},
 		},
 		Tool:        "github.com/smartcontractkit/capabilities/libs/capability/internal/docgen",

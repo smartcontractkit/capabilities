@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/spf13/cobra"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -100,6 +101,12 @@ func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.
 }
 
 type Option func(*config)
+
+// withRegisterer gives a run its own metrics registry. Tests start many runs in one process.
+// The default registry panics if you register the same metrics two times.
+func withRegisterer(r prometheus.Registerer) Option {
+	return func(c *config) { c.grpc.Registerer = r }
+}
 
 // WithOtelViews sets otel metric views - histogram bucket boundaries, typically - on the beholder
 // client this process reports through.
