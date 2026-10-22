@@ -636,7 +636,7 @@ func TestWriteReport_EarlyReturn(t *testing.T) {
 func TestWriteReport_HappyPath(t *testing.T) {
 	t.Parallel()
 
-	t.Run("fresh submit succeeds - reply uses own tx and metering uses own submit fee", func(t *testing.T) {
+	t.Run("fresh submit succeeds - reply and metering use the landed tx", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		_, reqMeta, req := newWRReportFixture(t)
@@ -665,7 +665,7 @@ func TestWriteReport_HappyPath(t *testing.T) {
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, txFee, *result.Response.TransactionFee)
 		requireReplyBlockTimestamp(t, result.Response, testBlockTimestamp)
-		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, ownFee)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, txFee)
 		h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 	})
 }
@@ -710,9 +710,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
-		require.NotNil(t, result)
-		require.Nil(t, result.Response)
-		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
+		require.Nil(t, result)
 		h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 	})
 
@@ -797,9 +795,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
-		require.NotNil(t, result)
-		require.Nil(t, result.Response)
-		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, 0)
+		require.Nil(t, result)
 		h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 	})
 
@@ -834,6 +830,8 @@ func TestWriteReport_Submit(t *testing.T) {
 		require.NotNil(t, result.Response.TxHash)
 		require.Equal(t, testTxHash, *result.Response.TxHash)
 		require.NotEqual(t, "mytx", *result.Response.TxHash)
+		// The duplicate's own fee is not billed; metering follows the landed tx like every other node.
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		requireDuplicateTxTelemetry(t, processor.messages, "mytx", testTxHash)
 	})
 
@@ -866,6 +864,7 @@ func TestWriteReport_Submit(t *testing.T) {
 		require.NotEqual(t, "mytx", *result.Response.TxHash)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "not a Wasm contract or missing on_report")
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
 		requireDuplicateTxTelemetry(t, processor.messages, "mytx", testTxHash)
 	})
 }
@@ -1313,9 +1312,7 @@ func TestWriteReport_TxFatalSubmitWithoutCanonicalOutcomeReturnsError(t *testing
 	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 	require.NotNil(t, capErr)
 	require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
-	require.NotNil(t, result)
-	require.Nil(t, result.Response)
-	validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, 0)
+	require.Nil(t, result)
 	h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 }
 
@@ -1408,9 +1405,7 @@ func TestWriteReport_PostSubmitPollFailureDoesNotRecoverFromEvents(t *testing.T)
 	result, capErr := h.stellar.WriteReport(ctx, reqMeta, req)
 	require.NotNil(t, capErr)
 	require.Contains(t, capErr.Error(), "failed to retrieve transmission outcome after report submission")
-	require.NotNil(t, result)
-	require.Nil(t, result.Response)
-	validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
+	require.Nil(t, result)
 	h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 }
 
@@ -1935,32 +1930,5 @@ func TestCheckEstimatedSpendLimit(t *testing.T) {
 		err := wr.checkEstimatedSpendLimit(meta, 50_000)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid spend limit")
-	})
-}
-
-func TestMeteringFromSubmitResponse(t *testing.T) {
-	t.Parallel()
-
-	t.Run("submitted fee bills own fee", func(t *testing.T) {
-		t.Parallel()
-		wr := &writeReport{
-			lggr:          logger.Sugared(logger.Test(t)),
-			chainSelector: testWRChainSelector,
-		}
-		meta := wr.meteringFromSubmitResponse(successSubmitRespWithFee(7_777))
-		validateWRMetering(t, meta, testWRChainSelector, 7_777)
-	})
-
-	t.Run("nil fee bills explicit zero", func(t *testing.T) {
-		t.Parallel()
-		wr := &writeReport{
-			lggr:          logger.Sugared(logger.Test(t)),
-			chainSelector: testWRChainSelector,
-		}
-		meta := wr.meteringFromSubmitResponse(&stellartypes.SubmitTransactionResponse{
-			TxStatus: stellartypes.TxSuccess,
-			TxHash:   testTxHash,
-		})
-		validateWRMetering(t, meta, testWRChainSelector, 0)
 	})
 }
