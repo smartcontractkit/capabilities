@@ -11,6 +11,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop/telemetry"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -77,6 +78,15 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	<-ctx.Done()
 	lggr.Info("Shutting down")
 	return nil
+}
+
+func startTelemetry(ctx context.Context, lggr logger.Logger, obs *observability) (*telemetry.Telemetry, error) {
+	t, err := telemetry.NewTelemetry(lggr, obs.TelemetryConfig, "", obs.otelViews)
+	if err != nil {
+		return nil, err
+	}
+
+	return t, t.Start(ctx)
 }
 
 func servicesToHealthReporters(svcs []services.Service) []services.HealthReporter {

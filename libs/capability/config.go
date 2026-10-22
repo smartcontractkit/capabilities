@@ -49,9 +49,7 @@ func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
 		return nil, err
 	}
 	return b, errors.Join(
-		b.RegisterInNamespace(root, telemetryNamespace, &c.observability.telemetry),
-		b.RegisterInNamespace(root, tracingNamespace, &c.observability.tracing),
-		b.RegisterInNamespace(root, chipIngressNamespace, &c.observability.chipIngress),
+		b.Register(root, &c.observability.TelemetryConfig),
 		b.RegisterInNamespace(root, pyroscopeNamespace, &c.observability.pyroscope),
 		b.RegisterInNamespace(root, httpNamespace, &c.observability.http),
 		b.RegisterInNamespace(root, capabilitiesNamespace, &c.capabilities),

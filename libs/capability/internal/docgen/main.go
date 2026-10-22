@@ -15,9 +15,6 @@ func main() {
 	if err := commentparsing.Run(commentparsing.RunArgs{
 		Markup: tomlmarkup.New(),
 		Roots: []any{
-			&capability.TelemetryConfig{},
-			&capability.TracingConfig{},
-			&capability.ChipIngressConfig{},
 			&capability.PyroscopeConfig{},
 			&capability.HTTPConfig{},
 			&capability.CapabilitiesConfig{},
