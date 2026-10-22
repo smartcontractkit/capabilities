@@ -51,6 +51,7 @@ type cronTrigger struct {
 }
 
 type Service struct {
+	services.StateMachine
 	capabilities.CapabilityInfo
 	limitsFactory           limits.Factory
 	fastestScheduleInterval limits.TimeLimiter
@@ -336,12 +337,10 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			}
 		})
 
-	if s.scheduler == nil {
+	// If service has already started, job will be scheduled immediately
+	if !s.IfNotStopped(func() { job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(triggerID)) }) {
 		return nil, caperrors.NewPublicSystemError(errors.New("cannot register a new trigger, service has been closed"), caperrors.Internal)
 	}
-
-	// If service has already started, job will be scheduled immediately
-	job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(triggerID))
 	if err != nil {
 		s.lggr.Errorw("failed to create new job", "err", err)
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("RegisterTrigger failed to create new job: %s", err), caperrors.Internal)
@@ -352,7 +351,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		// errors if job no longer exists on scheduler
 		s.lggr.Errorw("failed to get next run time", "err", err)
 		// ensure that it is out of scheduler
-		err := s.scheduler.RemoveJob(job.ID())
+		s.IfNotStopped(func() { err = s.scheduler.RemoveJob(job.ID()) })
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("RegisterTrigger failed to remove job: %s", err), caperrors.Internal)
 	}
 
@@ -400,10 +399,10 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	jobID := trigger.job.ID()
 
 	// Remove job from scheduler
-	if s.scheduler == nil {
+	var err error
+	if !s.IfNotStopped(func() { err = s.scheduler.RemoveJob(jobID) }) {
 		return caperrors.NewPublicSystemError(errors.New("cannot unregister a new trigger, service has been closed"), caperrors.Internal)
 	}
-	err := s.scheduler.RemoveJob(jobID)
 	if err != nil {
 		return caperrors.NewPublicSystemError(fmt.Errorf("UnregisterTrigger failed to remove job from scheduler: %s", err), caperrors.Internal)
 	}
@@ -421,10 +420,10 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 
 // Start the service.
 func (s *Service) Start(ctx context.Context) error {
-	if s.scheduler == nil {
-		return errors.New("service has shutdown, it must be built again to restart")
-	}
+	return s.StartOnce(s.Name(), s.start)
+}
 
+func (s *Service) start() error {
 	s.scheduler.Start()
 
 	for triggerID, trigger := range s.triggers.ReadAll() {
@@ -449,31 +448,29 @@ func (s *Service) Start(ctx context.Context) error {
 // After this call the Service cannot be started again,
 // The service will need to be re-built to start scheduling again.
 func (s *Service) Close() error {
-	if s.scheduler == nil {
-		return errors.New("service has shutdown, it must be built again to restart")
+	err := s.StopOnce(s.Name(), s.close)
+	if errors.Is(err, services.ErrCannotStopUnstarted) {
+		// gocron runs a goroutine from construction rather than from Start, so a service closed
+		// without having started, e.g. when Initialise fails, still has to shut the scheduler down.
+		return s.close()
 	}
+	return err
+}
 
+func (s *Service) close() error {
 	err := s.scheduler.Shutdown()
 	s.cronLogger.stop()
 	if err != nil {
 		return fmt.Errorf("scheduler shutdown encountered a problem: %s", err)
 	}
 
-	// After .Shutdown() the scheduler cannot be started again,
-	// but calling .Start() on it will not error. Set to nil to mark closed.
-	s.scheduler = nil
-
 	s.lggr.Info(s.Name() + " closed")
 
 	return nil
 }
 
-func (s *Service) Ready() error {
-	return nil
-}
-
 func (s *Service) HealthReport() map[string]error {
-	return map[string]error{s.Name(): nil}
+	return map[string]error{s.Name(): s.Healthy()}
 }
 
 func (s *Service) Name() string {
