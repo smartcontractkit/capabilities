@@ -44,7 +44,7 @@ func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability,
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c) }()
+	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities) }()
 
 	deadline := time.After(30 * time.Second)
 	for {
@@ -173,7 +173,9 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor) }()
+	go func() {
+		done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor, NewInjector(), 1, cfg.capabilities)
+	}()
 
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
 		"the run should be serving while it is up")

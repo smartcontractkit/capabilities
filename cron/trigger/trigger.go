@@ -57,6 +57,7 @@ type Service struct {
 	clock                   clockwork.Clock
 	lggr                    logger.Logger
 	scheduler               gocron.Scheduler
+	cronLogger              *CronLogger
 	triggers                *cronStore
 	labeler                 custmsg.MessageEmitter
 	metrics                 *Metrics
@@ -112,7 +113,8 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 	// Set scheduler location to UTC for consistency across nodes.
 	options = append(options, gocron.WithLocation(time.UTC))
 	// Adapt chainlink logger to gocron logger interface.
-	options = append(options, gocron.WithLogger(NewCronLogger(lggr)))
+	cronLogger := NewCronLogger(lggr)
+	options = append(options, gocron.WithLogger(cronLogger))
 	// Allow injecting a clock for testing. Otherwise use system clock.
 	if clock != nil {
 		options = append(options, gocron.WithClock(clock))
@@ -131,6 +133,7 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 		limitsFactory:  limitsFactory,
 		triggers:       NewCronStore(),
 		scheduler:      scheduler,
+		cronLogger:     cronLogger,
 		clock:          clock,
 		labeler: custmsg.NewLabeler().With(
 			"capabilityID", cronTriggerInfo.ID,
@@ -250,7 +253,9 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 			s.lggr.Debugw("sending trigger event", "executionID", workflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
-			nextExecutionTime, nextRunErr := job.NextRun()
+			// gocron only drops a scheduled time once it is in the past, so a run on its exact
+			// scheduled instant can still be next. Skip it, or the next event repeats this one's time.
+			nextExecutionTime, nextRunErr := nextRunAfter(job, scheduledExecutionTimeUTC)
 			if nextRunErr != nil {
 				// .NextRun() will error if the job no longer exists
 				// or if there is no next run to schedule, which shouldn't happen with cron jobs
@@ -449,6 +454,7 @@ func (s *Service) Close() error {
 	}
 
 	err := s.scheduler.Shutdown()
+	s.cronLogger.stop()
 	if err != nil {
 		return fmt.Errorf("scheduler shutdown encountered a problem: %s", err)
 	}
@@ -476,4 +482,18 @@ func (s *Service) Name() string {
 
 func (s *Service) Description() string {
 	return "Cron Trigger Capability"
+}
+
+// nextRunAfter is the job's first scheduled run after t.
+func nextRunAfter(job gocron.Job, t time.Time) (time.Time, error) {
+	runs, err := job.NextRuns(2)
+	if err != nil {
+		return time.Time{}, err
+	}
+	for _, run := range runs {
+		if run.After(t) {
+			return run, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("no run scheduled after %s", t)
 }

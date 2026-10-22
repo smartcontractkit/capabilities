@@ -2,7 +2,6 @@ package capability
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,12 +11,10 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error)) error {
+func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error), base *Injector, total int, capabilities CapabilitiesConfig) error {
 	defer func() { _ = lggr.Sync() }()
 
 	var svcs []services.Service
@@ -43,23 +40,17 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	}
 	svcs = append(svcs, telemetry)
 
-	reg, err := startRegistry(ctx, lggr, cfg.capabilities, cfg.grpc)
-	if err != nil {
-		return fmt.Errorf("failed to start registry: %w", err)
-	}
-	svcs = append(svcs, reg)
-
 	settings, err := startSettings(ctx, lggr, cfg.settings)
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
 	svcs = append(svcs, settings)
 
-	capability, err := startCapability(ctx, lggr, cfg, newCapability, reg, settings.values, mux)
+	_, started, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, settings.values))
+	svcs = append(svcs, started...)
 	if err != nil {
 		return err
 	}
-	svcs = append(svcs, capability)
 
 	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(svcs))
 	if err != nil {
@@ -104,35 +95,4 @@ func servicesToHealthReporters(svcs []services.Service) []services.HealthReporte
 func underPluginHost() bool {
 	h := emptyHandshakeConfig()
 	return os.Getenv(h.MagicCookieKey) == h.MagicCookieValue
-}
-
-// startCapability builds the capability from its constructor and makes it reachable: started,
-// served and announced by the registry, and mounted via the debug UI if debug mode is turned on.
-func startCapability(ctx context.Context, lggr logger.Logger, cfg *config, ctor func(do.Injector) (Capability, error), reg *registryService, settings *loop.AtomicSettings, mux *http.ServeMux) (Capability, error) {
-	// The run supervises the services it provides, so the injector is never shut down: doing so
-	// would close them a second time.
-	i := do.New()
-	do.ProvideValue(i, lggr)
-	do.ProvideValue[core.CapabilitiesRegistry](i, reg)
-	do.ProvideValue(i, newLimitsFactory(lggr, settings))
-
-	c, err := ctor(i)
-	if err != nil {
-		return nil, fmt.Errorf("failed to instantiate capability: %w", err)
-	}
-	if c == nil {
-		return nil, errors.New("failed to instantiate capability: the constructor returned neither a capability nor an error")
-	}
-
-	if err := c.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start capability: %w", err)
-	}
-
-	if err := reg.Add(ctx, c); err != nil {
-		// Not yet on the caller's list, so the deferred close would never reach it.
-		_ = c.Close()
-		return nil, err
-	}
-
-	return c, nil
 }
