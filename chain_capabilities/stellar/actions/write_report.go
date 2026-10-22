@@ -22,7 +22,6 @@ import (
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
@@ -44,7 +43,6 @@ type writeReport struct {
 	transmissionScheduler ts.TransmissionScheduler
 	messageBuilder        *monitoring.MessageBuilder
 	beholderProcessor     beholder.ProtoProcessor
-	gasMeter              *gasmeter.Meter
 }
 
 func (s *Stellar) WriteReport(
@@ -98,7 +96,6 @@ func (s *Stellar) executeWriteReport(
 		transmissionScheduler: s.transmissionScheduler,
 		messageBuilder:        s.messageBuilder,
 		beholderProcessor:     s.beholderProcessor,
-		gasMeter:              s.gasMeter,
 	}
 	return wr.execute(ctx, request, metadata, telemetryContext)
 }
@@ -153,7 +150,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, wr.meteringFromReply(ctx, metadata, reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateInvalidReceiver:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -168,7 +165,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
-		return reply, wr.meteringFromReply(ctx, metadata, reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateFailed:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -183,7 +180,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
-		return reply, wr.meteringFromReply(ctx, metadata, reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateNotAttempted:
 	case TransmissionStateUnknown:
 		// Unknown state must not authorize spend.
@@ -257,7 +254,7 @@ func (wr *writeReport) execute(
 			if err != nil {
 				return nil, capabilities.ResponseMetadata{}, err
 			}
-			return reply, wr.meteringFromReply(ctx, metadata, reply), nil
+			return reply, wr.meteringFromReply(reply), nil
 		}
 
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
@@ -273,7 +270,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, wr.meteringFromReply(ctx, metadata, reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		if submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
 			wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", submitResp.TxHash, "transmissionState", postInfo.State)
@@ -281,7 +278,7 @@ func (wr *writeReport) execute(
 			if err != nil {
 				return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(postInfo, transmissionID, err)
 			}
-			return reply, wr.meteringFromReply(ctx, metadata, reply), nil
+			return reply, wr.meteringFromReply(reply), nil
 		}
 
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
@@ -303,7 +300,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(postInfo, transmissionID, err)
 		}
-		return reply, wr.meteringFromReply(ctx, metadata, reply), nil
+		return reply, wr.meteringFromReply(reply), nil
 	default:
 		wr.lggr.Errorw("Invalid transmission state after submit", "state", postInfo.State, "localTxStatus", submitResp.TxStatus)
 		wr.emitInvalidTransmissionState(ctx, request, telemetryContext, postInfo, transmissionID, "WriteReport invalid transmission state after submit", invalidTransmissionStateError(postInfo.State).Error())
@@ -438,14 +435,12 @@ func (wr *writeReport) pollTransmissionInfo(
 
 // meteringFromReply returns billing metadata carrying the on-chain fee of the transaction the
 // reply names, so every node bills the same canonical transaction whether it submitted it,
-// returned early for it, or sent a duplicate. It also emits the cre:workflow:gas usage record
-// for that transaction. An absent fee yields empty metadata and no record.
-func (wr *writeReport) meteringFromReply(ctx context.Context, metadata capabilities.RequestMetadata, reply *stellarcap.WriteReportReply) capabilities.ResponseMetadata {
+// returned early for it, or sent a duplicate. An absent fee yields empty metadata.
+func (wr *writeReport) meteringFromReply(reply *stellarcap.WriteReportReply) capabilities.ResponseMetadata {
 	if reply.TransactionFee == nil {
 		wr.lggr.Warnw("Transaction fee unavailable in reply; skipping metering", "txHash", reply.GetTxHash())
 		return capabilities.ResponseMetadata{}
 	}
-	wr.gasMeter.Emit(ctx, metadata, reply.GetTxHash(), new(big.Int).SetUint64(*reply.TransactionFee))
 	return metering.GetResponseMetadataWriteReport(*reply.TransactionFee, wr.chainSelector)
 }
 
