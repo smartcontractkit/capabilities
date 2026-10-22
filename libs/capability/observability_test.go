@@ -12,6 +12,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop/pyroscope"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -21,7 +22,7 @@ import (
 // Nil rather than a no-op matters to the caller: the root would take a no-op and report on it, and
 // a health report mentioning profiling that is not happening is worse than not mentioning it.
 func TestProfilerWithoutAServer(t *testing.T) {
-	assert.Nil(t, newProfiler(logger.Test(t), "cron", PyroscopeConfig{}))
+	assert.Nil(t, newProfiler(logger.Test(t), "cron", pyroscope.PyroscopeConfig{}))
 }
 
 // TestProfilerWithAServer covers the other side: a configured one is a service the root can take,
@@ -30,7 +31,7 @@ func TestProfilerWithoutAServer(t *testing.T) {
 // It is built rather than started. Starting one dials a pyroscope server, which a test has no
 // business standing up to prove a constructor returned something.
 func TestProfilerWithAServer(t *testing.T) {
-	p := newProfiler(logger.Test(t), "cron", PyroscopeConfig{ServerAddress: "pyro:4040"})
+	p := newProfiler(logger.Test(t), "cron", pyroscope.PyroscopeConfig{PyroscopeServerAddress: "pyro:4040"})
 
 	require.NotNil(t, p)
 	assert.Equal(t, "Profiler", p.Name())
