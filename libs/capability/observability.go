@@ -4,6 +4,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop/pyroscope"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop/telemetry"
 )
 
@@ -16,8 +17,8 @@ const (
 // the command runs and they have been decoded.
 type observability struct {
 	telemetry.TelemetryConfig
-	pyroscope PyroscopeConfig
-	http      HTTPConfig
+	pyroscope.PyroscopeConfig
+	http HTTPConfig
 
 	otelViews []metric.View // supplied through capability.Run
 }

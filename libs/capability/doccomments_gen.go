@@ -24,14 +24,6 @@ func (HTTPConfig) DocComments() map[string]commentparsing.FieldDoc {
 	}
 }
 
-func (PyroscopeConfig) DocComments() map[string]commentparsing.FieldDoc {
-	return map[string]commentparsing.FieldDoc{
-		"AuthToken":     {Comment: "AuthToken is the pyroscope auth token."},
-		"Environment":   {Comment: "Environment is the environment tag attached to profiles."},
-		"ServerAddress": {Comment: "ServerAddress is the pyroscope server address. Profiling is disabled when unset."},
-	}
-}
-
 func (SettingsConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
 		"URL": {Comment: "URL is the gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes\nsettings updates to this process. Unset leaves every limit at its compiled-in default."},

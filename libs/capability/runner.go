@@ -27,7 +27,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 
 	mux := http.NewServeMux()
 
-	profiler, err := startProfiler(ctx, lggr, name, cfg.observability.pyroscope)
+	profiler, err := startProfiler(ctx, lggr, name, cfg.observability.PyroscopeConfig)
 	if err != nil {
 		return fmt.Errorf("failed to start profiler: %w", err)
 	}

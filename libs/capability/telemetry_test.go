@@ -53,6 +53,12 @@ var undocumentedLoopFlags = []string{
 	"chip-ingress-max-grpc-request-size",
 	"chip-ingress-send-interval",
 	"chip-ingress-send-timeout",
+	"pyroscope-auth-token",
+	"pyroscope-environment",
+	"pyroscope-link-traces-to-profiles",
+	"pyroscope-pprof-block-profile-rate",
+	"pyroscope-pprof-mutex-profile-fraction",
+	"pyroscope-server-address",
 	"telemetry-attribute",
 	"telemetry-attribute.<key>",
 	"telemetry-auth-header",
@@ -128,9 +134,9 @@ func TestObservabilityFlags(t *testing.T) {
 		"chip-ingress-endpoint",
 		"chip-ingress-insecure-connection",
 
-		"pyroscope.server-address",
-		"pyroscope.auth-token",
-		"pyroscope.environment",
+		"pyroscope-server-address",
+		"pyroscope-auth-token",
+		"pyroscope-environment",
 
 		"http.port",
 
@@ -203,8 +209,8 @@ func TestObservabilityDecodesFromFlags(t *testing.T) {
 		"--tracing-tls-cert-path", "/certs/trace.pem",
 		"--chip-ingress-endpoint", "chip:9000",
 		"--chip-ingress-insecure-connection", "true",
-		"--pyroscope.server-address", "pyro:4040",
-		"--pyroscope.environment", "staging",
+		"--pyroscope-server-address", "pyro:4040",
+		"--pyroscope-environment", "staging",
 		"--telemetry-endpoint", "otel:4317",
 		"--telemetry-insecure-connection", "true",
 		"--telemetry-attribute", "env=staging",
@@ -226,8 +232,8 @@ func TestObservabilityDecodesFromFlags(t *testing.T) {
 	assert.Equal(t, "chip:9000", obs.ChipIngressEndpoint)
 	assert.True(t, obs.ChipIngressInsecureConnection)
 
-	assert.Equal(t, "pyro:4040", obs.pyroscope.ServerAddress)
-	assert.Equal(t, "staging", obs.pyroscope.Environment)
+	assert.Equal(t, "pyro:4040", obs.PyroscopeServerAddress)
+	assert.Equal(t, "staging", obs.PyroscopeEnvironment)
 }
 
 // TestTelemetryDecodesFromEnv covers why the namespace and field names are what they are: a
