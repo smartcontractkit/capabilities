@@ -19,11 +19,13 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
@@ -31,6 +33,7 @@ import (
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 
@@ -1931,4 +1934,37 @@ func TestCheckEstimatedSpendLimit(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid spend limit")
 	})
+}
+
+type discardEmitter struct{}
+
+func (discardEmitter) Emit(context.Context, []byte, ...any) error { return nil }
+
+func TestMeteringFromReply_EmitsGasUsageRecord(t *testing.T) {
+	t.Parallel()
+	lggr, obs := logger.TestObserved(t, zapcore.InfoLevel)
+	meter := gasmeter.New(lggr, resourcemanager.Config{
+		MeterRecordsEnabled: true,
+		Emitter:             discardEmitter{},
+		DeploymentIdentity:  resourcemanager.DeploymentIdentity{Product: "cre", Tenant: "t", Environment: "test", Zone: "z", NodeID: "node-1"},
+	}, testWRChainSelector, 7)
+	require.NotNil(t, meter)
+	wr := &writeReport{lggr: logger.Sugared(lggr), chainSelector: testWRChainSelector, gasMeter: meter}
+	metadata := capabilities.RequestMetadata{WorkflowID: "wf-1", WorkflowExecutionID: "exec-1", OrgID: "org-1"}
+
+	meta := wr.meteringFromReply(t.Context(), metadata, &stellarcap.WriteReportReply{TxHash: new(testTxHash), TransactionFee: new(testFee)})
+
+	validateWRMetering(t, meta, testWRChainSelector, testFee)
+	logs := obs.FilterMessage("Emitted capability usage meter record").All()
+	require.Len(t, logs, 1)
+	fields := logs[0].ContextMap()
+	require.Equal(t, "exec-1", fields["executionID"])
+	require.Equal(t, testTxHash, fields["txHash"])
+	require.Equal(t, fmt.Sprintf("cre:workflow:gas:%d", testWRChainSelector), fields["resourceType"])
+	require.Equal(t, strconv.FormatUint(testFee, 10), fields["value"])
+
+	// Without a meter the metering metadata is unchanged and nothing is emitted.
+	meta = (&writeReport{lggr: logger.Sugared(lggr), chainSelector: testWRChainSelector}).meteringFromReply(t.Context(), metadata, &stellarcap.WriteReportReply{TxHash: new(testTxHash), TransactionFee: new(testFee)})
+	validateWRMetering(t, meta, testWRChainSelector, testFee)
+	require.Len(t, obs.FilterMessage("Emitted capability usage meter record").All(), 1)
 }

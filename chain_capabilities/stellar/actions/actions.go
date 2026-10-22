@@ -24,6 +24,7 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
@@ -45,6 +46,7 @@ type Stellar struct {
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	maxResourceFeeLimit   limits.BoundLimiter[uint64]
 	transmissionScheduler ts.TransmissionScheduler
+	gasMeter              *gasmeter.Meter
 }
 
 func NewStellar(
@@ -81,6 +83,12 @@ func NewStellar(
 		transmissionScheduler: transmissionScheduler,
 	}
 	return st, st.initLimiters(limitsFactory)
+}
+
+// WithGasMeter enables cre:workflow:gas usage MeterRecords for write reports.
+// A nil meter disables emission.
+func (s *Stellar) WithGasMeter(m *gasmeter.Meter) {
+	s.gasMeter = m
 }
 
 func (s *Stellar) initLimiters(limitsFactory limits.Factory) (err error) {

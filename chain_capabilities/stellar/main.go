@@ -18,6 +18,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
@@ -29,6 +30,7 @@ import (
 	stellarcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -53,6 +55,12 @@ type capabilityGRPCService struct {
 	capability
 	lggr          logger.Logger
 	limitsFactory limits.Factory
+
+	// meteringCfg comes from the LOOP environment ([Metering] on the host).
+	// gasMeter emits cre:workflow:gas usage records for write reports when
+	// MeterRecordsEnabled; nil otherwise.
+	meteringCfg resourcemanager.Config
+	gasMeter    *gasmeter.Meter
 }
 
 type capability struct {
@@ -77,6 +85,7 @@ func main() {
 		return stellarcapserver.NewClientServer(&capabilityGRPCService{
 			lggr:          s.Logger.Named(CapabilityName),
 			limitsFactory: s.LimitsFactory,
+			meteringCfg:   s.MeteringConfig(),
 		})
 	}, loop.WithOtelViews(consMetrics.MetricViews()))
 }
@@ -110,6 +119,9 @@ func (c *capabilityGRPCService) Close() error {
 	}
 	if c.Stellar != nil {
 		closers = append(closers, c.Stellar)
+	}
+	if c.gasMeter != nil {
+		closers = append(closers, c.gasMeter)
 	}
 	return services.CloseAll(closers...)
 }
@@ -244,8 +256,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return err
 	}
+	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, dependencies.CapabilityDonID)
+	c.WithGasMeter(c.gasMeter)
 
-	for _, service := range []interface{ Start(context.Context) error }{c.requestPoller, c.consensusHandler, c.blocksProvider, c.oracle} {
+	toStart := []interface{ Start(context.Context) error }{c.requestPoller, c.consensusHandler, c.blocksProvider, c.oracle}
+	if c.gasMeter != nil {
+		toStart = append(toStart, c.gasMeter)
+	}
+	for _, service := range toStart {
 		if err = service.Start(ctx); err != nil {
 			return err
 		}
