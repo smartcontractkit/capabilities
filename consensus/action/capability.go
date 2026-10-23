@@ -254,6 +254,10 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{}
 		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("failed to decode observation: %s", err), caperrors.InvalidArgument)
 	}
+	if err := validateSimpleConsensusInput(input); err != nil {
+		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{}
+		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("invalid consensus input: %s", err), caperrors.InvalidArgument)
+	}
 
 	lggr.Debugw("received simple consensus request", "metadata", metadata)
 
@@ -650,5 +654,15 @@ func decodeObservationType(lggr logger.Logger, input *sdk.SimpleConsensusInputs)
 			lggr.Debugw("neither value, error or default is set in the observation input for request")
 		}
 	}
+	return nil
+}
+
+func validateSimpleConsensusInput(input *sdk.SimpleConsensusInputs) error {
+	if valueInput, ok := input.GetObservation().(*sdk.SimpleConsensusInputs_Value); ok {
+		if err := oracle.ValidateAggregatableValue(valueInput.Value); err != nil {
+			return fmt.Errorf("invalid observation value: %w", err)
+		}
+	}
+
 	return nil
 }
