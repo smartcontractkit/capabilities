@@ -20,14 +20,15 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
-// fake is an untyped capability: it answers with its input plus reply, or fails with err, and streams its
-// events, each "id" or "id=payload".
+// fake is an untyped capability: it answers with its input plus reply and any metering, or fails with err,
+// and streams its events, each "id" or "id=payload".
 type fake struct {
 	capabilities.Executable
 	capabilities.TriggerExecutable
-	reply  string
-	err    caperrors.Error
-	events []string
+	reply    string
+	metering string
+	err      caperrors.Error
+	events   []string
 }
 
 func (f fake) Execute(_ context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
@@ -39,7 +40,11 @@ func (f fake) Execute(_ context.Context, request capabilities.CapabilityRequest)
 		return capabilities.CapabilityResponse{}, err
 	}
 	payload, err := anypb.New(valuespb.NewStringValue(in.GetStringValue() + f.reply))
-	return capabilities.CapabilityResponse{Payload: payload}, err
+	response := capabilities.CapabilityResponse{Payload: payload}
+	if f.metering != "" {
+		response.Metadata.Metering = []capabilities.MeteringNodeDetail{{SpendUnit: "GAS", SpendValue: f.metering}}
+	}
+	return response, err
 }
 
 func (f fake) RegisterTrigger(ctx context.Context, _ capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
@@ -99,6 +104,20 @@ func TestExecuteDisagreeing(t *testing.T) {
 	assert.Error(t, mismatch.Results[2].Err)
 	assert.Contains(t, err.Error(), "instance 1: ")
 	assert.Contains(t, err.Error(), "instance 2: error")
+}
+
+func TestExecuteComparesMetering(t *testing.T) {
+	got, err := TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "a", metering: "1"}, {reply: "a", metering: "1"}}, "Do", metadata, in)
+	require.NoError(t, err)
+	assert.Equal(t, []capabilities.MeteringNodeDetail{{SpendUnit: "GAS", SpendValue: "1"}}, got.ResponseMetadata.Metering)
+
+	_, err = TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "a", metering: "1"}, {reply: "a", metering: "2"}}, "Do", metadata, in)
+	var mismatch *MismatchError[capabilities.CapabilityResponse]
+	require.ErrorAs(t, err, &mismatch, "the same response with different metering")
+	assert.Contains(t, err.Error(), "instance 1: ")
+
+	_, err = TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "a", metering: "1"}, {reply: "a"}}, "Do", metadata, in)
+	require.ErrorAs(t, err, &mismatch, "metering from only one instance")
 }
 
 func TestExecuteAgreeingOnAnError(t *testing.T) {
