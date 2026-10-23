@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/x/config/cli"
 	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
@@ -35,6 +36,8 @@ type config struct {
 	capabilities  CapabilitiesConfig
 	grpc          GRPCConfig
 	settings      SettingsConfig
+
+	lggr logger.Logger // set only by tests, with withLogger
 }
 
 func defaultConfig() *config {
