@@ -28,14 +28,6 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 
 	mux := http.NewServeMux()
 
-	profiler, err := startProfiler(ctx, lggr, name, cfg.observability.PyroscopeConfig)
-	if err != nil {
-		return fmt.Errorf("failed to start profiler: %w", err)
-	}
-	if profiler != nil {
-		svcs = append(svcs, profiler)
-	}
-
 	telemetry, err := startTelemetry(ctx, lggr, &cfg.observability)
 	if err != nil {
 		return fmt.Errorf("failed to build telemetry: %w", err)
@@ -47,6 +39,16 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 		return err
 	}
 	lggr = streamed
+
+	// Start the profiler after telemetry. To link traces to profiles, the profiler wraps the tracer
+	// provider that telemetry sets.
+	profiler, err := startProfiler(ctx, lggr, name, cfg.observability.PyroscopeConfig, cfg.observability.TracingEnabled)
+	if err != nil {
+		return fmt.Errorf("failed to start profiler: %w", err)
+	}
+	if profiler != nil {
+		svcs = append(svcs, profiler)
+	}
 
 	// Start telemetry before you make the gRPC options. The gRPC tracing and metrics read the
 	// telemetry providers when you make them.
