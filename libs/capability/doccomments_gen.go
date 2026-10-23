@@ -4,6 +4,12 @@ package capability
 
 import "github.com/smartcontractkit/chainlink-common/x/config/commentparsing"
 
+func (AppConfig) DocComments() map[string]commentparsing.FieldDoc {
+	return map[string]commentparsing.FieldDoc{
+		"AppID": {Comment: "AppID is the ID of the node process that started this process. The node makes a new random ID\neach time it starts. Traces use it as service.instance.id. If the node does not set it, this\nprocess makes its own random ID."},
+	}
+}
+
 func (CapabilitiesConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
 		"CapabilityDonID": {Comment: "CapabilityDonID is the on-chain DON ID of the capability DON this process was spawned for."},

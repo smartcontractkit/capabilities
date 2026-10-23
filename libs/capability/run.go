@@ -17,6 +17,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
 // Run builds and runs the capability constructor makes, and does not return until ctx is cancelled or the
@@ -24,13 +25,8 @@ import (
 //
 //	func main() { capability.Run(context.Background(), trigger.NewCron) }
 func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, error), opts ...Option) {
-	lggr, err := NewLogger()
-	if err != nil {
+	if err := RunErr(ctx, constructor, opts...); err != nil {
 		log.Fatal(err)
-	}
-
-	if err := RunErr(ctx, lggr, constructor, opts...); err != nil {
-		lggr.Fatal(err)
 	}
 }
 
@@ -38,10 +34,7 @@ func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, er
 //
 // A run blocks until it is told to stop, which is either ctx being cancelled or this process being
 // signalled - see below.
-func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.Injector) (T, error), opts ...Option) error {
-	if lggr == nil {
-		return errors.New("must provide a logger")
-	}
+func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error), opts ...Option) error {
 	if ctor == nil {
 		return errors.New("must provide a capability constructor")
 	}
@@ -53,12 +46,22 @@ func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.
 		Short: "A CRE capability",
 	}
 
-	lggr = logger.Named(lggr, root.Name())
-
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
+
+	lggr := cfg.lggr
+	if lggr == nil {
+		l, err := loop.NewLogger()
+		if err != nil {
+			return fmt.Errorf("failed to create logger: %w", err)
+		}
+
+		lggr = l
+	}
+	lggr = logger.Named(lggr, root.Name())
+
 	b, err := cfg.bind(root)
 	if err != nil {
 		return err
@@ -101,6 +104,11 @@ func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.
 }
 
 type Option func(*config)
+
+// withLogger gives a run the logger of a test. Other runs make their own logger.
+func withLogger(lggr logger.Logger) Option {
+	return func(c *config) { c.lggr = lggr }
+}
 
 // withRegisterer gives a run its own metrics registry. Tests start many runs in one process.
 // The default registry panics if you register the same metrics two times.

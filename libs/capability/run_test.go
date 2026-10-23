@@ -97,7 +97,7 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- RunErr(ctx, lggr, ctor, withRegisterer(prometheus.NewRegistry())) }()
+	go func() { done <- RunErr(ctx, ctor, withLogger(lggr), withRegisterer(prometheus.NewRegistry())) }()
 
 	if port == 0 {
 		// Nothing that serves: a rejected constructor, or a bare invocation that prints help.
@@ -153,12 +153,8 @@ func freePort(t *testing.T) int {
 func fakeConstructor(do.Injector) (Capability, error) { return newFake(), nil }
 
 func TestRunErrRejects(t *testing.T) {
-	t.Run("no logger", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), nil, fakeConstructor), "must provide a logger")
-	})
-
 	t.Run("no constructor", func(t *testing.T) {
-		require.ErrorContains(t, RunErr[Capability](context.Background(), logger.Test(t), nil), "must provide a capability constructor")
+		require.ErrorContains(t, RunErr[Capability](context.Background(), nil, withLogger(logger.Test(t))), "must provide a capability constructor")
 	})
 }
 

@@ -1,6 +1,7 @@
 package capability
 
 import (
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -19,14 +20,25 @@ type observability struct {
 	telemetry.TelemetryConfig
 	pyroscope.PyroscopeConfig
 	http HTTPConfig
+	AppConfig
 
 	otelViews []metric.View // supplied through capability.Run
+}
+
+// AppConfig identifies the node that started this process. It is here for compatibility with the
+// core node, which sets CL_APP_ID for each LOOP.
+type AppConfig struct {
+	// AppID is the ID of the node process that started this process. The node makes a new random ID
+	// each time it starts. Traces use it as service.instance.id. If the node does not set it, this
+	// process makes its own random ID.
+	AppID string
 }
 
 func defaultObservability() *observability {
 	return &observability{
 		TelemetryConfig: defaultTelemetryConfig(),
 		http:            HTTPConfig{Port: defaultHTTPPort},
+		AppConfig:       AppConfig{AppID: uuid.NewString()},
 	}
 }
 
