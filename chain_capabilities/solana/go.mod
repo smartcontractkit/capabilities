@@ -12,7 +12,7 @@ require (
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261023154944-990f0c00a42e
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260814143946-b5a88c16af02
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261013212015-e622e8b83b6b
-	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20261023164540-b90297a1d026
+	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20261023165117-2c70084e5139
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260803170030-90043607d911
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
 	github.com/stretchr/testify v1.12.1
