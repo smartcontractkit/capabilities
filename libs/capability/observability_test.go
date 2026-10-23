@@ -3,6 +3,7 @@ package capability
 import (
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"testing"
@@ -82,7 +83,8 @@ func TestWebServerServes(t *testing.T) {
 		fmt.Fprintln(w, "hello")
 	})
 
-	web := newWebServer(logger.Test(t), HTTPConfig{Port: uint16(port)}, mux, &probes{})
+	require.LessOrEqual(t, port, math.MaxUint16)
+	web := newWebServer(logger.Test(t), HTTPConfig{Port: uint16(port)}, mux, &probes{}) //nolint:gosec // range checked above
 	require.NoError(t, web.Start(t.Context()))
 
 	for path, want := range map[string]int{
@@ -90,7 +92,7 @@ func TestWebServerServes(t *testing.T) {
 		"/debug/pprof/": http.StatusOK,
 		"/capability":   http.StatusOK,
 	} {
-		res, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, path))
+		res, err := httpGet(t.Context(), fmt.Sprintf("http://localhost:%d%s", port, path))
 		require.NoError(t, err, path)
 		_, _ = io.Copy(io.Discard, res.Body)
 		require.NoError(t, res.Body.Close())
@@ -99,7 +101,7 @@ func TestWebServerServes(t *testing.T) {
 
 	// Stopping frees the port, so the next thing to want it can have it.
 	require.NoError(t, web.Close())
-	_, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
+	_, err := httpGet(t.Context(), fmt.Sprintf("http://localhost:%d/metrics", port))
 	assert.Error(t, err, "the server should not answer once it has stopped")
 }
 

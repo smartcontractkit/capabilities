@@ -128,13 +128,22 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 // run fail leaves a listener that accepts and never answers, and a bare Get would hang on it
 // rather than report not-serving.
 func serving(port int) bool {
-	client := &http.Client{Timeout: 5 * time.Second}
-	res, err := client.Get(fmt.Sprintf("http://localhost:%d/startupz", port))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := httpGet(ctx, fmt.Sprintf("http://localhost:%d/startupz", port))
 	if err != nil {
 		return false
 	}
 	_ = res.Body.Close()
 	return res.StatusCode == http.StatusOK
+}
+
+func httpGet(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
 // freePort is a port nothing is listening on, found by listening on one and stopping again.

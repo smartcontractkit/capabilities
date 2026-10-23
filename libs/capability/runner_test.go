@@ -428,7 +428,7 @@ func probe(t *testing.T, port uint16, path string) int {
 func probeBody(t *testing.T, port uint16, path string) (int, string) {
 	t.Helper()
 
-	res, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, path))
+	res, err := httpGet(t.Context(), fmt.Sprintf("http://localhost:%d%s", port, path))
 	require.NoError(t, err, path)
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err, path)
