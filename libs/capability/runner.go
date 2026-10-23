@@ -41,13 +41,17 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	}
 	svcs = append(svcs, telemetry)
 
-	settings, err := startSettings(ctx, lggr, cfg.settings)
+	// Start telemetry before you make the gRPC options. The gRPC tracing and metrics read the
+	// telemetry providers when you make them.
+	grpcOpts := cfg.grpc.New(lggr)
+
+	settings, err := startSettings(ctx, lggr, cfg.settings, grpcOpts)
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
 	svcs = append(svcs, settings)
 
-	_, started, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, settings.values))
+	_, started, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, &grpcOpts, settings.values))
 	svcs = append(svcs, started...)
 	if err != nil {
 		return err

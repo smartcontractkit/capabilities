@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,7 @@ func runArgs(t *testing.T) (*config, uint16) {
 
 	port := uint16(freePort(t))
 	cfg := defaultConfig()
+	cfg.grpc.Registerer = prometheus.NewRegistry()
 	cfg.observability.http.Port = port
 	// A stub the registrar's announcement can land on: registering the capability dials the
 	// proxy, so it has to be a real listener rather than merely a lazy one.
