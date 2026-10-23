@@ -106,8 +106,14 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		genericIX.AccountValues = append(genericIX.AccountValues, acc)
 	}
 
-	// we can encode with empty block hash here, it will be updated with recent blockhash later
-	tx, err := solana.NewTransaction([]solana.Instruction{ix}, solana.Hash{}, solana.TransactionPayer(fc.transmitter))
+	// Encode as a v1 (SIMD-0385) transaction. The node's SubmitTransaction routes v1 encodings
+	// to EnqueueV1, which sets the inline compute budget. The blockhash is filled in later.
+	tx, err := solana.NewTransaction(
+		[]solana.Instruction{ix},
+		solana.Hash{},
+		solana.TransactionPayer(fc.transmitter),
+		solana.TransactionMessageVersion(solana.MessageVersionV1),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create report transaction: %w", err)
 	}
