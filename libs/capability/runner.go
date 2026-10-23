@@ -19,20 +19,35 @@ import (
 func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error), base *Injector, total int, capabilities CapabilitiesConfig) error {
 	defer func() { _ = lggr.Sync() }()
 
+	// Started first and closed last, so probes get an answer while the run starts and stops.
+	p := &probes{}
+	ws, err := startWebServer(ctx, lggr, cfg.observability.http, http.NewServeMux(), p)
+	if err != nil {
+		return fmt.Errorf("failed to start web server: %w", err)
+	}
+	defer func() {
+		if err := ws.Close(); err != nil {
+			logger.Sugared(lggr).Errorw("failed to stop the web server", "err", err)
+		}
+	}()
+
 	var svcs []services.Service
 	defer func() {
+		p.draining.Store(true)
 		if err := services.MultiCloser(svcs).Close(); err != nil {
 			logger.Sugared(lggr).Errorw("failed to stop the services of this run", "err", err)
 		}
 	}()
-
-	mux := http.NewServeMux()
+	started := func(s ...services.Service) {
+		svcs = append(svcs, s...)
+		p.add(servicesToHealthReporters(s)...)
+	}
 
 	telemetry, err := startTelemetry(ctx, lggr, &cfg.observability)
 	if err != nil {
 		return fmt.Errorf("failed to build telemetry: %w", err)
 	}
-	svcs = append(svcs, telemetry)
+	started(telemetry)
 
 	streamed, err := streamLogs(lggr, telemetry)
 	if err != nil {
@@ -47,7 +62,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 		return fmt.Errorf("failed to start profiler: %w", err)
 	}
 	if profiler != nil {
-		svcs = append(svcs, profiler)
+		started(profiler)
 	}
 
 	// Start telemetry before you make the gRPC options. The gRPC tracing and metrics read the
@@ -58,10 +73,10 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
-	svcs = append(svcs, settings)
+	started(settings)
 
-	_, started, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, &grpcOpts, settings.values))
-	svcs = append(svcs, started...)
+	_, caps, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, &grpcOpts, settings.values))
+	started(caps...)
 	if err != nil {
 		return err
 	}
@@ -70,13 +85,9 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	if err != nil {
 		return fmt.Errorf("failed to start health checker: %w", err)
 	}
-	svcs = append(svcs, health)
+	started(health)
 
-	ws, err := startWebServer(ctx, lggr, cfg.observability.http, mux, health.checker)
-	if err != nil {
-		return fmt.Errorf("failed to start web server: %w", err)
-	}
-	svcs = append(svcs, ws)
+	p.started.Store(true)
 
 	if underPluginHost() {
 		lggr.Info("Serving the empty LOOP: this process is supervised by a go-plugin host")
