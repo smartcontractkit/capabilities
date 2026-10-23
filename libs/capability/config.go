@@ -54,6 +54,7 @@ func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
 	return b, errors.Join(
 		b.Register(root, &c.observability.TelemetryConfig),
 		b.Register(root, &c.observability.PyroscopeConfig),
+		b.Register(root, &c.observability.AppConfig),
 		b.RegisterInNamespace(root, httpNamespace, &c.observability.http),
 		b.RegisterInNamespace(root, capabilitiesNamespace, &c.capabilities),
 		b.RegisterInNamespace(root, grpcNamespace, &c.grpc),

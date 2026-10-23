@@ -142,6 +142,8 @@ func TestObservabilityFlags(t *testing.T) {
 
 		"http.port",
 
+		"app-id",
+
 		"capabilities.proxy-url",
 		"capabilities.capability-don-id",
 	} {

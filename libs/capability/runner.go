@@ -85,7 +85,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 }
 
 func startTelemetry(ctx context.Context, lggr logger.Logger, obs *observability) (*telemetry.Telemetry, error) {
-	t, err := telemetry.NewTelemetry(lggr, obs.TelemetryConfig, "", obs.otelViews)
+	t, err := telemetry.NewTelemetry(lggr, obs.TelemetryConfig, obs.AppID, obs.otelViews)
 	if err != nil {
 		return nil, err
 	}
