@@ -1067,6 +1067,29 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	})
 }
 
+func TestCronTrigger_ReadyAndHealthFollowLifecycle(t *testing.T) {
+	ts, err := NewTriggerService(logger.Nop(), clockwork.NewRealClock(), limits.Factory{})
+	require.NoError(t, err)
+
+	require.Error(t, ts.Ready())
+	require.Error(t, ts.HealthReport()[ts.Name()])
+
+	require.NoError(t, ts.Start(t.Context()))
+	require.NoError(t, ts.Ready())
+	require.NoError(t, ts.HealthReport()[ts.Name()])
+
+	require.NoError(t, ts.Close())
+	require.Error(t, ts.Ready())
+	require.Error(t, ts.HealthReport()[ts.Name()])
+}
+
+func TestCronTrigger_CloseBeforeStart(t *testing.T) {
+	ts, err := NewTriggerService(logger.Nop(), clockwork.NewRealClock(), limits.Factory{})
+	require.NoError(t, err)
+
+	require.NoError(t, ts.Close())
+}
+
 func TestCronTrigger_CloseStartErrors(t *testing.T) {
 	fakeClock := clockwork.NewRealClock()
 	ts, err := NewTriggerService(logger.Nop(), fakeClock, limits.Factory{})
