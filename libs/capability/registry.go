@@ -38,7 +38,8 @@ func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig,
 			Listen: func() (net.Listener, error) {
 				return net.Listen("tcp", net.JoinHostPort(grpcCfg.AdvertiseHost, strconv.Itoa(int(0))))
 			},
-			Connect: dial,
+			Connect:       dial,
+			ServerFactory: func() *grpc.Server { return grpcOpts.NewServer(nil) },
 		})
 		if err != nil {
 			_ = conn.Close()

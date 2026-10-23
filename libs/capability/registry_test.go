@@ -137,6 +137,25 @@ func TestRegistryDialsWithTheRunsInterceptors(t *testing.T) {
 	assert.Positive(t, counterTotal(t, metrics, "grpc_client_handled_total"), "the announcement should be counted")
 }
 
+// TestRegistryServesWithTheRunsInterceptors makes sure that calls from the node use the gRPC options.
+// The server metrics must count the call.
+func TestRegistryServesWithTheRunsInterceptors(t *testing.T) {
+	node := newSpyRegistry(t)
+	metrics := prometheus.NewRegistry()
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC, newTestGRPCOpts(t, metrics))
+	require.NoError(t, err)
+	require.NoError(t, reg.Start(t.Context()))
+	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
+	require.NoError(t, reg.Add(t.Context(), newFake()))
+
+	held, err := node.Get(t.Context(), fakeID)
+	require.NoError(t, err)
+	_, err = held.Info(t.Context())
+	require.NoError(t, err)
+
+	assert.Positive(t, counterTotal(t, metrics, "grpc_server_handled_total"), "the node's call should be counted")
+}
+
 // counterTotal adds the values of all series of the counter with this name.
 func counterTotal(t *testing.T, g prometheus.Gatherer, name string) float64 {
 	t.Helper()
