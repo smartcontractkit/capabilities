@@ -11,6 +11,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop/telemetry"
 )
 
 // settingsRoot builds the command tree the way RunErr does, through the same registration, and
@@ -326,4 +327,34 @@ func TestRunLeavesTelemetryAsItFoundIt(t *testing.T) {
 	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run"))
 
 	assert.Same(t, before, beholder.GetClient())
+}
+
+// TestStreamLogsKeepsTheLoggerWhenStreamingIsOff covers the default. The run must keep its logger.
+func TestStreamLogsKeepsTheLoggerWhenStreamingIsOff(t *testing.T) {
+	lggr := logger.Test(t)
+	tel, err := telemetry.NewTelemetry(lggr, defaultTelemetryConfig(), "", nil)
+	require.NoError(t, err)
+
+	got, err := streamLogs(lggr, tel)
+	require.NoError(t, err)
+	assert.True(t, got == lggr, "the logger should not change")
+}
+
+// TestStreamLogsReplacesTheLoggerWhenStreamingIsOn makes sure that the run uses a new logger that
+// sends its logs to beholder. The new logger must keep the name of the old logger.
+func TestStreamLogsReplacesTheLoggerWhenStreamingIsOn(t *testing.T) {
+	cfg := defaultTelemetryConfig()
+	cfg.TelemetryEnabled = true
+	cfg.TelemetryEndpoint = "localhost:1"
+	cfg.TelemetryInsecureConnection = true
+	cfg.TelemetryLogStreamingEnabled = true
+
+	lggr := logger.Named(logger.Test(t), "cron")
+	tel, err := telemetry.NewTelemetry(lggr, cfg, "", nil)
+	require.NoError(t, err)
+
+	got, err := streamLogs(lggr, tel)
+	require.NoError(t, err)
+	assert.False(t, got == lggr, "the logger should be replaced")
+	assert.Equal(t, "cron", got.Name())
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop/telemetry"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
@@ -40,6 +41,12 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 		return fmt.Errorf("failed to build telemetry: %w", err)
 	}
 	svcs = append(svcs, telemetry)
+
+	streamed, err := streamLogs(lggr, telemetry)
+	if err != nil {
+		return err
+	}
+	lggr = streamed
 
 	// Start telemetry before you make the gRPC options. The gRPC tracing and metrics read the
 	// telemetry providers when you make them.
@@ -91,6 +98,21 @@ func startTelemetry(ctx context.Context, lggr logger.Logger, obs *observability)
 	}
 
 	return t, t.Start(ctx)
+}
+
+// streamLogs returns a logger that also sends its logs to the beholder client, if the telemetry
+// config turns on log streaming. Otherwise it returns lggr. Loop does the same.
+func streamLogs(lggr logger.Logger, t *telemetry.Telemetry) (logger.Logger, error) {
+	level, ok := t.LogStreamingLevel()
+	if !ok {
+		return lggr, nil
+	}
+
+	otelLggr, err := loop.NewOtelLogger(t.Client().Logger, level)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enable log streaming: %w", err)
+	}
+	return logger.Named(otelLggr, lggr.Name()), nil
 }
 
 func servicesToHealthReporters(svcs []services.Service) []services.HealthReporter {
