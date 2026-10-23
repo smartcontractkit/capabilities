@@ -12,12 +12,6 @@ func (CapabilitiesConfig) DocComments() map[string]commentparsing.FieldDoc {
 	}
 }
 
-func (GRPCConfig) DocComments() map[string]commentparsing.FieldDoc {
-	return map[string]commentparsing.FieldDoc{
-		"AdvertiseHost": {Comment: "AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.\nEmpty binds every interface."},
-	}
-}
-
 func (HTTPConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
 		"Port": {Comment: "Port serves /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers."},

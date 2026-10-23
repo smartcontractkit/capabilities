@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/stretchr/testify/assert"
@@ -96,7 +97,7 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- RunErr(ctx, lggr, ctor) }()
+	go func() { done <- RunErr(ctx, lggr, ctor, withRegisterer(prometheus.NewRegistry())) }()
 
 	if port == 0 {
 		// Nothing that serves: a rejected constructor, or a bare invocation that prints help.

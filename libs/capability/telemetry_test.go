@@ -53,6 +53,8 @@ var undocumentedLoopFlags = []string{
 	"chip-ingress-max-grpc-request-size",
 	"chip-ingress-send-interval",
 	"chip-ingress-send-timeout",
+	"grpc.advertise-host",
+	"grpc.server-max-recv-msg-size",
 	"pyroscope-auth-token",
 	"pyroscope-environment",
 	"pyroscope-link-traces-to-profiles",

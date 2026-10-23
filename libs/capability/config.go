@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/x/config/cli"
 	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 )
@@ -19,11 +20,13 @@ const settingsNamespace = "settings"
 
 const defaultHost = "localhost"
 
-// GRPCConfig configures the gRPC servers this process opens.
+// GRPCConfig configures the gRPC clients and servers this process opens.
 type GRPCConfig struct {
 	// AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.
 	// Empty binds every interface.
 	AdvertiseHost string
+
+	loop.GRPCOptsConfig
 }
 
 // the standard configuration for a capability; does not include the config that a capability may request via its constructor.
