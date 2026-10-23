@@ -47,9 +47,8 @@ type Event struct {
 	Mismatch *MismatchError[capabilities.TriggerResponse]
 }
 
-// Execute calls Execute on every instance and returns the response they agree on, with the first instance's
-// metering, which is not compared. It returns a *MismatchError when the instances disagree, on the response
-// or the error.
+// Execute calls Execute on every instance and returns the response they agree on. It returns a *MismatchError
+// when the instances disagree, on the response or the error.
 func Execute[C capabilities.Executable](
 	ctx context.Context,
 	cs []C,
@@ -61,7 +60,7 @@ func Execute[C capabilities.Executable](
 		return capabilities.CapabilityResponse{}, err
 	}
 	return agree(results, func(a, b capabilities.CapabilityResponse) bool {
-		return samePayload(a.Payload, b.Payload)
+		return samePayload(a.Payload, b.Payload) && slices.Equal(a.Metadata.Metering, b.Metadata.Metering)
 	})
 }
 
