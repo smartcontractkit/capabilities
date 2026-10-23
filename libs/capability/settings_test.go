@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -163,7 +164,7 @@ func (f *fakeBroadcaster) closeStream() {
 // TestSettingsServiceWithoutAURL covers a run the host pushes no settings to: it starts and stops
 // cleanly, and every limit stays at its compiled-in default.
 func TestSettingsServiceWithoutAURL(t *testing.T) {
-	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{})
+	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{}, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	assert.Nil(t, s.conn)
 	require.NoError(t, s.Close())
@@ -180,7 +181,7 @@ func TestSettingsServiceFollowsTheHost(t *testing.T) {
 	go func() { _ = srv.Serve(l) }()
 	t.Cleanup(srv.Stop)
 
-	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{URL: l.Addr().String()})
+	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{URL: l.Addr().String()}, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 

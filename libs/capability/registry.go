@@ -17,15 +17,17 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/remote"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
-func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig) (*registryService, error) {
+func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
 	r := &registryService{local: registry.NewRegistry(lggr)}
 
 	if cfg.ProxyURL != "" {
+		dial := dialer(grpcOpts)
 		conn, err := dial(cfg.ProxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create registry proxy client for %s: %w", cfg.ProxyURL, err)
@@ -51,13 +53,17 @@ func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig)
 	return r, nil
 }
 
-func dial(target string) (*grpc.ClientConn, error) {
-	return grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+// dialer makes gRPC clients with the interceptors in opts. opts has no transport credentials, so
+// dialer adds insecure credentials.
+func dialer(opts loop.GRPCOpts) func(target string) (*grpc.ClientConn, error) {
+	return func(target string) (*grpc.ClientConn, error) {
+		return grpc.NewClient(target, append(slices.Clone(opts.DialOpts), grpc.WithTransportCredentials(insecure.NewCredentials()))...)
+	}
 }
 
 // startRegistry builds the registry and starts it.
-func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig) (*registryService, error) {
-	r, err := newRegistry(lggr, cfg, grpcCfg)
+func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
+	r, err := newRegistry(lggr, cfg, grpcCfg, grpcOpts)
 	if err != nil {
 		return nil, err
 	}

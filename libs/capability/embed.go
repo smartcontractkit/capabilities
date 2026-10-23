@@ -92,7 +92,7 @@ func StartCapabilities[T Capability](ctx context.Context, lggr logger.Logger, ba
 			instLggr = logger.Named(lggr, fmt.Sprintf("Instance%d", id))
 		}
 
-		reg, err := startRegistry(ctx, instLggr, cfg.capabilities, cfg.grpc)
+		reg, err := startRegistry(ctx, instLggr, cfg.capabilities, cfg.grpc, *cfg.grpcOpts)
 		if err != nil {
 			return built, svcs, fmt.Errorf("failed to start registry: %w", err)
 		}

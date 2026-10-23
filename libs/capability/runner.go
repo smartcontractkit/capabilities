@@ -45,7 +45,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	// telemetry providers when you make them.
 	grpcOpts := cfg.grpc.New(lggr)
 
-	settings, err := startSettings(ctx, lggr, cfg.settings)
+	settings, err := startSettings(ctx, lggr, cfg.settings, grpcOpts)
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
