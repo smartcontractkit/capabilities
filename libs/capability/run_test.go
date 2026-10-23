@@ -122,15 +122,14 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	}
 }
 
-// serving reports whether the shared HTTP server is answering on port, which is how a test tells
-// that a run has finished coming up.
+// serving checks /startupz because the web server answers before the run has finished starting.
 //
 // A timeout, because the port is not always the run's: a test that takes the port to watch the
 // run fail leaves a listener that accepts and never answers, and a bare Get would hang on it
 // rather than report not-serving.
 func serving(port int) bool {
 	client := &http.Client{Timeout: 5 * time.Second}
-	res, err := client.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
+	res, err := client.Get(fmt.Sprintf("http://localhost:%d/startupz", port))
 	if err != nil {
 		return false
 	}
