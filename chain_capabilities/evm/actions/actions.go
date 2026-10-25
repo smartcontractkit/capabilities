@@ -37,6 +37,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/txevents"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
@@ -63,10 +64,22 @@ type EVM struct {
 	writeReportL1FeeActive                     limits.RangeLimiter[commoncfg.Timestamp]
 
 	transmissionScheduler ts.TransmissionScheduler
+
+	// txEvents publishes ChainTransactionObserved events for the Transactions Viewer.
+	txEvents txevents.Emitter
+}
+
+// Option configures optional behaviour of the EVM capability.
+type Option func(*EVM)
+
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func WithTxEvents(emitter txevents.Emitter) Option {
+	return func(e *EVM) { e.txEvents = emitter }
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*EVM, caperrors.Error) {
+	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, opts ...Option) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.FailedPrecondition)
@@ -88,6 +101,10 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		consensusHandler:         handler,
 		chainSelector:            chainSelector,
 		transmissionScheduler:    transmissionScheduler,
+		txEvents:                 txevents.NopEmitter{},
+	}
+	for _, opt := range opts {
+		opt(e)
 	}
 	err = e.initLimiters(limitsFactory)
 	if err != nil {
