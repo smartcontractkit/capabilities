@@ -469,7 +469,7 @@ func TestUnderPluginHost(t *testing.T) {
 
 // assertPortFree reports whether nothing is listening on port, which is how a stopped web server is
 // told from a running one.
-func assertPortFree(t *testing.T, port uint16) {
+func assertPortFree[P int | uint16](t *testing.T, port P) {
 	t.Helper()
 
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))

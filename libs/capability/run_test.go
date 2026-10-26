@@ -260,7 +260,7 @@ func TestBareCommandServesOnThePrometheusPort(t *testing.T) {
 	require.NoError(t, RunErr(t.Context(), fakeConstructor,
 		withLogger(logger.Test(t)), withRegisterer(prometheus.NewRegistry()), withServe(serve)))
 	assert.True(t, served)
-	assertPortFree(t, uint16(promPort))
+	assertPortFree(t, promPort)
 }
 
 // TestRunServesAndAnnouncesTheCapability is the whole path through the real entry point: a run
