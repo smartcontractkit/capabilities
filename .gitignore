@@ -50,3 +50,6 @@ bin
 # Used for changesets
 node_modules
 
+
+# AI
+.claude

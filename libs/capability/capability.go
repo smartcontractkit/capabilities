@@ -1,8 +1,6 @@
 package capability
 
 import (
-	"google.golang.org/protobuf/reflect/protoreflect"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
@@ -10,9 +8,6 @@ import (
 type Capability interface {
 	services.Service
 	capabilities.ExecutableAndTriggerCapability
-
-	// Service is the proto service this capability's server was generated from.
-	Service() protoreflect.ServiceDescriptor
 }
 
 // CapabilitiesConfig is what a capability binary needs from the node it runs beside.

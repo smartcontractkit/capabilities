@@ -3,10 +3,13 @@ package capability
 //go:generate go run ./internal/docgen
 
 import (
+	"context"
 	"errors"
 
 	"github.com/spf13/cobra"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/x/config/cli"
 	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 )
@@ -19,11 +22,13 @@ const settingsNamespace = "settings"
 
 const defaultHost = "localhost"
 
-// GRPCConfig configures the gRPC servers this process opens.
+// GRPCConfig configures the gRPC clients and servers this process opens.
 type GRPCConfig struct {
 	// AdvertiseHost is the host the gRPC servers this process opens bind to and are advertised at.
 	// Empty binds every interface.
 	AdvertiseHost string
+
+	loop.GRPCOptsConfig
 }
 
 // the standard configuration for a capability; does not include the config that a capability may request via its constructor.
@@ -32,6 +37,9 @@ type config struct {
 	capabilities  CapabilitiesConfig
 	grpc          GRPCConfig
 	settings      SettingsConfig
+
+	lggr  logger.Logger         // set only by tests, with withLogger
+	serve func(context.Context) // set only by tests, with withServe
 }
 
 func defaultConfig() *config {
@@ -49,10 +57,10 @@ func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
 		return nil, err
 	}
 	return b, errors.Join(
-		b.RegisterInNamespace(root, telemetryNamespace, &c.observability.telemetry),
-		b.RegisterInNamespace(root, tracingNamespace, &c.observability.tracing),
-		b.RegisterInNamespace(root, chipIngressNamespace, &c.observability.chipIngress),
-		b.RegisterInNamespace(root, pyroscopeNamespace, &c.observability.pyroscope),
+		b.Register(root, &c.observability.TelemetryConfig),
+		b.Register(root, &c.observability.PyroscopeConfig),
+		b.Register(root, &c.observability.AppConfig),
+		b.Register(root, &c.observability.PrometheusConfig),
 		b.RegisterInNamespace(root, httpNamespace, &c.observability.http),
 		b.RegisterInNamespace(root, capabilitiesNamespace, &c.capabilities),
 		b.RegisterInNamespace(root, grpcNamespace, &c.grpc),

@@ -116,4 +116,45 @@ func TestConfig_UnmarshalJSON(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "forwarderLookbackLedgers must be non-negative")
 	})
+
+	t.Run("optional ledgerBoundsOffset", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"chainId":"stellar-testnet",
+			"network":"stellar",
+			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"ledgerBoundsOffset":3
+		}`
+		var cfg Config
+		require.NoError(t, json.Unmarshal([]byte(input), &cfg))
+		assert.EqualValues(t, 3, cfg.LedgerBoundsOffset)
+	})
+
+	t.Run("ledgerBoundsOffset leaving no valid ledger", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"chainId":"stellar-testnet",
+			"network":"stellar",
+			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"ledgerBoundsOffset":1
+		}`
+		var cfg Config
+		err := json.Unmarshal([]byte(input), &cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ledgerBoundsOffset must be 0 (default) or at least 3")
+	})
+
+	t.Run("ledgerBoundsOffset leaving a single valid ledger", func(t *testing.T) {
+		t.Parallel()
+		input := `{
+			"chainId":"stellar-testnet",
+			"network":"stellar",
+			"creForwarderAddress":"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+			"ledgerBoundsOffset":2
+		}`
+		var cfg Config
+		err := json.Unmarshal([]byte(input), &cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "2 leaves 1 valid ledger(s)")
+	})
 }

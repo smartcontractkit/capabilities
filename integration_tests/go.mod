@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/integration_tests
 
-go 1.27.1
+go 1.27.3
 
 replace github.com/smartcontractkit/capabilities/http_action => ../http_action
 
@@ -215,7 +215,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
