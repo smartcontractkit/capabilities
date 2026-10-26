@@ -3,6 +3,7 @@ package capability
 //go:generate go run ./internal/docgen
 
 import (
+	"context"
 	"errors"
 
 	"github.com/spf13/cobra"
@@ -37,7 +38,8 @@ type config struct {
 	grpc          GRPCConfig
 	settings      SettingsConfig
 
-	lggr logger.Logger // set only by tests, with withLogger
+	lggr  logger.Logger         // set only by tests, with withLogger
+	serve func(context.Context) // set only by tests, with withServe
 }
 
 func defaultConfig() *config {
@@ -58,6 +60,7 @@ func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
 		b.Register(root, &c.observability.TelemetryConfig),
 		b.Register(root, &c.observability.PyroscopeConfig),
 		b.Register(root, &c.observability.AppConfig),
+		b.Register(root, &c.observability.PrometheusConfig),
 		b.RegisterInNamespace(root, httpNamespace, &c.observability.http),
 		b.RegisterInNamespace(root, capabilitiesNamespace, &c.capabilities),
 		b.RegisterInNamespace(root, grpcNamespace, &c.grpc),

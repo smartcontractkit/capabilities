@@ -67,12 +67,38 @@ func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error)
 		return err
 	}
 
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"compat"}
+	}
+	root.SetArgs(args)
+
+	compatCmd := &cobra.Command{
+		Use:    "compat",
+		Short:  "Run the capability as a LOOP of the core node",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !underPluginHost() {
+				return errors.New("compatibility mode must be started by a go-plugin host, such as the core node. To run the capability alone, use the run command")
+			}
+			if cfg.observability.PrometheusPort == 0 {
+				return errors.New("compatibility mode needs CL_PROMETHEUS_PORT")
+			}
+			serve := func(context.Context) { servePlugin(lggr) }
+			if cfg.serve != nil {
+				serve = cfg.serve
+			}
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities, HTTPConfig{Port: cfg.observability.PrometheusPort}, serve).run(cmd.Context())
+		},
+	}
+
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the capability",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities)
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
@@ -87,14 +113,18 @@ func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error)
 			}
 			capCfg := cfg.capabilities
 			capCfg.ProxyURL = ""
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, EmbedInjector, total, capCfg)
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, EmbedInjector, total, capCfg, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
-	if err := errors.Join(RunInjector.RegisterConfig(runCmd, b), EmbedInjector.RegisterConfig(embedCmd, b)); err != nil {
+	if err := errors.Join(
+		RunInjector.RegisterConfig(compatCmd, b),
+		RunInjector.RegisterConfig(runCmd, b),
+		EmbedInjector.RegisterConfig(embedCmd, b),
+	); err != nil {
 		return err
 	}
-	root.AddCommand(runCmd, embedCmd)
+	root.AddCommand(compatCmd, runCmd, embedCmd)
 
 	// Wire up SIGTERM + SIGINT to the context
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -108,6 +138,12 @@ type Option func(*config)
 // withLogger gives a run the logger of a test. Other runs make their own logger.
 func withLogger(lggr logger.Logger) Option {
 	return func(c *config) { c.lggr = lggr }
+}
+
+// withServe replaces plugin.Serve in compatibility mode. plugin.Serve takes over the stdio of the
+// process, so tests can't call it.
+func withServe(serve func(context.Context)) Option {
+	return func(c *config) { c.serve = serve }
 }
 
 // withRegisterer gives a run its own metrics registry. Tests start many runs in one process.

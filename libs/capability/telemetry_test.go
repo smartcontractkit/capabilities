@@ -144,6 +144,7 @@ func TestObservabilityFlags(t *testing.T) {
 		"http.port",
 
 		"app-id",
+		"prometheus-port",
 
 		"capabilities.proxy-url",
 		"capabilities.capability-don-id",
