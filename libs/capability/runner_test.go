@@ -38,6 +38,11 @@ func runArgs(t *testing.T) (*config, uint16) {
 	return cfg, port
 }
 
+// testRunner returns a runner of one instance over cfg, with the logger of the test.
+func testRunner(t *testing.T, cfg *config, c func(do.Injector) (Capability, error)) runner {
+	return newRunner(logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities, cfg.observability.http, nil)
+}
+
 // runToCompletion starts a run and stops it once it is serving, returning what run returned.
 //
 // A run blocks until its context is cancelled, so a test that wants one to finish has to be the
@@ -50,7 +55,9 @@ func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability,
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities) }()
+	go func() {
+		done <- testRunner(t, cfg, c).run(ctx)
+	}()
 
 	deadline := time.After(30 * time.Second)
 	for {
@@ -185,7 +192,7 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor, NewInjector(), 1, cfg.capabilities)
+		done <- testRunner(t, cfg, fakeConstructor).run(ctx)
 	}()
 
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
@@ -239,8 +246,7 @@ func TestRunProbeTransitions(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, func(do.Injector) (Capability, error) { return f, nil },
-			NewInjector(), 1, cfg.capabilities)
+		done <- testRunner(t, cfg, func(do.Injector) (Capability, error) { return f, nil }).run(ctx)
 	}()
 
 	// healthz is down because the run has not started, not because of the health set above.
@@ -307,8 +313,7 @@ func TestRunProbesWhenTheCapabilityFailsToStart(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), logger.Test(t), "cron", cfg, func(do.Injector) (Capability, error) { return f, nil },
-			NewInjector(), 1, cfg.capabilities)
+		done <- testRunner(t, cfg, func(do.Injector) (Capability, error) { return f, nil }).run(context.Background())
 	}()
 
 	<-f.starting
@@ -338,9 +343,9 @@ func TestRunProbesAcrossInstances(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, func(i do.Injector) (Capability, error) {
+		done <- newRunner(logger.Test(t), "cron", cfg, func(i do.Injector) (Capability, error) {
 			return fakes[do.MustInvoke[InstanceInfo](i).ID], nil
-		}, NewInjector(), len(fakes), cfg.capabilities)
+		}, NewInjector(), len(fakes), cfg.capabilities, cfg.observability.http, nil).run(ctx)
 	}()
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
 		"the run should finish starting")

@@ -216,14 +216,51 @@ func TestRunProvidesItsDependencies(t *testing.T) {
 	assert.NotNil(t, gotClock)
 }
 
-// TestRunHasARunCommand is the shape of the binary rather than what it does: a root that runs
-// nothing itself, and a way to start it hanging off it.
-func TestRunHasARunCommand(t *testing.T) {
-	// A bare invocation prints help and does nothing, rather than starting the capability.
-	require.NoError(t, execute(t, logger.Test(t), func(do.Injector) (Capability, error) {
-		t.Error("the root command should not build the capability")
+// TestBareCommandRunsInCompatibilityMode covers a bare <command>, which is how the core node starts
+// a LOOP. The test can't reach plugin.Serve, because it takes over the stdio of the process. So
+// each case must fail before the capability is built.
+func TestBareCommandRunsInCompatibilityMode(t *testing.T) {
+	h := emptyHandshakeConfig()
+	notBuilt := func(do.Injector) (Capability, error) {
+		t.Error("the capability must not be built")
 		return newFake(), nil
-	}))
+	}
+
+	t.Run("without a plugin host", func(t *testing.T) {
+		t.Setenv(h.MagicCookieKey, "")
+		require.ErrorContains(t, execute(t, logger.Test(t), notBuilt), "must be started by a go-plugin host")
+	})
+
+	t.Run("without CL_PROMETHEUS_PORT", func(t *testing.T) {
+		t.Setenv(h.MagicCookieKey, h.MagicCookieValue)
+		require.ErrorContains(t, execute(t, logger.Test(t), notBuilt), "needs CL_PROMETHEUS_PORT")
+	})
+}
+
+// TestBareCommandServesOnThePrometheusPort makes sure that compatibility mode serves on the port
+// that the core node gives in CL_PROMETHEUS_PORT, and ignores CL_HTTP_PORT.
+func TestBareCommandServesOnThePrometheusPort(t *testing.T) {
+	h := emptyHandshakeConfig()
+	promPort, httpPort := freePort(t), freePort(t)
+	t.Setenv(h.MagicCookieKey, h.MagicCookieValue)
+	t.Setenv("CL_PROMETHEUS_PORT", strconv.Itoa(promPort))
+	t.Setenv("CL_HTTP_PORT", strconv.Itoa(httpPort))
+
+	previous := os.Args
+	t.Cleanup(func() { os.Args = previous })
+	os.Args = []string{"cron"}
+
+	served := false
+	serve := func(context.Context) {
+		served = true
+		assert.True(t, serving(promPort), "the web server must serve on CL_PROMETHEUS_PORT")
+		assert.False(t, serving(httpPort), "the web server must not serve on CL_HTTP_PORT")
+	}
+
+	require.NoError(t, RunErr(t.Context(), fakeConstructor,
+		withLogger(logger.Test(t)), withRegisterer(prometheus.NewRegistry()), withServe(serve)))
+	assert.True(t, served)
+	assertPortFree(t, uint16(promPort))
 }
 
 // TestRunServesAndAnnouncesTheCapability is the whole path through the real entry point: a run
