@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/samber/do/v2"
@@ -34,9 +35,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	var svcs []services.Service
 	defer func() {
 		p.draining.Store(true)
-		if err := services.MultiCloser(svcs).Close(); err != nil {
-			logger.Sugared(lggr).Errorw("failed to stop the services of this run", "err", err)
-		}
+		stopInReverse(lggr, svcs)
 	}()
 	started := func(s ...services.Service) {
 		svcs = append(svcs, s...)
@@ -126,6 +125,16 @@ func streamLogs(lggr logger.Logger, t *telemetry.Telemetry) (logger.Logger, erro
 		return nil, fmt.Errorf("failed to enable log streaming: %w", err)
 	}
 	return logger.Named(otelLggr, lggr.Name()), nil
+}
+
+// stopInReverse stops each service before the services that it depends on. Each service starts
+// after its dependencies, so the reverse of the start order is the reverse of the dependency order.
+func stopInReverse(lggr logger.Logger, svcs []services.Service) {
+	for _, s := range slices.Backward(svcs) {
+		if err := s.Close(); err != nil {
+			logger.Sugared(lggr).Errorw("failed to stop a service of this run", "service", s.Name(), "err", err)
+		}
+	}
 }
 
 func servicesToHealthReporters(svcs []services.Service) []services.HealthReporter {

@@ -472,3 +472,16 @@ func assertPortFree(t *testing.T, port uint16) {
 		require.NoError(t, l.Close())
 	}
 }
+
+func TestStopInReverseStopsInTheReverseOfTheStartOrder(t *testing.T) {
+	var stopped []string
+	named := func(name string) services.Service {
+		s, _ := services.Config{Name: name, Close: func() error { stopped = append(stopped, name); return nil }}.NewServiceEngine(logger.Nop())
+		require.NoError(t, s.Start(t.Context()))
+		return s
+	}
+
+	stopInReverse(logger.Test(t), []services.Service{named("Telemetry"), named("Capability"), named("Web")})
+
+	assert.Equal(t, []string{"Web", "Capability", "Telemetry"}, stopped)
+}
