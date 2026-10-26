@@ -10,7 +10,7 @@ require (
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260821155228-fa1d775e2138
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
-	github.com/stellar/go-stellar-sdk v0.7.4-0.20261014050248-990270d32ebe // Protocol 30 XDR from the protocol-next branch; re-pin to the tagged release once SDF cuts it
+	github.com/stellar/go-stellar-sdk v0.8.0
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
