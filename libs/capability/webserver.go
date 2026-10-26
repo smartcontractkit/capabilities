@@ -26,12 +26,13 @@ const defaultHTTPPort = 8080
 // routes a service registers on the mux while it is being built - it is not only prometheus's, so
 // it is named for the transport it serves rather than for one of its handlers.
 type HTTPConfig struct {
-	// Port serves /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers.
+	// Port serves /metrics, /debug/pprof, /livez, /startupz, /readyz, /healthz and any routes a
+	// service registers.
 	Port uint16
 }
 
 // newWebServer returns the shared HTTP server as a service.
-func newWebServer(lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, checker *services.HealthChecker) *webService {
+func newWebServer(lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, p *probes) *webService {
 	mux.Handle("/metrics", promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	}))
@@ -42,8 +43,10 @@ func newWebServer(lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, checke
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
-	mux.HandleFunc("/healthz", healthHandler(checker.IsHealthy))
-	mux.HandleFunc("/readyz", healthHandler(checker.IsReady))
+	mux.HandleFunc("/livez", healthHandler(p.live))
+	mux.HandleFunc("/startupz", healthHandler(p.startup))
+	mux.HandleFunc("/readyz", healthHandler(p.ready))
+	mux.HandleFunc("/healthz", healthHandler(p.healthy))
 
 	w := &webService{
 		lggr: lggr,
@@ -63,8 +66,8 @@ func newWebServer(lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, checke
 }
 
 // startWebServer builds the shared HTTP server and starts it - listening is what Start does.
-func startWebServer(ctx context.Context, lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, checker *services.HealthChecker) (*webService, error) {
-	w := newWebServer(lggr, cfg, mux, checker)
+func startWebServer(ctx context.Context, lggr logger.Logger, cfg HTTPConfig, mux *http.ServeMux, p *probes) (*webService, error) {
+	w := newWebServer(lggr, cfg, mux, p)
 	return w, w.Start(ctx)
 }
 
@@ -102,7 +105,8 @@ func (w *webService) close() error {
 	return w.server.Close()
 }
 
-// newHealthChecker returns the health checker as a service.
+// newHealthChecker returns the health checker as a service. It only exports health metrics; the
+// health endpoints do not read it.
 //
 // client is always a client, never nil: when telemetry is off it is the noop one that is global
 // until something replaces it, so the otel hooks are configured either way and simply record
@@ -135,8 +139,6 @@ func startHealthChecker(ctx context.Context, lggr logger.Logger, client *beholde
 type healthService struct {
 	services.Service
 
-	// checker is made when this is built, so that whatever serves its view can be given it without
-	// waiting for this to start.
 	checker   *services.HealthChecker
 	reporters []services.HealthReporter
 }
@@ -160,8 +162,7 @@ func (h *healthService) start(context.Context) error {
 
 func (h *healthService) close() error { return h.checker.Close() }
 
-// healthHandler adapts a services.HealthChecker.IsHealthy/IsReady-shaped func into an HTTP handler:
-// 200 with each check's status when ok, 503 and the failing checks' errors otherwise.
+// healthHandler answers 200 when ok, and 503 with the failing checks' errors otherwise.
 func healthHandler(check func() (bool, map[string]error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		ok, errs := check()
