@@ -40,7 +40,21 @@ var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 )
 
 type Config struct {
+	// FastestScheduleIntervalSeconds is the shortest interval a cron schedule may have. Zero keeps the
+	// CRE settings default.
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
+}
+
+func newFastestScheduleInterval(limitsFactory limits.Factory, cfg Config) (limits.TimeLimiter, error) {
+	limit := cresettings.Default.PerWorkflow.CRONTrigger.FastestScheduleInterval // copy
+	if cfg.FastestScheduleIntervalSeconds > 0 {
+		limit.DefaultValue = time.Duration(cfg.FastestScheduleIntervalSeconds) * time.Second
+	}
+	limiter, err := limitsFactory.MakeTimeLimiter(limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create limiter: %w", err)
+	}
+	return limiter, nil
 }
 
 type cronTrigger struct {
@@ -101,8 +115,13 @@ var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
 // the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
-func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory) (*Service, error) {
+func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory, cfg Config) (*Service, error) {
 	lggr := logger.Named(parentLggr, "CRONTrigger")
+
+	fastestScheduleInterval, err := newFastestScheduleInterval(limitsFactory, cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	metrics, err := NewMetrics()
 	if err != nil {
@@ -129,13 +148,14 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 	}
 
 	return &Service{
-		lggr:           lggr,
-		CapabilityInfo: cronTriggerInfo,
-		limitsFactory:  limitsFactory,
-		triggers:       NewCronStore(),
-		scheduler:      scheduler,
-		cronLogger:     cronLogger,
-		clock:          clock,
+		lggr:                    lggr,
+		CapabilityInfo:          cronTriggerInfo,
+		limitsFactory:           limitsFactory,
+		fastestScheduleInterval: fastestScheduleInterval,
+		triggers:                NewCronStore(),
+		scheduler:               scheduler,
+		cronLogger:              cronLogger,
+		clock:                   clock,
 		labeler: custmsg.NewLabeler().With(
 			"capabilityID", cronTriggerInfo.ID,
 			"capabilityVersion", cronTriggerInfo.Version(),
@@ -148,31 +168,24 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	s.lggr.Debugw("Initialising cron trigger capability", "serviceName", ServiceName)
 
-	var cronConfig Config
 	if len(dependencies.Config) > 0 {
-		err := json.Unmarshal([]byte(dependencies.Config), &cronConfig)
-		if err != nil {
+		var cronConfig Config
+		if err := json.Unmarshal([]byte(dependencies.Config), &cronConfig); err != nil {
 			return fmt.Errorf("failed to unmarshal config: %s %w", dependencies.Config, err)
 		}
+		limiter, err := newFastestScheduleInterval(s.limitsFactory, cronConfig)
+		if err != nil {
+			return err
+		}
+		s.fastestScheduleInterval = limiter
 	}
-
-	limit := cresettings.Default.PerWorkflow.CRONTrigger.FastestScheduleInterval // copy
-	if cronConfig.FastestScheduleIntervalSeconds > 0 {
-		limit.DefaultValue = time.Duration(cronConfig.FastestScheduleIntervalSeconds) * time.Second
-	}
-	limiter, err := s.limitsFactory.MakeTimeLimiter(limit)
-	if err != nil {
-		return fmt.Errorf("failed to create limiter: %w", err)
-	}
-	s.fastestScheduleInterval = limiter
 
 	s.orgResolver = dependencies.OrgResolver
 	if s.orgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
 	}
 
-	err = s.Start(ctx)
-	if err != nil {
+	if err := s.Start(ctx); err != nil {
 		return fmt.Errorf("error when starting trigger service: %w", err)
 	}
 
