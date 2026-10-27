@@ -33,6 +33,7 @@ type GRPCConfig struct {
 
 // the standard configuration for a capability; does not include the config that a capability may request via its constructor.
 type config struct {
+	appName       string
 	observability observability
 	capabilities  CapabilitiesConfig
 	grpc          GRPCConfig
@@ -42,17 +43,18 @@ type config struct {
 	serve func(context.Context) // set only by tests, with withServe
 }
 
-func defaultConfig() *config {
+func defaultConfig(appName string) *config {
 	return &config{
+		appName:       appName,
 		observability: *defaultObservability(),
 		grpc:          GRPCConfig{AdvertiseHost: defaultHost},
 	}
 }
 
 // bind binds every config to root, each under the namespace that owns it. Each is settable by
-// flag, CRE_/CL_ env var, or config file, in that order of precedence, over its defaults.
+// flag, CL_ env var, or config file, in that order of precedence, over its defaults.
 func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
-	b, err := cli.New(cli.Options{Markup: tomlmarkup.New(), Prefixes: []string{"CRE", "CL"}})
+	b, err := cli.New(cli.Options{Markup: tomlmarkup.New(), Prefixes: []string{"CL"}})
 	if err != nil {
 		return nil, err
 	}
