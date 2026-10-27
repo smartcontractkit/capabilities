@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -94,6 +95,16 @@ func (s *Stellar) initLimiters(limitsFactory limits.Factory) (err error) {
 
 func (s *Stellar) Close() error {
 	return services.CloseAll(s.reportSizeLimit, s.maxResourceFeeLimit)
+}
+
+// MonitoringContext exposes the logger and capability-scoped metric labels consumed by the
+// generated v2 server wrapper (--with-monitoring). The wrapper emits lifecycle logs and
+// OTel metrics for every RPC; action code should not duplicate that emission.
+func (s *Stellar) MonitoringContext() capmon.MonitoringContext {
+	return capmon.MonitoringContext{
+		Logger:            s.lggr,
+		MetricsAttributes: s.messageBuilder.CapabilityMetricsAttributes,
+	}
 }
 
 // GetLatestLedger performs a consensus read of the current ledger. Each node
