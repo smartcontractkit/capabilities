@@ -84,186 +84,6 @@ func (x *WriteReportRequest) GetSigsCount() uint32 {
 	return 0
 }
 
-type WriteReportInitiated struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Req              *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
-	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *WriteReportInitiated) Reset() {
-	*x = WriteReportInitiated{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteReportInitiated) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteReportInitiated) ProtoMessage() {}
-
-func (x *WriteReportInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteReportInitiated.ProtoReflect.Descriptor instead.
-func (*WriteReportInitiated) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *WriteReportInitiated) GetReq() *WriteReportRequest {
-	if x != nil {
-		return x.Req
-	}
-	return nil
-}
-
-func (x *WriteReportInitiated) GetExecutionContext() *monitoring.ExecutionContext {
-	if x != nil {
-		return x.ExecutionContext
-	}
-	return nil
-}
-
-type WriteReportSuccess struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Req              *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
-	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *WriteReportSuccess) Reset() {
-	*x = WriteReportSuccess{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteReportSuccess) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteReportSuccess) ProtoMessage() {}
-
-func (x *WriteReportSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteReportSuccess.ProtoReflect.Descriptor instead.
-func (*WriteReportSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *WriteReportSuccess) GetReq() *WriteReportRequest {
-	if x != nil {
-		return x.Req
-	}
-	return nil
-}
-
-func (x *WriteReportSuccess) GetExecutionContext() *monitoring.ExecutionContext {
-	if x != nil {
-		return x.ExecutionContext
-	}
-	return nil
-}
-
-type WriteReportError struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Req              *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
-	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
-	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
-	IsUserError      bool                         `protobuf:"varint,4,opt,name=is_user_error,json=isUserError,proto3" json:"is_user_error,omitempty"`
-	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *WriteReportError) Reset() {
-	*x = WriteReportError{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteReportError) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteReportError) ProtoMessage() {}
-
-func (x *WriteReportError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteReportError.ProtoReflect.Descriptor instead.
-func (*WriteReportError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *WriteReportError) GetReq() *WriteReportRequest {
-	if x != nil {
-		return x.Req
-	}
-	return nil
-}
-
-func (x *WriteReportError) GetSummary() string {
-	if x != nil {
-		return x.Summary
-	}
-	return ""
-}
-
-func (x *WriteReportError) GetCause() string {
-	if x != nil {
-		return x.Cause
-	}
-	return ""
-}
-
-func (x *WriteReportError) GetIsUserError() bool {
-	if x != nil {
-		return x.IsUserError
-	}
-	return false
-}
-
-func (x *WriteReportError) GetExecutionContext() *monitoring.ExecutionContext {
-	if x != nil {
-		return x.ExecutionContext
-	}
-	return nil
-}
-
 type WriteReportTxInfoRetrievalError struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Req              *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
@@ -277,7 +97,7 @@ type WriteReportTxInfoRetrievalError struct {
 
 func (x *WriteReportTxInfoRetrievalError) Reset() {
 	*x = WriteReportTxInfoRetrievalError{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[4]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -289,7 +109,7 @@ func (x *WriteReportTxInfoRetrievalError) String() string {
 func (*WriteReportTxInfoRetrievalError) ProtoMessage() {}
 
 func (x *WriteReportTxInfoRetrievalError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[4]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -302,7 +122,7 @@ func (x *WriteReportTxInfoRetrievalError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteReportTxInfoRetrievalError.ProtoReflect.Descriptor instead.
 func (*WriteReportTxInfoRetrievalError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{4}
+	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *WriteReportTxInfoRetrievalError) GetReq() *WriteReportRequest {
@@ -357,7 +177,7 @@ type WriteReportInvalidTransmissionState struct {
 
 func (x *WriteReportInvalidTransmissionState) Reset() {
 	*x = WriteReportInvalidTransmissionState{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[5]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -369,7 +189,7 @@ func (x *WriteReportInvalidTransmissionState) String() string {
 func (*WriteReportInvalidTransmissionState) ProtoMessage() {}
 
 func (x *WriteReportInvalidTransmissionState) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[5]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -382,7 +202,7 @@ func (x *WriteReportInvalidTransmissionState) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use WriteReportInvalidTransmissionState.ProtoReflect.Descriptor instead.
 func (*WriteReportInvalidTransmissionState) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{5}
+	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *WriteReportInvalidTransmissionState) GetReq() *WriteReportRequest {
@@ -460,7 +280,7 @@ type WriteReportDuplicateTx struct {
 
 func (x *WriteReportDuplicateTx) Reset() {
 	*x = WriteReportDuplicateTx{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[6]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -472,7 +292,7 @@ func (x *WriteReportDuplicateTx) String() string {
 func (*WriteReportDuplicateTx) ProtoMessage() {}
 
 func (x *WriteReportDuplicateTx) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[6]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -485,7 +305,7 @@ func (x *WriteReportDuplicateTx) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteReportDuplicateTx.ProtoReflect.Descriptor instead.
 func (*WriteReportDuplicateTx) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{6}
+	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *WriteReportDuplicateTx) GetReq() *WriteReportRequest {
@@ -525,7 +345,7 @@ type WriteReportSuccessfulEarlyReturn struct {
 
 func (x *WriteReportSuccessfulEarlyReturn) Reset() {
 	*x = WriteReportSuccessfulEarlyReturn{}
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[7]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -537,7 +357,7 @@ func (x *WriteReportSuccessfulEarlyReturn) String() string {
 func (*WriteReportSuccessfulEarlyReturn) ProtoMessage() {}
 
 func (x *WriteReportSuccessfulEarlyReturn) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[7]
+	mi := &file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -550,7 +370,7 @@ func (x *WriteReportSuccessfulEarlyReturn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteReportSuccessfulEarlyReturn.ProtoReflect.Descriptor instead.
 func (*WriteReportSuccessfulEarlyReturn) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{7}
+	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *WriteReportSuccessfulEarlyReturn) GetExecutionContext() *monitoring.ExecutionContext {
@@ -571,19 +391,7 @@ const file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc = ""
 	"\vreport_size\x18\x02 \x01(\x04R\n" +
 	"reportSize\x12\x1d\n" +
 	"\n" +
-	"sigs_count\x18\x03 \x01(\rR\tsigsCount\"\xa3\x01\n" +
-	"\x14WriteReportInitiated\x12@\n" +
-	"\x03req\x18\x01 \x01(\v2..chain_capabilities.stellar.WriteReportRequestR\x03req\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xa1\x01\n" +
-	"\x12WriteReportSuccess\x12@\n" +
-	"\x03req\x18\x01 \x01(\v2..chain_capabilities.stellar.WriteReportRequestR\x03req\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xf3\x01\n" +
-	"\x10WriteReportError\x12@\n" +
-	"\x03req\x18\x01 \x01(\v2..chain_capabilities.stellar.WriteReportRequestR\x03req\x12\x18\n" +
-	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12\"\n" +
-	"\ris_user_error\x18\x04 \x01(\bR\visUserError\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xf7\x01\n" +
+	"sigs_count\x18\x03 \x01(\rR\tsigsCount\"\xf7\x01\n" +
 	"\x1fWriteReportTxInfoRetrievalError\x12@\n" +
 	"\x03req\x18\x01 \x01(\v2..chain_capabilities.stellar.WriteReportRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
@@ -620,37 +428,28 @@ func file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescGZIP()
 	return file_chain_capabilities_stellar_monitoring_write_report_proto_rawDescData
 }
 
-var file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_chain_capabilities_stellar_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_chain_capabilities_stellar_monitoring_write_report_proto_goTypes = []any{
 	(*WriteReportRequest)(nil),                  // 0: chain_capabilities.stellar.WriteReportRequest
-	(*WriteReportInitiated)(nil),                // 1: chain_capabilities.stellar.WriteReportInitiated
-	(*WriteReportSuccess)(nil),                  // 2: chain_capabilities.stellar.WriteReportSuccess
-	(*WriteReportError)(nil),                    // 3: chain_capabilities.stellar.WriteReportError
-	(*WriteReportTxInfoRetrievalError)(nil),     // 4: chain_capabilities.stellar.WriteReportTxInfoRetrievalError
-	(*WriteReportInvalidTransmissionState)(nil), // 5: chain_capabilities.stellar.WriteReportInvalidTransmissionState
-	(*WriteReportDuplicateTx)(nil),              // 6: chain_capabilities.stellar.WriteReportDuplicateTx
-	(*WriteReportSuccessfulEarlyReturn)(nil),    // 7: chain_capabilities.stellar.WriteReportSuccessfulEarlyReturn
-	(*monitoring.ExecutionContext)(nil),         // 8: monitoring.ExecutionContext
+	(*WriteReportTxInfoRetrievalError)(nil),     // 1: chain_capabilities.stellar.WriteReportTxInfoRetrievalError
+	(*WriteReportInvalidTransmissionState)(nil), // 2: chain_capabilities.stellar.WriteReportInvalidTransmissionState
+	(*WriteReportDuplicateTx)(nil),              // 3: chain_capabilities.stellar.WriteReportDuplicateTx
+	(*WriteReportSuccessfulEarlyReturn)(nil),    // 4: chain_capabilities.stellar.WriteReportSuccessfulEarlyReturn
+	(*monitoring.ExecutionContext)(nil),         // 5: monitoring.ExecutionContext
 }
 var file_chain_capabilities_stellar_monitoring_write_report_proto_depIdxs = []int32{
-	0,  // 0: chain_capabilities.stellar.WriteReportInitiated.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	8,  // 1: chain_capabilities.stellar.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
-	0,  // 2: chain_capabilities.stellar.WriteReportSuccess.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	8,  // 3: chain_capabilities.stellar.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
-	0,  // 4: chain_capabilities.stellar.WriteReportError.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	8,  // 5: chain_capabilities.stellar.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
-	0,  // 6: chain_capabilities.stellar.WriteReportTxInfoRetrievalError.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	8,  // 7: chain_capabilities.stellar.WriteReportTxInfoRetrievalError.execution_context:type_name -> monitoring.ExecutionContext
-	0,  // 8: chain_capabilities.stellar.WriteReportInvalidTransmissionState.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	8,  // 9: chain_capabilities.stellar.WriteReportInvalidTransmissionState.execution_context:type_name -> monitoring.ExecutionContext
-	0,  // 10: chain_capabilities.stellar.WriteReportDuplicateTx.req:type_name -> chain_capabilities.stellar.WriteReportRequest
-	8,  // 11: chain_capabilities.stellar.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
-	8,  // 12: chain_capabilities.stellar.WriteReportSuccessfulEarlyReturn.execution_context:type_name -> monitoring.ExecutionContext
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	0, // 0: chain_capabilities.stellar.WriteReportTxInfoRetrievalError.req:type_name -> chain_capabilities.stellar.WriteReportRequest
+	5, // 1: chain_capabilities.stellar.WriteReportTxInfoRetrievalError.execution_context:type_name -> monitoring.ExecutionContext
+	0, // 2: chain_capabilities.stellar.WriteReportInvalidTransmissionState.req:type_name -> chain_capabilities.stellar.WriteReportRequest
+	5, // 3: chain_capabilities.stellar.WriteReportInvalidTransmissionState.execution_context:type_name -> monitoring.ExecutionContext
+	0, // 4: chain_capabilities.stellar.WriteReportDuplicateTx.req:type_name -> chain_capabilities.stellar.WriteReportRequest
+	5, // 5: chain_capabilities.stellar.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
+	5, // 6: chain_capabilities.stellar.WriteReportSuccessfulEarlyReturn.execution_context:type_name -> monitoring.ExecutionContext
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_stellar_monitoring_write_report_proto_init() }
@@ -664,7 +463,7 @@ func file_chain_capabilities_stellar_monitoring_write_report_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc), len(file_chain_capabilities_stellar_monitoring_write_report_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
