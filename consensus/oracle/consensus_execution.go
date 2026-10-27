@@ -57,6 +57,17 @@ func ValidateAggregatableValue(value *valuespb.Value) error {
 				return err
 			}
 		}
+	case *valuespb.Value_StringValue,
+		*valuespb.Value_BoolValue,
+		*valuespb.Value_BytesValue,
+		*valuespb.Value_Int64Value,
+		*valuespb.Value_BigintValue,
+		*valuespb.Value_TimeValue,
+		*valuespb.Value_Float64Value,
+		*valuespb.Value_Uint64Value:
+		return nil
+	default:
+		return fmt.Errorf("unsupported value type %T", value.Value)
 	}
 
 	return nil
