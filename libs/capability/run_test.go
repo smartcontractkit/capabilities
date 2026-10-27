@@ -77,6 +77,12 @@ func newFakeNamed(lggr logger.Logger) *fake {
 // the way up never gets there and reports that instead.
 func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capability, error), args ...string) error {
 	t.Helper()
+	return executeWith(t, lggr, ctor, nil, args...)
+}
+
+// executeWith is execute, with opts given to RunErr.
+func executeWith(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capability, error), opts []Option, args ...string) error {
+	t.Helper()
 
 	// A free port rather than the default, since tests share a machine and run alongside each
 	// other - two of them on 8080 would collide. It is also how this tells that the binary is up.
@@ -97,7 +103,8 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- RunErr(ctx, ctor, withLogger(lggr), withRegisterer(prometheus.NewRegistry())) }()
+	opts = append([]Option{withLogger(lggr), withRegisterer(prometheus.NewRegistry())}, opts...)
+	go func() { done <- RunErr(ctx, "cron", ctor, opts...) }()
 
 	if port == 0 {
 		// Nothing that serves: a rejected constructor, or a bare invocation that prints help.
@@ -162,7 +169,7 @@ func fakeConstructor(do.Injector) (Capability, error) { return newFake(), nil }
 
 func TestRunErrRejects(t *testing.T) {
 	t.Run("no constructor", func(t *testing.T) {
-		require.ErrorContains(t, RunErr[Capability](context.Background(), nil, withLogger(logger.Test(t))), "must provide a capability constructor")
+		require.ErrorContains(t, RunErr[Capability](context.Background(), "cron", nil, withLogger(logger.Test(t))), "must provide a capability constructor")
 	})
 }
 
@@ -257,7 +264,7 @@ func TestBareCommandServesOnThePrometheusPort(t *testing.T) {
 		assert.False(t, serving(httpPort), "the web server must not serve on CL_HTTP_PORT")
 	}
 
-	require.NoError(t, RunErr(t.Context(), fakeConstructor,
+	require.NoError(t, RunErr(t.Context(), "cron", fakeConstructor,
 		withLogger(logger.Test(t)), withRegisterer(prometheus.NewRegistry()), withServe(serve)))
 	assert.True(t, served)
 	assertPortFree(t, promPort)
@@ -293,4 +300,65 @@ func TestRunInjectorConfigIsOnlyOnTheRunCommand(t *testing.T) {
 
 	require.ErrorContains(t, execute(t, logger.Test(t), fakeConstructor, "embed", "1", "--runonly.name", "set"),
 		"unknown flag: --runonly.name")
+}
+
+// TestWithConfig covers the config that a capability asks for with WithConfig. The node passes each
+// key as its own CL_<APP>_<KEY> env var. Each case runs compat without a plugin host, which fails
+// after the binder decodes and before anything is served.
+func TestWithConfig(t *testing.T) {
+	type appConf struct {
+		Name  string
+		Count int
+	}
+
+	// WithConfig provides on the global injectors, which take each config only once.
+	isolate := func(t *testing.T) {
+		run, embed, both := RunInjector, EmbedInjector, Injectors
+		t.Cleanup(func() { RunInjector, EmbedInjector, Injectors = run, embed, both })
+		RunInjector, EmbedInjector = run.Clone(), embed.Clone()
+		Injectors = MultiInjector{RunInjector, EmbedInjector}
+	}
+	compat := func(t *testing.T, args ...string) (*appConf, error) {
+		isolate(t)
+		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf]()}, append([]string{"compat"}, args...)...)
+		conf, invokeErr := do.Invoke[*appConf](RunInjector.Do())
+		require.NoError(t, invokeErr)
+		return conf, err
+	}
+
+	t.Run("fills the config from env vars under the app name", func(t *testing.T) {
+		t.Setenv("CL_CRON_NAME", "node")
+		t.Setenv("CL_CRON_COUNT", "3")
+		conf, err := compat(t)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "node", Count: 3}, *conf)
+	})
+
+	t.Run("leaves the keys it is not given", func(t *testing.T) {
+		t.Setenv("CL_CRON_COUNT", "3")
+		conf, err := compat(t)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Count: 3}, *conf)
+	})
+
+	t.Run("is overridden by flags", func(t *testing.T) {
+		t.Setenv("CL_CRON_NAME", "node")
+		conf, err := compat(t, "--cron.name", "flag")
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "flag"}, *conf)
+	})
+
+	t.Run("ignores a TOML config in CL_CAPABILITIES_CONFIG and CRE_ env vars", func(t *testing.T) {
+		t.Setenv("CL_CAPABILITIES_CONFIG", "[cron]\nName = 'node'\nCount = 3\n")
+		t.Setenv("CRE_CRON_COUNT", "3")
+		conf, err := compat(t)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{}, *conf)
+	})
+
+	t.Run("rejects a value of the wrong type", func(t *testing.T) {
+		t.Setenv("CL_CRON_COUNT", "three")
+		_, err := compat(t)
+		require.ErrorContains(t, err, "CL_CRON_COUNT")
+	})
 }
