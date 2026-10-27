@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
@@ -42,7 +44,7 @@ func TestFollowHostSettingsAppliesUpdates(t *testing.T) {
 	require.NoError(t, err)
 
 	host := newFakeBroadcaster()
-	go followHostSettings(t.Context(), logger.Test(t), host, s)
+	host.follow(t, s)
 
 	host.send(t, core.SettingsUpdate{Settings: "[global]\nTriggerRegistrationStatusUpdateTimeout = \"15s\"\n", Hash: "a"})
 
@@ -60,7 +62,7 @@ func TestFollowHostSettingsKeepsThePreviousSettingsOnFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	host := newFakeBroadcaster()
-	go followHostSettings(t.Context(), logger.Test(t), host, s)
+	host.follow(t, s)
 
 	host.send(t, core.SettingsUpdate{Settings: "[global]\nTriggerRegistrationStatusUpdateTimeout = \"15s\"\n", Hash: "a"})
 	host.send(t, core.SettingsUpdate{Settings: "not a settings payload", Hash: "b"})
@@ -79,7 +81,7 @@ func TestFollowHostSettingsResubscribes(t *testing.T) {
 	host := newFakeBroadcaster()
 	host.failFirst.Store(true)
 
-	go followHostSettings(t.Context(), logger.Test(t), host, s)
+	host.follow(t, s)
 
 	host.send(t, core.SettingsUpdate{Settings: "[global]\n", Hash: "a"})
 	host.closeStream()
@@ -100,8 +102,36 @@ func newFakeBroadcaster() *fakeBroadcaster {
 	return &fakeBroadcaster{streams: make(chan chan core.SettingsUpdate, 1)}
 }
 
-func (f *fakeBroadcaster) Subscribe(context.Context) (<-chan core.SettingsUpdate, error) {
+// follow runs followHostSettings against f until the test ends, then waits for it to return, so
+// nothing it logs can land after the test has completed.
+func (f *fakeBroadcaster) follow(t *testing.T, settings *loop.AtomicSettings) {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		followHostSettings(ctx, logger.Test(t), f, settings)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if f.current == nil {
+			// Wait for the follower's current subscription, if any, so it can be ended.
+			select {
+			case f.current = <-f.streams:
+			case <-done:
+			}
+		}
+		if f.current != nil {
+			f.closeStream()
+		}
+		<-done
+	})
+}
+
+func (f *fakeBroadcaster) Subscribe(ctx context.Context) (<-chan core.SettingsUpdate, error) {
 	f.subscriptions.Add(1)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if f.failFirst.CompareAndSwap(true, false) {
 		return nil, errors.New("host unavailable")
 	}
@@ -134,7 +164,7 @@ func (f *fakeBroadcaster) closeStream() {
 // TestSettingsServiceWithoutAURL covers a run the host pushes no settings to: it starts and stops
 // cleanly, and every limit stays at its compiled-in default.
 func TestSettingsServiceWithoutAURL(t *testing.T) {
-	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{})
+	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{}, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	assert.Nil(t, s.conn)
 	require.NoError(t, s.Close())
@@ -151,7 +181,7 @@ func TestSettingsServiceFollowsTheHost(t *testing.T) {
 	go func() { _ = srv.Serve(l) }()
 	t.Cleanup(srv.Stop)
 
-	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{URL: l.Addr().String()})
+	s, err := startSettings(t.Context(), logger.Test(t), SettingsConfig{URL: l.Addr().String()}, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 

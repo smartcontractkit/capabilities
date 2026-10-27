@@ -51,6 +51,7 @@ func NewStellar(
 	service types.StellarService,
 	forwarderAddress string,
 	forwarderLookbackLedgers int64,
+	ledgerBoundsOffset uint32,
 	lggr logger.Logger,
 	limitsFactory limits.Factory,
 	transmissionScheduler ts.TransmissionScheduler,
@@ -76,7 +77,7 @@ func NewStellar(
 		messageBuilder:        messageBuilder,
 		beholderProcessor:     beholderProcessor,
 		chainSelector:         chainSelector,
-		forwarderClient:       newForwarderClient(service, lggr, forwarderAddress, forwarderLookbackLedgers),
+		forwarderClient:       newForwarderClient(service, lggr, forwarderAddress, forwarderLookbackLedgers, ledgerBoundsOffset),
 		transmissionScheduler: transmissionScheduler,
 	}
 	return st, st.initLimiters(limitsFactory)

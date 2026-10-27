@@ -15,13 +15,10 @@ func main() {
 	if err := commentparsing.Run(commentparsing.RunArgs{
 		Markup: tomlmarkup.New(),
 		Roots: []any{
-			&capability.TelemetryConfig{},
-			&capability.TracingConfig{},
-			&capability.ChipIngressConfig{},
-			&capability.PyroscopeConfig{},
+			&capability.AppConfig{},
+			&capability.PrometheusConfig{},
 			&capability.HTTPConfig{},
 			&capability.CapabilitiesConfig{},
-			&capability.GRPCConfig{},
 			&capability.SettingsConfig{},
 		},
 		Tool:        "github.com/smartcontractkit/capabilities/libs/capability/internal/docgen",

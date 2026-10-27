@@ -17,7 +17,7 @@ func TestForwarderClient_ForwarderAddress(t *testing.T) {
 	t.Parallel()
 	lggr := logger.Test(t)
 	svc := mocks.NewStellarService(t)
-	client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+	client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 	require.Equal(t, testForwarderAddress, client.ForwarderAddress())
 }
 
@@ -29,7 +29,7 @@ func TestForwarderClient_DefaultForwarderLookbackLedgers(t *testing.T) {
 	svc.EXPECT().GetLatestLedger(mock.Anything).
 		Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
 
-	client := newForwarderClient(svc, lggr, testForwarderAddress, 0)
+	client := newForwarderClient(svc, lggr, testForwarderAddress, 0, 0)
 	searchRange, err := client.GetReportProcessedEventSearchRange(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, EventSearchRange{StartLedger: 100, EndLedger: 200}, searchRange)
@@ -44,7 +44,7 @@ func TestForwarderClient_ResolveSigningAccount(t *testing.T) {
 		svc := mocks.NewStellarService(t)
 		svc.EXPECT().GetSigningAccount(mock.Anything).
 			Return(stellartypes.GetSigningAccountResponse{}, errors.New("no account")).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		_, err := client.ResolveSigningAccount(t.Context())
 		require.Error(t, err)
@@ -56,7 +56,7 @@ func TestForwarderClient_ResolveSigningAccount(t *testing.T) {
 		svc := mocks.NewStellarService(t)
 		svc.EXPECT().GetSigningAccount(mock.Anything).
 			Return(stellartypes.GetSigningAccountResponse{}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		_, err := client.ResolveSigningAccount(t.Context())
 		require.Error(t, err)
@@ -68,7 +68,7 @@ func TestForwarderClient_ResolveSigningAccount(t *testing.T) {
 		svc := mocks.NewStellarService(t)
 		svc.EXPECT().GetSigningAccount(mock.Anything).
 			Return(stellartypes.GetSigningAccountResponse{AccountAddress: testReceiverAddress}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		_, err := client.ResolveSigningAccount(t.Context())
 		require.Error(t, err)
@@ -97,7 +97,7 @@ func TestForwarderClient_InvokeOnReport(t *testing.T) {
 				req.MaxResourceFee == maxResourceFee
 		})).
 			Return(nil, errors.New("txm unavailable")).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 		_, _, req := newWRReportFixture(t)
 
 		_, err := client.InvokeOnReport(t.Context(), testNodeAddress, testReceiverAddress, req.Report, transmissionID, maxResourceFee)
@@ -131,7 +131,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 					Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
 				}},
 			}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		svc := mocks.NewStellarService(t)
 		svc.EXPECT().GetLatestLedger(mock.Anything).
 			Return(stellartypes.GetLatestLedgerResponse{Sequence: 50}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		searchRange, err := client.GetReportProcessedEventSearchRange(t.Context())
 		require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 				Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
 			}},
 		}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 			}},
 			Cursor: "still-more", // never empty; must not be followed
 		}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.NoError(t, err)
@@ -261,7 +261,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 			Events: []stellartypes.EventInfo{}, // empty page, repeating cursor
 			Cursor: "c2",
 		}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		events, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.NoError(t, err)
@@ -275,7 +275,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		svc := mocks.NewStellarService(t)
 		svc.EXPECT().GetEvents(mock.Anything, mock.Anything).
 			Return(stellartypes.GetEventsResponse{LatestLedger: 150}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		_, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.Error(t, err)
@@ -293,7 +293,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 					Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeBool, Bool: &success},
 				}},
 			}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		_, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.Error(t, err)
@@ -310,7 +310,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 					Value:           stellartypes.ScVal{Type: stellartypes.ScValTypeU32},
 				}},
 			}, nil).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		_, err := client.GetReportProcessedEvents(t.Context(), transmissionID, searchRange)
 		require.Error(t, err)
@@ -322,7 +322,7 @@ func TestForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		svc := mocks.NewStellarService(t)
 		svc.EXPECT().GetLatestLedger(mock.Anything).
 			Return(stellartypes.GetLatestLedgerResponse{}, errors.New("ledger unavailable")).Once()
-		client := newForwarderClient(svc, lggr, testForwarderAddress, 100)
+		client := newForwarderClient(svc, lggr, testForwarderAddress, 100, 0)
 
 		_, err := client.GetReportProcessedEventSearchRange(t.Context())
 		require.Error(t, err)
@@ -350,4 +350,30 @@ func TestTransmissionID_Helpers(t *testing.T) {
 	invalid.Receiver = "not-a-contract"
 	_, err = invalid.ScheduleKey()
 	require.Error(t, err)
+}
+
+func TestForwarderClient_InvokeOnReportLedgerBoundsOffset(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		configured uint32
+		want       uint32
+	}{
+		"default when unset": {configured: 0, want: DefaultLedgerBoundsOffset},
+		"configured":         {configured: 3, want: 3},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			svc := mocks.NewStellarService(t)
+			svc.EXPECT().SubmitTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SubmitTransactionRequest) bool {
+				return req.LedgerBoundsOffset == tc.want
+			})).
+				Return(nil, errors.New("txm unavailable")).Once()
+			client := newForwarderClient(svc, logger.Test(t), testForwarderAddress, 100, tc.configured)
+			_, _, req := newWRReportFixture(t)
+
+			_, err := client.InvokeOnReport(t.Context(), testNodeAddress, testReceiverAddress, req.Report, testTransmissionID(), 100_000)
+			require.Error(t, err)
+		})
+	}
 }

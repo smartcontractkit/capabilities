@@ -12,26 +12,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
 // fake stands in for a generated capability server, which is what a real constructor returns. Only
 // its type matters here: nothing calls it, because building it is as far as this step goes.
 //
 // The interfaces are embedded rather than implemented so that this says what a capability is - a
-// service, a capability, and the proto service behind it - without a page of methods saying it.
+// service and a capability - without a page of methods saying it.
 type fake struct {
-	runnable
+	services.Service
 	capabilities.ExecutableAndTriggerCapability
 
 	// info is what the fake reports itself as, which is what the registrar serves and announces
@@ -45,16 +45,6 @@ type fake struct {
 	closed  bool
 }
 
-// runnable holds the services.Service half. It is a type of its own so that the field it embeds is
-// not called Service, which would collide with the method below.
-type runnable struct{ services.Service }
-
-// Service is the base capability's descriptor rather than nil: the debug UI builds its page from
-// what this returns and refuses a capability without one.
-func (fake) Service() protoreflect.ServiceDescriptor {
-	return capabilitiespb.File_capabilities_proto.Services().ByName("BaseCapability")
-}
-
 func (f *fake) Info(context.Context) (capabilities.CapabilityInfo, error) { return f.info, nil }
 
 // fakeID is what the fake registers and announces itself as.
@@ -62,14 +52,18 @@ const fakeID = "fake@1.0.0"
 
 // newFake builds one with a real service behind it, since the health checker asks the capability
 // its name and whether it is ready.
-func newFake() *fake {
+func newFake() *fake { return newFakeNamed(logger.Nop()) }
+
+// newFakeNamed is a fake whose service is named from lggr, as a real capability's is from the logger
+// it is given.
+func newFakeNamed(lggr logger.Logger) *fake {
 	f := &fake{}
 	f.info, _ = capabilities.NewCapabilityInfo(fakeID, capabilities.CapabilityTypeCombined, "a fake")
-	f.runnable.Service, _ = services.Config{
+	f.Service, _ = services.Config{
 		Name:  "FakeCapability",
 		Start: func(context.Context) error { f.started = true; return nil },
 		Close: func() error { f.closed = true; return nil },
-	}.NewServiceEngine(logger.Nop())
+	}.NewServiceEngine(lggr)
 	return f
 }
 
@@ -87,7 +81,7 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	// A free port rather than the default, since tests share a machine and run alongside each
 	// other - two of them on 8080 would collide. It is also how this tells that the binary is up.
 	port := 0
-	if slices.Contains(args, "run") && !slices.Contains(args, "--http.port") {
+	if (slices.Contains(args, "run") || slices.Contains(args, "embed")) && !slices.Contains(args, "--http.port") {
 		port = freePort(t)
 		args = append(args, "--http.port", strconv.Itoa(port))
 
@@ -103,7 +97,7 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- RunErr(ctx, lggr, ctor) }()
+	go func() { done <- RunErr(ctx, ctor, withLogger(lggr), withRegisterer(prometheus.NewRegistry())) }()
 
 	if port == 0 {
 		// Nothing that serves: a rejected constructor, or a bare invocation that prints help.
@@ -128,20 +122,28 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	}
 }
 
-// serving reports whether the shared HTTP server is answering on port, which is how a test tells
-// that a run has finished coming up.
+// serving checks /startupz because the web server answers before the run has finished starting.
 //
 // A timeout, because the port is not always the run's: a test that takes the port to watch the
 // run fail leaves a listener that accepts and never answers, and a bare Get would hang on it
 // rather than report not-serving.
 func serving(port int) bool {
-	client := &http.Client{Timeout: 5 * time.Second}
-	res, err := client.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := httpGet(ctx, fmt.Sprintf("http://localhost:%d/startupz", port))
 	if err != nil {
 		return false
 	}
 	_ = res.Body.Close()
 	return res.StatusCode == http.StatusOK
+}
+
+func httpGet(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
 // freePort is a port nothing is listening on, found by listening on one and stopping again.
@@ -159,12 +161,8 @@ func freePort(t *testing.T) int {
 func fakeConstructor(do.Injector) (Capability, error) { return newFake(), nil }
 
 func TestRunErrRejects(t *testing.T) {
-	t.Run("no logger", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), nil, fakeConstructor), "must provide a logger")
-	})
-
 	t.Run("no constructor", func(t *testing.T) {
-		require.ErrorContains(t, RunErr(context.Background(), logger.Test(t), nil), "must provide a capability constructor")
+		require.ErrorContains(t, RunErr[Capability](context.Background(), nil, withLogger(logger.Test(t))), "must provide a capability constructor")
 	})
 }
 
@@ -193,18 +191,21 @@ func TestRunRejectsANilCapability(t *testing.T) {
 }
 
 // TestRunProvidesItsDependencies covers what the injector holds: this process's logger, the
-// registry capabilities are resolved through, and the factory a workflow's requests are bounded by.
+// registry capabilities are resolved through, the factory a workflow's requests are bounded by, and
+// the clock.
 func TestRunProvidesItsDependencies(t *testing.T) {
 	var (
 		gotLogger   logger.Logger
-		gotRegistry core.CapabilitiesRegistry
+		gotRegistry registry.CapabilitiesRegistry
 		gotLimits   limits.Factory
+		gotClock    clockwork.Clock
 	)
 
 	require.NoError(t, execute(t, logger.Test(t), func(i do.Injector) (Capability, error) {
 		gotLogger = do.MustInvoke[logger.Logger](i)
-		gotRegistry = do.MustInvoke[core.CapabilitiesRegistry](i)
+		gotRegistry = do.MustInvoke[registry.CapabilitiesRegistry](i)
 		gotLimits = do.MustInvoke[limits.Factory](i)
+		gotClock = do.MustInvoke[clockwork.Clock](i)
 		return newFake(), nil
 	}, "run"))
 
@@ -212,16 +213,54 @@ func TestRunProvidesItsDependencies(t *testing.T) {
 	assert.NotNil(t, gotRegistry)
 	assert.NotNil(t, gotLimits.Settings)
 	assert.NotNil(t, gotLimits.Meter)
+	assert.NotNil(t, gotClock)
 }
 
-// TestRunHasARunCommand is the shape of the binary rather than what it does: a root that runs
-// nothing itself, and a way to start it hanging off it.
-func TestRunHasARunCommand(t *testing.T) {
-	// A bare invocation prints help and does nothing, rather than starting the capability.
-	require.NoError(t, execute(t, logger.Test(t), func(do.Injector) (Capability, error) {
-		t.Error("the root command should not build the capability")
+// TestBareCommandRunsInCompatibilityMode covers a bare <command>, which is how the core node starts
+// a LOOP. The test can't reach plugin.Serve, because it takes over the stdio of the process. So
+// each case must fail before the capability is built.
+func TestBareCommandRunsInCompatibilityMode(t *testing.T) {
+	h := emptyHandshakeConfig()
+	notBuilt := func(do.Injector) (Capability, error) {
+		t.Error("the capability must not be built")
 		return newFake(), nil
-	}))
+	}
+
+	t.Run("without a plugin host", func(t *testing.T) {
+		t.Setenv(h.MagicCookieKey, "")
+		require.ErrorContains(t, execute(t, logger.Test(t), notBuilt), "must be started by a go-plugin host")
+	})
+
+	t.Run("without CL_PROMETHEUS_PORT", func(t *testing.T) {
+		t.Setenv(h.MagicCookieKey, h.MagicCookieValue)
+		require.ErrorContains(t, execute(t, logger.Test(t), notBuilt), "needs CL_PROMETHEUS_PORT")
+	})
+}
+
+// TestBareCommandServesOnThePrometheusPort makes sure that compatibility mode serves on the port
+// that the core node gives in CL_PROMETHEUS_PORT, and ignores CL_HTTP_PORT.
+func TestBareCommandServesOnThePrometheusPort(t *testing.T) {
+	h := emptyHandshakeConfig()
+	promPort, httpPort := freePort(t), freePort(t)
+	t.Setenv(h.MagicCookieKey, h.MagicCookieValue)
+	t.Setenv("CL_PROMETHEUS_PORT", strconv.Itoa(promPort))
+	t.Setenv("CL_HTTP_PORT", strconv.Itoa(httpPort))
+
+	previous := os.Args
+	t.Cleanup(func() { os.Args = previous })
+	os.Args = []string{"cron"}
+
+	served := false
+	serve := func(context.Context) {
+		served = true
+		assert.True(t, serving(promPort), "the web server must serve on CL_PROMETHEUS_PORT")
+		assert.False(t, serving(httpPort), "the web server must not serve on CL_HTTP_PORT")
+	}
+
+	require.NoError(t, RunErr(t.Context(), fakeConstructor,
+		withLogger(logger.Test(t)), withRegisterer(prometheus.NewRegistry()), withServe(serve)))
+	assert.True(t, served)
+	assertPortFree(t, promPort)
 }
 
 // TestRunServesAndAnnouncesTheCapability is the whole path through the real entry point: a run
@@ -237,4 +276,21 @@ func TestRunServesAndAnnouncesTheCapability(t *testing.T) {
 
 	assert.Equal(t, []string{fakeID}, node.addedIDs(), "the run should have announced the capability to the node's registry")
 	assert.Equal(t, []string{fakeID}, node.removedIDs(), "and deregistered it on the way out")
+}
+
+// TestRunInjectorConfigIsOnlyOnTheRunCommand covers which command each injector's configs are registered on.
+func TestRunInjectorConfigIsOnlyOnTheRunCommand(t *testing.T) {
+	type runOnly struct{ Name string }
+	conf := &runOnly{}
+
+	runInjector := RunInjector
+	t.Cleanup(func() { RunInjector = runInjector })
+	RunInjector = runInjector.Clone()
+	require.NoError(t, RunInjector.ProvideConfig("runonly", conf))
+
+	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run", "--runonly.name", "set"))
+	assert.Equal(t, "set", conf.Name)
+
+	require.ErrorContains(t, execute(t, logger.Test(t), fakeConstructor, "embed", "1", "--runonly.name", "set"),
+		"unknown flag: --runonly.name")
 }

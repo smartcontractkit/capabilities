@@ -38,10 +38,10 @@ type settingsService struct {
 	conn   *grpc.ClientConn
 }
 
-func newSettingsService(lggr logger.Logger, cfg SettingsConfig) (*settingsService, error) {
+func newSettingsService(lggr logger.Logger, cfg SettingsConfig, grpcOpts loop.GRPCOpts) (*settingsService, error) {
 	s := &settingsService{values: newSettings(lggr)}
 	if cfg.URL != "" {
-		conn, err := dial(cfg.URL)
+		conn, err := dialer(grpcOpts)(cfg.URL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create settings client for %s: %w", cfg.URL, err)
 		}
@@ -51,8 +51,8 @@ func newSettingsService(lggr logger.Logger, cfg SettingsConfig) (*settingsServic
 	return s, nil
 }
 
-func startSettings(ctx context.Context, lggr logger.Logger, cfg SettingsConfig) (*settingsService, error) {
-	s, err := newSettingsService(lggr, cfg)
+func startSettings(ctx context.Context, lggr logger.Logger, cfg SettingsConfig, grpcOpts loop.GRPCOpts) (*settingsService, error) {
+	s, err := newSettingsService(lggr, cfg, grpcOpts)
 	if err != nil {
 		return nil, err
 	}
