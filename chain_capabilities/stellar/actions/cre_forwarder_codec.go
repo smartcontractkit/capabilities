@@ -3,6 +3,7 @@ package actions
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/binary"
 	"fmt"
 	"slices"
 
@@ -347,6 +348,16 @@ func addressFromScVal(sv xdr.ScVal) (string, bool) {
 		}
 		raw := *sv.Address.ContractId
 		out, err := strkey.Encode(strkey.VersionByteContract, raw[:])
+		return out, err == nil
+	case xdr.ScAddressTypeScAddressTypeMuxedContract:
+		// Protocol 30 (CAP-0084): a contract id plus a 64-bit mux id, rendered as a W-address.
+		if sv.Address.MuxedContract == nil {
+			return "", false
+		}
+		raw := make([]byte, 0, len(sv.Address.MuxedContract.ContractId)+8)
+		raw = append(raw, sv.Address.MuxedContract.ContractId[:]...)
+		raw = binary.BigEndian.AppendUint64(raw, uint64(sv.Address.MuxedContract.Id))
+		out, err := strkey.Encode(strkey.VersionByteMuxedContract, raw)
 		return out, err == nil
 	default:
 		return "", false
