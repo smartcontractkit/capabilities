@@ -8,27 +8,25 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"reflect"
+	"strconv"
 	"syscall"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/samber/do/v2"
 	"github.com/spf13/cobra"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
 // Run builds and runs the capability constructor makes, and does not return until ctx is cancelled or the
 // process is signalled.
 //
 //	func main() { capability.Run(context.Background(), trigger.NewCron) }
-func Run(ctx context.Context, constructor any, opts ...Option) {
-	lggr, err := NewLogger()
-	if err != nil {
+func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, error), opts ...Option) {
+	if err := RunErr(ctx, constructor, opts...); err != nil {
 		log.Fatal(err)
-	}
-
-	if err := RunErr(ctx, lggr, constructor, opts...); err != nil {
-		lggr.Fatal(err)
 	}
 }
 
@@ -36,60 +34,97 @@ func Run(ctx context.Context, constructor any, opts ...Option) {
 //
 // A run blocks until it is told to stop, which is either ctx being cancelled or this process being
 // signalled - see below.
-func RunErr(ctx context.Context, lggr logger.Logger, constructor any, opts ...Option) error {
-	if lggr == nil {
-		return errors.New("must provide a logger")
+func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error), opts ...Option) error {
+	if ctor == nil {
+		return errors.New("must provide a capability constructor")
 	}
-
-	// We instantiate this up-front so we can bubble up an error message about an invalid `constructor` early.
-	c, err := newConstructor(constructor)
-	if err != nil {
-		return err
-	}
+	constructor := func(i do.Injector) (Capability, error) { return ctor(i) }
 
 	// TODO: Run should accept some kind of Info struct
 	root := &cobra.Command{
 		Use:   filepath.Base(os.Args[0]),
 		Short: "A CRE capability",
 	}
-	root.PersistentFlags().String("config", "", "Path to config file")
-
-	lggr = logger.Named(lggr, root.Name())
 
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	if err := cfg.bind(root); err != nil {
+
+	lggr := cfg.lggr
+	if lggr == nil {
+		l, err := loop.NewLogger()
+		if err != nil {
+			return fmt.Errorf("failed to create logger: %w", err)
+		}
+
+		lggr = l
+	}
+	lggr = logger.Named(lggr, root.Name())
+
+	b, err := cfg.bind(root)
+	if err != nil {
 		return err
 	}
 
-	// Bind the capability's config if the constructor function declares a config struct.
-	// This will be namespaced using the name of the root command.
-	// eg. --cron.fastest-schedule-interval-seconds
-	if err := c.bindCapabilityConfig(root); err != nil {
-		return err
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"compat"}
+	}
+	root.SetArgs(args)
+
+	compatCmd := &cobra.Command{
+		Use:    "compat",
+		Short:  "Run the capability as a LOOP of the core node",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !underPluginHost() {
+				return errors.New("compatibility mode must be started by a go-plugin host, such as the core node. To run the capability alone, use the run command")
+			}
+			if cfg.observability.PrometheusPort == 0 {
+				return errors.New("compatibility mode needs CL_PROMETHEUS_PORT")
+			}
+			serve := func(context.Context) { servePlugin(lggr) }
+			if cfg.serve != nil {
+				serve = cfg.serve
+			}
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities, HTTPConfig{Port: cfg.observability.PrometheusPort}, serve).run(cmd.Context())
+		},
 	}
 
-	root.AddCommand(&cobra.Command{
+	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the capability",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO: pass in constructors here for our runnable/embeddable dependencies?
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, c)
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities, cfg.observability.http, nil).run(cmd.Context())
 		},
-	})
+	}
 
-	// TODO: embed command
-	root.AddCommand(&cobra.Command{
-		Use:   "embed",
-		Short: "Embed the capability",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO: pass in constructors here for our runnable/embeddable dependencies?
-			// Something else here
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, c)
+	embedCmd := &cobra.Command{
+		Use:   "embed <instances>",
+		Short: "Run instances of the capability in this process, with no node behind them",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			total, err := strconv.Atoi(args[0])
+			if err != nil || total < 1 {
+				return fmt.Errorf("instances must be a positive integer, got %q", args[0])
+			}
+			capCfg := cfg.capabilities
+			capCfg.ProxyURL = ""
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, EmbedInjector, total, capCfg, cfg.observability.http, nil).run(cmd.Context())
 		},
-	})
+	}
+
+	if err := errors.Join(
+		RunInjector.RegisterConfig(compatCmd, b),
+		RunInjector.RegisterConfig(runCmd, b),
+		EmbedInjector.RegisterConfig(embedCmd, b),
+	); err != nil {
+		return err
+	}
+	root.AddCommand(compatCmd, runCmd, embedCmd)
 
 	// Wire up SIGTERM + SIGINT to the context
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -98,120 +133,24 @@ func RunErr(ctx context.Context, lggr logger.Logger, constructor any, opts ...Op
 	return root.ExecuteContext(ctx)
 }
 
-type constructorFn struct {
-	fn  reflect.Value
-	typ reflect.Type
-
-	// configIn is the index of the parameter that is the capability's own config, or -1 when the
-	// constructor declares none.
-	configIn int
-	// config is the instance of that parameter the flags decode fills. Kept here rather than
-	// passed to run because the decode hook fills it in place when the command runs: call has to
-	// read that same memory, not a copy made when it was bound. Valid only when configIn >= 0.
-	config reflect.Value
-}
-
-var capabilityType = reflect.TypeFor[Capability]()
-
-// newConstructor validates that constructor has the right shape, i.e.:
-// - it's a function
-// - and the function returns a capability and optionally an error
-func newConstructor(ctor any) (constructorFn, error) {
-	t := reflect.TypeOf(ctor)
-	if t == nil || t.Kind() != reflect.Func {
-		return constructorFn{}, fmt.Errorf("a capability constructor must be a function, got %T", ctor)
-	}
-
-	switch t.NumOut() {
-	case 1:
-	case 2:
-		if t.Out(1) != reflect.TypeFor[error]() {
-			return constructorFn{}, fmt.Errorf(
-				"a capability constructor returning two values must return an error second, got %s", t)
-		}
-	default:
-		return constructorFn{}, fmt.Errorf(
-			"a capability constructor must return the capability, and optionally an error, got %s", t)
-	}
-
-	if out := t.Out(0); !out.Implements(capabilityType) {
-		return constructorFn{}, fmt.Errorf("%s does not implement capability.Capability", out)
-	}
-
-	configIn := -1
-	for i := range t.NumIn() {
-		if !isConfig(t.In(i)) {
-			continue
-		}
-		if configIn >= 0 {
-			return constructorFn{}, fmt.Errorf("a capability constructor takes its config once, got %s", t)
-		}
-		configIn = i
-	}
-	return constructorFn{fn: reflect.ValueOf(ctor), typ: t, configIn: configIn}, nil
-}
-
-var isConfigType = reflect.TypeFor[Config]()
-
-// isConfig reports whether t declares itself a capability's config by embedding Config. The
-// embedding has to be direct: the marker declares the struct it is embedded in, not the structs
-// that embed that one.
-func isConfig(t reflect.Type) bool {
-	if t.Kind() != reflect.Struct {
-		return false
-	}
-	for i := range t.NumField() {
-		if f := t.Field(i); f.Anonymous && f.Type == isConfigType {
-			return true
-		}
-	}
-	return false
-}
-
-// bindCapabilityConfig creates the config the constructor declares, if any, and binds its fields as flags
-// on root, under root's name.
-func (c *constructorFn) bindCapabilityConfig(root *cobra.Command) error {
-	if c.configIn < 0 {
-		return nil
-	}
-
-	v := reflect.New(c.typ.In(c.configIn))
-	if err := bindFlags(root, root.Name(), v.Interface()); err != nil {
-		return fmt.Errorf("failed to register the capability's config: %w", err)
-	}
-	c.config = v.Elem()
-	return nil
-}
-
-// call builds the capability by calling the contstructor.
-// The constructor's parameters are scanned, and type matched against the dependency set.
-// The config parameter is treated exceptionally and hydrated from the configuration that was passed in.
-func (c constructorFn) call(deps Dependencies) (Capability, error) {
-	args := make([]reflect.Value, c.typ.NumIn())
-	for i := range args {
-		if i == c.configIn {
-			args[i] = c.config
-			continue
-		}
-
-		want := c.typ.In(i)
-
-		v, ok := deps.resolve(want)
-		if !ok {
-			return nil, fmt.Errorf("the capability constructor asks for a %s, and nothing in this run "+
-				"provides one: %s", want, c.typ)
-		}
-		args[i] = v
-	}
-
-	out := c.fn.Call(args)
-	if len(out) == 2 && !out[1].IsNil() {
-		return nil, fmt.Errorf("failed to build the capability: %w", out[1].Interface().(error))
-	}
-	return out[0].Interface().(Capability), nil
-}
-
 type Option func(*config)
+
+// withLogger gives a run the logger of a test. Other runs make their own logger.
+func withLogger(lggr logger.Logger) Option {
+	return func(c *config) { c.lggr = lggr }
+}
+
+// withServe replaces plugin.Serve in compatibility mode. plugin.Serve takes over the stdio of the
+// process, so tests can't call it.
+func withServe(serve func(context.Context)) Option {
+	return func(c *config) { c.serve = serve }
+}
+
+// withRegisterer gives a run its own metrics registry. Tests start many runs in one process.
+// The default registry panics if you register the same metrics two times.
+func withRegisterer(r prometheus.Registerer) Option {
+	return func(c *config) { c.grpc.Registerer = r }
+}
 
 // WithOtelViews sets otel metric views - histogram bucket boundaries, typically - on the beholder
 // client this process reports through.

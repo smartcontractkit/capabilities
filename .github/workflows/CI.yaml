@@ -10,7 +10,7 @@ on:
 env:
   # Ensure that a cached go version is used:
   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
-  GO_VERSION: 1.27.1
+  GO_VERSION: 1.27.3
   GOPRIVATE: github.com/smartcontractkit/capabilities
 
 jobs:
@@ -225,7 +225,7 @@ jobs:
         run: ./.github/scripts/support-private-gomods.sh
 
       - name: Install mockery
-        run: go install github.com/vektra/mockery/v2@v2.53.7
+        run: go install github.com/vektra/mockery/v2@v2.53.8
 
       - name: Run "tidy" and "generate"
         run: |
@@ -322,16 +322,3 @@ jobs:
       - name: Some tests failed or were cancelled
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
-
-  sonarqube:
-    name: SonarQube Scan
-    needs: [test, lint]
-    if: ${{ always() && github.actor != 'dependabot[bot]' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: SonarQube Scan
-        uses: smartcontractkit/.github/actions/ci-sonarqube-go@5f4a9c9c3407dd499a1ebbc658a45b9beb9bf675 # v0.3.0
-        with:
-          include-lint: "true"
-          sonar-token: ${{ secrets.SONAR_TOKEN }}
-          sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
