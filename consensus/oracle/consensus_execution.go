@@ -33,8 +33,8 @@ var (
 // exponent 0; the symmetric window leaves room for scaled values.
 const MaxAggregatableExponent = 128
 
-// ValidateAggregatableValue rejects decimal exponents that could make decimal
-// comparisons allocate unbounded amounts of memory during aggregation.
+// ValidateAggregatableValue validates values used in aggregation and bounds
+// decimal exponents that could make comparisons allocate unbounded memory.
 func ValidateAggregatableValue(value *valuespb.Value) error {
 	if value == nil {
 		return nil
@@ -43,7 +43,7 @@ func ValidateAggregatableValue(value *valuespb.Value) error {
 	switch v := value.Value.(type) {
 	case *valuespb.Value_DecimalValue:
 		if exponent := v.DecimalValue.GetExponent(); exponent > MaxAggregatableExponent || exponent < -MaxAggregatableExponent {
-			return fmt.Errorf("decimal exponent out of range: got %d, allowed [%d, %d]", exponent, -MaxAggregatableExponent, MaxAggregatableExponent)
+			return fmt.Errorf("%w: got %d, allowed [%d, %d]", ErrDecimalExponentOutOfRange, exponent, -MaxAggregatableExponent, MaxAggregatableExponent)
 		}
 	case *valuespb.Value_MapValue:
 		for _, field := range v.MapValue.GetFields() {
@@ -299,8 +299,8 @@ func handleMedianAggregation(
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
-				if exp := val.GetDecimalValue().GetExponent(); exp > MaxAggregatableExponent || exp < -MaxAggregatableExponent {
-					return d, fmt.Errorf("%w: %d", ErrDecimalExponentOutOfRange, exp)
+				if err := ValidateAggregatableValue(val); err != nil {
+					return d, err
 				}
 				v, err := values.FromProto(val)
 				if err != nil {

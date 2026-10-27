@@ -70,7 +70,7 @@ func (r *reportingPlugin) ValidateObservation(ctx context.Context, outctx ocr3ty
 
 		if valueInput, ok := reqObs.Input.GetObservation().(*sdk.SimpleConsensusInputs_Value); ok {
 			if err := oracle.ValidateAggregatableValue(valueInput.Value); err != nil {
-				lggr.Warnw("observation contains an aggregatable value outside the supported exponent range", "requestID", requestID, "error", err)
+				lggr.Warnw("observation contains an invalid aggregatable value", "requestID", requestID, "error", err)
 				return fmt.Errorf("observation from observer %d has invalid value for request %s: %w", ao.Observer, requestID, err)
 			}
 		}
