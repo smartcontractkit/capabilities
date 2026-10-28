@@ -17,6 +17,14 @@ func TestAppIDDecodesFromLoopEnv(t *testing.T) {
 	assert.Equal(t, appID, decoded(t).observability.AppID)
 }
 
+// TestPrometheusPortDecodesFromLoopEnv makes sure that this process reads CL_PROMETHEUS_PORT, the
+// env var that the core node sets for each LOOP.
+func TestPrometheusPortDecodesFromLoopEnv(t *testing.T) {
+	t.Setenv("CL_PROMETHEUS_PORT", "9123")
+
+	assert.Equal(t, uint16(9123), decoded(t).observability.PrometheusPort)
+}
+
 // TestAppIDDefaultsToARandomID covers a process that the core node did not start. It must make its
 // own random ID, and each process must get a different ID.
 func TestAppIDDefaultsToARandomID(t *testing.T) {

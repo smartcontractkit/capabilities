@@ -24,6 +24,12 @@ func (HTTPConfig) DocComments() map[string]commentparsing.FieldDoc {
 	}
 }
 
+func (PrometheusConfig) DocComments() map[string]commentparsing.FieldDoc {
+	return map[string]commentparsing.FieldDoc{
+		"PrometheusPort": {Comment: "PrometheusPort is the port of the web server. The core node sets it, and gets the metrics\nfrom it."},
+	}
+}
+
 func (SettingsConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
 		"URL": {Comment: "URL is the gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes\nsettings updates to this process. Unset leaves every limit at its compiled-in default."},

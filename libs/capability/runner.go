@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/samber/do/v2"
@@ -16,12 +17,46 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
-func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error), base *Injector, total int, capabilities CapabilitiesConfig) error {
+// runner runs a capability with its services, until the run must stop.
+type runner struct {
+	lggr          logger.Logger
+	name          string
+	cfg           *config
+	newCapability func(do.Injector) (Capability, error)
+	injector      *Injector
+	total         int
+	capabilities  CapabilitiesConfig
+	web           HTTPConfig
+	// serve blocks until the run must stop.
+	serve func(context.Context)
+}
+
+// newRunner returns a runner. If serve is nil, the runner waits until ctx is done.
+func newRunner(lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error),
+	injector *Injector, total int, capabilities CapabilitiesConfig, web HTTPConfig, serve func(context.Context)) runner {
+	if serve == nil {
+		serve = func(ctx context.Context) { <-ctx.Done() }
+	}
+	return runner{
+		lggr:          lggr,
+		name:          name,
+		cfg:           cfg,
+		newCapability: newCapability,
+		injector:      injector,
+		total:         total,
+		capabilities:  capabilities,
+		web:           web,
+		serve:         serve,
+	}
+}
+
+func (r runner) run(ctx context.Context) error {
+	lggr := r.lggr
 	defer func() { _ = lggr.Sync() }()
 
 	// Started first and closed last, so probes get an answer while the run starts and stops.
 	p := &probes{}
-	ws, err := startWebServer(ctx, lggr, cfg.observability.http, http.NewServeMux(), p)
+	ws, err := startWebServer(ctx, lggr, r.web, http.NewServeMux(), p)
 	if err != nil {
 		return fmt.Errorf("failed to start web server: %w", err)
 	}
@@ -34,16 +69,14 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 	var svcs []services.Service
 	defer func() {
 		p.draining.Store(true)
-		if err := services.MultiCloser(svcs).Close(); err != nil {
-			logger.Sugared(lggr).Errorw("failed to stop the services of this run", "err", err)
-		}
+		stopInReverse(lggr, svcs)
 	}()
 	started := func(s ...services.Service) {
 		svcs = append(svcs, s...)
 		p.add(servicesToHealthReporters(s)...)
 	}
 
-	telemetry, err := startTelemetry(ctx, lggr, &cfg.observability)
+	telemetry, err := startTelemetry(ctx, lggr, &r.cfg.observability)
 	if err != nil {
 		return fmt.Errorf("failed to build telemetry: %w", err)
 	}
@@ -57,7 +90,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 
 	// Start the profiler after telemetry. To link traces to profiles, the profiler wraps the tracer
 	// provider that telemetry sets.
-	profiler, err := startProfiler(ctx, lggr, name, cfg.observability.PyroscopeConfig, cfg.observability.TracingEnabled)
+	profiler, err := startProfiler(ctx, lggr, r.name, r.cfg.observability.PyroscopeConfig, r.cfg.observability.TracingEnabled)
 	if err != nil {
 		return fmt.Errorf("failed to start profiler: %w", err)
 	}
@@ -67,15 +100,15 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 
 	// Start telemetry before you make the gRPC options. The gRPC tracing and metrics read the
 	// telemetry providers when you make them.
-	grpcOpts := cfg.grpc.New(lggr)
+	grpcOpts := r.cfg.grpc.New(lggr)
 
-	settings, err := startSettings(ctx, lggr, cfg.settings, grpcOpts)
+	settings, err := startSettings(ctx, lggr, r.cfg.settings, grpcOpts)
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
 	started(settings)
 
-	_, caps, err := StartCapabilities(ctx, lggr, base, total, newCapability, withNode(capabilities, cfg.grpc, &grpcOpts, settings.values))
+	_, caps, err := StartCapabilities(ctx, lggr, r.injector, r.total, r.newCapability, withNode(r.capabilities, r.cfg.grpc, &grpcOpts, settings.values))
 	started(caps...)
 	if err != nil {
 		return err
@@ -89,17 +122,7 @@ func run(ctx context.Context, lggr logger.Logger, name string, cfg *config, newC
 
 	p.started.Store(true)
 
-	if underPluginHost() {
-		lggr.Info("Serving the empty LOOP: this process is supervised by a go-plugin host")
-		plugin.Serve(&plugin.ServeConfig{
-			HandshakeConfig: emptyHandshakeConfig(),
-			Plugins:         map[string]plugin.Plugin{emptyPluginName: &emptyLoop{}},
-			GRPCServer:      plugin.DefaultGRPCServer,
-		})
-		return nil
-	}
-
-	<-ctx.Done()
+	r.serve(ctx)
 	lggr.Info("Shutting down")
 	return nil
 }
@@ -128,12 +151,31 @@ func streamLogs(lggr logger.Logger, t *telemetry.Telemetry) (logger.Logger, erro
 	return logger.Named(otelLggr, lggr.Name()), nil
 }
 
+// stopInReverse stops each service before the services that it depends on. Each service starts
+// after its dependencies, so the reverse of the start order is the reverse of the dependency order.
+func stopInReverse(lggr logger.Logger, svcs []services.Service) {
+	for _, s := range slices.Backward(svcs) {
+		if err := s.Close(); err != nil {
+			logger.Sugared(lggr).Errorw("failed to stop a service of this run", "service", s.Name(), "err", err)
+		}
+	}
+}
+
 func servicesToHealthReporters(svcs []services.Service) []services.HealthReporter {
 	reporters := make([]services.HealthReporter, 0, len(svcs))
 	for _, s := range svcs {
 		reporters = append(reporters, s)
 	}
 	return reporters
+}
+
+func servePlugin(lggr logger.Logger) {
+	lggr.Info("Serving the empty LOOP: this process is supervised by a go-plugin host")
+	plugin.Serve(&plugin.ServeConfig{
+		HandshakeConfig: emptyHandshakeConfig(),
+		Plugins:         map[string]plugin.Plugin{emptyPluginName: &emptyLoop{}},
+		GRPCServer:      plugin.DefaultGRPCServer,
+	})
 }
 
 // underPluginHost reports whether this process was launched by a go-plugin host, detected via the

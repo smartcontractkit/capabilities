@@ -3,6 +3,7 @@ package capability
 //go:generate go run ./internal/docgen
 
 import (
+	"context"
 	"errors"
 
 	"github.com/spf13/cobra"
@@ -32,25 +33,36 @@ type GRPCConfig struct {
 
 // the standard configuration for a capability; does not include the config that a capability may request via its constructor.
 type config struct {
+	appName       string
 	observability observability
 	capabilities  CapabilitiesConfig
 	grpc          GRPCConfig
 	settings      SettingsConfig
 
-	lggr logger.Logger // set only by tests, with withLogger
+	// Clones of RunInjector and EmbedInjector, made when the run starts. A run uses only these.
+	runInjector   *Injector
+	embedInjector *Injector
+
+	lggr  logger.Logger         // set only by tests, with withLogger
+	serve func(context.Context) // set only by tests, with withServe
 }
 
-func defaultConfig() *config {
+func defaultGRPCConfig() GRPCConfig {
+	return GRPCConfig{AdvertiseHost: defaultHost}
+}
+
+func defaultConfig(appName string) *config {
 	return &config{
+		appName:       appName,
 		observability: *defaultObservability(),
-		grpc:          GRPCConfig{AdvertiseHost: defaultHost},
+		grpc:          defaultGRPCConfig(),
 	}
 }
 
 // bind binds every config to root, each under the namespace that owns it. Each is settable by
-// flag, CRE_/CL_ env var, or config file, in that order of precedence, over its defaults.
+// flag, CL_ env var, or config file, in that order of precedence, over its defaults.
 func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
-	b, err := cli.New(cli.Options{Markup: tomlmarkup.New(), Prefixes: []string{"CRE", "CL"}})
+	b, err := cli.New(cli.Options{Markup: tomlmarkup.New(), Prefixes: []string{"CL"}})
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +70,7 @@ func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
 		b.Register(root, &c.observability.TelemetryConfig),
 		b.Register(root, &c.observability.PyroscopeConfig),
 		b.Register(root, &c.observability.AppConfig),
+		b.Register(root, &c.observability.PrometheusConfig),
 		b.RegisterInNamespace(root, httpNamespace, &c.observability.http),
 		b.RegisterInNamespace(root, capabilitiesNamespace, &c.capabilities),
 		b.RegisterInNamespace(root, grpcNamespace, &c.grpc),
