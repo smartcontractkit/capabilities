@@ -6,13 +6,13 @@ import "google/protobuf/descriptor.proto";
 
 option go_package = "github.com/smartcontractkit/capabilities/libs/capability/feature";
 
-// Every field and method of a capability's protos is tagged with the feature it belongs to: with its feature's
-// name while the feature is developed, and with "production" once it is promoted. protoc-gen-cre writes
-// what is tagged "production", and the messages and enums it needs, to the capability's production protos,
-// which are what the SDKs are released from. A message with a "production" field is released even when no
-// production method uses it, so one no method uses anymore, such as a retired method's, stays released. The
-// production protos are in the development package without the "x" before its version:
-// capabilities.scheduler.cron.x.v1 is released as capabilities.scheduler.cron.v1.
+// Every field and method of a capability's protos is tagged with the feature it belongs to. A feature is released
+//  by listing it in its capability's service as released. protoc-gen-cre writes what
+// is released, and the messages and enums it needs, to the capability's production protos, which are what the SDKs
+// are released from. A message with a released field is released even when no released method uses it, so one no
+// method uses anymore, such as a retired method's, stays released. The production protos are in the development
+// package without the "x" before its version: capabilities.scheduler.cron.x.v1 is released as
+// capabilities.scheduler.cron.v1.
 
 extend google.protobuf.FieldOptions {
   // field is the feature a field belongs to.
@@ -22,4 +22,11 @@ extend google.protobuf.FieldOptions {
 extend google.protobuf.MethodOptions {
   // method is the feature a method belongs to.
   string method = 50101;
+}
+
+extend google.protobuf.ServiceOptions {
+  // released are the features of the capability that are released, one option for each:
+  //
+  //   option (cre.feature.v1.released) = "timezones";
+  repeated string released = 50102;
 }

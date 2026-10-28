@@ -38,6 +38,14 @@ var file_capability_feature_feature_proto_extTypes = []protoimpl.ExtensionInfo{
 		Tag:           "bytes,50101,opt,name=method",
 		Filename:      "capability/feature/feature.proto",
 	},
+	{
+		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
+		ExtensionType: ([]string)(nil),
+		Field:         50102,
+		Name:          "cre.feature.v1.released",
+		Tag:           "bytes,50102,rep,name=released",
+		Filename:      "capability/feature/feature.proto",
+	},
 }
 
 // Extension fields to descriptorpb.FieldOptions.
@@ -56,25 +64,38 @@ var (
 	E_Method = &file_capability_feature_feature_proto_extTypes[1]
 )
 
+// Extension fields to descriptorpb.ServiceOptions.
+var (
+	// released are the features of the capability that are released, one option for each:
+	//
+	//   option (cre.feature.v1.released) = "timezones";
+	//
+	// repeated string released = 50102;
+	E_Released = &file_capability_feature_feature_proto_extTypes[2]
+)
+
 var File_capability_feature_feature_proto protoreflect.FileDescriptor
 
 const file_capability_feature_feature_proto_rawDesc = "" +
 	"\n" +
 	" capability/feature/feature.proto\x12\x0ecre.feature.v1\x1a google/protobuf/descriptor.proto:5\n" +
 	"\x05field\x12\x1d.google.protobuf.FieldOptions\x18\xb4\x87\x03 \x01(\tR\x05field:8\n" +
-	"\x06method\x12\x1e.google.protobuf.MethodOptions\x18\xb5\x87\x03 \x01(\tR\x06methodBBZ@github.com/smartcontractkit/capabilities/libs/capability/featureb\x06proto3"
+	"\x06method\x12\x1e.google.protobuf.MethodOptions\x18\xb5\x87\x03 \x01(\tR\x06method:=\n" +
+	"\breleased\x12\x1f.google.protobuf.ServiceOptions\x18\xb6\x87\x03 \x03(\tR\breleasedBBZ@github.com/smartcontractkit/capabilities/libs/capability/featureb\x06proto3"
 
 var file_capability_feature_feature_proto_goTypes = []any{
-	(*descriptorpb.FieldOptions)(nil),  // 0: google.protobuf.FieldOptions
-	(*descriptorpb.MethodOptions)(nil), // 1: google.protobuf.MethodOptions
+	(*descriptorpb.FieldOptions)(nil),   // 0: google.protobuf.FieldOptions
+	(*descriptorpb.MethodOptions)(nil),  // 1: google.protobuf.MethodOptions
+	(*descriptorpb.ServiceOptions)(nil), // 2: google.protobuf.ServiceOptions
 }
 var file_capability_feature_feature_proto_depIdxs = []int32{
 	0, // 0: cre.feature.v1.field:extendee -> google.protobuf.FieldOptions
 	1, // 1: cre.feature.v1.method:extendee -> google.protobuf.MethodOptions
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	0, // [0:2] is the sub-list for extension extendee
+	2, // 2: cre.feature.v1.released:extendee -> google.protobuf.ServiceOptions
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	0, // [0:3] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
@@ -90,7 +111,7 @@ func file_capability_feature_feature_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_capability_feature_feature_proto_rawDesc), len(file_capability_feature_feature_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   0,
-			NumExtensions: 2,
+			NumExtensions: 3,
 			NumServices:   0,
 		},
 		GoTypes:           file_capability_feature_feature_proto_goTypes,
