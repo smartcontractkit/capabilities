@@ -97,7 +97,7 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 			if cfg.serve != nil {
 				serve = cfg.serve
 			}
-			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, cfg.runInjector, 1, cfg.capabilities, HTTPConfig{Port: cfg.observability.PrometheusPort}, serve).run(cmd.Context())
+			return newRunner(lggr, appName, cfg, constructor, cfg.runInjector, 1, cfg.capabilities, HTTPConfig{Port: cfg.observability.PrometheusPort}, serve).run(cmd.Context())
 		},
 	}
 
@@ -106,7 +106,7 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 		Short: "Run the capability",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, cfg.runInjector, 1, cfg.capabilities, cfg.observability.http, nil).run(cmd.Context())
+			return newRunner(lggr, appName, cfg, constructor, cfg.runInjector, 1, cfg.capabilities, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
@@ -121,7 +121,7 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 			}
 			capCfg := cfg.capabilities
 			capCfg.ProxyURL = ""
-			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, cfg.embedInjector, total, capCfg, cfg.observability.http, nil).run(cmd.Context())
+			return newRunner(lggr, appName, cfg, constructor, cfg.embedInjector, total, capCfg, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
