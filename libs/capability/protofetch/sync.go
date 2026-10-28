@@ -28,8 +28,8 @@ type lockFile struct {
 
 type version struct {
 	Version string
-	Commit string
-	Time            time.Time
+	Commit  string
+	Time    time.Time
 }
 
 // toolchain is the go command and protofetch, which tests fake.
@@ -275,7 +275,18 @@ func pin(dir, dep, commit string) error {
 	return os.WriteFile(path, out, 0o644) //nolint:gosec // Source, readable like any other.
 }
 
-type commands struct{}
+type commands struct{ protofetch string }
+
+// binary prefers the protofetch pnpm installs at root, the version pnpm-lock.yaml pins, so go generate needs no PATH
+// set up. Repos without one use protofetch from PATH.
+func binary(root string) string {
+	local := filepath.Join(root, "node_modules", ".bin", "protofetch")
+	if _, err := os.Stat(local); err == nil {
+		return local
+	}
+
+	return "protofetch"
+}
 
 func (commands) resolve(ctx context.Context, dir, module, ref string) (version, error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-json", module+"@"+ref) //nolint:gosec // A module from go.mod or protofetch.lock.
@@ -314,8 +325,8 @@ func (commands) goGet(ctx context.Context, dir, module, v string) error {
 	return nil
 }
 
-func (commands) lockAll(ctx context.Context, dir string) error {
-	cmd := exec.CommandContext(ctx, "protofetch", "lock")
+func (c commands) lockAll(ctx context.Context, dir string) error {
+	cmd := exec.CommandContext(ctx, c.protofetch, "lock") //nolint:gosec // The repo's protofetch.
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: protofetch lock failed: %w\n%s", dir, err, out)
@@ -324,8 +335,8 @@ func (commands) lockAll(ctx context.Context, dir string) error {
 	return nil
 }
 
-func (commands) lock(ctx context.Context, dir, dep, commit string) error {
-	cmd := exec.CommandContext(ctx, "protofetch", "update", dep, "--precise", commit) //nolint:gosec // A dependency from protofetch.lock.
+func (c commands) lock(ctx context.Context, dir, dep, commit string) error {
+	cmd := exec.CommandContext(ctx, c.protofetch, "update", dep, "--precise", commit) //nolint:gosec // A dependency from protofetch.lock.
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: protofetch update failed: %w\n%s", dir, err, out)

@@ -56,14 +56,15 @@ func Generate(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	if err = sync(ctx, root, commands{}, append([]string{opts.Module}, opts.Modules...)...); err != nil {
+	tc := commands{protofetch: binary(root)}
+	if err = sync(ctx, root, tc, append([]string{opts.Module}, opts.Modules...)...); err != nil {
 		return err
 	}
 
-	fetch := exec.CommandContext(ctx, "protofetch", "fetch", "--locked")
+	fetch := exec.CommandContext(ctx, tc.protofetch, "fetch", "--locked") //nolint:gosec // The repo's protofetch.
 	fetch.Dir = root
 	if out, err := fetch.CombinedOutput(); err != nil {
-		return fmt.Errorf("protofetch fetch failed, install it with make protofetch: %w\n%s", err, out)
+		return fmt.Errorf("protofetch fetch failed, install it with pnpm install: %w\n%s", err, out)
 	}
 
 	files := slices.Clone(opts.Files)

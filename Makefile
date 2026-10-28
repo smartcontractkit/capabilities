@@ -22,17 +22,13 @@ protoc: ## Install protoc and protoc-gen-go
 	./script/install-protoc.sh 29.3
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v$(PROTOC_GEN_GO_VERSION)
 
-.PHONY: protofetch
-protofetch: ## Install protofetch at the version specified in .tool-versions
-	./script/install-protofetch.sh
-
 MOCKERY_VERSION := 2.53.8
 .PHONY: mockery
 mockery: ## Install mockery at the version specified in .tool-versions
 	go install github.com/vektra/mockery/v2@v$(MOCKERY_VERSION)
 
 .PHONY: generate
-generate: protoc protofetch mockery gomods ## Execute all go:generate commands (including proto generation).
+generate: protoc mockery gomods ## Execute all go:generate commands (including proto generation).
 	## Updating PATH makes sure that go:generate uses the version of protoc installed by the protoc make command.
 	export PATH="$(HOME)/.local/bin:$(PATH)"; gomods -w go generate -x ./...
 
