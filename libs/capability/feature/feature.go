@@ -1,5 +1,6 @@
-// Package feature holds the options capability protos tag each field and method with, naming the feature it
-// belongs to, and the option a capability releases features with. See feature.proto.
+// Package feature holds the options capability protos tag each field, method and enum value with, naming the feature
+// it belongs to, and the options a capability lists its features with, as released or in progress. See
+// feature.proto.
 package feature
 
 import _ "embed"

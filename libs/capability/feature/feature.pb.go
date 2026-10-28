@@ -39,11 +39,27 @@ var file_capability_feature_feature_proto_extTypes = []protoimpl.ExtensionInfo{
 		Filename:      "capability/feature/feature.proto",
 	},
 	{
+		ExtendedType:  (*descriptorpb.EnumValueOptions)(nil),
+		ExtensionType: (*string)(nil),
+		Field:         50103,
+		Name:          "cre.feature.v1.value",
+		Tag:           "bytes,50103,opt,name=value",
+		Filename:      "capability/feature/feature.proto",
+	},
+	{
 		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
 		ExtensionType: ([]string)(nil),
 		Field:         50102,
 		Name:          "cre.feature.v1.released",
 		Tag:           "bytes,50102,rep,name=released",
+		Filename:      "capability/feature/feature.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
+		ExtensionType: ([]string)(nil),
+		Field:         50104,
+		Name:          "cre.feature.v1.in_progress",
+		Tag:           "bytes,50104,rep,name=in_progress",
 		Filename:      "capability/feature/feature.proto",
 	},
 }
@@ -64,14 +80,29 @@ var (
 	E_Method = &file_capability_feature_feature_proto_extTypes[1]
 )
 
+// Extension fields to descriptorpb.EnumValueOptions.
+var (
+	// value is the feature an enum value belongs to. A released enum's first value, which must be zero, must be
+	// released with it.
+	//
+	// optional string value = 50103;
+	E_Value = &file_capability_feature_feature_proto_extTypes[2]
+)
+
 // Extension fields to descriptorpb.ServiceOptions.
 var (
-	// released are the features of the capability that are released, one option for each:
+	// released are the capability's released features, one option for each:
 	//
-	//   option (cre.feature.v1.released) = "timezones";
+	//   option (cre.feature.v1.released) = "launch";
 	//
 	// repeated string released = 50102;
-	E_Released = &file_capability_feature_feature_proto_extTypes[2]
+	E_Released = &file_capability_feature_feature_proto_extTypes[3]
+	// in_progress are the capability's features that aren't released yet, one option for each:
+	//
+	//   option (cre.feature.v1.in_progress) = "timezones";
+	//
+	// repeated string in_progress = 50104;
+	E_InProgress = &file_capability_feature_feature_proto_extTypes[4]
 )
 
 var File_capability_feature_feature_proto protoreflect.FileDescriptor
@@ -80,22 +111,28 @@ const file_capability_feature_feature_proto_rawDesc = "" +
 	"\n" +
 	" capability/feature/feature.proto\x12\x0ecre.feature.v1\x1a google/protobuf/descriptor.proto:5\n" +
 	"\x05field\x12\x1d.google.protobuf.FieldOptions\x18\xb4\x87\x03 \x01(\tR\x05field:8\n" +
-	"\x06method\x12\x1e.google.protobuf.MethodOptions\x18\xb5\x87\x03 \x01(\tR\x06method:=\n" +
-	"\breleased\x12\x1f.google.protobuf.ServiceOptions\x18\xb6\x87\x03 \x03(\tR\breleasedBBZ@github.com/smartcontractkit/capabilities/libs/capability/featureb\x06proto3"
+	"\x06method\x12\x1e.google.protobuf.MethodOptions\x18\xb5\x87\x03 \x01(\tR\x06method:9\n" +
+	"\x05value\x12!.google.protobuf.EnumValueOptions\x18\xb7\x87\x03 \x01(\tR\x05value:=\n" +
+	"\breleased\x12\x1f.google.protobuf.ServiceOptions\x18\xb6\x87\x03 \x03(\tR\breleased:B\n" +
+	"\vin_progress\x12\x1f.google.protobuf.ServiceOptions\x18\xb8\x87\x03 \x03(\tR\n" +
+	"inProgressBBZ@github.com/smartcontractkit/capabilities/libs/capability/featureb\x06proto3"
 
 var file_capability_feature_feature_proto_goTypes = []any{
-	(*descriptorpb.FieldOptions)(nil),   // 0: google.protobuf.FieldOptions
-	(*descriptorpb.MethodOptions)(nil),  // 1: google.protobuf.MethodOptions
-	(*descriptorpb.ServiceOptions)(nil), // 2: google.protobuf.ServiceOptions
+	(*descriptorpb.FieldOptions)(nil),     // 0: google.protobuf.FieldOptions
+	(*descriptorpb.MethodOptions)(nil),    // 1: google.protobuf.MethodOptions
+	(*descriptorpb.EnumValueOptions)(nil), // 2: google.protobuf.EnumValueOptions
+	(*descriptorpb.ServiceOptions)(nil),   // 3: google.protobuf.ServiceOptions
 }
 var file_capability_feature_feature_proto_depIdxs = []int32{
 	0, // 0: cre.feature.v1.field:extendee -> google.protobuf.FieldOptions
 	1, // 1: cre.feature.v1.method:extendee -> google.protobuf.MethodOptions
-	2, // 2: cre.feature.v1.released:extendee -> google.protobuf.ServiceOptions
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	0, // [0:3] is the sub-list for extension extendee
+	2, // 2: cre.feature.v1.value:extendee -> google.protobuf.EnumValueOptions
+	3, // 3: cre.feature.v1.released:extendee -> google.protobuf.ServiceOptions
+	3, // 4: cre.feature.v1.in_progress:extendee -> google.protobuf.ServiceOptions
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	0, // [0:5] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
@@ -111,7 +148,7 @@ func file_capability_feature_feature_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_capability_feature_feature_proto_rawDesc), len(file_capability_feature_feature_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   0,
-			NumExtensions: 3,
+			NumExtensions: 5,
 			NumServices:   0,
 		},
 		GoTypes:           file_capability_feature_feature_proto_goTypes,
