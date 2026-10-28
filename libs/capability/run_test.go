@@ -361,4 +361,10 @@ func TestWithConfig(t *testing.T) {
 		_, err := compat(t)
 		require.ErrorContains(t, err, "CL_CRON_COUNT")
 	})
+
+	t.Run("returns an error when given the same config twice", func(t *testing.T) {
+		isolate(t)
+		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf](), WithConfig[appConf]()}, "compat")
+		require.ErrorContains(t, err, "is already provided")
+	})
 }

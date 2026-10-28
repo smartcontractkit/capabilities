@@ -54,7 +54,10 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 
 	cfg := defaultConfig(appName)
 	for _, opt := range opts {
-		opt(cfg)
+		err := opt(cfg)
+		if err != nil {
+			return err
+		}
 	}
 
 	lggr := cfg.lggr
@@ -133,23 +136,32 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 	return root.ExecuteContext(ctx)
 }
 
-type Option func(*config)
+type Option func(*config) error
 
 // withLogger gives a run the logger of a test. Other runs make their own logger.
 func withLogger(lggr logger.Logger) Option {
-	return func(c *config) { c.lggr = lggr }
+	return func(c *config) error {
+		c.lggr = lggr
+		return nil
+	}
 }
 
 // withServe replaces plugin.Serve in compatibility mode. plugin.Serve takes over the stdio of the
 // process, so tests can't call it.
 func withServe(serve func(context.Context)) Option {
-	return func(c *config) { c.serve = serve }
+	return func(c *config) error {
+		c.serve = serve
+		return nil
+	}
 }
 
 // withRegisterer gives a run its own metrics registry. Tests start many runs in one process.
 // The default registry panics if you register the same metrics two times.
 func withRegisterer(r prometheus.Registerer) Option {
-	return func(c *config) { c.grpc.Registerer = r }
+	return func(c *config) error {
+		c.grpc.Registerer = r
+		return nil
+	}
 }
 
 // WithOtelViews sets otel metric views - histogram bucket boundaries, typically - on the beholder
@@ -157,11 +169,14 @@ func withRegisterer(r prometheus.Registerer) Option {
 //
 //	capability.Run(ctx, trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
 func WithOtelViews(views ...sdkmetric.View) Option {
-	return func(c *config) { c.observability.otelViews = append(c.observability.otelViews, views...) }
+	return func(c *config) error {
+		c.observability.otelViews = append(c.observability.otelViews, views...)
+		return nil
+	}
 }
 
 func WithConfig[T any]() Option {
-	return func(c *config) {
-		Injectors.MustProvideConfig(c.appName, new(T))
+	return func(c *config) error {
+		return Injectors.ProvideConfig(c.appName, new(T))
 	}
 }
