@@ -87,9 +87,8 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
 	// dependencies.CapabilityDonID is the on-chain DON ID this plugin process
 	// serves, used to label emitted events with the *sending* DON. Zero means the
-	// host could not resolve it authoritatively (a multi-DON job-spec node, or a
-	// core node that pre-dates CRE-4409); the handler then falls back to
-	// RequestMetadata.WorkflowDONID. See CRE-4409.
+	// host could not resolve it (e.g. a multi-DON job-spec node); events are then
+	// emitted without a DON ID label.
 	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, dependencies.CapabilityDonID, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory)
 	if err != nil {
 		return err
