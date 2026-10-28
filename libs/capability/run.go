@@ -182,7 +182,7 @@ func WithOtelViews(views ...sdkmetric.View) Option {
 
 // WithConfig provides a *T to the capability constructor, which gets it with do.MustInvoke[*T]. The
 // keys of T are under the app name: flags are --<app>.<key> and env vars are CL_<APP>_<KEY>. Giving the
-// same T two times is an error.
+// same T two times via WithConfig is an error.
 //
 //	capability.Run("cron", trigger.NewCron, capability.WithConfig[trigger.CronConfig]())
 func WithConfig[T any]() Option {
