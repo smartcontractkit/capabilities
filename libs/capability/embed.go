@@ -72,7 +72,7 @@ func StartCapabilities[T Capability](ctx context.Context, lggr logger.Logger, ba
 		return nil, nil, fmt.Errorf("instances must be positive, got %d", total)
 	}
 
-	cfg := &startConfig{grpc: defaultConfig("TEST_APP").grpc, settings: newSettings(lggr)}
+	cfg := &startConfig{grpc: defaultGRPCConfig(), settings: newSettings(lggr)}
 	for _, opt := range opts {
 		opt(cfg)
 	}

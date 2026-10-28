@@ -47,11 +47,15 @@ type config struct {
 	serve func(context.Context) // set only by tests, with withServe
 }
 
+func defaultGRPCConfig() GRPCConfig {
+	return GRPCConfig{AdvertiseHost: defaultHost}
+}
+
 func defaultConfig(appName string) *config {
 	return &config{
 		appName:       appName,
 		observability: *defaultObservability(),
-		grpc:          GRPCConfig{AdvertiseHost: defaultHost},
+		grpc:          defaultGRPCConfig(),
 	}
 }
 
