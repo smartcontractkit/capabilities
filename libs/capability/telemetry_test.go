@@ -24,7 +24,7 @@ func settingsRoot(t *testing.T) (*cobra.Command, *config) {
 	root := &cobra.Command{Use: "cron"}
 
 	// The production defaults, so what these read is what a binary gets rather than a zero value.
-	cfg := defaultConfig()
+	cfg := defaultConfig("TEST_APP")
 	_, err := cfg.bind(root)
 	require.NoError(t, err)
 	return root, cfg
@@ -37,7 +37,7 @@ func settingsRoot(t *testing.T) (*cobra.Command, *config) {
 // owning struct, and generating one in pkg/loop would make chainlink-common import x/config, which
 // already depends on it. Documenting any of these fails this too, so the list stays accurate.
 func TestEveryFlagIsDocumented(t *testing.T) {
-	b, err := defaultConfig().bind(&cobra.Command{Use: "cron"})
+	b, err := defaultConfig("TEST_APP").bind(&cobra.Command{Use: "cron"})
 	require.NoError(t, err)
 	require.Equal(t, undocumentedLoopFlags, b.Undocumented())
 }
@@ -144,6 +144,7 @@ func TestObservabilityFlags(t *testing.T) {
 		"http.port",
 
 		"app-id",
+		"prometheus-port",
 
 		"capabilities.proxy-url",
 		"capabilities.capability-don-id",
@@ -275,8 +276,8 @@ func TestWithOtelViewsReachesTheClient(t *testing.T) {
 		sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{Boundaries: []float64{1, 2, 3}}},
 	)
 
-	cfg := defaultConfig()
-	WithOtelViews(view)(cfg)
+	cfg := defaultConfig("TEST_APP")
+	require.NoError(t, WithOtelViews(view)(cfg))
 
 	assert.Len(t, cfg.observability.otelViews, 1, "the view should be what the client is built with")
 }

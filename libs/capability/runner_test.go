@@ -28,7 +28,7 @@ func runArgs(t *testing.T) (*config, uint16) {
 	t.Helper()
 
 	port := uint16(freePort(t))
-	cfg := defaultConfig()
+	cfg := defaultConfig("TEST_APP")
 	cfg.grpc.Registerer = prometheus.NewRegistry()
 	cfg.observability.http.Port = port
 	// A stub the registrar's announcement can land on: registering the capability dials the
@@ -36,6 +36,11 @@ func runArgs(t *testing.T) (*config, uint16) {
 	cfg.capabilities.ProxyURL = serveNodeRegistry(t, newSpyRegistry(t))
 
 	return cfg, port
+}
+
+// testRunner returns a runner of one instance over cfg, with the logger of the test.
+func testRunner(t *testing.T, cfg *config, c func(do.Injector) (Capability, error)) runner {
+	return newRunner(logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities, cfg.observability.http, nil)
 }
 
 // runToCompletion starts a run and stops it once it is serving, returning what run returned.
@@ -50,7 +55,9 @@ func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability,
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities) }()
+	go func() {
+		done <- testRunner(t, cfg, c).run(ctx)
+	}()
 
 	deadline := time.After(30 * time.Second)
 	for {
@@ -185,7 +192,7 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor, NewInjector(), 1, cfg.capabilities)
+		done <- testRunner(t, cfg, fakeConstructor).run(ctx)
 	}()
 
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
@@ -239,8 +246,7 @@ func TestRunProbeTransitions(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, func(do.Injector) (Capability, error) { return f, nil },
-			NewInjector(), 1, cfg.capabilities)
+		done <- testRunner(t, cfg, func(do.Injector) (Capability, error) { return f, nil }).run(ctx)
 	}()
 
 	// healthz is down because the run has not started, not because of the health set above.
@@ -307,8 +313,7 @@ func TestRunProbesWhenTheCapabilityFailsToStart(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), logger.Test(t), "cron", cfg, func(do.Injector) (Capability, error) { return f, nil },
-			NewInjector(), 1, cfg.capabilities)
+		done <- testRunner(t, cfg, func(do.Injector) (Capability, error) { return f, nil }).run(context.Background())
 	}()
 
 	<-f.starting
@@ -338,9 +343,9 @@ func TestRunProbesAcrossInstances(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, func(i do.Injector) (Capability, error) {
+		done <- newRunner(logger.Test(t), "cron", cfg, func(i do.Injector) (Capability, error) {
 			return fakes[do.MustInvoke[InstanceInfo](i).ID], nil
-		}, NewInjector(), len(fakes), cfg.capabilities)
+		}, NewInjector(), len(fakes), cfg.capabilities, cfg.observability.http, nil).run(ctx)
 	}()
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
 		"the run should finish starting")
@@ -464,11 +469,24 @@ func TestUnderPluginHost(t *testing.T) {
 
 // assertPortFree reports whether nothing is listening on port, which is how a stopped web server is
 // told from a running one.
-func assertPortFree(t *testing.T, port uint16) {
+func assertPortFree[P int | uint16](t *testing.T, port P) {
 	t.Helper()
 
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if assert.NoError(t, err, "port %d should be free", port) {
 		require.NoError(t, l.Close())
 	}
+}
+
+func TestStopInReverseStopsInTheReverseOfTheStartOrder(t *testing.T) {
+	var stopped []string
+	named := func(name string) services.Service {
+		s, _ := services.Config{Name: name, Close: func() error { stopped = append(stopped, name); return nil }}.NewServiceEngine(logger.Nop())
+		require.NoError(t, s.Start(t.Context()))
+		return s
+	}
+
+	stopInReverse(logger.Test(t), []services.Service{named("Telemetry"), named("Capability"), named("Web")})
+
+	assert.Equal(t, []string{"Web", "Capability", "Telemetry"}, stopped)
 }

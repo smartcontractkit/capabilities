@@ -16,6 +16,7 @@ func main() {
 		Markup: tomlmarkup.New(),
 		Roots: []any{
 			&capability.AppConfig{},
+			&capability.PrometheusConfig{},
 			&capability.HTTPConfig{},
 			&capability.CapabilitiesConfig{},
 			&capability.SettingsConfig{},
