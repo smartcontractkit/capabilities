@@ -1,4 +1,4 @@
-package feature
+package server
 
 import (
 	"fmt"
@@ -6,20 +6,22 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+
+	"github.com/smartcontractkit/capabilities/libs/capability/feature"
 )
 
-// Respond is the response a capability's output is sent as, its production message if the request was, as
-// UnmarshalAny reported.
+// Respond sends output as its production message if the request was one, as feature.UnmarshalAny reported.
 func Respond(output proto.Message, production bool, metadata capabilities.ResponseMetadata, attestation *capabilities.OCRAttestation) (capabilities.CapabilityResponse, error) {
-	payload, err := MarshalAny(output, production)
+	payload, err := feature.MarshalAny(output, production)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to write the response: %w", err)
 	}
+
 	return capabilities.CapabilityResponse{Payload: payload, Metadata: metadata, OCRAttestation: attestation}, nil
 }
 
-// ForwardTriggers sends each event a capability sends, as its production message if the registration was, until
-// the capability stops sending or stop is closed.
+// ForwardTriggers sends each event as its production message if the registration was one, until events closes or
+// stop is closed.
 func ForwardTriggers[O proto.Message](stop <-chan struct{}, triggerType string, production bool, events <-chan capabilities.TriggerAndId[O]) <-chan capabilities.TriggerResponse {
 	responses := make(chan capabilities.TriggerResponse)
 	go func() {
@@ -30,7 +32,8 @@ func ForwardTriggers[O proto.Message](stop <-chan struct{}, triggerType string, 
 				if !open {
 					return
 				}
-				payload, err := MarshalAny(event.Trigger, production)
+
+				payload, err := feature.MarshalAny(event.Trigger, production)
 				response := capabilities.TriggerResponse{Event: capabilities.TriggerEvent{TriggerType: triggerType, ID: event.Id, Payload: payload}, Err: err}
 				select {
 				case responses <- response:
@@ -42,5 +45,6 @@ func ForwardTriggers[O proto.Message](stop <-chan struct{}, triggerType string, 
 			}
 		}
 	}()
+
 	return responses
 }
