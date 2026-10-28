@@ -39,6 +39,10 @@ type config struct {
 	grpc          GRPCConfig
 	settings      SettingsConfig
 
+	// Clones of RunInjector and EmbedInjector, made when the run starts. A run uses only these.
+	runInjector   *Injector
+	embedInjector *Injector
+
 	lggr  logger.Logger         // set only by tests, with withLogger
 	serve func(context.Context) // set only by tests, with withServe
 }

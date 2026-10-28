@@ -53,6 +53,8 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 	root.SetArgs(args)
 
 	cfg := defaultConfig(appName)
+	cfg.runInjector = RunInjector.Clone()
+	cfg.embedInjector = EmbedInjector.Clone()
 	for _, opt := range opts {
 		err := opt(cfg)
 		if err != nil {
@@ -92,7 +94,7 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 			if cfg.serve != nil {
 				serve = cfg.serve
 			}
-			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities, HTTPConfig{Port: cfg.observability.PrometheusPort}, serve).run(cmd.Context())
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, cfg.runInjector, 1, cfg.capabilities, HTTPConfig{Port: cfg.observability.PrometheusPort}, serve).run(cmd.Context())
 		},
 	}
 
@@ -101,7 +103,7 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 		Short: "Run the capability",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities, cfg.observability.http, nil).run(cmd.Context())
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, cfg.runInjector, 1, cfg.capabilities, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
@@ -116,14 +118,14 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 			}
 			capCfg := cfg.capabilities
 			capCfg.ProxyURL = ""
-			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, EmbedInjector, total, capCfg, cfg.observability.http, nil).run(cmd.Context())
+			return newRunner(lggr, cmd.Root().Name(), cfg, constructor, cfg.embedInjector, total, capCfg, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
 	if err := errors.Join(
-		RunInjector.RegisterConfig(compatCmd, b),
-		RunInjector.RegisterConfig(runCmd, b),
-		EmbedInjector.RegisterConfig(embedCmd, b),
+		cfg.runInjector.RegisterConfig(compatCmd, b),
+		cfg.runInjector.RegisterConfig(runCmd, b),
+		cfg.embedInjector.RegisterConfig(embedCmd, b),
 	); err != nil {
 		return err
 	}
@@ -177,6 +179,6 @@ func WithOtelViews(views ...sdkmetric.View) Option {
 
 func WithConfig[T any]() Option {
 	return func(c *config) error {
-		return Injectors.ProvideConfig(c.appName, new(T))
+		return MultiInjector{c.runInjector, c.embedInjector}.ProvideConfig(c.appName, new(T))
 	}
 }

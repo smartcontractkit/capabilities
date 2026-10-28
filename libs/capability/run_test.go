@@ -311,17 +311,14 @@ func TestWithConfig(t *testing.T) {
 		Count int
 	}
 
-	// WithConfig provides on the global injectors, which take each config only once.
-	isolate := func(t *testing.T) {
-		run, embed, both := RunInjector, EmbedInjector, Injectors
-		t.Cleanup(func() { RunInjector, EmbedInjector, Injectors = run, embed, both })
-		RunInjector, EmbedInjector = run.Clone(), embed.Clone()
-		Injectors = MultiInjector{RunInjector, EmbedInjector}
-	}
 	compat := func(t *testing.T, args ...string) (*appConf, error) {
-		isolate(t)
-		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf]()}, append([]string{"compat"}, args...)...)
-		conf, invokeErr := do.Invoke[*appConf](RunInjector.Do())
+		var runInjector *Injector
+		capture := func(c *config) error {
+			runInjector = c.runInjector
+			return nil
+		}
+		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf](), capture}, append([]string{"compat"}, args...)...)
+		conf, invokeErr := do.Invoke[*appConf](runInjector.Do())
 		require.NoError(t, invokeErr)
 		return conf, err
 	}
@@ -363,7 +360,6 @@ func TestWithConfig(t *testing.T) {
 	})
 
 	t.Run("returns an error when given the same config twice", func(t *testing.T) {
-		isolate(t)
 		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf](), WithConfig[appConf]()}, "compat")
 		require.ErrorContains(t, err, "is already provided")
 	})
