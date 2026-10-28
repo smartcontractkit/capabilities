@@ -20,10 +20,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
-// Run builds and runs the capability constructor makes, and does not return until ctx is cancelled or the
-// process is signalled.
+// Run builds and runs the capability constructor makes, and does not return until the process is
+// signalled. To stop it with a context, use RunErr.
 //
-//	func main() { capability.Run(context.Background(), trigger.NewCron) }
+//	func main() { capability.Run("cron", trigger.NewCron) }
 func Run[T Capability](appName string, constructor func(do.Injector) (T, error), opts ...Option) {
 	if err := RunErr(context.Background(), appName, constructor, opts...); err != nil {
 		log.Fatal(err)
@@ -172,7 +172,7 @@ func withRegisterer(r prometheus.Registerer) Option {
 // WithOtelViews sets otel metric views - histogram bucket boundaries, typically - on the beholder
 // client this process reports through.
 //
-//	capability.Run(ctx, trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
+//	capability.Run("cron", trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
 func WithOtelViews(views ...sdkmetric.View) Option {
 	return func(c *config) error {
 		c.observability.otelViews = append(c.observability.otelViews, views...)
