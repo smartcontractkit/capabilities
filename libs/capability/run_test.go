@@ -171,6 +171,10 @@ func TestRunErrRejects(t *testing.T) {
 	t.Run("no constructor", func(t *testing.T) {
 		require.ErrorContains(t, RunErr[Capability](context.Background(), "cron", nil, withLogger(logger.Test(t))), "must provide a capability constructor")
 	})
+
+	t.Run("no app name", func(t *testing.T) {
+		require.ErrorContains(t, RunErr(context.Background(), "", fakeConstructor, withLogger(logger.Test(t))), "must provide an app name")
+	})
 }
 
 func TestRunBuildsTheCapability(t *testing.T) {

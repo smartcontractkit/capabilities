@@ -35,6 +35,9 @@ func Run[T Capability](appName string, constructor func(do.Injector) (T, error),
 // A run blocks until it is told to stop, which is either ctx being cancelled or this process being
 // signalled - see below.
 func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Injector) (T, error), opts ...Option) error {
+	if appName == "" {
+		return errors.New("must provide an app name")
+	}
 	if ctor == nil {
 		return errors.New("must provide a capability constructor")
 	}
