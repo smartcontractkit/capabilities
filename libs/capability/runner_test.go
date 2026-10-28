@@ -28,7 +28,7 @@ func runArgs(t *testing.T) (*config, uint16) {
 	t.Helper()
 
 	port := uint16(freePort(t))
-	cfg := defaultConfig()
+	cfg := defaultConfig("TEST_APP")
 	cfg.grpc.Registerer = prometheus.NewRegistry()
 	cfg.observability.http.Port = port
 	// A stub the registrar's announcement can land on: registering the capability dials the

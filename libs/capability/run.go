@@ -24,8 +24,8 @@ import (
 // process is signalled.
 //
 //	func main() { capability.Run(context.Background(), trigger.NewCron) }
-func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, error), opts ...Option) {
-	if err := RunErr(ctx, constructor, opts...); err != nil {
+func Run[T Capability](appName string, constructor func(do.Injector) (T, error), opts ...Option) {
+	if err := RunErr(context.Background(), appName, constructor, opts...); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -34,7 +34,7 @@ func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, er
 //
 // A run blocks until it is told to stop, which is either ctx being cancelled or this process being
 // signalled - see below.
-func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error), opts ...Option) error {
+func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Injector) (T, error), opts ...Option) error {
 	if ctor == nil {
 		return errors.New("must provide a capability constructor")
 	}
@@ -46,7 +46,13 @@ func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error)
 		Short: "A CRE capability",
 	}
 
-	cfg := defaultConfig()
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"compat"}
+	}
+	root.SetArgs(args)
+
+	cfg := defaultConfig(appName)
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -60,18 +66,12 @@ func RunErr[T Capability](ctx context.Context, ctor func(do.Injector) (T, error)
 
 		lggr = l
 	}
-	lggr = logger.Named(lggr, root.Name())
+	lggr = logger.Named(lggr, appName)
 
 	b, err := cfg.bind(root)
 	if err != nil {
 		return err
 	}
-
-	args := os.Args[1:]
-	if len(args) == 0 {
-		args = []string{"compat"}
-	}
-	root.SetArgs(args)
 
 	compatCmd := &cobra.Command{
 		Use:    "compat",
@@ -158,4 +158,10 @@ func withRegisterer(r prometheus.Registerer) Option {
 //	capability.Run(ctx, trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
 func WithOtelViews(views ...sdkmetric.View) Option {
 	return func(c *config) { c.observability.otelViews = append(c.observability.otelViews, views...) }
+}
+
+func WithConfig[T any]() Option {
+	return func(c *config) {
+		Injectors.MustProvideConfig(c.appName, new(T))
+	}
 }
