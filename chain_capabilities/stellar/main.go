@@ -27,6 +27,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	stellarcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar/server"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -78,7 +79,7 @@ func main() {
 			lggr:          s.Logger.Named(CapabilityName),
 			limitsFactory: s.LimitsFactory,
 		})
-	}, loop.WithOtelViews(consMetrics.MetricViews()))
+	}, loop.WithOtelViews(append(consMetrics.MetricViews(), capmon.MetricViews()...)))
 }
 
 func (c *capabilityGRPCService) ChainSelector() uint64 {
@@ -160,9 +161,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 	c.id = CapabilityName + ":ChainSelector:" + strconv.FormatUint(c.chainSelector, 10) + "@1.0.0"
+	c.CapabilityInfo = capabilities.CapabilityInfo{
+		ID:             c.id,
+		CapabilityType: capabilities.CapabilityTypeCombined,
+		Description:    c.Description(),
+		IsLocal:        cfg.IsLocal,
+	}
 
 	var chainInfo types.ChainInfo
-	if !cfg.IsLocal {
+	if cfg.IsLocal {
+		chainInfo = localChainInfo(cfg, c.chainSelector)
+	} else {
 		chainInfo, err = relayer.GetChainInfo(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
@@ -267,6 +276,27 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	}
 	c.chainSelector = cs
 	return nil
+}
+
+// localChainInfo builds monitoring labels for local CRE runs where the relayer
+// cannot resolve chain metadata from a fixed genesis hash.
+func localChainInfo(cfg *config.Config, chainSelector uint64) types.ChainInfo {
+	chainID := cfg.ChainID
+	if chainID == "" {
+		chainID = strconv.FormatUint(chainSelector, 10)
+	}
+
+	networkName := cfg.Network
+	if networkName == "" {
+		networkName = "local"
+	}
+
+	return types.ChainInfo{
+		FamilyName:      "stellar",
+		ChainID:         chainID,
+		NetworkName:     networkName,
+		NetworkNameFull: networkName + "-local",
+	}
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
