@@ -41,6 +41,9 @@ func ValidateAggregatableValue(value *valuespb.Value) error {
 	}
 
 	switch v := value.Value.(type) {
+	case nil:
+		// nil observations are valid; consensus falls back to the default
+		return nil
 	case *valuespb.Value_DecimalValue:
 		if exponent := v.DecimalValue.GetExponent(); exponent > MaxAggregatableExponent || exponent < -MaxAggregatableExponent {
 			return fmt.Errorf("%w: got %d, allowed [%d, %d]", ErrDecimalExponentOutOfRange, exponent, -MaxAggregatableExponent, MaxAggregatableExponent)

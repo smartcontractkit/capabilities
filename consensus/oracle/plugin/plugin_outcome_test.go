@@ -255,6 +255,27 @@ func Test_ValidateObservation_RejectsExtremeDecimalExponent(t *testing.T) {
 	require.ErrorContains(t, err, "decimal exponent out of range")
 }
 
+func Test_ValidateObservation_AcceptsNilValue(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	reportingPlugin, _ := createReportingPlugin(t, lggr, 2, 7, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	ao := makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	obs := &oracletypes.Observation{}
+	require.NoError(t, proto.Unmarshal(ao.Observation, obs))
+	obs.Observations[reqID].Input.Observation = &sdk.SimpleConsensusInputs_Value{Value: &valuespb.Value{}}
+	ao.Observation, err = proto.Marshal(obs)
+	require.NoError(t, err)
+
+	require.NoError(t, reportingPlugin.ValidateObservation(t.Context(), ocr3types.OutcomeContext{SeqNr: 1}, qBytes, ao))
+}
+
 // Test_Outcome_PlusOneErrors checks that when f+1 errors are received, Outcome() embeds the
 // per-field metadata string ("Consensus metadata: requestId=...") and the descriptor type
 // string ("Descriptor type: AGGREGATION_TYPE_MEDIAN").
