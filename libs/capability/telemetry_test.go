@@ -277,7 +277,7 @@ func TestWithOtelViewsReachesTheClient(t *testing.T) {
 	)
 
 	cfg := defaultConfig("TEST_APP")
-	WithOtelViews(view)(cfg)
+	require.NoError(t, WithOtelViews(view)(cfg))
 
 	assert.Len(t, cfg.observability.otelViews, 1, "the view should be what the client is built with")
 }

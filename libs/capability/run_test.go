@@ -322,6 +322,7 @@ func TestWithConfig(t *testing.T) {
 			return nil
 		}
 		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf](), capture}, append([]string{"compat"}, args...)...)
+		require.NotNil(t, runInjector, "RunErr returned before it applied every option: %v", err)
 		conf, invokeErr := do.Invoke[*appConf](runInjector.Do())
 		require.NoError(t, invokeErr)
 		return conf, err
