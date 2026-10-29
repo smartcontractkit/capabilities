@@ -63,6 +63,7 @@ type Service struct {
 	labeler                 custmsg.MessageEmitter
 	metrics                 *Metrics
 	orgResolver             orgresolver.OrgResolver
+	shardIndex              uint32
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
@@ -166,6 +167,7 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	s.fastestScheduleInterval = limiter
 
+	s.shardIndex = dependencies.ShardIndex
 	s.orgResolver = dependencies.OrgResolver
 	if s.orgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
@@ -331,6 +333,8 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
 				events.KeyWorkflowRegistryAddress, metadata.WorkflowRegistryAddress,
 				events.KeyEngineVersion, metadata.EngineVersion,
+				events.KeyShardIndex, strconv.FormatUint(uint64(s.shardIndex), 10),
+				events.KeyWorkflowDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
 			)
 			if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 				s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)

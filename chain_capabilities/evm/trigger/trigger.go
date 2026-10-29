@@ -61,6 +61,8 @@ type LogTriggerService struct {
 	// consumer workflow's DON ID carried in RequestMetadata.WorkflowDonID. Zero
 	// means unknown; the labeler then falls back to WorkflowDonID.
 	capabilityDonID uint32
+	// shardIndex is the host node's shard, labeled on emitted trigger events.
+	shardIndex uint32
 
 	triggers                        LogTriggerStore
 	logTriggerPollInterval          time.Duration
@@ -76,7 +78,7 @@ type LogTriggerService struct {
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, capabilityID string,
-	capabilityDonID uint32,
+	capabilityDonID uint32, shardIndex uint32,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
@@ -113,6 +115,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		beholderProcessor:               beholderProcessor,
 		messageBuilder:                  messageBuilder,
 		capabilityDonID:                 capabilityDonID,
+		shardIndex:                      shardIndex,
 		triggers:                        store,
 		logTriggerPollInterval:          logTriggerPollInterval,
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
@@ -492,6 +495,8 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowExecutionID, workflowExecutionID,
 			events.KeyWorkflowOwner, telemetryContext.WorkflowOwner,
 			events.KeyWorkflowName, displayWorkflowName,
+			events.KeyShardIndex, strconv.FormatUint(uint64(lts.shardIndex), 10),
+			events.KeyWorkflowDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)),
 		)
 
 		// Emit the *sending* capability DON ID. The trigger plugin runs on a capability
