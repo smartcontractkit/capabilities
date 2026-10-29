@@ -29,14 +29,14 @@ func faultSettings(t *testing.T, org string, kv map[string]string) settings.Gett
 func TestEmit_FaultInjection(t *testing.T) {
 	metadata := capabilities.RequestMetadata{WorkflowID: "wf-1", WorkflowExecutionID: "exec-1", OrgID: "org-1"}
 
-	t.Run("perturb subtracts delta from the emitted fee", func(t *testing.T) {
+	t.Run("perturb applies delta to the emitted fee", func(t *testing.T) {
 		emitter := &recordingEmitter{}
 		cfg := enabledCfg(emitter)
-		cfg.Settings = faultSettings(t, "org-1", map[string]string{"BillingFaultPerturbRate": "1", "BillingFaultPerturbDelta": "-7"})
+		cfg.Settings = faultSettings(t, "org-1", map[string]string{"BillingFaultPerturbRate": "1", "BillingFaultPerturbDelta": "7"})
 		m := New(logger.Test(t), cfg, 1, 7)
 		m.Emit(t.Context(), metadata, "0xabc", big.NewInt(100))
 		require.Len(t, emitter.records, 1)
-		require.Equal(t, "93", emitter.records[0].GetUtilizations()[0].GetValue())
+		require.Equal(t, "107", emitter.records[0].GetUtilizations()[0].GetValue(), "sign sample for 0xabc adds")
 	})
 
 	t.Run("drop emits nothing", func(t *testing.T) {
