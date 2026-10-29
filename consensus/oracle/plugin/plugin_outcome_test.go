@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -225,6 +228,52 @@ func Test_ValidateObservation_RequestIDConsistency(t *testing.T) {
 	notQueried := makeOutcomeTestObs(t, otherMD.RequestID(), otherMD, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
 	err = reportingPlugin.ValidateObservation(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, notQueried)
 	require.ErrorContains(t, err, "not in the query")
+}
+
+func Test_ValidateObservation_RejectsExtremeDecimalExponent(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	reportingPlugin, _ := createReportingPlugin(t, lggr, 2, 7, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	ao := makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	obs := &oracletypes.Observation{}
+	require.NoError(t, proto.Unmarshal(ao.Observation, obs))
+	obs.Observations[reqID].Input.Observation = &sdk.SimpleConsensusInputs_Value{
+		Value: valuespb.NewDecimalValue(decimal.New(1, math.MaxInt32)),
+	}
+	ao.Observation, err = proto.Marshal(obs)
+	require.NoError(t, err)
+
+	err = reportingPlugin.ValidateObservation(t.Context(), ocr3types.OutcomeContext{SeqNr: 1}, qBytes, ao)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "decimal exponent out of range")
+}
+
+func Test_ValidateObservation_AcceptsNilValue(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	reportingPlugin, _ := createReportingPlugin(t, lggr, 2, 7, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	ao := makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false)
+	obs := &oracletypes.Observation{}
+	require.NoError(t, proto.Unmarshal(ao.Observation, obs))
+	obs.Observations[reqID].Input.Observation = &sdk.SimpleConsensusInputs_Value{Value: &valuespb.Value{}}
+	ao.Observation, err = proto.Marshal(obs)
+	require.NoError(t, err)
+
+	require.NoError(t, reportingPlugin.ValidateObservation(t.Context(), ocr3types.OutcomeContext{SeqNr: 1}, qBytes, ao))
 }
 
 // Test_Outcome_PlusOneErrors checks that when f+1 errors are received, Outcome() embeds the

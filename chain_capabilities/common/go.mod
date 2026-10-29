@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/jpillora/backoff v1.0.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260714133332-db2a5f11cd64
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261028185759-68a28f8f3732
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261029170057-b615a8de42d9
 	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
 	github.com/stretchr/testify v1.12.1
