@@ -2,7 +2,6 @@ package trigger
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime/debug"
@@ -40,7 +39,21 @@ var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 )
 
 type Config struct {
+	// FastestScheduleIntervalSeconds is the shortest interval a cron schedule may have. Zero keeps the
+	// CRE settings default.
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
+}
+
+func newFastestScheduleInterval(limitsFactory limits.Factory, cfg Config) (limits.TimeLimiter, error) {
+	limit := cresettings.Default.PerWorkflow.CRONTrigger.FastestScheduleInterval // copy
+	if cfg.FastestScheduleIntervalSeconds > 0 {
+		limit.DefaultValue = time.Duration(cfg.FastestScheduleIntervalSeconds) * time.Second
+	}
+	limiter, err := limitsFactory.MakeTimeLimiter(limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create limiter: %w", err)
+	}
+	return limiter, nil
 }
 
 type cronTrigger struct {
@@ -50,7 +63,23 @@ type cronTrigger struct {
 	close      func()
 }
 
+// TODO: Remove when the generated server.CronCapability no longer requires
+// these methods.
+type unimplemented struct{}
+
+func (u unimplemented) Initialise(context.Context, core.StandardCapabilitiesDependencies) error {
+	return errors.ErrUnsupported
+}
+func (u unimplemented) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
+	return nil, caperrors.NewPublicSystemError(errors.ErrUnsupported, caperrors.Unimplemented)
+}
+
+func (u unimplemented) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
+	return caperrors.NewPublicSystemError(errors.ErrUnsupported, caperrors.Unimplemented)
+}
+
 type Service struct {
+	unimplemented
 	services.StateMachine
 	capabilities.CapabilityInfo
 	limitsFactory           limits.Factory
@@ -66,44 +95,22 @@ type Service struct {
 	shardIndex              uint32
 }
 
-func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
-	ch, err := s.RegisterTrigger(ctx, triggerID, metadata, input)
+var _ services.Service = &Service{}
+
+// NewService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
+// the system clock will be used.
+func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory, cfg Config) (_ *Service, err error) {
+	lggr := logger.Named(parentLggr, "CRONTrigger")
+
+	fastestScheduleInterval, err := newFastestScheduleInterval(limitsFactory, cfg)
 	if err != nil {
 		return nil, err
 	}
-	mapped := make(chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload]) //nolint
-	go func() {
-		defer close(mapped)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case triggerEvent, ok := <-ch:
-				if !ok {
-					return
-				}
-				mapped <- capabilities.TriggerAndId[*crontypedapi.LegacyPayload]{ //nolint:staticcheck
-					Id: triggerEvent.Id,
-					Trigger: &crontypedapi.LegacyPayload{ //nolint:staticcheck
-						ScheduledExecutionTime: triggerEvent.Trigger.ScheduledExecutionTime.AsTime().Format(time.RFC3339Nano),
-					},
-				}
-			}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, fastestScheduleInterval.Close())
 		}
 	}()
-	return mapped, nil
-}
-
-func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
-	return s.UnregisterTrigger(ctx, triggerID, metadata, input)
-}
-
-var _ services.Service = &Service{}
-
-// NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
-// the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
-func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory) (*Service, error) {
-	lggr := logger.Named(parentLggr, "CRONTrigger")
 
 	metrics, err := NewMetrics()
 	if err != nil {
@@ -130,13 +137,14 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 	}
 
 	return &Service{
-		lggr:           lggr,
-		CapabilityInfo: cronTriggerInfo,
-		limitsFactory:  limitsFactory,
-		triggers:       NewCronStore(),
-		scheduler:      scheduler,
-		cronLogger:     cronLogger,
-		clock:          clock,
+		lggr:                    lggr,
+		CapabilityInfo:          cronTriggerInfo,
+		limitsFactory:           limitsFactory,
+		fastestScheduleInterval: fastestScheduleInterval,
+		triggers:                NewCronStore(),
+		scheduler:               scheduler,
+		cronLogger:              cronLogger,
+		clock:                   clock,
 		labeler: custmsg.NewLabeler().With(
 			"capabilityID", cronTriggerInfo.ID,
 			"capabilityVersion", cronTriggerInfo.Version(),
@@ -144,41 +152,6 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 		),
 		metrics: metrics,
 	}, nil
-}
-
-func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	s.lggr.Debugw("Initialising cron trigger capability", "serviceName", ServiceName)
-
-	var cronConfig Config
-	if len(dependencies.Config) > 0 {
-		err := json.Unmarshal([]byte(dependencies.Config), &cronConfig)
-		if err != nil {
-			return fmt.Errorf("failed to unmarshal config: %s %w", dependencies.Config, err)
-		}
-	}
-
-	limit := cresettings.Default.PerWorkflow.CRONTrigger.FastestScheduleInterval // copy
-	if cronConfig.FastestScheduleIntervalSeconds > 0 {
-		limit.DefaultValue = time.Duration(cronConfig.FastestScheduleIntervalSeconds) * time.Second
-	}
-	limiter, err := s.limitsFactory.MakeTimeLimiter(limit)
-	if err != nil {
-		return fmt.Errorf("failed to create limiter: %w", err)
-	}
-	s.fastestScheduleInterval = limiter
-
-	s.shardIndex = dependencies.ShardIndex
-	s.orgResolver = dependencies.OrgResolver
-	if s.orgResolver == nil {
-		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
-	}
-
-	err = s.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("error when starting trigger service: %w", err)
-	}
-
-	return nil
 }
 
 func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], caperrors.Error) {
@@ -303,8 +276,8 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			// event bus) that must not delay the actual trigger or the next scheduled run.
 
 			// Try to fetch organization ID if org resolver is available
-			var orgID string
-			if s.orgResolver != nil && metadata.WorkflowOwner != "" {
+			orgID := metadata.OrgID
+			if metadata.OrgID == "" && s.orgResolver != nil && metadata.WorkflowOwner != "" {
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
@@ -465,7 +438,13 @@ func (s *Service) close() error {
 	err := s.scheduler.Shutdown()
 	s.cronLogger.stop()
 	if err != nil {
-		return fmt.Errorf("scheduler shutdown encountered a problem: %s", err)
+		err = fmt.Errorf("scheduler shutdown encountered a problem: %w", err)
+	}
+	if limiterErr := s.fastestScheduleInterval.Close(); limiterErr != nil {
+		err = errors.Join(err, fmt.Errorf("failed to close fastest schedule interval limiter: %w", limiterErr))
+	}
+	if err != nil {
+		return err
 	}
 
 	s.lggr.Info(s.Name() + " closed")
