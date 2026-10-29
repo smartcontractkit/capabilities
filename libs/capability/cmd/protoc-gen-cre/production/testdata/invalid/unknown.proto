@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package capabilities.test.unknown.x.v1;
+
+import "capability/feature/feature.proto";
+
+option (cre.feature.v1.released) = "lanch";
+option (cre.feature.v1.in_progress) = "timezones";
+
+message Request {
+  string id = 1 [(cre.feature.v1.field) = "launch"];
+  string zone = 2 [(cre.feature.v1.field) = "timezone"];
+}
+
+service Unknown {
+  rpc Get(Request) returns (Request) {
+    option (cre.feature.v1.method) = "launch";
+  }
+}

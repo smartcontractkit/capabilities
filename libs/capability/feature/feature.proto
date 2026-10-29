@@ -7,13 +7,13 @@ import "google/protobuf/descriptor.proto";
 option go_package = "github.com/smartcontractkit/capabilities/libs/capability/feature";
 
 // Every field, method and enum value of a capability's protos is tagged with the feature it belongs to, and every
-// feature is listed in its capability's service, as released or in progress. A feature is released whole by moving it
-// from in progress to released, so its tags never change. protoc-gen-cre fails if anything is tagged with a feature
-// that isn't listed, or a listed feature tags nothing, so a misspelt name can't leave anything unreleased.
-// protoc-gen-cre writes what is released, and the messages and enums it needs, to the capability's production protos,
-// which are what the SDKs are released from. A message with a released field is released even when no released
-// method uses it, so one no method uses anymore, such as a retired method's, stays released. Untagged elements are
-// never released. The production protos are in the development package without the "x" before its version:
+// feature is listed as released or in progress, in the options of one file of the capability. A feature is released
+// whole by moving it from in progress to released, so its tags never change. protoc-gen-cre fails if anything isn't tagged, is tagged
+// with a feature that isn't listed, or a listed feature tags nothing, so neither a forgotten tag nor a misspelt name
+// can leave anything unreleased. protoc-gen-cre writes what is released, and the messages and enums it needs, to the
+// capability's production protos, which are what the SDKs are released from. A message with a released field is
+// released even when no released method uses it, so one no method uses anymore, such as a retired method's, stays
+// released. The production protos are in the development package without the "x" before its version:
 // capabilities.scheduler.cron.x.v1 is released as capabilities.scheduler.cron.v1.
 
 extend google.protobuf.FieldOptions {
@@ -32,13 +32,13 @@ extend google.protobuf.EnumValueOptions {
   string value = 50103;
 }
 
-extend google.protobuf.ServiceOptions {
-  // released are the capability's released features, one option for each:
+extend google.protobuf.FileOptions {
+  // released are the capability's released features, one option for each, in one file of the capability:
   //
   //   option (cre.feature.v1.released) = "launch";
   repeated string released = 50102;
 
-  // in_progress are the capability's features that aren't released yet, one option for each:
+  // in_progress are the capability's features that aren't released yet, one option for each, in the same file:
   //
   //   option (cre.feature.v1.in_progress) = "timezones";
   repeated string in_progress = 50104;
