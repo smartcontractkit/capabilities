@@ -73,7 +73,7 @@ func (m *Meter) Close() error {
 // txHash (or tx signature) is the capability event id: one record per
 // on-chain write, identical on every node of the DON that observes it. The
 // log line is a contract consumed by the billing reconciler (fields:
-// executionID, eventID, resourceType, value, orgID, txHash) and must stay
+// workflowID, executionID, eventID, resourceType, value, orgID, txHash) and must stay
 // stable. Fail-open: never affects the reply.
 func (m *Meter) Emit(ctx context.Context, metadata capabilities.RequestMetadata, txHash string, fee *big.Int) {
 	if m == nil || fee == nil {
@@ -90,6 +90,7 @@ func (m *Meter) Emit(ctx context.Context, metadata capabilities.RequestMetadata,
 		OrgID:        metadata.OrgID,
 	})
 	m.lggr.Infow("Emitted capability usage meter record",
+		"workflowID", metadata.WorkflowID,
 		"executionID", metadata.WorkflowExecutionID,
 		"eventID", txHash,
 		"resourceType", m.resourceType,

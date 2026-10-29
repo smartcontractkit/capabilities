@@ -84,6 +84,7 @@ func TestEmit(t *testing.T) {
 		logs := obs.FilterMessage("Emitted capability usage meter record").All()
 		require.Len(t, logs, 1)
 		fields := logs[0].ContextMap()
+		require.Equal(t, "wf-1", fields["workflowID"])
 		require.Equal(t, "exec-1", fields["executionID"])
 		require.Equal(t, "0xabc", fields["eventID"])
 		require.Equal(t, "cre:workflow:gas:421614", fields["resourceType"])
