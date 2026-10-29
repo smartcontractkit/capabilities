@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package capabilities.test.client.x.v1;
+
+import "capability/feature/feature.proto";
+
+option go_package = "example.com/test/protos";
+
+// Nothing here is released, so its production file has only its package and service.
+message Experimental {
+  string id = 1 [(cre.feature.v1.field) = "experiment"];
+}
+
+service Experiment {
+  rpc Try(Experimental) returns (Experimental) {
+    option (cre.feature.v1.method) = "experiment";
+  }
+}

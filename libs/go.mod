@@ -3,10 +3,12 @@ module github.com/smartcontractkit/capabilities/libs
 go 1.27.3
 
 require (
+	github.com/bufbuild/protocompile v0.14.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.8.0
+	github.com/jhump/protoreflect/v2 v2.0.0-beta.2
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.23.2
@@ -68,7 +70,6 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jhump/protoreflect v1.18.1 // indirect
-	github.com/jhump/protoreflect/v2 v2.0.0-beta.2 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

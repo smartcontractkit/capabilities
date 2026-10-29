@@ -47,7 +47,7 @@ var file_capability_feature_feature_proto_extTypes = []protoimpl.ExtensionInfo{
 		Filename:      "capability/feature/feature.proto",
 	},
 	{
-		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
+		ExtendedType:  (*descriptorpb.FileOptions)(nil),
 		ExtensionType: ([]string)(nil),
 		Field:         50102,
 		Name:          "cre.feature.v1.released",
@@ -55,7 +55,7 @@ var file_capability_feature_feature_proto_extTypes = []protoimpl.ExtensionInfo{
 		Filename:      "capability/feature/feature.proto",
 	},
 	{
-		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
+		ExtendedType:  (*descriptorpb.FileOptions)(nil),
 		ExtensionType: ([]string)(nil),
 		Field:         50104,
 		Name:          "cre.feature.v1.in_progress",
@@ -89,15 +89,15 @@ var (
 	E_Value = &file_capability_feature_feature_proto_extTypes[2]
 )
 
-// Extension fields to descriptorpb.ServiceOptions.
+// Extension fields to descriptorpb.FileOptions.
 var (
-	// released are the capability's released features, one option for each:
+	// released are the capability's released features, one option for each, in one file of the capability:
 	//
 	//   option (cre.feature.v1.released) = "launch";
 	//
 	// repeated string released = 50102;
 	E_Released = &file_capability_feature_feature_proto_extTypes[3]
-	// in_progress are the capability's features that aren't released yet, one option for each:
+	// in_progress are the capability's features that aren't released yet, one option for each, in the same file:
 	//
 	//   option (cre.feature.v1.in_progress) = "timezones";
 	//
@@ -112,23 +112,23 @@ const file_capability_feature_feature_proto_rawDesc = "" +
 	" capability/feature/feature.proto\x12\x0ecre.feature.v1\x1a google/protobuf/descriptor.proto:5\n" +
 	"\x05field\x12\x1d.google.protobuf.FieldOptions\x18\xb4\x87\x03 \x01(\tR\x05field:8\n" +
 	"\x06method\x12\x1e.google.protobuf.MethodOptions\x18\xb5\x87\x03 \x01(\tR\x06method:9\n" +
-	"\x05value\x12!.google.protobuf.EnumValueOptions\x18\xb7\x87\x03 \x01(\tR\x05value:=\n" +
-	"\breleased\x12\x1f.google.protobuf.ServiceOptions\x18\xb6\x87\x03 \x03(\tR\breleased:B\n" +
-	"\vin_progress\x12\x1f.google.protobuf.ServiceOptions\x18\xb8\x87\x03 \x03(\tR\n" +
+	"\x05value\x12!.google.protobuf.EnumValueOptions\x18\xb7\x87\x03 \x01(\tR\x05value::\n" +
+	"\breleased\x12\x1c.google.protobuf.FileOptions\x18\xb6\x87\x03 \x03(\tR\breleased:?\n" +
+	"\vin_progress\x12\x1c.google.protobuf.FileOptions\x18\xb8\x87\x03 \x03(\tR\n" +
 	"inProgressBBZ@github.com/smartcontractkit/capabilities/libs/capability/featureb\x06proto3"
 
 var file_capability_feature_feature_proto_goTypes = []any{
 	(*descriptorpb.FieldOptions)(nil),     // 0: google.protobuf.FieldOptions
 	(*descriptorpb.MethodOptions)(nil),    // 1: google.protobuf.MethodOptions
 	(*descriptorpb.EnumValueOptions)(nil), // 2: google.protobuf.EnumValueOptions
-	(*descriptorpb.ServiceOptions)(nil),   // 3: google.protobuf.ServiceOptions
+	(*descriptorpb.FileOptions)(nil),      // 3: google.protobuf.FileOptions
 }
 var file_capability_feature_feature_proto_depIdxs = []int32{
 	0, // 0: cre.feature.v1.field:extendee -> google.protobuf.FieldOptions
 	1, // 1: cre.feature.v1.method:extendee -> google.protobuf.MethodOptions
 	2, // 2: cre.feature.v1.value:extendee -> google.protobuf.EnumValueOptions
-	3, // 3: cre.feature.v1.released:extendee -> google.protobuf.ServiceOptions
-	3, // 4: cre.feature.v1.in_progress:extendee -> google.protobuf.ServiceOptions
+	3, // 3: cre.feature.v1.released:extendee -> google.protobuf.FileOptions
+	3, // 4: cre.feature.v1.in_progress:extendee -> google.protobuf.FileOptions
 	5, // [5:5] is the sub-list for method output_type
 	5, // [5:5] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name
