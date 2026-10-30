@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -231,7 +232,7 @@ func TestRunProvidesItsDependencies(t *testing.T) {
 // a LOOP. The test can't reach plugin.Serve, because it takes over the stdio of the process. So
 // each case must fail before the capability is built.
 func TestBareCommandRunsInCompatibilityMode(t *testing.T) {
-	h := emptyHandshakeConfig()
+	h := loop.EmptyHandshakeConfig()
 	notBuilt := func(do.Injector) (Capability, error) {
 		t.Error("the capability must not be built")
 		return newFake(), nil
@@ -251,7 +252,7 @@ func TestBareCommandRunsInCompatibilityMode(t *testing.T) {
 // TestBareCommandServesOnThePrometheusPort makes sure that compatibility mode serves on the port
 // that the core node gives in CL_PROMETHEUS_PORT, and ignores CL_HTTP_PORT.
 func TestBareCommandServesOnThePrometheusPort(t *testing.T) {
-	h := emptyHandshakeConfig()
+	h := loop.EmptyHandshakeConfig()
 	promPort, httpPort := freePort(t), freePort(t)
 	t.Setenv(h.MagicCookieKey, h.MagicCookieValue)
 	t.Setenv("CL_PROMETHEUS_PORT", strconv.Itoa(promPort))
@@ -262,7 +263,7 @@ func TestBareCommandServesOnThePrometheusPort(t *testing.T) {
 	os.Args = []string{"cron"}
 
 	served := false
-	serve := func(context.Context) {
+	serve := func(context.Context, services.Service) {
 		served = true
 		assert.True(t, serving(promPort), "the web server must serve on CL_PROMETHEUS_PORT")
 		assert.False(t, serving(httpPort), "the web server must not serve on CL_HTTP_PORT")

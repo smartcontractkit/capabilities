@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -449,7 +450,7 @@ func probeBody(t *testing.T, port uint16, path string) (int, string) {
 // here - plugin.Serve takes over the process's stdio and handshake, so a test calling it would be
 // testing go-plugin rather than this.
 func TestUnderPluginHost(t *testing.T) {
-	h := emptyHandshakeConfig()
+	h := loop.EmptyHandshakeConfig()
 
 	t.Run("absent", func(t *testing.T) {
 		t.Setenv(h.MagicCookieKey, "")
@@ -478,7 +479,7 @@ func assertPortFree[P int | uint16](t *testing.T, port P) {
 	}
 }
 
-func TestStopInReverseStopsInTheReverseOfTheStartOrder(t *testing.T) {
+func TestRootServiceClosesInTheReverseOfTheStartOrder(t *testing.T) {
 	var stopped []string
 	named := func(name string) services.Service {
 		s, _ := services.Config{Name: name, Close: func() error { stopped = append(stopped, name); return nil }}.NewServiceEngine(logger.Nop())
@@ -486,7 +487,26 @@ func TestStopInReverseStopsInTheReverseOfTheStartOrder(t *testing.T) {
 		return s
 	}
 
-	stopInReverse(logger.Test(t), []services.Service{named("Telemetry"), named("Capability"), named("Web")})
+	root := newRootService(logger.Test(t))
+	root.addServices(named("Telemetry"), named("Capability"), named("Health"))
+	require.NoError(t, root.Start(t.Context()))
+	require.NoError(t, root.Close())
 
-	assert.Equal(t, []string{"Web", "Capability", "Telemetry"}, stopped)
+	assert.Equal(t, []string{"Health", "Capability", "Telemetry"}, stopped)
+}
+
+func TestRootServiceReportsTheHealthOfItsServices(t *testing.T) {
+	sub, _ := services.Config{Name: "Capability"}.NewServiceEngine(logger.Nop())
+	require.NoError(t, sub.Start(t.Context()))
+
+	root := newRootService(logger.Test(t))
+	root.addServices(sub)
+	require.NoError(t, root.Start(t.Context()))
+
+	report := root.HealthReport()
+	assert.Contains(t, report, "Root")
+	assert.Contains(t, report, "Capability")
+
+	require.NoError(t, root.Close())
+	assert.Error(t, root.HealthReport()["Capability"], "a closed service is not healthy")
 }
