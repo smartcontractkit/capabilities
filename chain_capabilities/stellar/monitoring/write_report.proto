@@ -1,8 +1,9 @@
 syntax = "proto3";
 package chain_capabilities.stellar;
-option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring;monitoring";
 
 import "libs/monitoring/execution_context.proto";
+
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring;monitoring";
 
 // WriteReportRequest intentionally captures only the non-sensitive subset of the
 // capability request that is useful for monitoring (no raw report bytes or signatures).
