@@ -1,6 +1,8 @@
 package capability
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
@@ -8,6 +10,16 @@ import (
 type Capability interface {
 	services.Service
 	capabilities.ExecutableAndTriggerCapability
+	// Methods are the methods the capability serves, which generated servers list.
+	Methods() []Method
+}
+
+// Method is a method a capability serves, and the messages it takes and returns.
+type Method struct {
+	Name    string
+	Trigger bool
+	Input   proto.Message
+	Output  proto.Message
 }
 
 // CapabilitiesConfig is what a capability binary needs from the node it runs beside.

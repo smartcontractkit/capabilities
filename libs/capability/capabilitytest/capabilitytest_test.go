@@ -27,6 +27,8 @@ func (*fake) Info(context.Context) (capabilities.CapabilityInfo, error) {
 	return capabilities.NewCapabilityInfo("fake@1.0.0", capabilities.CapabilityTypeCombined, "a fake")
 }
 
+func (*fake) Methods() []capability.Method { return nil }
+
 func newFake(i do.Injector) (*fake, error) {
 	f := &fake{
 		info:  do.MustInvoke[capability.InstanceInfo](i),

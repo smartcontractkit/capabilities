@@ -132,7 +132,7 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 	); err != nil {
 		return err
 	}
-	root.AddCommand(compatCmd, runCmd, embedCmd)
+	root.AddCommand(compatCmd, runCmd, embedCmd, newDocgenCmd())
 
 	// Wire up SIGTERM + SIGINT to the context
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
