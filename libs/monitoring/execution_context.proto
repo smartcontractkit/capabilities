@@ -29,5 +29,5 @@ message ExecutionContext {
   string meta_capability_id = 14;
   uint64 meta_capability_timestamp_start = 15;
   uint64 meta_capability_timestamp_emit = 16;
-      string   meta_autofix_test=17;
+  string meta_autofix_test = 17;
 }
