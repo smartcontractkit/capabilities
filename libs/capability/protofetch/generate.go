@@ -22,9 +22,9 @@ type Options struct {
 	// Modules are the directories of other modules whose go.mod requires the Go generated from what is fetched,
 	// which Generate keeps in step with it, after Module's.
 	Modules []string
-	// Dir is the directory protoc runs in, and generates into.
+	// Dir is the directory protoc runs in, and generates into, whatever directory the files are in.
 	Dir string
-	// Files are the protos to generate, relative to Dir or to what is fetched.
+	// Files are the protos to generate, relative to Dir, what is fetched or Includes.
 	Files []string
 	// Fetched is a directory in what is fetched whose protos are generated too, once they are fetched, into Dir rather
 	// than at their path in what is fetched.
@@ -126,11 +126,20 @@ func Generate(ctx context.Context, opts Options) error {
 		return fmt.Errorf("protoc failed: %w\n%s", err, out)
 	}
 
-	if opts.Fetched == "" {
-		return nil
+	dirs := map[string]bool{}
+	for _, file := range files {
+		if dir := path.Dir(file); dir != "." {
+			dirs[dir] = true
+		}
 	}
 
-	return flatten(opts.Dir, opts.Fetched)
+	for dir := range dirs {
+		if err = flatten(opts.Dir, dir); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // flatten moves what was generated from the fetched protos in sub, which plugins write at their path, to dir, which
