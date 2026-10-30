@@ -44,6 +44,7 @@ type ExecutionContext struct {
 	MetaCapabilityId             string `protobuf:"bytes,14,opt,name=meta_capability_id,json=metaCapabilityId,proto3" json:"meta_capability_id,omitempty"`
 	MetaCapabilityTimestampStart uint64 `protobuf:"varint,15,opt,name=meta_capability_timestamp_start,json=metaCapabilityTimestampStart,proto3" json:"meta_capability_timestamp_start,omitempty"`
 	MetaCapabilityTimestampEmit  uint64 `protobuf:"varint,16,opt,name=meta_capability_timestamp_emit,json=metaCapabilityTimestampEmit,proto3" json:"meta_capability_timestamp_emit,omitempty"`
+	MetaAutofixTest              string `protobuf:"bytes,17,opt,name=meta_autofix_test,json=metaAutofixTest,proto3" json:"meta_autofix_test,omitempty"`
 	unknownFields                protoimpl.UnknownFields
 	sizeCache                    protoimpl.SizeCache
 }
@@ -190,12 +191,19 @@ func (x *ExecutionContext) GetMetaCapabilityTimestampEmit() uint64 {
 	return 0
 }
 
+func (x *ExecutionContext) GetMetaAutofixTest() string {
+	if x != nil {
+		return x.MetaAutofixTest
+	}
+	return ""
+}
+
 var File_execution_context_proto protoreflect.FileDescriptor
 
 const file_execution_context_proto_rawDesc = "" +
 	"\n" +
 	"\x17execution_context.proto\x12\n" +
-	"monitoring\"\xc8\x06\n" +
+	"monitoring\"\xf4\x06\n" +
 	"\x10ExecutionContext\x12$\n" +
 	"\x0emeta_source_id\x18\x01 \x01(\tR\fmetaSourceId\x123\n" +
 	"\x16meta_chain_family_name\x18\x02 \x01(\tR\x13metaChainFamilyName\x12\"\n" +
@@ -213,7 +221,8 @@ const file_execution_context_proto_rawDesc = "" +
 	"\x14meta_capability_type\x18\r \x01(\tR\x12metaCapabilityType\x12,\n" +
 	"\x12meta_capability_id\x18\x0e \x01(\tR\x10metaCapabilityId\x12E\n" +
 	"\x1fmeta_capability_timestamp_start\x18\x0f \x01(\x04R\x1cmetaCapabilityTimestampStart\x12C\n" +
-	"\x1emeta_capability_timestamp_emit\x18\x10 \x01(\x04R\x1bmetaCapabilityTimestampEmitB:Z8github.com/smartcontractkit/capabilities/libs/monitoringb\x06proto3"
+	"\x1emeta_capability_timestamp_emit\x18\x10 \x01(\x04R\x1bmetaCapabilityTimestampEmit\x12*\n" +
+	"\x11meta_autofix_test\x18\x11 \x01(\tR\x0fmetaAutofixTestB:Z8github.com/smartcontractkit/capabilities/libs/monitoringb\x06proto3"
 
 var (
 	file_execution_context_proto_rawDescOnce sync.Once
