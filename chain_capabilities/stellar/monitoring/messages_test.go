@@ -8,10 +8,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
@@ -55,50 +53,6 @@ func attrsToMap(attrs []attribute.KeyValue) map[string]any {
 	return out
 }
 
-func TestMessageBuilder_ReadContractMessages(t *testing.T) {
-	builder := newMessageBuilder()
-	tc := newTelemetryContext()
-	req := stellartypes.SimulateTransactionRequest{
-		ContractID:    "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-		Function:      "get",
-		SourceAccount: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
-	}
-
-	initiated := builder.BuildReadContractInitiated(tc, req)
-	require.NotNil(t, initiated.Req)
-	assert.Equal(t, req.ContractID, initiated.Req.GetContractId())
-	assert.EqualValues(t, 7, attrsToMap(initiated.MetricAttributes())["workflow_don_id"])
-
-	success := builder.BuildReadContractSuccess(tc, req, 12, 100)
-	successAttrs := attrsToMap(success.LogAttributes())
-	assert.EqualValues(t, int64(12), successAttrs["result_len"])
-	assert.EqualValues(t, int64(100), successAttrs["ledger_sequence"])
-
-	readErr := builder.BuildReadContractError(tc, req, "summary", caperrors.NewPublicUserError(assert.AnError, caperrors.InvalidArgument))
-	errAttrs := attrsToMap(readErr.LogAttributes())
-	assert.Equal(t, "summary", errAttrs["summary"])
-	assert.Equal(t, true, errAttrs["is_user_error"])
-	assert.Equal(t, req.ContractID, errAttrs["contract_id"])
-	assert.EqualValues(t, 7, attrsToMap(readErr.MetricAttributes())["workflow_don_id"])
-
-	readSystemErr := builder.BuildReadContractError(tc, req, "system failure", caperrors.NewPublicSystemError(assert.AnError, caperrors.Unknown))
-	systemErrAttrs := attrsToMap(readSystemErr.LogAttributes())
-	assert.Equal(t, false, systemErrAttrs["is_user_error"])
-
-	nilRead := &monitoring.ReadContractInitiated{
-		ExecutionContext: newMessageBuilder().BuildExecutionContext(newTelemetryContext()),
-	}
-	assert.Equal(t, "nil request", attrsToMap(nilRead.LogAttributes())["contract_id"])
-
-	reqNoSource := stellartypes.SimulateTransactionRequest{
-		ContractID: req.ContractID,
-		Function:   req.Function,
-	}
-	noSourceAttrs := attrsToMap(builder.BuildReadContractInitiated(tc, reqNoSource).LogAttributes())
-	_, hasSource := noSourceAttrs["source_account"]
-	assert.False(t, hasSource)
-}
-
 func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	builder := newMessageBuilder()
 	tc := newTelemetryContext()
@@ -109,30 +63,6 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 			Sigs:      []*workflowpb.AttributedSignature{{}, {}},
 		},
 	}
-
-	initiated := builder.BuildWriteReportInitiated(tc, req)
-	require.NotNil(t, initiated.Req)
-	assert.Equal(t, req.ContractId, initiated.Req.GetContractId())
-	assert.Equal(t, uint64(4), initiated.Req.GetReportSize())
-	assert.Equal(t, uint32(2), initiated.Req.GetSigsCount())
-
-	initiatedAttrs := attrsToMap(initiated.LogAttributes())
-	assert.Equal(t, req.ContractId, initiatedAttrs["contract_id"])
-	assert.EqualValues(t, int64(4), initiatedAttrs["report_size"])
-	assert.EqualValues(t, int64(2), initiatedAttrs["sigs_count"])
-	assert.EqualValues(t, 7, attrsToMap(initiated.MetricAttributes())["workflow_don_id"])
-
-	success := builder.BuildWriteReportSuccess(tc, req)
-	assert.Equal(t, req.ContractId, attrsToMap(success.LogAttributes())["contract_id"])
-
-	writeErr := builder.BuildWriteReportError(tc, req, "summary", caperrors.NewPublicUserError(assert.AnError, caperrors.InvalidArgument))
-	errAttrs := attrsToMap(writeErr.LogAttributes())
-	assert.Equal(t, "summary", errAttrs["summary"])
-	assert.Equal(t, true, errAttrs["is_user_error"])
-
-	writeSystemErr := builder.BuildWriteReportError(tc, req, "execute failed", caperrors.NewPublicSystemError(assert.AnError, caperrors.Unknown))
-	assert.Equal(t, false, attrsToMap(writeSystemErr.LogAttributes())["is_user_error"])
-	assert.EqualValues(t, 7, attrsToMap(writeSystemErr.MetricAttributes())["workflow_don_id"])
 
 	txInfoErr := builder.BuildWriteReportTxInfoRetrievalError(tc, req, "abc123", "rpc down")
 	txInfoAttrs := attrsToMap(txInfoErr.LogAttributes())
@@ -168,10 +98,6 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	assert.Equal(t, false, invalidAttrs["success"])
 	assert.Equal(t, "transmitter", invalidAttrs["transmitter"])
 	assert.EqualValues(t, 7, attrsToMap(invalidState.MetricAttributes())["workflow_don_id"])
-
-	nilInitiated := builder.BuildWriteReportInitiated(tc, nil)
-	nilAttrs := attrsToMap(nilInitiated.LogAttributes())
-	assert.Equal(t, "nil request", nilAttrs["contract_id"])
 }
 
 func TestMessageAttributes_WriteReportNilRequest(t *testing.T) {
@@ -183,9 +109,6 @@ func TestMessageAttributes_WriteReportNilRequest(t *testing.T) {
 		LogAttributes() []attribute.KeyValue
 		MetricAttributes() []attribute.KeyValue
 	}{
-		&monitoring.WriteReportInitiated{ExecutionContext: ec},
-		&monitoring.WriteReportSuccess{ExecutionContext: ec},
-		&monitoring.WriteReportError{ExecutionContext: ec, Summary: "summary"},
 		&monitoring.WriteReportTxInfoRetrievalError{ExecutionContext: ec, Summary: "summary"},
 		&monitoring.WriteReportDuplicateTx{ExecutionContext: ec, DuplicateTxHash: "dup"},
 		&monitoring.WriteReportInvalidTransmissionState{ExecutionContext: ec, Summary: "summary"},
@@ -196,16 +119,6 @@ func TestMessageAttributes_WriteReportNilRequest(t *testing.T) {
 		assert.Equal(t, "nil request", attrs["contract_id"])
 		assert.NotEmpty(t, msg.MetricAttributes())
 	}
-}
-
-func TestMessageAttributes_ReadContractNilRequest(t *testing.T) {
-	t.Parallel()
-
-	ec := newMessageBuilder().BuildExecutionContext(newTelemetryContext())
-	msg := &monitoring.ReadContractSuccess{ExecutionContext: ec}
-	attrs := attrsToMap(msg.LogAttributes())
-	assert.Equal(t, "nil request", attrs["contract_id"])
-	assert.NotEmpty(t, msg.MetricAttributes())
 }
 
 func TestMessageAttributes_WriteReportWithRequest(t *testing.T) {
@@ -219,11 +132,6 @@ func TestMessageAttributes_WriteReportWithRequest(t *testing.T) {
 		SigsCount:  1,
 	}
 	ec := builder.BuildExecutionContext(tc)
-
-	success := &monitoring.WriteReportSuccess{Req: req, ExecutionContext: ec}
-	successAttrs := attrsToMap(success.LogAttributes())
-	assert.Equal(t, req.ContractId, successAttrs["contract_id"])
-	assert.NotEmpty(t, success.MetricAttributes())
 
 	txInfoErr := &monitoring.WriteReportTxInfoRetrievalError{
 		Req: req, ExecutionContext: ec, Summary: "summary", TxHash: "hash",
@@ -243,4 +151,18 @@ func TestMessageAttributes_WriteReportWithRequest(t *testing.T) {
 	earlyReturn := &monitoring.WriteReportSuccessfulEarlyReturn{ExecutionContext: ec}
 	assert.NotEmpty(t, earlyReturn.LogAttributes())
 	assert.NotEmpty(t, earlyReturn.MetricAttributes())
+}
+
+// TestMessageBuilder_CapabilityMetricsAttributes pins the OTel label set consumed by
+// the generated v2 server wrapper via MonitoringContext.
+func TestMessageBuilder_CapabilityMetricsAttributes(t *testing.T) {
+	t.Parallel()
+
+	attrs := attrsToMap(newMessageBuilder().CapabilityMetricsAttributes())
+	assert.Equal(t, "stellar", attrs["chain_family_name"])
+	assert.Equal(t, "testnet", attrs["chain_id"])
+	assert.Equal(t, "testnet", attrs["network_name"])
+	assert.Equal(t, "Stellar Testnet", attrs["network_name_full"])
+	assert.Equal(t, "stellar:write-report@1.0.0", attrs["capability_id"])
+	require.NotEmpty(t, attrs["capability_type"])
 }

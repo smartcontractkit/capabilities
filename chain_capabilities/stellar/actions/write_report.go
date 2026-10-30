@@ -53,26 +53,16 @@ func (s *Stellar) WriteReport(
 	ctx = metadata.ContextWithCRE(ctx)
 
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
-	monitoring.EmitInitiated(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 
 	if err := s.validateWriteReportInputs(metadata, input); err != nil {
-		capErr := caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
-		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
-			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", capErr))
-		return nil, capErr
+		return nil, caperrors.NewPublicUserError(err, caperrors.InvalidArgument)
 	}
 
 	reply, meteringMeta, err := s.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
 		isUserError := s.isUserErrorWriteReport(err)
-		capErr := capcommon.GetError(err, isUserError)
-		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
-			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", capErr))
-		return nil, capErr
+		return nil, capcommon.GetError(err, isUserError)
 	}
-
-	monitoring.LogAndEmitSuccess(ctx, "Successfully executed WriteReport", s.lggr, s.beholderProcessor,
-		s.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 
 	return &capabilities.ResponseAndMetadata[*stellarcap.WriteReportReply]{
 		Response:         reply,

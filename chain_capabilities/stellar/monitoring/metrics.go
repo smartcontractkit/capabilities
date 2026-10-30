@@ -49,19 +49,9 @@ func recordBasicCapEmit(ctx context.Context, basic capmonitoring.MetricsCapBasic
 }
 
 // Metrics holds the per-method instruments for Stellar capability operations.
+// Lifecycle events (Initiated/Success/Error) are covered by the auto-generated
+// v2 action metrics; only sub-execution events live here.
 type Metrics struct {
-	ReadContractSuccess struct {
-		basic capmonitoring.MetricsCapBasic
-	}
-	ReadContractError struct {
-		basic capmonitoring.MetricsCapBasic
-	}
-	WriteReportSuccess struct {
-		basic capmonitoring.MetricsCapBasic
-	}
-	WriteReportError struct {
-		basic capmonitoring.MetricsCapBasic
-	}
 	WriteReportDuplicateTx struct {
 		basic capmonitoring.MetricsCapBasic
 	}
@@ -81,18 +71,6 @@ func NewMetrics() (Metrics, error) {
 	m := Metrics{}
 	var err error
 
-	if m.ReadContractSuccess.basic, err = newBasicCapMetric("read_contract_success", &ReadContractSuccess{}); err != nil {
-		return Metrics{}, err
-	}
-	if m.ReadContractError.basic, err = newBasicCapMetric("read_contract_error", &ReadContractError{}); err != nil {
-		return Metrics{}, err
-	}
-	if m.WriteReportSuccess.basic, err = newBasicCapMetric("write_report_success", &WriteReportSuccess{}); err != nil {
-		return Metrics{}, err
-	}
-	if m.WriteReportError.basic, err = newBasicCapMetric("write_report_error", &WriteReportError{}); err != nil {
-		return Metrics{}, err
-	}
 	if m.WriteReportDuplicateTx.basic, err = newBasicCapMetric("write_report_duplicate_tx", &WriteReportDuplicateTx{}); err != nil {
 		return Metrics{}, err
 	}
@@ -107,26 +85,6 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	return m, nil
-}
-
-func (m *Metrics) OnReadContractSuccess(ctx context.Context, msg *ReadContractSuccess) error {
-	recordBasicCapEmit(ctx, m.ReadContractSuccess.basic, msg)
-	return nil
-}
-
-func (m *Metrics) OnReadContractError(ctx context.Context, msg *ReadContractError) error {
-	recordBasicCapEmit(ctx, m.ReadContractError.basic, msg)
-	return nil
-}
-
-func (m *Metrics) OnWriteReportSuccess(ctx context.Context, msg *WriteReportSuccess) error {
-	recordBasicCapEmit(ctx, m.WriteReportSuccess.basic, msg)
-	return nil
-}
-
-func (m *Metrics) OnWriteReportError(ctx context.Context, msg *WriteReportError) error {
-	recordBasicCapEmit(ctx, m.WriteReportError.basic, msg)
-	return nil
 }
 
 func (m *Metrics) OnWriteReportDuplicateTx(ctx context.Context, msg *WriteReportDuplicateTx) error {

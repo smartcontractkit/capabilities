@@ -25,30 +25,12 @@ func TestMetrics_OnBasicCapHandlers(t *testing.T) {
 	require.NoError(t, err)
 
 	ec := testExecutionContext(t)
-	readReq := &monitoring.ReadContractRequest{
-		ContractId:    "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-		Function:      "get",
-		ArgsCount:     2,
-		SourceAccount: "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7",
-	}
 	writeReq := &monitoring.WriteReportRequest{
 		ContractId: "CA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJUWDA",
 		ReportSize: 4,
 		SigsCount:  2,
 	}
 
-	require.NoError(t, metrics.OnReadContractSuccess(ctx, &monitoring.ReadContractSuccess{
-		Req: readReq, ResultLen: 12, LedgerSequence: 100, ExecutionContext: ec,
-	}))
-	require.NoError(t, metrics.OnReadContractError(ctx, &monitoring.ReadContractError{
-		Req: readReq, Summary: "summary", IsUserError: false, ExecutionContext: ec,
-	}))
-	require.NoError(t, metrics.OnWriteReportSuccess(ctx, &monitoring.WriteReportSuccess{
-		Req: writeReq, ExecutionContext: ec,
-	}))
-	require.NoError(t, metrics.OnWriteReportError(ctx, &monitoring.WriteReportError{
-		Req: writeReq, Summary: "summary", IsUserError: false, ExecutionContext: ec,
-	}))
 	require.NoError(t, metrics.OnWriteReportDuplicateTx(ctx, &monitoring.WriteReportDuplicateTx{
 		Req: writeReq, DuplicateTxHash: "dup", CanonicalTxHash: "canonical", ExecutionContext: ec,
 	}))

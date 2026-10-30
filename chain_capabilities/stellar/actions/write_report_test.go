@@ -1534,35 +1534,6 @@ func TestWriteReport_EmitsSuccessfulEarlyReturnTelemetry(t *testing.T) {
 	require.True(t, hasTelemetryMessage[*monitoring.WriteReportSuccessfulEarlyReturn](processor.messages))
 }
 
-func TestWriteReport_EmitsLifecycleTelemetry(t *testing.T) {
-	t.Parallel()
-	h := newWriteReportHelper(t)
-	processor := &recordingWriteReportProcessor{}
-	h.stellar.beholderProcessor = processor
-
-	rm, reqMeta, req := newWRReportFixture(t)
-	h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
-		Return(transmissionResp(succeededXDR(t)), nil).Once()
-	h.expectObservedTxHashLookup(t, rm, req.ContractId, true)
-
-	_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
-	require.Nil(t, capErr)
-
-	var sawInitiated, sawSuccess bool
-	for _, msg := range processor.messages {
-		switch msg.(type) {
-		case *monitoring.WriteReportInitiated:
-			sawInitiated = true
-		case *monitoring.WriteReportSuccess:
-			sawSuccess = true
-		case *monitoring.WriteReportSuccessfulEarlyReturn:
-			t.Fatalf("unexpected early return telemetry on direct success path")
-		}
-	}
-	require.True(t, sawInitiated)
-	require.True(t, sawSuccess)
-}
-
 func TestIsUserErrorWriteReport(t *testing.T) {
 	t.Parallel()
 	h := newWriteReportHelper(t)
