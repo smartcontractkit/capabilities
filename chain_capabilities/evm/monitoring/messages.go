@@ -56,15 +56,22 @@ func (m *MessageBuilder) BuildWriteReportInitiated(tc TelemetryContext, req *evm
 }
 
 func convertWriteReportRequest(req *evmcap.WriteReportRequest) *WriteReportRequest {
-	return &WriteReportRequest{
-		Receiver: req.Receiver,
-		Report: &ReportResponse{
+	if req == nil {
+		return nil
+	}
+	report := &ReportResponse{}
+	if req.Report != nil {
+		report = &ReportResponse{
 			ConfigDigest:  req.Report.ConfigDigest,
 			SeqNr:         req.Report.SeqNr,
 			ReportContext: req.Report.ReportContext,
 			RawReport:     req.Report.RawReport,
 			Sigs:          convertAttributedSignature(req.Report.Sigs),
-		},
+		}
+	}
+	return &WriteReportRequest{
+		Receiver: req.Receiver,
+		Report:   report,
 		GasConfig: &GasConfig{
 			GasLimit: req.GasConfig.GetGasLimit(),
 		},
@@ -159,6 +166,21 @@ func (m *MessageBuilder) BuildWriteReportInsufficientGasRetry(
 		TransmissionReceiverGasBudget: transmissionGas,
 		QueuePosition:                 int32(queuePosition), //nolint:gosec // G115: queue size is bounded by DON size
 		ExecutionContext:              m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportGasMismatch(
+	tc TelemetryContext,
+	req *evmcap.WriteReportRequest,
+	txHash string,
+	expectedTxGasLimit, actualTxGasLimit uint64,
+) Message {
+	return &WriteReportGasMismatch{
+		Req:                convertWriteReportRequest(req),
+		TxHash:             txHash,
+		ExpectedTxGasLimit: expectedTxGasLimit,
+		ActualTxGasLimit:   actualTxGasLimit,
+		ExecutionContext:   m.BuildExecutionContext(tc),
 	}
 }
 
