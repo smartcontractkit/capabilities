@@ -146,7 +146,7 @@ func Test_Outcome_DuplicateRequestIDsInQuery(t *testing.T) {
 	reqID := md.RequestID()
 
 	var attributed []libocrtypes.AttributedObservation
-	for i := uint8(0); i < 5; i++ {
+	for i := range uint8(5) {
 		attributed = append(attributed, makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, i, false))
 	}
 
@@ -177,7 +177,7 @@ func Test_Outcome_RequestWithHistoricalOutcome(t *testing.T) {
 	reqID := md.RequestID()
 
 	var attributed []libocrtypes.AttributedObservation
-	for i := uint8(0); i < 5; i++ {
+	for i := range uint8(5) {
 		attributed = append(attributed, makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, i, false))
 	}
 

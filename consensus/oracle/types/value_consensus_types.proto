@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-option go_package = "consensus/oracle/types";
-
 package value_consensus_types;
 
 import "google/protobuf/timestamp.proto";
 import "sdk/v1alpha/sdk.proto";
+
+option go_package = "consensus/oracle/types";
 
 enum RequestType {
   VALUE_CONSENSUS = 0;
@@ -38,14 +38,14 @@ message RequestObservation {
   sdk.v1alpha.SimpleConsensusInputs input = 2;
   google.protobuf.Timestamp received_at = 3;
 
-  bool remove_lib_use_in_failure_message_formatting_flag = 4  [deprecated = true]; // remove use of libraries in failure message formatting
-  bool update_error_handling_flag = 5  [deprecated = true]; // migrate system errors to user errors
+  bool remove_lib_use_in_failure_message_formatting_flag = 4 [deprecated = true]; // remove use of libraries in failure message formatting
+  bool update_error_handling_flag = 5 [deprecated = true]; // migrate system errors to user errors
   bool median_2fplus1_quorum_flag = 6;
   bool include_all_timestamps_flag = 7;
 }
 
 message Observation {
-  map<string,RequestObservation> observations = 1;
+  map<string, RequestObservation> observations = 1;
 }
 
 // this message is used when calculating the current batch size and serves no other purpose
