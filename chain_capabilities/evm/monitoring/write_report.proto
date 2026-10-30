@@ -1,9 +1,9 @@
 syntax = "proto3";
 package chain_capabilities.evm;
-option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
 
 import "libs/monitoring/execution_context.proto";
 
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
 
 message WriteReportInitiated {
   WriteReportRequest req = 1;

@@ -1,8 +1,9 @@
 syntax = "proto3";
 package chain_capabilities.aptos;
-option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/aptos;monitoring";
 
 import "libs/monitoring/execution_context.proto";
+
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/aptos;monitoring";
 
 // ViewRequest intentionally captures only the small, non-sensitive subset of
 // the capability request that is useful for monitoring.

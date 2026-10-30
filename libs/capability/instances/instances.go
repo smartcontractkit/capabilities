@@ -271,8 +271,8 @@ func TypedRegisterTrigger[O proto.Message, C capabilities.TriggerExecutable, I p
 	go func() {
 		defer close(out)
 		for e := range events {
-			typed := TypedEvent[O]{Err: e.Err, Mismatch: e.Mismatch}
-			typed.Id = e.Event.ID
+			typed := TypedEvent[O]{Err: e.Err, Mismatch: e.Mismatch,
+				Id: e.Event.ID}
 			if e.Mismatch == nil && e.Err == nil {
 				typed.Trigger = newMessage[O]()
 				typed.Err = e.Event.Payload.UnmarshalTo(typed.Trigger)

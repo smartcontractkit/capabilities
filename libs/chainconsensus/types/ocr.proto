@@ -1,11 +1,10 @@
 syntax = "proto3";
-
-option go_package = "github.com/smartcontractkit/capabilities/libs/chainconsensus/types";
 package chain_capabilities.evm.types;
 
 import "google/protobuf/empty.proto";
 import "values/v1/values.proto";
 
+option go_package = "github.com/smartcontractkit/capabilities/libs/chainconsensus/types";
 
 message ChainHeight {
   int64 latest = 1;

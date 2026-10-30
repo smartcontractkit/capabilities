@@ -198,48 +198,6 @@ jobs:
   integration-tests:
     uses: ./.github/workflows/integration-tests.yml
 
-  tidy-and-generate:
-    needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up project environment
-        uses: ./.github/actions/setup
-        with:
-          project: ${{ matrix.projects }}
-          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
-          task: "tidy-and-generate"
-
-      - name: Support private Go modules
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/support-private-gomods.sh
-
-      - name: Install mockery
-        run: go install github.com/vektra/mockery/v2@v2.53.8
-
-      - name: Run "tidy" and "generate"
-        env:
-          # The runner has no SSH key, which protofetch fetches with by default.
-          PROTOFETCH_GIT_PROTOCOL: https
-        run: |
-          ./nx run ${{ matrix.projects }}:tidy
-          ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
-
-      - name: Ensure no diff
-        run: |
-          git diff
-          git diff --stat --exit-code
-
   lint:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
@@ -286,26 +244,76 @@ jobs:
           golangci-lint-version: v${{ steps.get-version.outputs.version }}
           go-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
 
-  modgraph:
+  # Formats the protos and Go, regenerates and tidies every module, and commits the result to the pull request. On
+  # main and in the merge queue it can't commit, so it fails when anything is out of date instead.
+  autofix:
     runs-on: ubuntu-latest
-    name: modgraph
+    permissions:
+      contents: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      # Commits pushed with GITHUB_TOKEN don't trigger CI, so the commit is pushed with a GATI token, and the job fails
+      # without one. Forks get no secrets, and nothing is committed outside pull requests, so neither needs one.
+      - name: Get GitHub token
+        id: token
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: smartcontractkit/.github/actions/setup-github-token@setup-github-token/v1
         with:
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN_GATI_CHANGESETS }}
+          aws-lambda-url: ${{ secrets.AWS_LAMBDA_URL_GATI }}
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Set up project environment
+        uses: ./.github/actions/setup
+        with:
+          project: all
+          go-module-file: "**/go.sum"
+          task: autofix
 
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
 
-      - run: make modgraph
+      - name: Install tools
+        run: make mockery buf
 
-      - name: Ensure clean modgraph
-        run: git diff --minimal --exit-code
+      # TODO: switch to autofix/v1 once released.
+      - name: Autofix
+        uses: smartcontractkit/.github/actions/autofix@ccb256da32bde41565d5e0ed953e7eb390395aba # rtinianov_doAndCommit
+        env:
+          # The runner has no SSH key, which protofetch fetches with by default.
+          PROTOFETCH_GIT_PROTOCOL: https
+        with:
+          github-token: ${{ steps.token.outputs.access-token }}
+          commit-message: "chore: format, generate, and tidy"
+          # Protos are formatted before anything generates from them. The Go fixers then format Go, generate from the
+          # formatted sources, and tidy. go.md graphs the tidied modules, so it's made last.
+          setup: ./script/format-protos.sh
+          go: true
+          run: make modgraph
+
+      # The setup action's cache is only saved when the job succeeds. Save it when it fails too, so a rerun doesn't
+      # start cold. The paths and key match the setup action's, which the cache needs to restore it.
+      - name: Go cache paths
+        id: go-cache
+        if: failure()
+        run: |
+          echo "gomodcache=$(go env GOMODCACHE)" | tee -a "$GITHUB_OUTPUT"
+          echo "gobuildcache=$(go env GOCACHE)" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Save Go cache
+        if: failure() && steps.go-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.gomodcache }}
+            ${{ steps.go-cache.outputs.gobuildcache }}
+          key: ${{ runner.os }}-2-all-autofix-gomod-${{ hashFiles('**/go.sum') }}
 
   checks:
     runs-on: ubuntu-latest
@@ -314,9 +322,8 @@ jobs:
       - build
       - test
       - race
-      - tidy-and-generate
+      - autofix
       - integration-tests
-      - modgraph
     if: always()
     steps:
       - name: All tests ok
