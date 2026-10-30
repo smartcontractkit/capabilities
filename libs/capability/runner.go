@@ -2,12 +2,12 @@ package capability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"slices"
 
-	"github.com/hashicorp/go-plugin"
 	"github.com/samber/do/v2"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -28,14 +28,14 @@ type runner struct {
 	capabilities  CapabilitiesConfig
 	web           HTTPConfig
 	// serve blocks until the run must stop.
-	serve func(context.Context)
+	serve func(context.Context, services.Service)
 }
 
 // newRunner returns a runner. If serve is nil, the runner waits until ctx is done.
 func newRunner(lggr logger.Logger, name string, cfg *config, newCapability func(do.Injector) (Capability, error),
-	injector *Injector, total int, capabilities CapabilitiesConfig, web HTTPConfig, serve func(context.Context)) runner {
+	injector *Injector, total int, capabilities CapabilitiesConfig, web HTTPConfig, serve func(context.Context, services.Service)) runner {
 	if serve == nil {
-		serve = func(ctx context.Context) { <-ctx.Done() }
+		serve = func(ctx context.Context, s services.Service) { <-ctx.Done() }
 	}
 	return runner{
 		lggr:          lggr,
@@ -54,33 +54,30 @@ func (r runner) run(ctx context.Context) error {
 	lggr := r.lggr
 	defer func() { _ = lggr.Sync() }()
 
-	// Started first and closed last, so probes get an answer while the run starts and stops.
-	p := &probes{}
-	ws, err := startWebServer(ctx, lggr, r.web, http.NewServeMux(), p)
-	if err != nil {
-		return fmt.Errorf("failed to start web server: %w", err)
+	root := newRootService(lggr)
+	if err := root.Start(ctx); err != nil {
+		return err
 	}
+
 	defer func() {
-		if err := ws.Close(); err != nil {
-			logger.Sugared(lggr).Errorw("failed to stop the web server", "err", err)
+		err := root.Close()
+		if err != nil {
+			lggr.Errorf("failed to close root service: %s", err)
 		}
 	}()
 
-	var svcs []services.Service
-	defer func() {
-		p.draining.Store(true)
-		stopInReverse(lggr, svcs)
-	}()
-	started := func(s ...services.Service) {
-		svcs = append(svcs, s...)
-		p.add(servicesToHealthReporters(s)...)
+	// Started first and closed last, so probes get an answer while the run starts and stops.
+	ws, err := startWebServer(ctx, lggr, r.web, http.NewServeMux(), root.probes)
+	if err != nil {
+		return fmt.Errorf("failed to start web server: %w", err)
 	}
+	root.addServices(ws)
 
 	telemetry, err := startTelemetry(ctx, lggr, &r.cfg.observability)
 	if err != nil {
 		return fmt.Errorf("failed to build telemetry: %w", err)
 	}
-	started(telemetry)
+	root.addServices(telemetry)
 
 	streamed, err := streamLogs(lggr, telemetry)
 	if err != nil {
@@ -95,7 +92,7 @@ func (r runner) run(ctx context.Context) error {
 		return fmt.Errorf("failed to start profiler: %w", err)
 	}
 	if profiler != nil {
-		started(profiler)
+		root.addServices(profiler)
 	}
 
 	// Start telemetry before you make the gRPC options. The gRPC tracing and metrics read the
@@ -106,25 +103,71 @@ func (r runner) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
-	started(settings)
+	root.addServices(settings)
 
 	_, caps, err := StartCapabilities(ctx, lggr, r.injector, r.total, r.newCapability, withNode(r.capabilities, r.cfg.grpc, &grpcOpts, settings.values))
-	started(caps...)
+	root.addServices(caps...)
 	if err != nil {
 		return err
 	}
 
-	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(svcs))
+	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(root.subServices))
 	if err != nil {
 		return fmt.Errorf("failed to start health checker: %w", err)
 	}
-	started(health)
+	root.addServices(health)
 
-	p.started.Store(true)
-
-	r.serve(ctx)
+	root.probes.started.Store(true)
+	r.serve(ctx, root)
 	lggr.Info("Shutting down")
 	return nil
+}
+
+func newRootService(lggr logger.Logger) *rootService {
+	rs := &rootService{lggr: lggr, probes: &probes{}}
+	rs.Service, _ = services.Config{
+		Name:  "Root",
+		Close: rs.close,
+	}.NewServiceEngine(lggr)
+	return rs
+}
+
+// rootService is the run as one service: the go-plugin host supervises it in compatibility mode.
+// It does not start its services, because each one starts as soon as it is built, so that the next
+// one can use it.
+type rootService struct {
+	services.Service
+	lggr        logger.Logger
+	probes      *probes
+	subServices []services.Service
+}
+
+func (r *rootService) addServices(svcs ...services.Service) {
+	r.subServices = append(r.subServices, svcs...)
+	r.probes.add(servicesToHealthReporters(svcs)...)
+}
+
+// close stops each service before the services that it depends on. Each service starts after its
+// dependencies, so the reverse of the start order is the reverse of the dependency order.
+func (r *rootService) close() error {
+	r.probes.draining.Store(true)
+	var errs []error
+	for _, s := range slices.Backward(r.subServices) {
+		if err := s.Close(); err != nil {
+			logger.Sugared(r.lggr).Errorw("failed to stop a service of this run", "service", s.Name(), "err", err)
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// HealthReport adds the health of the run's services, which the engine does not know about.
+func (r *rootService) HealthReport() map[string]error {
+	m := r.Service.HealthReport()
+	for _, s := range r.subServices {
+		services.CopyHealth(m, s.HealthReport())
+	}
+	return m
 }
 
 func startTelemetry(ctx context.Context, lggr logger.Logger, obs *observability) (*telemetry.Telemetry, error) {
@@ -151,16 +194,6 @@ func streamLogs(lggr logger.Logger, t *telemetry.Telemetry) (logger.Logger, erro
 	return logger.Named(otelLggr, lggr.Name()), nil
 }
 
-// stopInReverse stops each service before the services that it depends on. Each service starts
-// after its dependencies, so the reverse of the start order is the reverse of the dependency order.
-func stopInReverse(lggr logger.Logger, svcs []services.Service) {
-	for _, s := range slices.Backward(svcs) {
-		if err := s.Close(); err != nil {
-			logger.Sugared(lggr).Errorw("failed to stop a service of this run", "service", s.Name(), "err", err)
-		}
-	}
-}
-
 func servicesToHealthReporters(svcs []services.Service) []services.HealthReporter {
 	reporters := make([]services.HealthReporter, 0, len(svcs))
 	for _, s := range svcs {
@@ -169,21 +202,12 @@ func servicesToHealthReporters(svcs []services.Service) []services.HealthReporte
 	return reporters
 }
 
-func servePlugin(lggr logger.Logger) {
-	lggr.Info("Serving the empty LOOP: this process is supervised by a go-plugin host")
-	plugin.Serve(&plugin.ServeConfig{
-		HandshakeConfig: emptyHandshakeConfig(),
-		Plugins:         map[string]plugin.Plugin{emptyPluginName: &emptyLoop{}},
-		GRPCServer:      plugin.DefaultGRPCServer,
-	})
-}
-
 // underPluginHost reports whether this process was launched by a go-plugin host, detected via the
 // empty plugin's handshake magic cookie.
 //
 // The check is necessary rather than defensive: go-plugin's Serve refuses to run - and exits the
 // process - when the cookie is absent, so a standalone binary that called it would die on startup.
 func underPluginHost() bool {
-	h := emptyHandshakeConfig()
+	h := loop.EmptyHandshakeConfig()
 	return os.Getenv(h.MagicCookieKey) == h.MagicCookieValue
 }
