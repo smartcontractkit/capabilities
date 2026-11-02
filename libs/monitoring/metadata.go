@@ -16,6 +16,7 @@ type ChainInfo struct {
 	ChainID         string
 	NetworkName     string
 	NetworkNameFull string
+	AutofixTest     string
 }
 
 func DistinctAttributes(in []attribute.KeyValue) []attribute.KeyValue {
