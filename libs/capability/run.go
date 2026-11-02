@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
+	"github.com/smartcontractkit/chainlink-common/x/config/markup"
 	"github.com/spf13/cobra"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
@@ -176,6 +177,15 @@ func withRegisterer(r prometheus.Registerer) Option {
 func WithOtelViews(views ...sdkmetric.View) Option {
 	return func(c *config) error {
 		c.observability.otelViews = append(c.observability.otelViews, views...)
+		return nil
+	}
+}
+
+// WithMarkup sets the markup language to use for config files.
+// When unset, YAML is used
+func WithMarkup(m markup.Markup) Option {
+	return func(c *config) error {
+		c.markup = m
 		return nil
 	}
 }

@@ -6,12 +6,13 @@ import (
 	"context"
 	"errors"
 
+	"github.com/smartcontractkit/chainlink-common/x/config/markup"
+	"github.com/smartcontractkit/chainlink-common/x/config/markup/yamlmarkup"
 	"github.com/spf13/cobra"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/x/config/cli"
-	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 )
 
 const capabilitiesNamespace = "capabilities"
@@ -43,8 +44,9 @@ type config struct {
 	runInjector   *Injector
 	embedInjector *Injector
 
-	lggr  logger.Logger         // set only by tests, with withLogger
-	serve func(context.Context) // set only by tests, with withServe
+	lggr   logger.Logger         // set only by tests, with withLogger
+	serve  func(context.Context) // set only by tests, with withServe
+	markup markup.Markup
 }
 
 func defaultGRPCConfig() GRPCConfig {
@@ -62,7 +64,11 @@ func defaultConfig(appName string) *config {
 // bind binds every config to root, each under the namespace that owns it. Each is settable by
 // flag, CL_ env var, or config file, in that order of precedence, over its defaults.
 func (c *config) bind(root *cobra.Command) (*cli.Binder, error) {
-	b, err := cli.New(cli.Options{Markup: tomlmarkup.New(), Prefixes: []string{"CL"}})
+	if c.markup == nil {
+		c.markup = yamlmarkup.New()
+	}
+
+	b, err := cli.New(cli.Options{Markup: c.markup, Prefixes: []string{"CL"}})
 	if err != nil {
 		return nil, err
 	}
