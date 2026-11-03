@@ -10,6 +10,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/libs/capability"
 	"github.com/smartcontractkit/capabilities/libs/capability/cmd/newcapability/options"
+	breaking "github.com/smartcontractkit/capabilities/libs/capability/cmd/protobreaking/options"
 	"github.com/smartcontractkit/capabilities/libs/capability/internal/example/capability/service"
 )
 
@@ -23,6 +24,7 @@ func main() {
 			&capability.CapabilitiesConfig{},
 			&capability.SettingsConfig{},
 			&options.Options{},
+			&breaking.Options{},
 			&service.Config{},
 		},
 		Tool:        "github.com/smartcontractkit/capabilities/libs/capability/internal/docgen",
