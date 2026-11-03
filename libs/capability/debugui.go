@@ -89,9 +89,9 @@ func ServeDebugUI[T Capability](ctx context.Context, mux *http.ServeMux, cs []T)
 	mux.HandleFunc("GET "+DebugPath+"/{$}", h.index)
 	mux.HandleFunc("GET "+DebugPath+"/events", h.stream)
 	protect := http.NewCrossOriginProtection()
-	mux.Handle("POST "+DebugPath+"/invoke", protect.Handler(h.counted(h.invoke)))
-	mux.Handle("POST "+DebugPath+"/unsubscribe", protect.Handler(h.counted(h.unsubscribe)))
-	mux.Handle("POST "+DebugPath+"/delete", protect.Handler(h.counted(h.remove)))
+	mux.Handle("POST "+DebugPath+"/invoke", protect.Handler(h.untilShutdown(h.invoke)))
+	mux.Handle("POST "+DebugPath+"/unsubscribe", protect.Handler(h.untilShutdown(h.unsubscribe)))
+	mux.Handle("POST "+DebugPath+"/delete", protect.Handler(h.untilShutdown(h.remove)))
 	return h.shutdown, nil
 }
 
@@ -103,8 +103,7 @@ func (h *debugHandler) shutdown() {
 	h.running.Wait()
 }
 
-// counted serves next only until shutdown starts, which waits for it.
-func (h *debugHandler) counted(next http.HandlerFunc) http.Handler {
+func (h *debugHandler) untilShutdown(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !h.begin() {
 			http.Error(w, "the debug UI is shutting down", http.StatusServiceUnavailable)
