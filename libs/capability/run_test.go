@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 )
 
 // fake stands in for a generated capability server, which is what a real constructor returns. Only
@@ -318,18 +320,41 @@ func TestWithConfig(t *testing.T) {
 		Count int
 	}
 
-	compat := func(t *testing.T, args ...string) (*appConf, error) {
+	compatWith := func(t *testing.T, opts []Option, args ...string) (*appConf, error) {
 		var runInjector *Injector
 		capture := func(c *config) error {
 			runInjector = c.runInjector
 			return nil
 		}
-		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf](), capture}, append([]string{"compat"}, args...)...)
+		opts = append([]Option{WithConfig[appConf](), capture}, opts...)
+		err := executeWith(t, logger.Test(t), fakeConstructor, opts, append([]string{"compat"}, args...)...)
 		require.NotNil(t, runInjector, "RunErr returned before it applied every option: %v", err)
 		conf, invokeErr := do.Invoke[*appConf](runInjector.Do())
 		require.NoError(t, invokeErr)
 		return conf, err
 	}
+
+	compat := func(t *testing.T, args ...string) (*appConf, error) { return compatWith(t, nil, args...) }
+
+	writeConfig := func(t *testing.T, name, contents string) string {
+		path := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+		return path
+	}
+
+	t.Run("reads a YAML config file by default", func(t *testing.T) {
+		path := writeConfig(t, "config.yaml", "cron:\n  Name: node\n  Count: 3\n")
+		conf, err := compat(t, "--config", path)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "node", Count: 3}, *conf)
+	})
+
+	t.Run("reads a config file in the markup given by WithMarkup", func(t *testing.T) {
+		path := writeConfig(t, "config.toml", "[cron]\nName = 'node'\nCount = 3\n")
+		conf, err := compatWith(t, []Option{WithMarkup(tomlmarkup.New())}, "--config", path)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "node", Count: 3}, *conf)
+	})
 
 	t.Run("fills the config from env vars under the app name", func(t *testing.T) {
 		t.Setenv("CL_CRON_NAME", "node")
