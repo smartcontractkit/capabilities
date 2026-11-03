@@ -22,6 +22,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 )
 
 // runArgs is the arguments of one run over settings a test can start: a real port, and everything
@@ -537,42 +538,67 @@ func (s readyService) Ready() error { return s.err }
 
 func newReadyService(t *testing.T, name string, err error) services.Service {
 	s, _ := services.Config{Name: name}.NewServiceEngine(logger.Nop())
-	require.NoError(t, s.Start(t.Context()))
 	return readyService{Service: s, err: err}
 }
 
 func TestRootServiceReady(t *testing.T) {
 	t.Run("ready when it and all its services are ready", func(t *testing.T) {
 		root := newRootService(logger.Test(t))
-		root.addServices(newReadyService(t, "A", nil), newReadyService(t, "B", nil))
-		require.NoError(t, root.Start(t.Context()))
-		t.Cleanup(func() { _ = root.Close() })
+
+		svca := newReadyService(t, "A", nil)
+		svca.Start(t.Context())
+		root.addServices(svca)
+
+		svcb := newReadyService(t, "B", nil)
+		svcb.Start(t.Context())
+		root.addServices(svcb)
+
+		servicetest.Run(t, root)
 
 		assert.NoError(t, root.Ready())
 	})
 
 	t.Run("not ready before it starts", func(t *testing.T) {
 		root := newRootService(logger.Test(t))
-		root.addServices(newReadyService(t, "A", nil))
+
+		svca := newReadyService(t, "A", nil)
+		svca.Start(t.Context())
+		t.Cleanup(func() { svca.Close() })
+		root.addServices(svca)
 
 		assert.Error(t, root.Ready())
 	})
 
 	t.Run("reports every service that is not ready", func(t *testing.T) {
-		errA, errB := errors.New("a not ready"), errors.New("b not ready")
+		errA, errC := errors.New("a not ready"), errors.New("c not ready")
 		root := newRootService(logger.Test(t))
-		root.addServices(newReadyService(t, "A", errA), newReadyService(t, "B", nil), newReadyService(t, "C", errB))
-		require.NoError(t, root.Start(t.Context()))
-		t.Cleanup(func() { _ = root.Close() })
+
+		svca := newReadyService(t, "A", errA)
+		svca.Start(t.Context())
+		root.addServices(svca)
+
+		svcb := newReadyService(t, "B", nil)
+		svcb.Start(t.Context())
+		root.addServices(svcb)
+
+		svcc := newReadyService(t, "C", errC)
+		svcc.Start(t.Context())
+		root.addServices(svcc)
+
+		servicetest.Run(t, root)
 
 		err := root.Ready()
 		assert.ErrorIs(t, err, errA)
-		assert.ErrorIs(t, err, errB)
+		assert.ErrorIs(t, err, errC)
 	})
 
 	t.Run("not ready after it closes", func(t *testing.T) {
 		root := newRootService(logger.Test(t))
-		root.addServices(newReadyService(t, "A", nil))
+
+		svca := newReadyService(t, "A", nil)
+		svca.Start(t.Context())
+		root.addServices(svca)
+
 		require.NoError(t, root.Start(t.Context()))
 		require.NoError(t, root.Close())
 
