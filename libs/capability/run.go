@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/hashicorp/go-plugin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/smartcontractkit/chainlink-common/x/config/markup"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
 // Run builds and runs the capability constructor makes, and does not return until the process is
@@ -94,7 +96,7 @@ func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Inje
 			if cfg.observability.PrometheusPort == 0 {
 				return errors.New("compatibility mode needs CL_PROMETHEUS_PORT")
 			}
-			serve := func(context.Context) { servePlugin(lggr) }
+			serve := func(_ context.Context, s services.Service) { loop.ServeEmpty(s, plugin.DefaultGRPCServer) }
 			if cfg.serve != nil {
 				serve = cfg.serve
 			}
@@ -154,7 +156,7 @@ func withLogger(lggr logger.Logger) Option {
 
 // withServe replaces plugin.Serve in compatibility mode. plugin.Serve takes over the stdio of the
 // process, so tests can't call it.
-func withServe(serve func(context.Context)) Option {
+func withServe(serve func(context.Context, services.Service)) Option {
 	return func(c *config) error {
 		c.serve = serve
 		return nil

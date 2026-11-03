@@ -12,6 +12,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/x/config/cli"
 )
 
@@ -44,8 +45,8 @@ type config struct {
 	runInjector   *Injector
 	embedInjector *Injector
 
-	lggr   logger.Logger         // set only by tests, with withLogger
-	serve  func(context.Context) // set only by tests, with withServe
+	lggr   logger.Logger                           // set only by tests, with withLogger
+	serve  func(context.Context, services.Service) // set only by tests, with withServe
 	markup markup.Markup
 }
 
