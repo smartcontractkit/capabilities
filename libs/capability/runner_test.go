@@ -546,7 +546,7 @@ func TestRootServiceReady(t *testing.T) {
 		root := newRootService(logger.Test(t))
 
 		svca := newReadyService(t, "A", nil)
-		svca.Start(t.Context())
+		require.NoError(t, svca.Start(t.Context()))
 		root.addServices(svca)
 
 		svcb := newReadyService(t, "B", nil)
@@ -562,7 +562,7 @@ func TestRootServiceReady(t *testing.T) {
 		root := newRootService(logger.Test(t))
 
 		svca := newReadyService(t, "A", nil)
-		svca.Start(t.Context())
+		require.NoError(t, svca.Start(t.Context()))
 		t.Cleanup(func() { svca.Close() })
 		root.addServices(svca)
 
@@ -574,15 +574,15 @@ func TestRootServiceReady(t *testing.T) {
 		root := newRootService(logger.Test(t))
 
 		svca := newReadyService(t, "A", errA)
-		svca.Start(t.Context())
+		require.NoError(t, svca.Start(t.Context()))
 		root.addServices(svca)
 
 		svcb := newReadyService(t, "B", nil)
-		svcb.Start(t.Context())
+		require.NoError(t, svcb.Start(t.Context()))
 		root.addServices(svcb)
 
 		svcc := newReadyService(t, "C", errC)
-		svcc.Start(t.Context())
+		require.NoError(t, svcc.Start(t.Context()))
 		root.addServices(svcc)
 
 		servicetest.Run(t, root)
@@ -596,7 +596,7 @@ func TestRootServiceReady(t *testing.T) {
 		root := newRootService(logger.Test(t))
 
 		svca := newReadyService(t, "A", nil)
-		svca.Start(t.Context())
+		require.NoError(t, svca.Start(t.Context()))
 		root.addServices(svca)
 
 		require.NoError(t, root.Start(t.Context()))
