@@ -15,7 +15,7 @@ require (
 	github.com/samber/do/v2 v2.1.0
 	github.com/samber/go-type-to-string v1.8.0
 	github.com/shopspring/decimal v1.4.0
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261027153112-98a50810196d
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261102201435-1c6d22d0a5ad
 	github.com/smartcontractkit/chainlink-common/x/config v0.0.0-20261102161601-beffc93e226e
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261013212015-e622e8b83b6b
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
