@@ -15,10 +15,12 @@ import (
 	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
@@ -215,6 +217,22 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 		t.Fatal("the run did not stop when it was told to")
 	}
 
+	assertPortFree(t, port)
+}
+
+// TestRunAcceptsARootClosedByTheHost covers compatibility mode: the go-plugin host closes the root
+// service when it stops the process, and then run closes it again.
+func TestRunAcceptsARootClosedByTheHost(t *testing.T) {
+	cfg, port := runArgs(t)
+	lggr, logs := logger.TestObserved(t, zapcore.ErrorLevel)
+	serve := func(_ context.Context, root services.Service) {
+		assert.NoError(t, root.Close())
+	}
+
+	r := newRunner(lggr, "cron", cfg, fakeConstructor, NewInjector(), 1, cfg.capabilities, cfg.observability.http, serve)
+	require.NoError(t, r.run(t.Context()))
+
+	assert.Zero(t, logs.FilterMessageSnippet("failed to close root service").Len())
 	assertPortFree(t, port)
 }
 
@@ -449,7 +467,7 @@ func probeBody(t *testing.T, port uint16, path string) (int, string) {
 // here - plugin.Serve takes over the process's stdio and handshake, so a test calling it would be
 // testing go-plugin rather than this.
 func TestUnderPluginHost(t *testing.T) {
-	h := emptyHandshakeConfig()
+	h := loop.EmptyHandshakeConfig()
 
 	t.Run("absent", func(t *testing.T) {
 		t.Setenv(h.MagicCookieKey, "")
@@ -478,7 +496,7 @@ func assertPortFree[P int | uint16](t *testing.T, port P) {
 	}
 }
 
-func TestStopInReverseStopsInTheReverseOfTheStartOrder(t *testing.T) {
+func TestRootServiceClosesInTheReverseOfTheStartOrder(t *testing.T) {
 	var stopped []string
 	named := func(name string) services.Service {
 		s, _ := services.Config{Name: name, Close: func() error { stopped = append(stopped, name); return nil }}.NewServiceEngine(logger.Nop())
@@ -486,7 +504,78 @@ func TestStopInReverseStopsInTheReverseOfTheStartOrder(t *testing.T) {
 		return s
 	}
 
-	stopInReverse(logger.Test(t), []services.Service{named("Telemetry"), named("Capability"), named("Web")})
+	root := newRootService(logger.Test(t))
+	root.addServices(named("Telemetry"), named("Capability"), named("Health"))
+	require.NoError(t, root.Start(t.Context()))
+	require.NoError(t, root.Close())
 
-	assert.Equal(t, []string{"Web", "Capability", "Telemetry"}, stopped)
+	assert.Equal(t, []string{"Health", "Capability", "Telemetry"}, stopped)
+}
+
+func TestRootServiceReportsTheHealthOfItsServices(t *testing.T) {
+	sub, _ := services.Config{Name: "Capability"}.NewServiceEngine(logger.Nop())
+	require.NoError(t, sub.Start(t.Context()))
+
+	root := newRootService(logger.Test(t))
+	root.addServices(sub)
+	require.NoError(t, root.Start(t.Context()))
+
+	report := root.HealthReport()
+	assert.Contains(t, report, "Root")
+	assert.Contains(t, report, "Capability")
+
+	require.NoError(t, root.Close())
+	assert.Error(t, root.HealthReport()["Capability"], "a closed service is not healthy")
+}
+
+type readyService struct {
+	services.Service
+	err error
+}
+
+func (s readyService) Ready() error { return s.err }
+
+func newReadyService(t *testing.T, name string, err error) services.Service {
+	s, _ := services.Config{Name: name}.NewServiceEngine(logger.Nop())
+	require.NoError(t, s.Start(t.Context()))
+	return readyService{Service: s, err: err}
+}
+
+func TestRootServiceReady(t *testing.T) {
+	t.Run("ready when it and all its services are ready", func(t *testing.T) {
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", nil), newReadyService(t, "B", nil))
+		require.NoError(t, root.Start(t.Context()))
+		t.Cleanup(func() { _ = root.Close() })
+
+		assert.NoError(t, root.Ready())
+	})
+
+	t.Run("not ready before it starts", func(t *testing.T) {
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", nil))
+
+		assert.Error(t, root.Ready())
+	})
+
+	t.Run("reports every service that is not ready", func(t *testing.T) {
+		errA, errB := errors.New("a not ready"), errors.New("b not ready")
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", errA), newReadyService(t, "B", nil), newReadyService(t, "C", errB))
+		require.NoError(t, root.Start(t.Context()))
+		t.Cleanup(func() { _ = root.Close() })
+
+		err := root.Ready()
+		assert.ErrorIs(t, err, errA)
+		assert.ErrorIs(t, err, errB)
+	})
+
+	t.Run("not ready after it closes", func(t *testing.T) {
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", nil))
+		require.NoError(t, root.Start(t.Context()))
+		require.NoError(t, root.Close())
+
+		assert.Error(t, root.Ready())
+	})
 }
