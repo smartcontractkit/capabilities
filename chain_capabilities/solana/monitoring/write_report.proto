@@ -1,8 +1,9 @@
 syntax = "proto3";
 package chain_capabilities.solana;
-option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/solana;monitoring";
 
 import "libs/monitoring/execution_context.proto";
+
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/solana;monitoring";
 
 message WriteReportInitiated {
   WriteReportRequest req = 1;
@@ -70,4 +71,3 @@ message AttributedSignature {
   bytes signature = 1;
   uint32 signer_id = 2;
 }
-
