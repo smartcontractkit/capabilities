@@ -70,7 +70,8 @@ func (r runner) run(ctx context.Context) error {
 	}()
 
 	// Started first and closed last, so probes get an answer while the run starts and stops.
-	ws, err := startWebServer(ctx, lggr, r.web, http.NewServeMux(), root.probes)
+	mux := http.NewServeMux()
+	ws, err := startWebServer(ctx, lggr, r.web, mux, root.probes)
 	if err != nil {
 		return fmt.Errorf("failed to start web server: %w", err)
 	}
@@ -108,10 +109,28 @@ func (r runner) run(ctx context.Context) error {
 	}
 	root.addServices(settings)
 
-	_, caps, err := StartCapabilities(ctx, lggr, r.injector, r.total, r.newCapability, withNode(r.capabilities, r.cfg.grpc, &grpcOpts, settings.values))
-	root.addServices(caps...)
+	caps, capSvcs, err := StartCapabilities(ctx, lggr, r.injector, r.total, r.newCapability, withNode(r.capabilities, r.cfg.grpc, &grpcOpts, settings.values))
+	root.addServices(capSvcs...)
 	if err != nil {
 		return err
+	}
+
+	if r.capabilities.HTTPDebug {
+		shutdown, err := ServeDebugUI(ctx, mux, caps)
+		if err != nil {
+			return fmt.Errorf("failed to build the debug UI: %w", err)
+		}
+
+		// Added after the capabilities, so it's stopped before them, while its triggers can still be unregistered.
+		debug := services.Config{Name: "DebugUI", Close: func() error {
+			shutdown()
+			return nil
+		}}.NewService(lggr)
+		if err = debug.Start(ctx); err != nil {
+			return err
+		}
+
+		root.addServices(debug)
 	}
 
 	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(root.subServices))
