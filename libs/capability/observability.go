@@ -47,7 +47,7 @@ func defaultObservability() *observability {
 	return &observability{
 		TelemetryConfig: defaultTelemetryConfig(),
 		http:            HTTPConfig{Port: defaultHTTPPort},
-		AppConfig:       AppConfig{AppID: uuid.NewString()},
+		AppID:           uuid.NewString(),
 	}
 }
 
