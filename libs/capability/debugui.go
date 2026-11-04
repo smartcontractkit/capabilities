@@ -289,9 +289,7 @@ func (h *debugHandler) subscribe(request capabilities.TriggerRegistrationRequest
 	}
 	h.add(sub)
 	// The invoke registering it is still counted, so this can't race shutdown's Wait.
-	h.running.Add(1)
-	go func() {
-		defer h.running.Done()
+	h.running.Go(func() {
 		// Stopping releases the shutdown watcher once the trigger ends by itself too.
 		defer stop()
 		defer close(sub.done)
@@ -300,7 +298,7 @@ func (h *debugHandler) subscribe(request capabilities.TriggerRegistrationRequest
 		}
 
 		h.stopped(sub, sub.unregister(context.WithoutCancel(ctx)))
-	}()
+	})
 
 	return nil
 }

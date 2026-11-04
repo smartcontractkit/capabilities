@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -119,10 +120,8 @@ func checkout(t *testing.T, files map[string]string) string {
 	all := map[string]string{}
 	for name, content := range files {
 		all[name] = content
-		if i := strings.Index(name, "protos/production/"); i >= 0 {
-			for k, v := range fetched(name[:i]) {
-				all[k] = v
-			}
+		if before, _, ok := strings.Cut(name, "protos/production/"); ok {
+			maps.Copy(all, fetched(before))
 		}
 	}
 
