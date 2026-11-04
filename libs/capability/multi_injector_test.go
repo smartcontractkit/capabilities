@@ -24,6 +24,24 @@ func TestMultiInjector(t *testing.T) {
 	}
 }
 
+func TestMultiInjectorMust(t *testing.T) {
+	m := MultiInjector{NewInjector(), NewInjector()}
+	// Each provides a different key, so only the second call of each is a duplicate.
+	for name, provide := range map[string]func(){
+		"Provide":            func() { m.MustProvide(func(do.Injector) (*depB, error) { return &depB{}, nil }) },
+		"ProvideValue":       func() { m.MustProvideValue(&depA{}) },
+		"ProvideNamed":       func() { m.MustProvideNamed("a", func(do.Injector) (*depA, error) { return &depA{}, nil }) },
+		"ProvideNamedValue":  func() { m.MustProvideNamedValue("b", &depB{}) },
+		"ProvideConfig":      func() { m.MustProvideConfig("test", &testConfig{}) },
+		"ProvideNamedConfig": func() { m.MustProvideNamedConfig("named", "conf", &testConfig{}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.NotPanics(t, provide)
+			assert.Panics(t, provide)
+		})
+	}
+}
+
 func TestMultiInjectorNamedAndProviders(t *testing.T) {
 	m := MultiInjector{NewInjector(), NewInjector()}
 

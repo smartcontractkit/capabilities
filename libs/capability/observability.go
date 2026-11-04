@@ -19,10 +19,19 @@ const (
 type observability struct {
 	telemetry.TelemetryConfig
 	pyroscope.PyroscopeConfig
+	PrometheusConfig
 	http HTTPConfig
 	AppConfig
 
 	otelViews []metric.View // supplied through capability.Run
+}
+
+// PrometheusConfig is here for compatibility with the core node, which sets CL_PROMETHEUS_PORT for
+// each LOOP.
+type PrometheusConfig struct {
+	// PrometheusPort is the port of the web server. The core node sets it, and gets the metrics
+	// from it.
+	PrometheusPort uint16
 }
 
 // AppConfig identifies the node that started this process. It is here for compatibility with the

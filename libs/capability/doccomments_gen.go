@@ -20,7 +20,13 @@ func (CapabilitiesConfig) DocComments() map[string]commentparsing.FieldDoc {
 
 func (HTTPConfig) DocComments() map[string]commentparsing.FieldDoc {
 	return map[string]commentparsing.FieldDoc{
-		"Port": {Comment: "Port serves /metrics, /debug/pprof, /healthz, /readyz and any routes a service registers."},
+		"Port": {Comment: "Port serves /metrics, /debug/pprof, /livez, /startupz, /readyz, /healthz and any routes a\nservice registers."},
+	}
+}
+
+func (PrometheusConfig) DocComments() map[string]commentparsing.FieldDoc {
+	return map[string]commentparsing.FieldDoc{
+		"PrometheusPort": {Comment: "PrometheusPort is the port of the web server. The core node sets it, and gets the metrics\nfrom it."},
 	}
 }
 

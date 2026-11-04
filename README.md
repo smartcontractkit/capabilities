@@ -7,11 +7,50 @@ This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detect
 - With the exception of `libs`, each package in the root folder creates a binary that instantiates a **capability set** when added to the node through a `type="standardcapabilities"` job spec (**capability spec**). A capability set contains one or more capabilities that are centered around some functionality or shared resource, e.g., EVM chain, CRON, etc.
 - `libs` folder contains packages that are shared across capabilities. You should only create a package there if two or more capability sets need to share a dependency.
 
+## Building a capability
+
+New capabilities are PSBs, built on [`libs/capability`](libs/capability), and own their protos.
+
+### Create one
+
+```sh
+pnpm install
+cd libs
+go run ./capability/cmd/newcapability --trigger --action --category scheduler --name cron
+```
+
+This creates `scheduler/cron`: a module with its `go.mod` and `project.json`, its protos, the server generated from
+them, a `service` package to implement it in, its config, a `main` that runs it, and a test. For what you'll get,
+see [`libs/capability/internal/example/capability`](libs/capability/internal/example/capability), which is
+scaffolded the same way, as packages of `libs`. `--help` lists the options.
+
+`pnpm install` installs protofetch, which fetches the protos a capability's protos import.
+
+### Change its API
+
+Edit the protos in its `protos` directory, tagging what you add with an in progress feature, see
+[`feature.proto`](libs/capability/feature/feature.proto). Then regenerate:
+
+```sh
+go generate ./...
+```
+
+### Release a feature
+
+Move the feature from `in_progress` to `released` and regenerate. Its `protos/production` now has it, which is what
+the SDKs are generated from.
+
+### Run it
+
+```sh
+go run . --help
+```
+
 ## Generating SDKs
 
-Each new capability must have a proto in [chainlink-protos/cre](https://github.com/smartcontractkit/chainlink-protos/blob/main/cre) annotated with [cre metadata](https://github.com/smartcontractkit/chainlink-protos/blob/main/cre/tools/generator/v1alpha/cre_metadata.proto)
-
-See Cron as the simplest example of how to generate a capability from the code generator.
+Capabilities that are not yet PSBs have their protos in
+[chainlink-protos/cre](https://github.com/smartcontractkit/chainlink-protos/blob/main/cre), annotated with
+[cre metadata](https://github.com/smartcontractkit/chainlink-protos/blob/main/cre/tools/generator/v1alpha/cre_metadata.proto).
 
 ## Generating Leagacy SDKs
 

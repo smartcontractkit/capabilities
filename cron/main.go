@@ -10,7 +10,7 @@ import (
 
 func main() {
 	loopserver.ServeNew(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
-		triggerService, err := trigger.NewTriggerService(s.Logger, nil, s.LimitsFactory)
+		triggerService, err := trigger.NewLegacyService(s.Logger, nil, s.LimitsFactory)
 		if err != nil {
 			s.Logger.Fatalw("Failed to create cron trigger service", "error", err)
 		}

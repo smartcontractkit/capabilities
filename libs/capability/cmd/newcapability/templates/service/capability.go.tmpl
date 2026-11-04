@@ -1,0 +1,84 @@
+package service
+
+import (
+	"context"
+{{- if .Trigger}}
+	"errors"
+{{- end}}
+
+	"github.com/samber/do/v2"
+
+	"github.com/smartcontractkit/capabilities/libs/capability"
+	"{{.Module}}/protos"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
+)
+
+// ConfigNamespace is the namespace the {{.Name}} capability's Config is set under.
+const ConfigNamespace = "{{.Name}}"
+
+// Config is how the node operator configures the {{.Name}} capability.
+type Config struct{}
+
+// init provides Config however the capability is run, so whoever embeds it gets its defaults without providing it.
+func init() {
+	capability.Injectors.MustProvideConfig(ConfigNamespace, &Config{})
+}
+
+var _ capability.Capability = (*protos.ClientServer)(nil)
+
+// New builds the {{.Name}} capability from what the run provides, for capability.Run.
+func New(i do.Injector) (*protos.ClientServer, error) {
+	lggr, err := do.Invoke[logger.Logger](i)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := do.Invoke[*Config](i)
+	if err != nil {
+		return nil, err
+	}
+
+	return protos.NewClientServer(newService(lggr, *cfg)), nil
+}
+
+// service implements the {{.Name}} capability.
+// TODO: replace the echoes with what the capability does.
+type service struct {
+	services.Service
+	cfg Config
+}
+
+var _ protos.ClientCapability = (*service)(nil)
+
+func newService(lggr logger.Logger, cfg Config) *service {
+	return &service{Service: services.Config{Name: "Client"}.NewService(lggr), cfg: cfg}
+}
+
+func (s *service) Description() string {
+	return "The {{.Name}} capability"
+}
+{{if .Trigger}}
+// RegisterTrigger sends one event echoing the trigger's config.
+func (s *service) RegisterTrigger(_ context.Context, triggerID string, _ capabilities.RequestMetadata, input *protos.TriggerConfig) (<-chan capabilities.TriggerAndId[*protos.TriggerEvent], caperrors.Error) {
+	events := make(chan capabilities.TriggerAndId[*protos.TriggerEvent], 1)
+	events <- capabilities.TriggerAndId[*protos.TriggerEvent]{Id: triggerID, Trigger: &protos.TriggerEvent{Message: input.Message}}
+	return events, nil
+}
+
+func (s *service) UnregisterTrigger(context.Context, string, capabilities.RequestMetadata, *protos.TriggerConfig) caperrors.Error {
+	return nil
+}
+
+func (s *service) AckEvent(context.Context, string, string, string) caperrors.Error {
+	return caperrors.NewPrivateSystemError(errors.New("AckEvent is not implemented"), caperrors.Unimplemented)
+}
+{{end}}{{if .Action}}
+// Execute replies with the request's message.
+func (s *service) Execute(_ context.Context, _ capabilities.RequestMetadata, input *protos.Request) (*capabilities.ResponseAndMetadata[*protos.Reply], caperrors.Error) {
+	return &capabilities.ResponseAndMetadata[*protos.Reply]{Response: &protos.Reply{Message: input.Message}}, nil
+}
+{{end}}

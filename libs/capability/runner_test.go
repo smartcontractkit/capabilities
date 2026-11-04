@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,9 +15,13 @@ import (
 	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
 // runArgs is the arguments of one run over settings a test can start: a real port, and everything
@@ -24,7 +30,7 @@ func runArgs(t *testing.T) (*config, uint16) {
 	t.Helper()
 
 	port := uint16(freePort(t))
-	cfg := defaultConfig()
+	cfg := defaultConfig("TEST_APP")
 	cfg.grpc.Registerer = prometheus.NewRegistry()
 	cfg.observability.http.Port = port
 	// A stub the registrar's announcement can land on: registering the capability dials the
@@ -32,6 +38,11 @@ func runArgs(t *testing.T) (*config, uint16) {
 	cfg.capabilities.ProxyURL = serveNodeRegistry(t, newSpyRegistry(t))
 
 	return cfg, port
+}
+
+// testRunner returns a runner of one instance over cfg, with the logger of the test.
+func testRunner(t *testing.T, cfg *config, c func(do.Injector) (Capability, error)) runner {
+	return newRunner(logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities, cfg.observability.http, nil)
 }
 
 // runToCompletion starts a run and stops it once it is serving, returning what run returned.
@@ -46,7 +57,9 @@ func runToCompletion(t *testing.T, cfg *config, c func(do.Injector) (Capability,
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, logger.Test(t), "cron", cfg, c, NewInjector(), 1, cfg.capabilities) }()
+	go func() {
+		done <- testRunner(t, cfg, c).run(ctx)
+	}()
 
 	deadline := time.After(30 * time.Second)
 	for {
@@ -181,20 +194,11 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, logger.Test(t), "cron", cfg, fakeConstructor, NewInjector(), 1, cfg.capabilities)
+		done <- testRunner(t, cfg, fakeConstructor).run(ctx)
 	}()
 
 	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
 		"the run should be serving while it is up")
-
-	// The root is started, and the health checker reports on the root - so a run that is up is a
-	// run that says it is ready. This is what starting the capability bought.
-	for path, want := range map[string]int{"/healthz": 200, "/readyz": 200} {
-		res, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, path))
-		require.NoError(t, err, path)
-		require.NoError(t, res.Body.Close())
-		assert.Equal(t, want, res.StatusCode, path)
-	}
 
 	// Still up: it has not unwound just because it finished starting.
 	select {
@@ -216,6 +220,245 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 	assertPortFree(t, port)
 }
 
+// TestRunAcceptsARootClosedByTheHost covers compatibility mode: the go-plugin host closes the root
+// service when it stops the process, and then run closes it again.
+func TestRunAcceptsARootClosedByTheHost(t *testing.T) {
+	cfg, port := runArgs(t)
+	lggr, logs := logger.TestObserved(t, zapcore.ErrorLevel)
+	serve := func(_ context.Context, root services.Service) {
+		assert.NoError(t, root.Close())
+	}
+
+	r := newRunner(lggr, "cron", cfg, fakeConstructor, NewInjector(), 1, cfg.capabilities, cfg.observability.http, serve)
+	require.NoError(t, r.run(t.Context()))
+
+	assert.Zero(t, logs.FilterMessageSnippet("failed to close root service").Len())
+	assertPortFree(t, port)
+}
+
+type status [4]int
+
+var probePaths = [4]string{"/livez", "/startupz", "/readyz", "/healthz"}
+
+const (
+	up   = http.StatusOK
+	down = http.StatusServiceUnavailable
+)
+
+func assertProbes(t *testing.T, port uint16, when string, want status) {
+	t.Helper()
+	for i, path := range probePaths {
+		assert.Equal(t, want[i], probe(t, port, path), "%s: %s", when, path)
+	}
+}
+
+// TestRunProbeTransitions covers every combination of the capability's readiness and health across
+// a run's lifecycle, from starting to stopped.
+func TestRunProbeTransitions(t *testing.T) {
+	cfg, port := runArgs(t)
+	f := newControlledFake("ControlledCapability")
+	f.setReady(errors.New("not connected"))
+	f.setHealth(errors.New("not connected"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- testRunner(t, cfg, func(do.Injector) (Capability, error) { return f, nil }).run(ctx)
+	}()
+
+	// healthz is down because the run has not started, not because of the health set above.
+	<-f.starting
+	assertProbes(t, port, "starting", status{up, down, down, down})
+	_, body := probeBody(t, port, "/startupz")
+	assert.Contains(t, body, "Run: starting")
+
+	close(f.releaseStart)
+	require.Eventually(t, func() bool { return probe(t, port, "/startupz") == up }, 30*time.Second, 5*time.Millisecond,
+		"the run should finish starting once the capability has")
+
+	// Probes ask the capability on every request, so each change shows on the very next probe.
+	assertProbes(t, port, "started, not ready or healthy", status{up, up, down, down})
+	for _, path := range []string{"/readyz", "/healthz"} {
+		_, body := probeBody(t, port, path)
+		assert.Contains(t, body, "ControlledCapability: not connected", "%s should name the capability and why", path)
+	}
+
+	f.setReady(nil)
+	assertProbes(t, port, "ready, not healthy", status{up, up, up, down})
+
+	f.setReady(errors.New("busy"))
+	f.setHealth(nil)
+	assertProbes(t, port, "healthy, not ready", status{up, up, down, up})
+
+	f.setReady(nil)
+	assertProbes(t, port, "ready and healthy", status{up, up, up, up})
+	for _, path := range probePaths {
+		_, body := probeBody(t, port, path)
+		assert.Equal(t, "ok\n", body, path)
+	}
+
+	f.setHealth(errors.New("lost connection"))
+	assertProbes(t, port, "unhealthy again", status{up, up, up, down})
+
+	f.setReady(errors.New("lost connection"))
+	assertProbes(t, port, "not ready again", status{up, up, down, down})
+
+	// The capability is ready and healthy, so the probes going down while stopping is the run's doing.
+	f.setReady(nil)
+	f.setHealth(nil)
+	assertProbes(t, port, "back up before stopping", status{up, up, up, up})
+	cancel()
+	<-f.closing
+	assertProbes(t, port, "stopping", status{up, up, down, down})
+	_, body = probeBody(t, port, "/readyz")
+	assert.Contains(t, body, "Run: shutting down")
+
+	close(f.releaseClose)
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the run did not stop when it was told to")
+	}
+	assertPortFree(t, port)
+}
+
+func TestRunProbesWhenTheCapabilityFailsToStart(t *testing.T) {
+	cfg, port := runArgs(t)
+	f := newControlledFake("ControlledCapability")
+	f.startErr = errors.New("no schedule")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- testRunner(t, cfg, func(do.Injector) (Capability, error) { return f, nil }).run(context.Background())
+	}()
+
+	<-f.starting
+	assertProbes(t, port, "failing to start", status{up, down, down, down})
+
+	close(f.releaseStart)
+	select {
+	case err := <-done:
+		require.ErrorContains(t, err, "no schedule")
+	case <-time.After(30 * time.Second):
+		t.Fatal("the run did not end when its capability failed to start")
+	}
+	assertPortFree(t, port)
+}
+
+func TestRunProbesAcrossInstances(t *testing.T) {
+	cfg, port := runArgs(t)
+	cfg.capabilities.ProxyURL = ""
+	fakes := []*controlledFake{newControlledFake("Instance0"), newControlledFake("Instance1")}
+	for _, f := range fakes {
+		close(f.releaseStart)
+	}
+	fakes[1].setReady(errors.New("not connected"))
+	fakes[1].setHealth(errors.New("not connected"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- newRunner(logger.Test(t), "cron", cfg, func(i do.Injector) (Capability, error) {
+			return fakes[do.MustInvoke[InstanceInfo](i).ID], nil
+		}, NewInjector(), len(fakes), cfg.capabilities, cfg.observability.http, nil).run(ctx)
+	}()
+	require.Eventually(t, func() bool { return serving(int(port)) }, 30*time.Second, 5*time.Millisecond,
+		"the run should finish starting")
+
+	assertProbes(t, port, "one instance not online", status{up, up, down, down})
+	for _, path := range []string{"/readyz", "/healthz"} {
+		_, body := probeBody(t, port, path)
+		assert.Contains(t, body, "Instance1: not connected", path)
+		assert.NotContains(t, body, "Instance0:", path)
+	}
+
+	fakes[1].setReady(nil)
+	fakes[1].setHealth(nil)
+	assertProbes(t, port, "every instance online", status{up, up, up, up})
+
+	fakes[0].setHealth(errors.New("lost connection"))
+	assertProbes(t, port, "the other instance unhealthy", status{up, up, up, down})
+
+	for _, f := range fakes {
+		close(f.releaseClose)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the run did not stop when it was told to")
+	}
+}
+
+type controlledFake struct {
+	*fake
+
+	starting, releaseStart chan struct{}
+	closing, releaseClose  chan struct{}
+	startErr               error
+
+	ready, health atomic.Pointer[error]
+}
+
+func newControlledFake(name string) *controlledFake {
+	f := &controlledFake{
+		fake:         &fake{},
+		starting:     make(chan struct{}),
+		releaseStart: make(chan struct{}),
+		closing:      make(chan struct{}),
+		releaseClose: make(chan struct{}),
+	}
+	f.setReady(nil)
+	f.setHealth(nil)
+	f.info, _ = capabilities.NewCapabilityInfo(fakeID, capabilities.CapabilityTypeCombined, "a fake")
+	f.Service, _ = services.Config{
+		Name:  name,
+		Start: func(context.Context) error { close(f.starting); <-f.releaseStart; return f.startErr },
+		Close: func() error { close(f.closing); <-f.releaseClose; return nil },
+	}.NewServiceEngine(logger.Nop())
+	return f
+}
+
+func (f *controlledFake) setReady(err error) { f.ready.Store(&err) }
+
+func (f *controlledFake) setHealth(err error) { f.health.Store(&err) }
+
+func (f *controlledFake) Ready() error {
+	if err := f.Service.Ready(); err != nil {
+		return err
+	}
+	return *f.ready.Load()
+}
+
+func (f *controlledFake) HealthReport() map[string]error {
+	if err := f.Service.Ready(); err != nil {
+		return map[string]error{f.Name(): err}
+	}
+	return map[string]error{f.Name(): *f.health.Load()}
+}
+
+func probe(t *testing.T, port uint16, path string) int {
+	t.Helper()
+
+	status, _ := probeBody(t, port, path)
+	return status
+}
+
+func probeBody(t *testing.T, port uint16, path string) (int, string) {
+	t.Helper()
+
+	res, err := httpGet(t.Context(), fmt.Sprintf("http://localhost:%d%s", port, path))
+	require.NoError(t, err, path)
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err, path)
+	require.NoError(t, res.Body.Close())
+	return res.StatusCode, string(body)
+}
+
 // TestUnderPluginHost covers the cookie go-plugin's Serve insists on, which is what decides whether
 // a run hands the process to a host or waits for a signal.
 //
@@ -224,7 +467,7 @@ func TestRunStaysUpUntilItIsToldToStop(t *testing.T) {
 // here - plugin.Serve takes over the process's stdio and handshake, so a test calling it would be
 // testing go-plugin rather than this.
 func TestUnderPluginHost(t *testing.T) {
-	h := emptyHandshakeConfig()
+	h := loop.EmptyHandshakeConfig()
 
 	t.Run("absent", func(t *testing.T) {
 		t.Setenv(h.MagicCookieKey, "")
@@ -244,11 +487,95 @@ func TestUnderPluginHost(t *testing.T) {
 
 // assertPortFree reports whether nothing is listening on port, which is how a stopped web server is
 // told from a running one.
-func assertPortFree(t *testing.T, port uint16) {
+func assertPortFree[P int | uint16](t *testing.T, port P) {
 	t.Helper()
 
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if assert.NoError(t, err, "port %d should be free", port) {
 		require.NoError(t, l.Close())
 	}
+}
+
+func TestRootServiceClosesInTheReverseOfTheStartOrder(t *testing.T) {
+	var stopped []string
+	named := func(name string) services.Service {
+		s, _ := services.Config{Name: name, Close: func() error { stopped = append(stopped, name); return nil }}.NewServiceEngine(logger.Nop())
+		require.NoError(t, s.Start(t.Context()))
+		return s
+	}
+
+	root := newRootService(logger.Test(t))
+	root.addServices(named("Telemetry"), named("Capability"), named("Health"))
+	require.NoError(t, root.Start(t.Context()))
+	require.NoError(t, root.Close())
+
+	assert.Equal(t, []string{"Health", "Capability", "Telemetry"}, stopped)
+}
+
+func TestRootServiceReportsTheHealthOfItsServices(t *testing.T) {
+	sub, _ := services.Config{Name: "Capability"}.NewServiceEngine(logger.Nop())
+	require.NoError(t, sub.Start(t.Context()))
+
+	root := newRootService(logger.Test(t))
+	root.addServices(sub)
+	require.NoError(t, root.Start(t.Context()))
+
+	report := root.HealthReport()
+	assert.Contains(t, report, "Root")
+	assert.Contains(t, report, "Capability")
+
+	require.NoError(t, root.Close())
+	assert.Error(t, root.HealthReport()["Capability"], "a closed service is not healthy")
+}
+
+type readyService struct {
+	services.Service
+	err error
+}
+
+func (s readyService) Ready() error { return s.err }
+
+func newReadyService(t *testing.T, name string, err error) services.Service {
+	s, _ := services.Config{Name: name}.NewServiceEngine(logger.Nop())
+	require.NoError(t, s.Start(t.Context()))
+	return readyService{Service: s, err: err}
+}
+
+func TestRootServiceReady(t *testing.T) {
+	t.Run("ready when it and all its services are ready", func(t *testing.T) {
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", nil), newReadyService(t, "B", nil))
+		require.NoError(t, root.Start(t.Context()))
+		t.Cleanup(func() { _ = root.Close() })
+
+		assert.NoError(t, root.Ready())
+	})
+
+	t.Run("not ready before it starts", func(t *testing.T) {
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", nil))
+
+		assert.Error(t, root.Ready())
+	})
+
+	t.Run("reports every service that is not ready", func(t *testing.T) {
+		errA, errB := errors.New("a not ready"), errors.New("b not ready")
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", errA), newReadyService(t, "B", nil), newReadyService(t, "C", errB))
+		require.NoError(t, root.Start(t.Context()))
+		t.Cleanup(func() { _ = root.Close() })
+
+		err := root.Ready()
+		assert.ErrorIs(t, err, errA)
+		assert.ErrorIs(t, err, errB)
+	})
+
+	t.Run("not ready after it closes", func(t *testing.T) {
+		root := newRootService(logger.Test(t))
+		root.addServices(newReadyService(t, "A", nil))
+		require.NoError(t, root.Start(t.Context()))
+		require.NoError(t, root.Close())
+
+		assert.Error(t, root.Ready())
+	})
 }

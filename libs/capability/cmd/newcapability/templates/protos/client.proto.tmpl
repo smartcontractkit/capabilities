@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package capabilities.{{.Category}}.{{.Name}}.x.v1;
+
+import "capability/feature/feature.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+
+option (cre.feature.v1.in_progress) = "example";
+{{if .Trigger}}
+message TriggerConfig {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+
+message TriggerEvent {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+{{end}}{{if .Action}}
+message Request {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+
+message Reply {
+  string message = 1 [(cre.feature.v1.field) = "example"];
+}
+{{end}}
+service Client {
+  option (tools.generator.v1alpha.capability) = {
+    mode: {{if .Node}}MODE_NODE{{else}}MODE_DON{{end}}
+    capability_id: "{{.Name}}@1.0.0"
+  };
+{{if .Trigger}}
+  rpc Trigger(TriggerConfig) returns (stream TriggerEvent) {
+    option (cre.feature.v1.method) = "example";
+  }
+{{end}}{{if .Action}}
+  rpc Execute(Request) returns (Reply) {
+    option (cre.feature.v1.method) = "example";
+  }
+{{end}}}

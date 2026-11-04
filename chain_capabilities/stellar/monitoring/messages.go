@@ -8,6 +8,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 
@@ -29,6 +30,18 @@ type MessageBuilder struct {
 func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
 	return &MessageBuilder{
 		MessageBuilder: commonmon.NewMessageBuilder(chainInfo, capInfo, nodeAddress),
+	}
+}
+
+// CapabilityMetricsAttributes returns capability-scoped OTel labels for v2 action metrics.
+func (m *MessageBuilder) CapabilityMetricsAttributes() []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String(capmon.LabelChainFamilyName, capmon.ValOrUnknown(m.ChainInfo.FamilyName)),
+		attribute.String(capmon.LabelChainID, capmon.ValOrUnknown(m.ChainInfo.ChainID)),
+		attribute.String(capmon.LabelNetworkName, capmon.ValOrUnknown(m.ChainInfo.NetworkName)),
+		attribute.String(capmon.LabelNetworkNameFull, capmon.ValOrUnknown(m.ChainInfo.NetworkNameFull)),
+		attribute.String(capmon.LabelCapabilityType, capmon.ValOrUnknown(string(m.CapInfo.CapabilityType))),
+		attribute.String(capmon.LabelCapabilityID, capmon.ValOrUnknown(m.CapInfo.ID)),
 	}
 }
 

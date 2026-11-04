@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/x/config/markup/tomlmarkup"
 )
 
 // fake stands in for a generated capability server, which is what a real constructor returns. Only
@@ -46,6 +49,8 @@ type fake struct {
 }
 
 func (f *fake) Info(context.Context) (capabilities.CapabilityInfo, error) { return f.info, nil }
+
+func (f *fake) Methods() []Method { return nil }
 
 // fakeID is what the fake registers and announces itself as.
 const fakeID = "fake@1.0.0"
@@ -77,6 +82,12 @@ func newFakeNamed(lggr logger.Logger) *fake {
 // the way up never gets there and reports that instead.
 func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capability, error), args ...string) error {
 	t.Helper()
+	return executeWith(t, lggr, ctor, nil, args...)
+}
+
+// executeWith is execute, with opts given to RunErr.
+func executeWith(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capability, error), opts []Option, args ...string) error {
+	t.Helper()
 
 	// A free port rather than the default, since tests share a machine and run alongside each
 	// other - two of them on 8080 would collide. It is also how this tells that the binary is up.
@@ -97,7 +108,8 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- RunErr(ctx, ctor, withLogger(lggr), withRegisterer(prometheus.NewRegistry())) }()
+	opts = append([]Option{withLogger(lggr), withRegisterer(prometheus.NewRegistry())}, opts...)
+	go func() { done <- RunErr(ctx, "cron", ctor, opts...) }()
 
 	if port == 0 {
 		// Nothing that serves: a rejected constructor, or a bare invocation that prints help.
@@ -122,20 +134,28 @@ func execute(t *testing.T, lggr logger.Logger, ctor func(do.Injector) (Capabilit
 	}
 }
 
-// serving reports whether the shared HTTP server is answering on port, which is how a test tells
-// that a run has finished coming up.
+// serving checks /startupz because the web server answers before the run has finished starting.
 //
 // A timeout, because the port is not always the run's: a test that takes the port to watch the
 // run fail leaves a listener that accepts and never answers, and a bare Get would hang on it
 // rather than report not-serving.
 func serving(port int) bool {
-	client := &http.Client{Timeout: 5 * time.Second}
-	res, err := client.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := httpGet(ctx, fmt.Sprintf("http://localhost:%d/startupz", port))
 	if err != nil {
 		return false
 	}
 	_ = res.Body.Close()
 	return res.StatusCode == http.StatusOK
+}
+
+func httpGet(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
 // freePort is a port nothing is listening on, found by listening on one and stopping again.
@@ -154,7 +174,11 @@ func fakeConstructor(do.Injector) (Capability, error) { return newFake(), nil }
 
 func TestRunErrRejects(t *testing.T) {
 	t.Run("no constructor", func(t *testing.T) {
-		require.ErrorContains(t, RunErr[Capability](context.Background(), nil, withLogger(logger.Test(t))), "must provide a capability constructor")
+		require.ErrorContains(t, RunErr[Capability](context.Background(), "cron", nil, withLogger(logger.Test(t))), "must provide a capability constructor")
+	})
+
+	t.Run("no app name", func(t *testing.T) {
+		require.ErrorContains(t, RunErr(context.Background(), "", fakeConstructor, withLogger(logger.Test(t))), "must provide an app name")
 	})
 }
 
@@ -208,14 +232,51 @@ func TestRunProvidesItsDependencies(t *testing.T) {
 	assert.NotNil(t, gotClock)
 }
 
-// TestRunHasARunCommand is the shape of the binary rather than what it does: a root that runs
-// nothing itself, and a way to start it hanging off it.
-func TestRunHasARunCommand(t *testing.T) {
-	// A bare invocation prints help and does nothing, rather than starting the capability.
-	require.NoError(t, execute(t, logger.Test(t), func(do.Injector) (Capability, error) {
-		t.Error("the root command should not build the capability")
+// TestBareCommandRunsInCompatibilityMode covers a bare <command>, which is how the core node starts
+// a LOOP. The test can't reach plugin.Serve, because it takes over the stdio of the process. So
+// each case must fail before the capability is built.
+func TestBareCommandRunsInCompatibilityMode(t *testing.T) {
+	h := loop.EmptyHandshakeConfig()
+	notBuilt := func(do.Injector) (Capability, error) {
+		t.Error("the capability must not be built")
 		return newFake(), nil
-	}))
+	}
+
+	t.Run("without a plugin host", func(t *testing.T) {
+		t.Setenv(h.MagicCookieKey, "")
+		require.ErrorContains(t, execute(t, logger.Test(t), notBuilt), "must be started by a go-plugin host")
+	})
+
+	t.Run("without CL_PROMETHEUS_PORT", func(t *testing.T) {
+		t.Setenv(h.MagicCookieKey, h.MagicCookieValue)
+		require.ErrorContains(t, execute(t, logger.Test(t), notBuilt), "needs CL_PROMETHEUS_PORT")
+	})
+}
+
+// TestBareCommandServesOnThePrometheusPort makes sure that compatibility mode serves on the port
+// that the core node gives in CL_PROMETHEUS_PORT, and ignores CL_HTTP_PORT.
+func TestBareCommandServesOnThePrometheusPort(t *testing.T) {
+	h := loop.EmptyHandshakeConfig()
+	promPort, httpPort := freePort(t), freePort(t)
+	t.Setenv(h.MagicCookieKey, h.MagicCookieValue)
+	t.Setenv("CL_PROMETHEUS_PORT", strconv.Itoa(promPort))
+	t.Setenv("CL_HTTP_PORT", strconv.Itoa(httpPort))
+
+	previous := os.Args
+	t.Cleanup(func() { os.Args = previous })
+	os.Args = []string{"cron"}
+
+	served := false
+	serve := func(context.Context, services.Service) {
+		served = true
+		assert.True(t, serving(promPort), "the web server must serve on CL_PROMETHEUS_PORT")
+		assert.False(t, serving(httpPort), "the web server must not serve on CL_HTTP_PORT")
+	}
+
+	require.NoError(t, RunErr(t.Context(), "cron", fakeConstructor,
+		withLogger(logger.Test(t)), withRegisterer(prometheus.NewRegistry()), withServe(serve)))
+	assert.True(t, served)
+	assertPortFree(t, promPort)
 }
 
 // TestRunServesAndAnnouncesTheCapability is the whole path through the real entry point: a run
@@ -248,4 +309,91 @@ func TestRunInjectorConfigIsOnlyOnTheRunCommand(t *testing.T) {
 
 	require.ErrorContains(t, execute(t, logger.Test(t), fakeConstructor, "embed", "1", "--runonly.name", "set"),
 		"unknown flag: --runonly.name")
+}
+
+// TestWithConfig covers the config that a capability asks for with WithConfig. The node passes each
+// key as its own CL_<APP>_<KEY> env var. Each case runs compat without a plugin host, which fails
+// after the binder decodes and before anything is served.
+func TestWithConfig(t *testing.T) {
+	type appConf struct {
+		Name  string
+		Count int
+	}
+
+	compatWith := func(t *testing.T, opts []Option, args ...string) (*appConf, error) {
+		var runInjector *Injector
+		capture := func(c *config) error {
+			runInjector = c.runInjector
+			return nil
+		}
+		opts = append([]Option{WithConfig[appConf](), capture}, opts...)
+		err := executeWith(t, logger.Test(t), fakeConstructor, opts, append([]string{"compat"}, args...)...)
+		require.NotNil(t, runInjector, "RunErr returned before it applied every option: %v", err)
+		conf, invokeErr := do.Invoke[*appConf](runInjector.Do())
+		require.NoError(t, invokeErr)
+		return conf, err
+	}
+
+	compat := func(t *testing.T, args ...string) (*appConf, error) { return compatWith(t, nil, args...) }
+
+	writeConfig := func(t *testing.T, name, contents string) string {
+		path := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+		return path
+	}
+
+	t.Run("reads a YAML config file by default", func(t *testing.T) {
+		path := writeConfig(t, "config.yaml", "cron:\n  Name: node\n  Count: 3\n")
+		conf, err := compat(t, "--config", path)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "node", Count: 3}, *conf)
+	})
+
+	t.Run("reads a config file in the markup given by WithMarkup", func(t *testing.T) {
+		path := writeConfig(t, "config.toml", "[cron]\nName = 'node'\nCount = 3\n")
+		conf, err := compatWith(t, []Option{WithMarkup(tomlmarkup.New())}, "--config", path)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "node", Count: 3}, *conf)
+	})
+
+	t.Run("fills the config from env vars under the app name", func(t *testing.T) {
+		t.Setenv("CL_CRON_NAME", "node")
+		t.Setenv("CL_CRON_COUNT", "3")
+		conf, err := compat(t)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "node", Count: 3}, *conf)
+	})
+
+	t.Run("leaves the keys it is not given", func(t *testing.T) {
+		t.Setenv("CL_CRON_COUNT", "3")
+		conf, err := compat(t)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Count: 3}, *conf)
+	})
+
+	t.Run("is overridden by flags", func(t *testing.T) {
+		t.Setenv("CL_CRON_NAME", "node")
+		conf, err := compat(t, "--cron.name", "flag")
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{Name: "flag"}, *conf)
+	})
+
+	t.Run("ignores a TOML config in CL_CAPABILITIES_CONFIG and CRE_ env vars", func(t *testing.T) {
+		t.Setenv("CL_CAPABILITIES_CONFIG", "[cron]\nName = 'node'\nCount = 3\n")
+		t.Setenv("CRE_CRON_COUNT", "3")
+		conf, err := compat(t)
+		require.ErrorContains(t, err, "must be started by a go-plugin host")
+		assert.Equal(t, appConf{}, *conf)
+	})
+
+	t.Run("rejects a value of the wrong type", func(t *testing.T) {
+		t.Setenv("CL_CRON_COUNT", "three")
+		_, err := compat(t)
+		require.ErrorContains(t, err, "CL_CRON_COUNT")
+	})
+
+	t.Run("returns an error when given the same config twice", func(t *testing.T) {
+		err := executeWith(t, logger.Test(t), fakeConstructor, []Option{WithConfig[appConf](), WithConfig[appConf]()}, "compat")
+		require.ErrorContains(t, err, "is already provided")
+	})
 }

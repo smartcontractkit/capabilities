@@ -7,6 +7,8 @@
   "namedInputs": {
     "sharedGlobals": [
       "{workspaceRoot}/.github/**",
+      "{workspaceRoot}/protofetch.toml",
+      "{workspaceRoot}/protofetch.lock",
       "{workspaceRoot}/.nx/**",
       "{workspaceRoot}/sonar-project.properties"
     ],

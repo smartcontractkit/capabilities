@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package capabilities.test.split.x.v1;
+
+import "capability/feature/feature.proto";
+
+option (cre.feature.v1.in_progress) = "timezones";
+
+message Reply {
+  string zone = 1 [(cre.feature.v1.field) = "timezones"];
+}

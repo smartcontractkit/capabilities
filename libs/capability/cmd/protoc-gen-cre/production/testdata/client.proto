@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+// The comments before the package are dropped: they are about the development package.
+package capabilities.test.client.x.v1;
+
+import "capability/feature/feature.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "shared.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+
+option go_package = "example.com/test/protos";
+option (cre.feature.v1.released) = "launch";
+option (cre.feature.v1.released) = "timezones";
+option (cre.feature.v1.in_progress) = "new_field";
+option (cre.feature.v1.in_progress) = "new_method";
+option (cre.feature.v1.in_progress) = "experiment";
+
+// Request is kept: Execute takes it.
+message Request {
+  // message is released.
+  string message = 1 [(cre.feature.v1.field) = "launch"];
+  // at is not, so neither is the timestamp import.
+  google.protobuf.Timestamp at = 2 [(cre.feature.v1.field) = "new_field"];
+  // shared comes from another file, which is kept for it.
+  capabilities.test.client.x.v1.Shared shared = 3 [(cre.feature.v1.field) = "launch"];
+
+  oneof kind {
+    // Only one of the oneof's fields is released.
+    Nested nested = 4 [(cre.feature.v1.field) = "launch"];
+    string other = 5 [(cre.feature.v1.field) = "new_field"];
+  }
+
+  // Unused has nothing released, and nothing released uses it.
+  message Unused {
+    string value = 1 [(cre.feature.v1.field) = "new_field"];
+  }
+
+  // A oneof with nothing released is dropped.
+  oneof gone {
+    string a = 6 [(cre.feature.v1.field) = "new_field"];
+  }
+
+  map<string, Level> levels = 7 [(cre.feature.v1.field) = "launch", deprecated = true];
+
+  // zone is released with the rest of timezones, which is in shared.proto too.
+  string zone = 8 [(cre.feature.v1.field) = "timezones"];
+}
+
+// Nested is kept: Request uses it.
+message Nested {
+  string value = 1 [(cre.feature.v1.field) = "launch"];
+  Hidden hidden = 2 [(cre.feature.v1.field) = "new_field"];
+}
+
+// Hidden is only used by what is not released.
+message Hidden {
+  string value = 1 [(cre.feature.v1.field) = "new_field"];
+}
+
+// Level is kept with its released values: Request uses it.
+enum Level {
+  LEVEL_UNSPECIFIED = 0 [(cre.feature.v1.value) = "launch"];
+  LEVEL_HIGH = 1 [(cre.feature.v1.value) = "launch"];
+  // LEVEL_LOW is not released.
+  LEVEL_LOW = 2 [(cre.feature.v1.value) = "new_field"];
+  // LEVEL_MEDIUM is released with the rest of timezones.
+  LEVEL_MEDIUM = 3 [(cre.feature.v1.value) = "timezones"];
+}
+
+message Reply {
+  string message = 1 [(cre.feature.v1.field) = "launch"];
+}
+
+// Retired is kept though no method uses it any more: its field is released.
+message Retired {
+  option deprecated = true;
+  string value = 1 [(cre.feature.v1.field) = "launch"];
+  string later = 2 [(cre.feature.v1.field) = "new_field"];
+}
+
+// NewRequest is only taken by a method that is not released.
+message NewRequest {
+  string message = 1 [(cre.feature.v1.field) = "new_method"];
+}
+
+service Client {
+  option (tools.generator.v1alpha.capability) = {
+    mode: MODE_DON
+    capability_id: "client@1.0.0"
+  };
+
+  // Execute is released.
+  rpc Execute(Request) returns (Reply) {
+    option (cre.feature.v1.method) = "launch";
+  }
+
+  // Trigger is released, and streams.
+  rpc Trigger(Reply) returns (stream Reply) {
+    option (cre.feature.v1.method) = "launch";
+  }
+
+  // Zones is released with the rest of timezones.
+  rpc Zones(Reply) returns (Reply) {
+    option (cre.feature.v1.method) = "timezones";
+  }
+
+  // NewMethod is not released.
+  rpc NewMethod(NewRequest) returns (google.protobuf.Empty) {
+    option (cre.feature.v1.method) = "new_method";
+  }
+}

@@ -3,6 +3,7 @@ package capability
 import (
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"testing"
@@ -12,10 +13,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop/pyroscope"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
 // TestProfilerWithoutAServer is the off case, which is every binary that has not configured
@@ -76,12 +75,6 @@ func TestProfilerLinksTracesToProfiles(t *testing.T) {
 // TestWebServerServes is what the HTTP config buys: the endpoints an operator and a prometheus
 // scrape depend on, on the configured port, and gone again when it stops.
 func TestWebServerServes(t *testing.T) {
-	health, err := newHealthChecker(logger.Test(t), beholder.NewNoopClient(), []services.HealthReporter{newFake()})
-	require.NoError(t, err)
-	require.NoError(t, health.Start(t.Context()))
-	t.Cleanup(func() { assert.NoError(t, health.Close()) })
-	checker := health.checker
-
 	port := freePort(t)
 	mux := http.NewServeMux()
 
@@ -90,18 +83,16 @@ func TestWebServerServes(t *testing.T) {
 		fmt.Fprintln(w, "hello")
 	})
 
-	web := newWebServer(logger.Test(t), HTTPConfig{Port: uint16(port)}, mux, checker)
+	require.LessOrEqual(t, port, math.MaxUint16)
+	web := newWebServer(logger.Test(t), HTTPConfig{Port: uint16(port)}, mux, &probes{}) //nolint:gosec // range checked above
 	require.NoError(t, web.Start(t.Context()))
 
 	for path, want := range map[string]int{
 		"/metrics":      http.StatusOK,
 		"/debug/pprof/": http.StatusOK,
 		"/capability":   http.StatusOK,
-		// The capability is built but not started, so it is not ready - which is the honest
-		// answer rather than a health check that reports on nothing.
-		"/readyz": http.StatusServiceUnavailable,
 	} {
-		res, err := http.Get(fmt.Sprintf("http://localhost:%d%s", port, path))
+		res, err := httpGet(t.Context(), fmt.Sprintf("http://localhost:%d%s", port, path))
 		require.NoError(t, err, path)
 		_, _ = io.Copy(io.Discard, res.Body)
 		require.NoError(t, res.Body.Close())
@@ -110,26 +101,20 @@ func TestWebServerServes(t *testing.T) {
 
 	// Stopping frees the port, so the next thing to want it can have it.
 	require.NoError(t, web.Close())
-	_, err = http.Get(fmt.Sprintf("http://localhost:%d/metrics", port))
+	_, err := httpGet(t.Context(), fmt.Sprintf("http://localhost:%d/metrics", port))
 	assert.Error(t, err, "the server should not answer once it has stopped")
 }
 
 // TestWebServerReportsAPortItCannotHave covers the failure a misconfigured port gives: it is
 // reported where it happens rather than as a server that silently never listens.
 func TestWebServerReportsAPortItCannotHave(t *testing.T) {
-	health, err := newHealthChecker(logger.Test(t), beholder.NewNoopClient(), []services.HealthReporter{newFake()})
-	require.NoError(t, err)
-	require.NoError(t, health.Start(t.Context()))
-	t.Cleanup(func() { assert.NoError(t, health.Close()) })
-	checker := health.checker
-
 	taken, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = taken.Close() })
 
 	// Building it registers routes and binds nothing, so the failure is at start.
 	port := uint16(taken.Addr().(*net.TCPAddr).Port)
-	web := newWebServer(logger.Test(t), HTTPConfig{Port: port}, http.NewServeMux(), checker)
+	web := newWebServer(logger.Test(t), HTTPConfig{Port: port}, http.NewServeMux(), &probes{})
 
 	require.ErrorContains(t, web.Start(t.Context()), fmt.Sprintf("failed to listen on port %d", port))
 }

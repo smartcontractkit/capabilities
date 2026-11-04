@@ -39,6 +39,7 @@ type connectorHandler struct {
 	gatewayConnector         core.GatewayConnector
 	config                   ServiceConfig
 	capabilityDonID          uint32 // authoritative sending DON ID; 0 = unknown, falls back to WorkflowDONID
+	shardIndex               uint32
 	requestCache             *requestCache
 	workflowStore            *workflowStore
 	gatewayMetadataPublisher GatewayMetadataPublisher
@@ -48,7 +49,7 @@ type connectorHandler struct {
 	orgResolver              orgresolver.OrgResolver
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32,
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32, shardIndex uint32,
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics,
 	orgResolver orgresolver.OrgResolver, limitsFactory limits.Factory,
 ) (*connectorHandler, error) {
@@ -57,6 +58,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		gatewayConnector:         gc,
 		config:                   config,
 		capabilityDonID:          capabilityDonID,
+		shardIndex:               shardIndex,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
@@ -337,6 +339,8 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
 		events.KeyDonID, strconv.Itoa(int(donIDForEvent)),
+		events.KeyShardIndex, strconv.FormatUint(uint64(h.shardIndex), 10),
+		events.KeyWorkflowDonID, strconv.Itoa(int(workflowMetadata.WorkflowDONID)),
 	)
 	if orgID != "" {
 		labeler = labeler.With(events.KeyOrganizationID, orgID)

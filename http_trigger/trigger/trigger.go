@@ -90,7 +90,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	// host could not resolve it authoritatively (a multi-DON job-spec node, or a
 	// core node that pre-dates CRE-4409); the handler then falls back to
 	// RequestMetadata.WorkflowDONID. See CRE-4409.
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, dependencies.CapabilityDonID, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, dependencies.CapabilityDonID, dependencies.ShardIndex, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver, s.limitsFactory)
 	if err != nil {
 		return err
 	}
