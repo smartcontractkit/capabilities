@@ -158,9 +158,6 @@ func (s *Stellar) ReadContract(
 		"sourceAccount", request.SourceAccount,
 		"argsCount", len(request.Args),
 	)
-	lggr.Debug("Received ReadContract request")
-
-	monitoring.EmitInitiated(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildReadContractInitiated(tc, request))
 
 	cReq := ctypes.NewVolatileRequest(
 		metadata.WorkflowExecutionID,
@@ -183,15 +180,9 @@ func (s *Stellar) ReadContract(
 
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*stellarcap.ReadContractResponse](ctx, s.handler, cReq)
 	if err != nil {
-		capErr := capcommon.GetError(err, isUserError(fmt.Errorf("failed to ReadContract: %w", err)))
-		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
-			s.messageBuilder.BuildReadContractError(tc, request, "Failed to ReadContract", capErr))
-		return nil, capErr
+		return nil, capcommon.GetError(err, isUserError(fmt.Errorf("failed to ReadContract: %w", err)))
 	}
 
-	resp := responseAndMetadata.Response
-	monitoring.LogAndEmitSuccess(ctx, "Successfully handled ReadContract", s.lggr, s.beholderProcessor,
-		s.messageBuilder.BuildReadContractSuccess(tc, request, uint64(len(resp.GetResult())), resp.GetLedgerSequence()))
 	return responseAndMetadata, nil
 }
 

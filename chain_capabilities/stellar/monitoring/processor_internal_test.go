@@ -16,22 +16,6 @@ type errorMetrics struct {
 	err error
 }
 
-func (e errorMetrics) OnReadContractSuccess(context.Context, *ReadContractSuccess) error {
-	return e.err
-}
-
-func (e errorMetrics) OnReadContractError(context.Context, *ReadContractError) error {
-	return e.err
-}
-
-func (e errorMetrics) OnWriteReportSuccess(context.Context, *WriteReportSuccess) error {
-	return e.err
-}
-
-func (e errorMetrics) OnWriteReportError(context.Context, *WriteReportError) error {
-	return e.err
-}
-
 func (e errorMetrics) OnWriteReportTxInfoRetrievalError(context.Context, *WriteReportTxInfoRetrievalError) error {
 	return e.err
 }
@@ -52,7 +36,6 @@ func TestProcessor_Process_MetricsErrors(t *testing.T) {
 	t.Parallel()
 
 	ec := &capmonitoring.ExecutionContext{}
-	readReq := &ReadContractRequest{ContractId: "C123", Function: "get"}
 	writeReq := &WriteReportRequest{ContractId: "C456", ReportSize: 1, SigsCount: 1}
 	metricsErr := errors.New("metrics publish failed")
 
@@ -60,10 +43,6 @@ func TestProcessor_Process_MetricsErrors(t *testing.T) {
 		name string
 		msg  proto.Message
 	}{
-		{"ReadContractSuccess", &ReadContractSuccess{Req: readReq, ExecutionContext: ec}},
-		{"ReadContractError", &ReadContractError{Req: readReq, ExecutionContext: ec, IsUserError: false}},
-		{"WriteReportSuccess", &WriteReportSuccess{Req: writeReq, ExecutionContext: ec}},
-		{"WriteReportError", &WriteReportError{Req: writeReq, ExecutionContext: ec, IsUserError: false}},
 		{"WriteReportTxInfoRetrievalError", &WriteReportTxInfoRetrievalError{Req: writeReq, ExecutionContext: ec}},
 		{"WriteReportDuplicateTx", &WriteReportDuplicateTx{Req: writeReq, ExecutionContext: ec}},
 		{"WriteReportSuccessfulEarlyReturn", &WriteReportSuccessfulEarlyReturn{ExecutionContext: ec}},

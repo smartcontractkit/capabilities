@@ -16,7 +16,7 @@ import (
 
 func TestNs(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "stellar_capability_read_contract_success", ns("read_contract_success"))
+	require.Equal(t, "stellar_capability_write_report_duplicate_tx", ns("write_report_duplicate_tx"))
 }
 
 func TestNewMetrics_ConstructorError(t *testing.T) {
@@ -42,12 +42,12 @@ func TestNewMetrics_CapDurationBuckets(t *testing.T) {
 		MetaCapabilityTimestampStart: 100,
 		MetaCapabilityTimestampEmit:  150,
 	}
-	require.NoError(t, metrics.OnWriteReportSuccess(t.Context(), &WriteReportSuccess{ExecutionContext: ec}))
+	require.NoError(t, metrics.OnWriteReportDuplicateTx(t.Context(), &WriteReportDuplicateTx{ExecutionContext: ec}))
 
 	var resourceMetrics metricdata.ResourceMetrics
 	require.NoError(t, reader.Collect(context.Background(), &resourceMetrics))
 
-	histogram := findHistogram(resourceMetrics, "stellar_capability_write_report_success_cap_duration")
+	histogram := findHistogram(resourceMetrics, "stellar_capability_write_report_duplicate_tx_cap_duration")
 	require.NotNil(t, histogram)
 	require.Len(t, histogram.DataPoints, 1)
 	require.Equal(t, capDurationBucketBoundariesMs, histogram.DataPoints[0].Bounds)
@@ -55,10 +55,6 @@ func TestNewMetrics_CapDurationBuckets(t *testing.T) {
 
 func TestNewMetrics_RegistrationErrors(t *testing.T) {
 	metricNames := []string{
-		"read_contract_success",
-		"read_contract_error",
-		"write_report_success",
-		"write_report_error",
 		"write_report_duplicate_tx",
 		"write_report_tx_info_retrieval_error",
 		"write_report_successful_early_return",

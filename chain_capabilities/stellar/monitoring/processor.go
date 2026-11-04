@@ -14,10 +14,6 @@ import (
 )
 
 type metricsHandler interface {
-	OnReadContractSuccess(context.Context, *ReadContractSuccess) error
-	OnReadContractError(context.Context, *ReadContractError) error
-	OnWriteReportSuccess(context.Context, *WriteReportSuccess) error
-	OnWriteReportError(context.Context, *WriteReportError) error
 	OnWriteReportTxInfoRetrievalError(context.Context, *WriteReportTxInfoRetrievalError) error
 	OnWriteReportDuplicateTx(context.Context, *WriteReportDuplicateTx) error
 	OnWriteReportSuccessfulEarlyReturn(context.Context, *WriteReportSuccessfulEarlyReturn) error
@@ -32,32 +28,6 @@ type Processor struct {
 
 func (p *Processor) Process(ctx context.Context, m proto.Message, attrKVs ...any) error {
 	switch msg := m.(type) {
-	case *ReadContractInitiated, *WriteReportInitiated:
-		p.logMessage(m)
-	case *ReadContractSuccess:
-		p.logMessage(msg)
-		if err := p.Metrics.OnReadContractSuccess(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish ReadContractSuccess metrics: %w", err)
-		}
-	case *ReadContractError:
-		p.logMessage(msg)
-		if !msg.GetIsUserError() {
-			if err := p.Metrics.OnReadContractError(ctx, msg); err != nil {
-				return fmt.Errorf("failed to publish ReadContractError metrics: %w", err)
-			}
-		}
-	case *WriteReportSuccess:
-		p.logMessage(msg)
-		if err := p.Metrics.OnWriteReportSuccess(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish WriteReportSuccess metrics: %w", err)
-		}
-	case *WriteReportError:
-		p.logMessage(msg)
-		if !msg.GetIsUserError() {
-			if err := p.Metrics.OnWriteReportError(ctx, msg); err != nil {
-				return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
-			}
-		}
 	case *WriteReportTxInfoRetrievalError:
 		p.logMessage(msg)
 		if err := p.Metrics.OnWriteReportTxInfoRetrievalError(ctx, msg); err != nil {

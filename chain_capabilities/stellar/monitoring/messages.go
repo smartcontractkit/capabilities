@@ -6,14 +6,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
 	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	stellartypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/stellar"
 
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
-	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 type TelemetryContext = commonmon.TelemetryContext
@@ -42,56 +39,6 @@ func (m *MessageBuilder) CapabilityMetricsAttributes() []attribute.KeyValue {
 		attribute.String(capmon.LabelNetworkNameFull, capmon.ValOrUnknown(m.ChainInfo.NetworkNameFull)),
 		attribute.String(capmon.LabelCapabilityType, capmon.ValOrUnknown(string(m.CapInfo.CapabilityType))),
 		attribute.String(capmon.LabelCapabilityID, capmon.ValOrUnknown(m.CapInfo.ID)),
-	}
-}
-
-func (m *MessageBuilder) BuildReadContractInitiated(tc commonmon.TelemetryContext, req stellartypes.SimulateTransactionRequest) *ReadContractInitiated {
-	return &ReadContractInitiated{
-		Req:              convertReadContractRequest(req),
-		ExecutionContext: m.BuildExecutionContext(tc),
-	}
-}
-
-func (m *MessageBuilder) BuildReadContractSuccess(tc commonmon.TelemetryContext, req stellartypes.SimulateTransactionRequest, resultLen uint64, ledgerSequence uint32) *ReadContractSuccess {
-	return &ReadContractSuccess{
-		Req:              convertReadContractRequest(req),
-		ResultLen:        resultLen,
-		LedgerSequence:   ledgerSequence,
-		ExecutionContext: m.BuildExecutionContext(tc),
-	}
-}
-
-func (m *MessageBuilder) BuildReadContractError(tc commonmon.TelemetryContext, req stellartypes.SimulateTransactionRequest, summary string, err caperrors.Error) commonmon.ErrorMessage {
-	return &ReadContractError{
-		Req:              convertReadContractRequest(req),
-		Summary:          summary,
-		Cause:            err.Error(),
-		IsUserError:      err.Origin() == caperrors.OriginUser,
-		ExecutionContext: m.BuildExecutionContext(tc),
-	}
-}
-
-func (m *MessageBuilder) BuildWriteReportInitiated(tc TelemetryContext, req *stellarcap.WriteReportRequest) *WriteReportInitiated {
-	return &WriteReportInitiated{
-		Req:              convertWriteReportRequest(req),
-		ExecutionContext: m.BuildExecutionContext(tc),
-	}
-}
-
-func (m *MessageBuilder) BuildWriteReportSuccess(tc TelemetryContext, req *stellarcap.WriteReportRequest) *WriteReportSuccess {
-	return &WriteReportSuccess{
-		Req:              convertWriteReportRequest(req),
-		ExecutionContext: m.BuildExecutionContext(tc),
-	}
-}
-
-func (m *MessageBuilder) BuildWriteReportError(tc TelemetryContext, req *stellarcap.WriteReportRequest, summary string, err caperrors.Error) ErrorMessage {
-	return &WriteReportError{
-		Req:              convertWriteReportRequest(req),
-		Summary:          summary,
-		Cause:            err.Error(),
-		IsUserError:      err.Origin() == caperrors.OriginUser,
-		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
@@ -158,69 +105,6 @@ func convertWriteReportRequest(req *stellarcap.WriteReportRequest) *WriteReportR
 	return msg
 }
 
-// convertReadContractRequest extracts the non-sensitive subset of the request for telemetry
-// (raw argument values are intentionally omitted; only the count is recorded).
-func convertReadContractRequest(req stellartypes.SimulateTransactionRequest) *ReadContractRequest {
-	return &ReadContractRequest{
-		ContractId:    req.ContractID,
-		Function:      req.Function,
-		ArgsCount:     uint64(len(req.Args)),
-		SourceAccount: req.SourceAccount,
-	}
-}
-
-func appendUserErrorLogAttributes(reqAttrs []attribute.KeyValue, summary string, isUserError bool, ec *capmonitoring.ExecutionContext) []attribute.KeyValue {
-	return append(append(reqAttrs,
-		attribute.String("summary", summary),
-		attribute.Bool("is_user_error", isUserError),
-	), ec.LogAttributes()...)
-}
-
-func readContractRequestLogAttributes(req *ReadContractRequest) []attribute.KeyValue {
-	if req == nil {
-		return []attribute.KeyValue{
-			attribute.String("contract_id", "nil request"),
-			attribute.String("function", ""),
-		}
-	}
-	attrs := []attribute.KeyValue{
-		attribute.String("contract_id", req.GetContractId()),
-		attribute.String("function", req.GetFunction()),
-		attribute.Int64("args_count", int64(req.GetArgsCount())), //nolint:gosec // G115: arg count is bounded by request size
-	}
-	if req.GetSourceAccount() != "" {
-		attrs = append(attrs, attribute.String("source_account", req.GetSourceAccount()))
-	}
-	return attrs
-}
-
-func (r *ReadContractInitiated) LogAttributes() []attribute.KeyValue {
-	return append(readContractRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
-}
-
-func (r *ReadContractInitiated) MetricAttributes() []attribute.KeyValue {
-	return r.ExecutionContext.MetricsAttributes()
-}
-
-func (r *ReadContractSuccess) LogAttributes() []attribute.KeyValue {
-	return append(append(readContractRequestLogAttributes(r.Req),
-		attribute.Int64("result_len", int64(r.GetResultLen())), //nolint:gosec // G115: result length is bounded by simulation output
-		attribute.Int64("ledger_sequence", int64(r.GetLedgerSequence())),
-	), r.ExecutionContext.LogAttributes()...)
-}
-
-func (r *ReadContractSuccess) MetricAttributes() []attribute.KeyValue {
-	return r.ExecutionContext.MetricsAttributes()
-}
-
-func (r *ReadContractError) LogAttributes() []attribute.KeyValue {
-	return appendUserErrorLogAttributes(readContractRequestLogAttributes(r.Req), r.GetSummary(), r.GetIsUserError(), r.ExecutionContext)
-}
-
-func (r *ReadContractError) MetricAttributes() []attribute.KeyValue {
-	return r.ExecutionContext.MetricsAttributes()
-}
-
 func writeReportRequestLogAttributes(req *WriteReportRequest) []attribute.KeyValue {
 	if req == nil {
 		return []attribute.KeyValue{attribute.String("contract_id", "nil request")}
@@ -230,30 +114,6 @@ func writeReportRequestLogAttributes(req *WriteReportRequest) []attribute.KeyVal
 		attribute.Int64("report_size", int64(req.GetReportSize())), //nolint:gosec // G115: report size is bounded by capability limit
 		attribute.Int64("sigs_count", int64(req.GetSigsCount())),
 	}
-}
-
-func (r *WriteReportInitiated) LogAttributes() []attribute.KeyValue {
-	return append(writeReportRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
-}
-
-func (r *WriteReportInitiated) MetricAttributes() []attribute.KeyValue {
-	return r.ExecutionContext.MetricsAttributes()
-}
-
-func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
-	return append(writeReportRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
-}
-
-func (r *WriteReportSuccess) MetricAttributes() []attribute.KeyValue {
-	return r.ExecutionContext.MetricsAttributes()
-}
-
-func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
-	return appendUserErrorLogAttributes(writeReportRequestLogAttributes(r.Req), r.GetSummary(), r.GetIsUserError(), r.ExecutionContext)
-}
-
-func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
-	return r.ExecutionContext.MetricsAttributes()
 }
 
 func (r *WriteReportTxInfoRetrievalError) LogAttributes() []attribute.KeyValue {

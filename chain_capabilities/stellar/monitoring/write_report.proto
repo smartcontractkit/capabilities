@@ -12,24 +12,6 @@ message WriteReportRequest {
   uint32 sigs_count = 3;
 }
 
-message WriteReportInitiated {
-  WriteReportRequest req = 1;
-  monitoring.ExecutionContext execution_context = 20;
-}
-
-message WriteReportSuccess {
-  WriteReportRequest req = 1;
-  monitoring.ExecutionContext execution_context = 20;
-}
-
-message WriteReportError {
-  WriteReportRequest req = 1;
-  string summary = 2;
-  string cause = 3;
-  bool is_user_error = 4;
-  monitoring.ExecutionContext execution_context = 20;
-}
-
 message WriteReportTxInfoRetrievalError {
   WriteReportRequest req = 1;
   string summary = 2;
