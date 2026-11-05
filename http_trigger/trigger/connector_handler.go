@@ -115,7 +115,7 @@ func (h *connectorHandler) HealthReport() map[string]error {
 }
 
 func (h *connectorHandler) Ready() error {
-	return h.StateMachine.Healthy()
+	return h.Healthy()
 }
 
 func (h *connectorHandler) Name() string {
