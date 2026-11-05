@@ -116,7 +116,7 @@ func (s *service) HealthReport() map[string]error {
 }
 
 func (s *service) Ready() error {
-	return s.StateMachine.Healthy()
+	return s.Healthy()
 }
 
 func (s *service) Name() string {

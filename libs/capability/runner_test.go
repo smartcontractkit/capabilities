@@ -29,7 +29,7 @@ import (
 func runArgs(t *testing.T) (*config, uint16) {
 	t.Helper()
 
-	port := uint16(freePort(t))
+	port := uint16(freePort(t)) //nolint:gosec // G115: ports fit in a uint16
 	cfg := defaultConfig("TEST_APP")
 	cfg.grpc.Registerer = prometheus.NewRegistry()
 	cfg.observability.http.Port = port

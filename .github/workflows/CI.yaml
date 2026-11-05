@@ -198,55 +198,10 @@ jobs:
   integration-tests:
     uses: ./.github/workflows/integration-tests.yml
 
-  lint:
-    needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-      actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up project environment
-        id: setup
-        uses: ./.github/actions/setup
-        with:
-          project: ${{ matrix.projects }}
-          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
-          task: "lint"
-
-      - name: Support private Go modules
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/support-private-gomods.sh
-
-      - name: Get golangci-lint version from asdf
-        id: get-version
-        run: |
-          version=$(grep '^golangci-lint ' .tool-versions | awk '{print $2}')
-          echo "version=${version}" | tee -a "$GITHUB_OUTPUT"
-
-      - name: golangci-lint (${{ matrix.projects }})
-        uses: smartcontractkit/.github/actions/ci-lint-go@ci-lint-go/4.2.1
-        with:
-          checkout-repo: false
-          golangci-lint-config: ${{ github.workspace }}/.golangci.yml
-          golangci-lint-version: v${{ steps.get-version.outputs.version }}
-          go-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
-
-  # Formats the protos and Go, and regenerates and tidies every module. It runs code from the pull request, so it only
-  # reads, and autofix-commit pushes what it changed. On main and in the merge queue it can't commit, so it fails when
-  # anything is out of date instead.
+  # Formats the protos and Go, regenerates and tidies the modules the pull request changed, and lints them, fixing what
+  # golangci-lint can. It runs code from the pull request, so it only reads, and autofix-commit pushes what it changed.
+  # Lint issues it can't fix fail it after the fixes are uploaded. On main and in the merge queue it can't commit, and
+  # checks every module, so it fails when anything is out of date instead.
   autofix:
     runs-on: ubuntu-latest
     permissions:
@@ -275,6 +230,10 @@ jobs:
       - name: Install tools
         run: make mockery buf
 
+      - name: Get golangci-lint version from asdf
+        id: golangci-lint-version
+        run: echo "version=v$(awk '$1 == "golangci-lint" {print $2}' .tool-versions)" | tee -a "$GITHUB_OUTPUT"
+
       - name: Autofix
         id: autofix
         uses: smartcontractkit/.github/actions/autofix@autofix/v1
@@ -286,6 +245,9 @@ jobs:
           # formatted sources, and tidy. go.md graphs the tidied modules, so it's made last.
           setup: ./script/format-protos.sh
           go: true
+          go-changed-only: true
+          golangci-lint: true
+          golangci-lint-version: ${{ steps.golangci-lint-version.outputs.version }}
           run: make modgraph
 
       # The setup action's cache is only saved when the job succeeds. Save it when it fails too, so a rerun doesn't
@@ -310,7 +272,9 @@ jobs:
   # GATI token. It holds that token, so it runs nothing from the pull request and checks out nothing.
   autofix-commit:
     needs: autofix
-    if: needs.autofix.outputs.commit == 'true'
+    # Runs when autofix failed too: lint issues it couldn't fix fail it after the fixes it could make are uploaded, and
+    # those should still be pushed.
+    if: ${{ !cancelled() && needs.autofix.outputs.commit == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -333,7 +297,6 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     needs:
-      - lint
       - build
       - test
       - race

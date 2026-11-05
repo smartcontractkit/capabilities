@@ -238,7 +238,7 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 	}
 
 	requestSizeLimit.DefaultValue = configuredLimit
-	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, requestSizeLimit)
+	maxRequestSizeBytes, err := limits.MakeUpperBoundLimiter(c.limitsFactory, requestSizeLimit)
 	if err != nil {
 		return err
 	}

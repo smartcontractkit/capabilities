@@ -109,9 +109,10 @@ func (m *MetricsCapBasic) RecordEmit(ctx context.Context, start, emit uint64, at
 	m.count.Add(ctx, 1, attrs)
 
 	// Timestamp events
-	m.capTimestampStart.Record(ctx, int64(start), attrs)
-	m.capTimestampEmit.Record(ctx, int64(emit), attrs)
-	m.capDuration.Record(ctx, int64(emit-start), attrs)
+	// Unix timestamps, far below math.MaxInt64.
+	m.capTimestampStart.Record(ctx, int64(start), attrs) //nolint:gosec // G115
+	m.capTimestampEmit.Record(ctx, int64(emit), attrs)   //nolint:gosec // G115
+	m.capDuration.Record(ctx, int64(emit-start), attrs)  //nolint:gosec // G115
 }
 
 func RequestID(workflowExecutionID, reference string) string {
