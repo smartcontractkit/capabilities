@@ -108,12 +108,12 @@ func TestWebServerServes(t *testing.T) {
 // TestWebServerReportsAPortItCannotHave covers the failure a misconfigured port gives: it is
 // reported where it happens rather than as a server that silently never listens.
 func TestWebServerReportsAPortItCannotHave(t *testing.T) {
-	taken, err := net.Listen("tcp", ":0")
+	taken, err := net.Listen("tcp", ":0") //nolint:gosec // G102
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = taken.Close() })
 
 	// Building it registers routes and binds nothing, so the failure is at start.
-	port := uint16(taken.Addr().(*net.TCPAddr).Port)
+	port := uint16(taken.Addr().(*net.TCPAddr).Port) //nolint:gosec // G115: ports fit in a uint16
 	web := newWebServer(logger.Test(t), HTTPConfig{Port: port}, http.NewServeMux(), &probes{})
 
 	require.ErrorContains(t, web.Start(t.Context()), fmt.Sprintf("failed to listen on port %d", port))

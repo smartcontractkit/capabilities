@@ -13,7 +13,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
 var _ GatewayMetadataPublisher = (*gatewayMetadataPublisher)(nil)
@@ -75,7 +74,7 @@ func (h *gatewayMetadataPublisher) BroadcastWorkflowMetadata(ctx context.Context
 	for _, gatewayID := range gatewayIDs {
 		backoff := time.Duration(h.cfg.GatewayConnectionConfig.RetryConfig.InitialIntervalMs) * time.Millisecond
 		for {
-			err := h.sendResponse(ctx, gatewayID, &gatewayResp, gateway_common.MethodPushWorkflowMetadata)
+			err := h.sendResponse(ctx, gatewayID, &gatewayResp, gateway.MethodPushWorkflowMetadata)
 			if err == nil {
 				h.lggr.Debugw("successfully sent metadata", "gatewayID", gatewayID)
 				break
@@ -116,12 +115,12 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 		return errors.New("request cannot be nil")
 	}
 	if req.ID == "" {
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID", gateway_common.MethodPullWorkflowMetadata)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID", gateway.MethodPullWorkflowMetadata)
 		return errors.New("empty request ID")
 	}
 	methodName, _, _ := strings.Cut(req.ID, "/")
 	if methodName != gateway.MethodPullWorkflowMetadata {
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull metadata", gateway_common.MethodPullWorkflowMetadata)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull metadata", gateway.MethodPullWorkflowMetadata)
 		return fmt.Errorf("invalid request ID for workflow pull metadata: %s", req.ID)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPullMetadataDurationMs)*time.Millisecond)
@@ -150,7 +149,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 
 		payload, err := json.Marshal(batchData)
 		if err != nil {
-			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to marshal batch metadata", gateway_common.MethodPullWorkflowMetadata)
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to marshal batch metadata", gateway.MethodPullWorkflowMetadata)
 			return fmt.Errorf("failed to marshal batch metadata: %w", err)
 		}
 
@@ -162,7 +161,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 			Result:  &rawRes,
 		}
 
-		err = h.sendResponse(ctx, gatewayID, &gatewayResp, gateway_common.MethodPullWorkflowMetadata)
+		err = h.sendResponse(ctx, gatewayID, &gatewayResp, gateway.MethodPullWorkflowMetadata)
 		if err != nil {
 			return fmt.Errorf("failed to send batch metadata to gateway for workflow: %w", err)
 		}
