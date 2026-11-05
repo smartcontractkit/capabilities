@@ -461,7 +461,7 @@ func (wr *WriteReport) assessFailedTransmission(
 	priorTxComputeLimit := prior.limit
 
 	if !prior.found {
-		wr.lggr.Warnw("Prior transmission tx has no SetComputeUnitLimit instruction - retrying",
+		wr.lggr.Warnw("Prior transmission tx has no compute unit limit - retrying",
 			"signature", transmissionInfo.Signature.String(),
 			"requestedComputeUnitLimit", requestedComputeLimit,
 		)
@@ -509,7 +509,8 @@ type priorTxLimit struct {
 }
 
 // computeUnitLimitFromMessage returns the tx's SetComputeUnitLimit value clamped to the
-// runtime cap, or found=false when absent.
+// runtime cap, or found=false when absent. For v1 transactions the node's GetTransaction
+// conversion attaches that instruction from the inline TransactionConfig.
 func computeUnitLimitFromMessage(msg soltypes.Message) (uint32, bool, error) {
 	for _, ix := range msg.Instructions {
 		// Program ids cannot come from address lookup tables; static keys suffice.

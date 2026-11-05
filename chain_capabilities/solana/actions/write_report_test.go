@@ -1402,3 +1402,38 @@ func TestWriteReport_FailedTransmissionRetry(t *testing.T) {
 		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }
+
+func TestInvokeOnReport_EncodesV1Transaction(t *testing.T) {
+	t.Parallel()
+
+	mockSvc := mocks.NewSolanaService(t)
+	transmitter := solana.PublicKey{1}
+	forwarderProgram := solana.PublicKey{2}
+	forwarderState := solana.PublicKey{3}
+	receiver := solana.PublicKey{4}
+	fc := newForwarderClient(mocks.WrapSolanaService(mockSvc), logger.Test(t), forwarderProgram, forwarderState, transmitter)
+
+	mockSvc.On("GetAccountInfoWithOpts", mock.Anything, mock.Anything).Return(&soltypes.GetAccountInfoReply{
+		Value: &soltypes.Account{Executable: true},
+	}, nil)
+
+	metadata := createTestReportMetadata()
+	accounts := createTestRemainingAccounts(forwarderState, 1)
+	report := &workflowpb.ReportResponse{
+		RawReport:     buildRawReport(t, metadata, computeAccountHash(accounts), []byte("payload")),
+		ReportContext: RandomBytes(reportContextLen),
+		Sigs:          generateRandomSignatures(),
+	}
+
+	var encoded string
+	mockSvc.On("SubmitTransaction", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		encoded = args.Get(1).(soltypes.SubmitTransactionRequest).EncodedTransaction
+	}).Return(&soltypes.SubmitTransactionReply{Status: soltypes.TxSuccess}, nil)
+
+	_, err := fc.InvokeOnReport(t.Context(), receiver, accounts, report, nil)
+	require.NoError(t, err)
+
+	tx, err := solana.TransactionFromBase64(encoded)
+	require.NoError(t, err)
+	require.Equal(t, solana.MessageVersionV1, tx.Message.GetVersion())
+}
