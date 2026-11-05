@@ -21,7 +21,8 @@ func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer f
 }
 
 func ServeNew[T loop.StandardCapabilities](serviceName string, newServer func(*loop.Server) T, opts ...loop.ServerOpt) {
-	atomicSettings := loop.NewAtomicSettings(cresettings.DefaultGetter)
+	atomicSettings := &loop.AtomicSettings{}
+	atomicSettings.SetGetter(cresettings.DefaultGetter)
 	opts = append(opts, loop.WithSettingsGetter(atomicSettings))
 	s := loop.MustNewStartedServer(serviceName, opts...)
 	defer s.Stop()

@@ -162,7 +162,7 @@ func httpGet(ctx context.Context, url string) (*http.Response, error) {
 func freePort(t *testing.T) int {
 	t.Helper()
 
-	l, err := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := l.Addr().(*net.TCPAddr).Port
 	require.NoError(t, l.Close())
