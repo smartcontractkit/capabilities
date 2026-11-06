@@ -16,9 +16,6 @@ flowchart LR
 	capabilities/chain_capabilities/stellar --> capabilities/chain_capabilities/common
 	capabilities/chain_capabilities/stellar --> chainlink-framework/multinode
 	click capabilities/chain_capabilities/stellar href "https://github.com/smartcontractkit/capabilities"
-	capabilities/consensus --> capabilities/libs
-	capabilities/consensus --> cre-sdk-go
-	click capabilities/consensus href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_action --> capabilities/libs
 	click capabilities/http_action href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_trigger --> capabilities/libs
@@ -29,6 +26,9 @@ flowchart LR
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
+	capabilities/internal/consensus --> capabilities/libs
+	capabilities/internal/consensus --> cre-sdk-go
+	click capabilities/internal/consensus href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common/x/config
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/scheduler/cron --> capabilities/libs
@@ -239,10 +239,10 @@ flowchart LR
 		 capabilities/chain_capabilities/evm
 		 capabilities/chain_capabilities/solana
 		 capabilities/chain_capabilities/stellar
-		 capabilities/consensus
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests
+		 capabilities/internal/consensus
 		 capabilities/libs
 		 capabilities/scheduler/cron
 	end

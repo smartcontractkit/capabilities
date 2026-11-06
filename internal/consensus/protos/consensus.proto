@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+// The development package: its production protos are released as capabilities.internal.consensus.v1alpha, which
+// never changes.
+package capabilities.internal.consensus.x.v1alpha;
+
+import "capability/feature/feature.proto";
+import "sdk/v1alpha/sdk.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+import "values/v1/values.proto";
+
+option (cre.feature.v1.released) = "psb_migration";
+
+service Consensus {
+  option (tools.generator.v1alpha.capability) = {
+    mode: MODE_DON
+    capability_id: "consensus@1.0.0-alpha"
+  };
+
+  rpc Simple(sdk.v1alpha.SimpleConsensusInputs) returns (values.v1.Value) {
+    option (cre.feature.v1.method) = "psb_migration";
+  }
+
+  rpc Report(sdk.v1alpha.ReportRequest) returns (sdk.v1alpha.ReportResponse) {
+    option (cre.feature.v1.method) = "psb_migration";
+  }
+}
