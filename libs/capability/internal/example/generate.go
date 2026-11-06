@@ -4,4 +4,4 @@
 package example
 
 //go:generate go run ../../cmd/newcapability --force --no-module --trigger --action --out-dir .. --category example --name capability
-//go:generate go -C ../.. run ./internal/docgen
+//go:generate go -C ../../.. run ./capability/internal/docgen

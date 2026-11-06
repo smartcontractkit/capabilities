@@ -1,6 +1,6 @@
 package capability
 
-//go:generate go run ./internal/docgen
+//go:generate go -C .. run ./capability/internal/docgen
 
 import (
 	"context"

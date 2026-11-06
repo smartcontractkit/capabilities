@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"reflect"
@@ -88,6 +89,7 @@ func ServeDebugUI[T Capability](ctx context.Context, mux *http.ServeMux, cs []T)
 	mux.Handle("GET "+DebugPath, http.RedirectHandler(DebugPath+"/", http.StatusMovedPermanently))
 	mux.HandleFunc("GET "+DebugPath+"/{$}", h.index)
 	mux.HandleFunc("GET "+DebugPath+"/events", h.stream)
+	mux.HandleFunc("GET "+DebugPath+"/metadata", h.realisticMetadata)
 	protect := http.NewCrossOriginProtection()
 	mux.Handle("POST "+DebugPath+"/invoke", protect.Handler(h.untilShutdown(h.invoke)))
 	mux.Handle("POST "+DebugPath+"/unsubscribe", protect.Handler(h.untilShutdown(h.unsubscribe)))
@@ -140,6 +142,7 @@ func renderPage(title string, instances int, methods []Method) ([]byte, error) {
 		"Page": map[string]any{
 			"Methods":   methods,
 			"Inputs":    inputs,
+			"Instances": instances,
 			"MaxEvents": maxDebugEvents,
 			"Schema":    types,
 			"Metadata":  types.goStruct(reflect.TypeFor[capabilities.RequestMetadata]()),
@@ -161,13 +164,24 @@ type debugResult struct {
 	Output    json.RawMessage `json:",omitempty"`
 	Error     string
 	Instances []debugResult
+	// Instance is which instance a result is from: a grouped call may skip instances, so position in Instances
+	// need not be the instance's index.
+	Instance *int `json:",omitempty"`
 }
 
 type debugCall struct {
 	Method   string
 	Metadata capabilities.RequestMetadata
 	Input    json.RawMessage
+	// Groups, when set, replace Input: each claims a disjoint set of instances and carries the input sent to
+	// them, so the instances can be asked different things.
+	Groups   []debugGroup
 	HexBytes bool
+}
+
+type debugGroup struct {
+	Instances []int
+	Input     json.RawMessage
 }
 
 func (h *debugHandler) invoke(w http.ResponseWriter, r *http.Request) {
@@ -177,9 +191,9 @@ func (h *debugHandler) invoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m, payload, err := h.decode(call)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	m, ok := h.methods[call.Method]
+	if !ok {
+		http.Error(w, "no method "+call.Method, http.StatusBadRequest)
 		return
 	}
 
@@ -188,29 +202,139 @@ func (h *debugHandler) invoke(w http.ResponseWriter, r *http.Request) {
 		return debugOutput(m.Output, payload, err, call.HexBytes)
 	}
 
-	if m.Trigger {
-		writeDebugJSON(w, h.register(m, call, payload, show))
+	if len(call.Groups) > 0 {
+		h.invokeGrouped(w, r, m, call, show)
 		return
 	}
 
-	writeDebugJSON(w, h.execute(r.Context(), show, capabilities.CapabilityRequest{
+	payload, err := decodeInput(m, call.Input)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if m.Trigger {
+		id := "debug-" + randomDebugHex(6)
+		requests := repeatRequest(h.instances, capabilities.TriggerRegistrationRequest{
+			TriggerID: id, Method: m.Name, Metadata: call.Metadata, Payload: payload,
+		})
+		if err = h.subscribe(h.instances, nil, requests, call.Input, show); err != nil {
+			writeDebugJSON(w, debugResult{Error: err.Error()})
+			return
+		}
+
+		writeDebugJSON(w, debugResult{TriggerID: id})
+		return
+	}
+
+	writeDebugJSON(w, h.execute(r.Context(), show, h.instances, nil, repeatRequest(h.instances, capabilities.CapabilityRequest{
 		Method: m.Name, Metadata: call.Metadata, Payload: payload,
-	}))
+	})))
 }
 
-func (h *debugHandler) decode(call debugCall) (Method, *anypb.Any, error) {
-	m, ok := h.methods[call.Method]
-	if !ok {
-		return Method{}, nil, errors.New("no method " + call.Method)
+// invokeGrouped answers a call whose groups send each set of instances its own input. Instances in no group are
+// not called: leaving some out is the point of grouping.
+func (h *debugHandler) invokeGrouped(w http.ResponseWriter, r *http.Request, m Method, call debugCall, show debugDisplay) {
+	payloads, err := h.groupPayloads(m, call.Groups)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
+	// called is the instances in a group, with their payloads; the rest are skipped.
+	var called []Capability
+	var indexes []int
+	for i, payload := range payloads {
+		if payload == nil {
+			continue
+		}
+		called = append(called, h.instances[i])
+		indexes = append(indexes, i)
+	}
+
+	if m.Trigger {
+		id := "debug-" + randomDebugHex(6)
+		requests := make([]capabilities.TriggerRegistrationRequest, len(called))
+		for j, i := range indexes {
+			requests[j] = capabilities.TriggerRegistrationRequest{TriggerID: id, Method: m.Name, Metadata: call.Metadata, Payload: payloads[i]}
+		}
+
+		// The groups are the input shown for the subscription: there is no one input to show.
+		input, _ := json.Marshal(call.Groups)
+		if err = h.subscribe(called, indexes, requests, input, show); err != nil {
+			writeDebugJSON(w, debugResult{Error: err.Error()})
+			return
+		}
+
+		writeDebugJSON(w, debugResult{TriggerID: id})
+		return
+	}
+
+	requests := make([]capabilities.CapabilityRequest, len(called))
+	for j, i := range indexes {
+		requests[j] = capabilities.CapabilityRequest{Method: m.Name, Metadata: call.Metadata, Payload: payloads[i]}
+	}
+
+	// The inputs differ per group; the answer must not. Consensus is every instance returning the same thing
+	// regardless of input, so the results are compared across every called instance, not within groups.
+	writeDebugJSON(w, h.execute(r.Context(), show, called, indexes, requests))
+}
+
+func (h *debugHandler) groupPayloads(m Method, groups []debugGroup) ([]*anypb.Any, error) {
+	payloads := make([]*anypb.Any, len(h.instances))
+	called := 0
+	for gi, g := range groups {
+		if len(g.Instances) == 0 {
+			return nil, fmt.Errorf("group %d claims no instances", gi+1)
+		}
+
+		payload, err := decodeInput(m, g.Input)
+		if err != nil {
+			return nil, fmt.Errorf("group %d: %w", gi+1, err)
+		}
+
+		for _, i := range g.Instances {
+			if i < 0 || i >= len(h.instances) {
+				return nil, fmt.Errorf("group %d: no instance %d", gi+1, i)
+			}
+			if payloads[i] != nil {
+				return nil, fmt.Errorf("instance %d is in two groups", i)
+			}
+			payloads[i] = payload
+			called++
+		}
+	}
+
+	if called == 0 {
+		return nil, errors.New("no instance is in any group")
+	}
+
+	return payloads, nil
+}
+
+func repeatRequest[T any](cs []Capability, request T) []T {
+	requests := make([]T, len(cs))
+	for i := range requests {
+		requests[i] = request
+	}
+	return requests
+}
+
+func decodeInput(m Method, raw json.RawMessage) (*anypb.Any, error) {
 	input := m.Input.ProtoReflect().New().Interface()
-	if err := fromPageJSON(call.Input, input); err != nil {
-		return Method{}, nil, err
+	if err := fromPageJSON(raw, input); err != nil {
+		return nil, err
 	}
 
-	payload, err := anypb.New(input)
-	return m, payload, err
+	return anypb.New(input)
+}
+
+// realisticMetadata answers the page's "populate realistic values" with metadata filled the same way invoke
+// fills blanks, so the page can show what a real request carries and keep it across invocations.
+func (h *debugHandler) realisticMetadata(w http.ResponseWriter, _ *http.Request) {
+	var md capabilities.RequestMetadata
+	fillDebugMetadata(&md)
+	writeDebugJSON(w, md)
 }
 
 func fillDebugMetadata(md *capabilities.RequestMetadata) {
@@ -241,32 +365,30 @@ func fillDebugMetadata(md *capabilities.RequestMetadata) {
 	}
 }
 
-func (h *debugHandler) register(m Method, call debugCall, payload *anypb.Any, show debugDisplay) debugResult {
-	request := capabilities.TriggerRegistrationRequest{
-		TriggerID: "debug-" + randomDebugHex(6), Method: m.Name, Metadata: call.Metadata, Payload: payload,
-	}
-
-	if err := h.subscribe(request, call.Input, show); err != nil {
-		return debugResult{Error: err.Error()}
-	}
-
-	return debugResult{TriggerID: request.TriggerID}
-}
-
 type debugDisplay func(payload *anypb.Any, err error) debugResult
 
-func (h *debugHandler) execute(ctx context.Context, show debugDisplay, request capabilities.CapabilityRequest) debugResult {
-	response, err := instances.Execute(ctx, h.instances, request)
+// execute runs the requests, one per instance of cs, and shows the response they agree on. indexes, when set,
+// says which instances cs is, so a grouped call's per-instance results are labeled with them.
+func (h *debugHandler) execute(ctx context.Context, show debugDisplay, cs []Capability, indexes []int, requests []capabilities.CapabilityRequest) debugResult {
+	response, err := instances.ExecuteEach(ctx, cs, requests)
 	if mismatch, ok := errors.AsType[*instances.MismatchError[capabilities.CapabilityResponse]](err); ok {
-		return debugPerInstance(mismatch, func(r capabilities.CapabilityResponse, err error) debugResult {
+		out := debugPerInstance(mismatch, func(r capabilities.CapabilityResponse, err error) debugResult {
 			return show(r.Payload, err)
 		})
+		for j := range out.Instances {
+			if indexes != nil {
+				out.Instances[j].Instance = &indexes[j]
+			}
+		}
+		return out
 	}
 
 	return show(response.Payload, err)
 }
 
-func (h *debugHandler) subscribe(request capabilities.TriggerRegistrationRequest, input json.RawMessage, show debugDisplay) error {
+// subscribe registers the requests on cs, one per instance; cs may be a subset of every instance, as a grouped
+// call's is, with indexes saying which instances they are.
+func (h *debugHandler) subscribe(cs []Capability, indexes []int, requests []capabilities.TriggerRegistrationRequest, input json.RawMessage, show debugDisplay) error {
 	ctx, stop := context.WithCancel(context.Background())
 	// Before registering, so shutting down also cancels a registration in progress.
 	go func() {
@@ -277,15 +399,17 @@ func (h *debugHandler) subscribe(request capabilities.TriggerRegistrationRequest
 		}
 	}()
 
-	events, err := instances.RegisterTrigger(ctx, h.instances, request)
+	events, err := instances.RegisterTriggerEach(ctx, cs, requests)
 	if err != nil {
 		stop()
 		return err
 	}
 
+	// The trigger ID and method are the same on every request, grouped or not.
+	id, method := requests[0].TriggerID, requests[0].Method
 	sub := &debugSubscription{
-		id: request.TriggerID, method: request.Method, input: input, stop: stop, done: make(chan struct{}),
-		unregister: unregisterOutstanding(h.instances, request),
+		id: id, method: method, input: input, stop: stop, done: make(chan struct{}),
+		unregister: unregisterOutstanding(cs, requests),
 	}
 	h.add(sub)
 	// The invoke registering it is still counted, so this can't race shutdown's Wait.
@@ -294,7 +418,7 @@ func (h *debugHandler) subscribe(request capabilities.TriggerRegistrationRequest
 		defer stop()
 		defer close(sub.done)
 		for e := range events {
-			h.publish(request.TriggerID, h.event(ctx, request, show, e))
+			h.publish(id, h.event(ctx, cs, indexes, id, method, show, e))
 		}
 
 		h.stopped(sub, sub.unregister(context.WithoutCancel(ctx)))
@@ -305,29 +429,30 @@ func (h *debugHandler) subscribe(request capabilities.TriggerRegistrationRequest
 
 // unregisterOutstanding unregisters the trigger from every instance it's still registered on, so a retry after some
 // failed doesn't unregister it again from those that succeeded.
-func unregisterOutstanding(cs []Capability, request capabilities.TriggerRegistrationRequest) func(context.Context) error {
-	outstanding := cs
+func unregisterOutstanding(cs []Capability, requests []capabilities.TriggerRegistrationRequest) func(context.Context) error {
+	outstanding := repeatRequest(cs, true)
 	return func(ctx context.Context) error {
-		err := instances.UnregisterTrigger(ctx, outstanding, request)
-		if mismatch, ok := errors.AsType[*instances.MismatchError[struct{}]](err); ok {
-			var left []Capability
-			for i, r := range mismatch.Results {
-				if r.Err != nil {
-					left = append(left, outstanding[i])
-				}
+		var errs []error
+		for i, c := range cs {
+			if !outstanding[i] {
+				continue
 			}
-
-			outstanding = left
+			// One at a time rather than UnregisterTrigger on the set: the requests may differ per instance.
+			if err := c.UnregisterTrigger(ctx, requests[i]); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			outstanding[i] = false
 		}
-
-		return err
+		return errors.Join(errs...)
 	}
 }
 
 // event shows e, and acks it to every instance that delivered it, whether or not it could be shown or the instances
-// agreed, as they won't deliver it again.
-func (h *debugHandler) event(ctx context.Context, request capabilities.TriggerRegistrationRequest, show debugDisplay, e instances.Event) debugResult {
-	delivered := make([]string, len(h.instances))
+// agreed, as they won't deliver it again. Positions in e index cs; indexes, when set, says which instances those
+// are, so a grouped event's results are labeled with them.
+func (h *debugHandler) event(ctx context.Context, cs []Capability, indexes []int, triggerID, method string, show debugDisplay, e instances.Event) debugResult {
+	delivered := make([]string, len(cs))
 	var out debugResult
 	if e.Mismatch != nil {
 		out = debugPerInstance(e.Mismatch, func(r capabilities.TriggerResponse, err error) debugResult {
@@ -345,10 +470,17 @@ func (h *debugHandler) event(ctx context.Context, request capabilities.TriggerRe
 		}
 	}
 
+	// A grouped event's instances are a subset; label each result with the instance it is from.
+	for j := range out.Instances {
+		if indexes != nil {
+			out.Instances[j].Instance = &indexes[j]
+		}
+	}
+
 	var errs []error
 	for i, id := range delivered {
 		if id != "" {
-			errs = append(errs, h.instances[i].AckEvent(ctx, request.TriggerID, id, request.Method))
+			errs = append(errs, cs[i].AckEvent(ctx, triggerID, id, method))
 		}
 	}
 

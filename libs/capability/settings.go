@@ -2,23 +2,20 @@ package capability
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 
 	"github.com/cenkalti/backoff/v5"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/remote"
 	"github.com/smartcontractkit/chainlink-common/pkg/timeutil"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
 // SettingsConfig points this process at the host's CRE settings service.
@@ -63,7 +60,7 @@ func (s *settingsService) start(context.Context) error {
 	if s.conn == nil {
 		return nil
 	}
-	host := newSettingsClient(s.eng, s.conn)
+	host := remote.NewSettingsClient(s.eng, s.conn)
 	s.eng.Go(func(ctx context.Context) { followHostSettings(ctx, s.eng, host, s.values) })
 	return nil
 }
@@ -85,7 +82,7 @@ func newSettings(lggr logger.Logger) *loop.AtomicSettings {
 
 // followHostSettings applies every settings update the host broadcasts, resubscribing with backoff
 // whenever the subscription cannot be made or ends.
-func followHostSettings(ctx context.Context, lggr logger.Logger, host core.SettingsBroadcaster, settings *loop.AtomicSettings) {
+func followHostSettings(ctx context.Context, lggr logger.Logger, host settings.Broadcaster, values *loop.AtomicSettings) {
 	bo := backoff.NewExponentialBackOff()
 	for {
 		ch, err := host.Subscribe(ctx)
@@ -99,50 +96,13 @@ func followHostSettings(ctx context.Context, lggr logger.Logger, host core.Setti
 		lggr.Info("Subscribed to settings updates")
 		bo.Reset()
 		for update := range ch {
-			if err := settings.Store(update); err != nil {
+			if err := values.Store(update); err != nil {
 				lggr.Errorw("Failed to update settings", "err", err)
 				continue
 			}
 			lggr.Infow("Updated settings", "hash", update.Hash)
 		}
 	}
-}
-
-// settingsClient is the host's settings service as a core.SettingsBroadcaster. Each subscription is
-// one server stream, forwarded until it ends or ctx is done.
-type settingsClient struct {
-	lggr logger.Logger
-	grpc pb.SettingsClient
-}
-
-func newSettingsClient(lggr logger.Logger, conn grpc.ClientConnInterface) *settingsClient {
-	return &settingsClient{lggr: lggr, grpc: pb.NewSettingsClient(conn)}
-}
-
-func (c *settingsClient) Subscribe(ctx context.Context) (<-chan core.SettingsUpdate, error) {
-	stream, err := c.grpc.Subscribe(ctx, &emptypb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	ch := make(chan core.SettingsUpdate)
-	go func() {
-		defer close(ch)
-		for {
-			update, err := stream.Recv()
-			if err != nil {
-				if !errors.Is(err, io.EOF) && stream.Context().Err() == nil {
-					c.lggr.Errorw("Failed to receive settings update", "err", err)
-				}
-				return
-			}
-			select {
-			case <-stream.Context().Done():
-				return
-			case ch <- core.SettingsUpdate{Settings: update.Settings, Hash: update.Hash}:
-			}
-		}
-	}()
-	return ch, nil
 }
 
 // newLimitsFactory builds the limits factory over settings.
