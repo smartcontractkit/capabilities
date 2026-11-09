@@ -129,6 +129,66 @@ func TestExecuteAgreeingOnAnError(t *testing.T) {
 	assert.False(t, errors.As(err, &mismatch))
 }
 
+func TestExecuteEach(t *testing.T) {
+	requests := make([]capabilities.CapabilityRequest, 2)
+	for i, input := range []string{"a", "b"} {
+		payload, err := anypb.New(valuespb.NewStringValue(input))
+		require.NoError(t, err)
+		requests[i] = capabilities.CapabilityRequest{Payload: payload}
+	}
+
+	// Different inputs, but the instances answer with their input echoed: the answers differ, and differing
+	// answers are a mismatch whatever the inputs were.
+	_, err := ExecuteEach(t.Context(), []fake{{reply: "-x"}, {reply: "-x"}}, requests)
+	var mismatch *MismatchError[capabilities.CapabilityResponse]
+	require.ErrorAs(t, err, &mismatch)
+	require.Len(t, mismatch.Results, 2)
+	for i, want := range []string{"a-x", "b-x"} {
+		got := &valuespb.Value{}
+		require.NoError(t, mismatch.Results[i].Value.Payload.UnmarshalTo(got))
+		assert.Equal(t, want, got.GetStringValue(), "each instance got its own request")
+	}
+
+	// Instances that ignore their input answer the same, and agree.
+	got, err := TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "same"}, {reply: "same"}}, "Do", metadata, in)
+	require.NoError(t, err)
+	assert.Equal(t, "in-same", got.Response.GetStringValue())
+
+	_, err = ExecuteEach(t.Context(), []fake{{}}, requests)
+	require.ErrorContains(t, err, "2 requests for 1 instances")
+}
+
+func TestRegisterTriggerEach(t *testing.T) {
+	requests := repeat(2, capabilities.TriggerRegistrationRequest{TriggerID: "t", Method: "Trigger"})
+	payload, err := anypb.New(valuespb.NewStringValue("different"))
+	require.NoError(t, err)
+	requests[1].Payload = payload
+
+	ch, err := RegisterTriggerEach(t.Context(), []fake{{events: []string{"1", "2"}}, {events: []string{"2", "1"}}}, requests)
+	require.NoError(t, err)
+	for range 2 {
+		e := <-ch
+		assert.Nil(t, e.Mismatch, "events are still matched by ID across differently-registered instances")
+	}
+	_, open := <-ch
+	assert.False(t, open)
+
+	_, err = RegisterTriggerEach(t.Context(), []fake{{}}, requests)
+	require.ErrorContains(t, err, "2 requests for 1 instances")
+}
+
+func TestRegisterTriggerEachRollsBack(t *testing.T) {
+	registered, failed := &atomic.Bool{}, &atomic.Bool{}
+	_, err := RegisterTriggerEach(t.Context(),
+		[]registrationFake{{unregistered: registered}, {err: errors.New("no"), unregistered: failed}},
+		repeat(2, capabilities.TriggerRegistrationRequest{}))
+
+	var mismatch *MismatchError[<-chan capabilities.TriggerResponse]
+	require.ErrorAs(t, err, &mismatch)
+	assert.True(t, registered.Load(), "the instance that registered is unregistered again")
+	assert.False(t, failed.Load(), "the one that failed had nothing to undo")
+}
+
 func TestRegisterTrigger(t *testing.T) {
 	ch, err := TypedRegisterTrigger[*valuespb.Value](t.Context(),
 		[]fake{{events: []string{"1", "2", "3=a"}}, {events: []string{"2", "1", "3=b"}}}, "Trigger", "t", metadata, in)
