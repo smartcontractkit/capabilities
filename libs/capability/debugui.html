@@ -27,10 +27,19 @@
   <small id="types"></small>
 </p>
 <div id="input"></div>
+<small id="top-ignored" hidden>ignored while splitting: each group below has its own copy of this form</small>
 <details>
   <summary>Request metadata</summary>
   <small>Anything left blank is filled in for each request, with new IDs every time.</small>
+  <button id="populate" type="button">populate realistic values</button>
   <div id="metadata"></div>
+</details>
+<details>
+  <summary>Per-instance values</summary>
+  <small>Send each group of instances its own input instead of the same one to all of them. Instances in no group are not called.</small>
+  <div class="field"><label><input type="checkbox" id="groups-enabled"> split instances into groups</label></div>
+  <div id="groups" hidden></div>
+  <small id="groups-skipped"></small>
 </details>
 <p>
   <button id="invoke">Invoke</button>
@@ -223,16 +232,136 @@ $('method').onchange = () => {
 };
 $('method').onchange();
 
-const metadata = message(page.Metadata);
+let metadata = message(page.Metadata);
 $('metadata').append(metadata.el);
+// Populate replaces the form with one holding the server's realistic values, which then stay put across
+// invocations instead of being refilled per request.
+$('populate').onclick = async () => {
+  const res = await fetch('metadata');
+  if (!res.ok) return alert(await res.text());
+  const values = await res.json();
+  metadata = message(page.Metadata, values);
+  $('metadata').replaceChildren(metadata.el);
+};
+
+// ---- per-instance groups ----
+// A group claims a disjoint set of instances and holds its own copy of the input form, so the instances can be
+// sent different values. With splitting off, the one form above goes to all of them.
+const groupList = [];
+
+function renderGroups() {
+  const enabled = $('groups-enabled').checked;
+  $('groups').hidden = !enabled;
+  // The top form is what groups replace: grey it out while splitting, so there is no guessing which is sent.
+  $('input').style.opacity = enabled ? 0.5 : '';
+  $('input').style.pointerEvents = enabled ? 'none' : '';
+  $('top-ignored').hidden = !enabled;
+  if (!enabled) {
+    $('invoke').disabled = false;
+    $('groups-skipped').textContent = '';
+    return;
+  }
+
+  const method = $('method').value;
+  const claimed = new Set();
+  groupList.forEach((g, i) => {
+    g.el.querySelector('legend b').textContent = 'Group ' + (i + 1);
+    // copy from offers the top form and every other group, by current number.
+    g.copy.replaceChildren(
+      h('option', {value: '', textContent: 'copy from…'}),
+      h('option', {value: 'top', textContent: 'top form'}),
+      ...groupList.map((o, j) => o === g ? null : h('option', {value: j, textContent: 'Group ' + (j + 1)})).filter(Boolean));
+    g.copy.value = '';
+    g.forms[method] ??= single(page.Inputs[method]);
+    if (g.shown !== method) {
+      g.slot.replaceChildren(g.forms[method].el);
+      g.shown = method;
+    }
+    g.targets.replaceChildren(...[...Array(page.Instances).keys()].map(idx =>
+      h('label', {}, h('input', {type: 'checkbox', checked: g.claims.has(idx), onchange: e => {
+        // Exclusive: checking an instance takes it away from whichever group held it.
+        if (e.target.checked) {
+          groupList.forEach(o => o.claims.delete(idx));
+          g.claims.add(idx);
+        } else {
+          g.claims.delete(idx);
+        }
+        renderGroups();
+      }}), ' ' + idx, ' ')));
+    g.claims.forEach(idx => claimed.add(idx));
+  });
+
+  const skipped = [...Array(page.Instances).keys()].filter(i => !claimed.has(i));
+  $('groups-skipped').textContent = skipped.length ? 'Not called: instance ' + skipped.join(', ') : '';
+  // Nothing claimed is nothing to call.
+  $('invoke').disabled = claimed.size === 0;
+}
+
+const addGroupButton = button('+ add group', () => addGroup([]));
+
+function addGroup(claims) {
+  const g = {claims: new Set(claims), forms: {}, slot: h('div'), targets: h('span'), shown: null, copy: h('select')};
+  // Copying replaces the group's form with one holding the source's current values.
+  g.copy.onchange = () => {
+    if (g.copy.value === '') return;
+    const method = $('method').value;
+    const from = g.copy.value === 'top' ? forms[method] : groupList[Number(g.copy.value)].forms[method];
+    try {
+      g.forms[method] = single(page.Inputs[method], from.get() ?? zero(page.Inputs[method]));
+    } catch (e) {
+      alert('Cannot copy: ' + e.message);
+      g.copy.value = '';
+      return;
+    }
+    g.slot.replaceChildren(g.forms[method].el);
+    g.shown = method;
+    g.copy.value = '';
+  };
+  g.el = h('fieldset', {},
+    h('legend', {}, h('b'), ' ', g.copy, ' ', button('remove', () => {
+      groupList.splice(groupList.indexOf(g), 1);
+      g.el.remove();
+      renderGroups();
+    })),
+    h('div', {className: 'field'}, h('label', {}, h('b', {textContent: 'Instances'})), g.targets),
+    g.slot);
+  groupList.push(g);
+  $('groups').insertBefore(g.el, addGroupButton);
+  renderGroups();
+}
+
+$('groups').append(addGroupButton);
+$('groups-enabled').onchange = () => {
+  if ($('groups-enabled').checked && !groupList.length) {
+    addGroup([...Array(page.Instances).keys()]);
+  }
+  renderGroups();
+};
+// A listener rather than onchange, which the method wiring above already owns: a method change swaps every
+// group's form for one of the new method's.
+$('method').addEventListener('change', renderGroups);
+
+// readGroups is the groups as invoke sends them: each with its instances and own input. Instances in no group
+// are not called, which is the point of grouping; none at all is a mistake.
+function readGroups(method) {
+  const groups = groupList.filter(g => g.claims.size).map(g => ({
+    instances: [...g.claims].sort((a, b) => a - b),
+    input: g.forms[method].get() ?? zero(page.Inputs[method]),
+  }));
+  if (!groups.length) throw new Error('no instance is in any group');
+  return groups;
+}
 
 
 function render(r) {
-  const div = h('div', {className: 'result' + (r.Error || r.Instances ? ' failed' : '')});
+  // Consensus is the same answer from every instance whatever the input, so any disagreement is a failure,
+  // grouped call or not.
+  const failed = r.Error || r.Instances;
+  const div = h('div', {className: 'result' + (failed ? ' failed' : '')});
   if (r.ID) div.append(h('b', {textContent: 'Event ' + r.ID}));
   if (r.Error) div.append(h('div', {className: 'error', textContent: r.Error}));
   if ('Output' in r) div.append(h('pre', {textContent: JSON.stringify(r.Output, null, 2)}));
-  (r.Instances || []).forEach((each, i) => div.append('Instance ' + i, render(each)));
+  (r.Instances || []).forEach((each, i) => div.append('Instance ' + (each.Instance ?? i), render(each)));
   return div;
 }
 
@@ -259,16 +388,21 @@ $('invoke').onclick = async () => {
 
   let body;
   try {
-    body = {method, metadata: metadata.get(), input: forms[method].get() ?? zero(page.Inputs[method]), hexBytes: $('bytes').value === 'hex'};
+    body = {method, metadata: metadata.get(), hexBytes: $('bytes').value === 'hex'};
+    if ($('groups-enabled').checked) {
+      body.groups = readGroups(method);
+    } else {
+      body.input = forms[method].get() ?? zero(page.Inputs[method]);
+    }
   } catch (e) {
     body = {method};
     show({Error: e.message});
   }
   entry.append(
     h('summary', {}, h('b', {textContent: `#${++calls} ${method}`}), ' ', h('small', {textContent: new Date().toLocaleTimeString()}), ' ', status),
-    h('details', {}, h('summary', {textContent: 'Input'}), h('pre', {textContent: JSON.stringify(body.input, null, 2)})),
+    h('details', {}, h('summary', {textContent: 'Input'}), h('pre', {textContent: JSON.stringify(body.input ?? body.groups, null, 2)})),
     slot);
-  if (body.input === undefined) return;
+  if (body.input === undefined && body.groups === undefined) return;
 
   try {
     const res = await post('invoke', body);
