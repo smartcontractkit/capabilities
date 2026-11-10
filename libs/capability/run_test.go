@@ -232,6 +232,18 @@ func TestRunProvidesItsDependencies(t *testing.T) {
 	assert.NotNil(t, gotClock)
 }
 
+// TestRunProvidesTheCapabilitiesConfig covers what the node spawned this process with, such as its shard.
+func TestRunProvidesTheCapabilitiesConfig(t *testing.T) {
+	var got CapabilitiesConfig
+
+	require.NoError(t, execute(t, logger.Test(t), func(i do.Injector) (Capability, error) {
+		got = do.MustInvoke[CapabilitiesConfig](i)
+		return newFake(), nil
+	}, "run", "--capabilities.shard-index", "3"))
+
+	assert.Equal(t, uint32(3), got.ShardIndex)
+}
+
 // TestBareCommandRunsInCompatibilityMode covers a bare <command>, which is how the core node starts
 // a LOOP. The test can't reach plugin.Serve, because it takes over the stdio of the process. So
 // each case must fail before the capability is built.
