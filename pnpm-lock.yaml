@@ -15,8 +15,8 @@ importers:
         specifier: ~2.28.1
         version: 2.28.1
       '@coralogix/protofetch':
-        specifier: 0.1.21
-        version: 0.1.21
+        specifier: 0.1.22
+        version: 0.1.22
       nx:
         specifier: 24.0.5
         version: 24.0.5
@@ -96,33 +96,33 @@ packages:
     resolution: {integrity: sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A==}
     engines: {node: '>= 20.12.0'}
 
-  '@coralogix/protofetch-darwin-arm64@0.1.21':
-    resolution: {integrity: sha512-AroEEzUezYaVJI0Ow95Ycpb1dxC7CQl9KEPSYEEC84afF6SylTclRpbwvmtlE8DF5NGEB7kaR1qp+q3NhwjLlg==}
+  '@coralogix/protofetch-darwin-arm64@0.1.22':
+    resolution: {integrity: sha512-LZtwiu5NRdfrchqloiKQ/6t4JBm4YbV9syYuwUNg8oU122LqYWwCPnuT/hiwicTJ0rHUZ8VUvvgPrG6vfq3wxA==}
     cpu: [arm64]
     os: [darwin]
 
-  '@coralogix/protofetch-darwin-x64@0.1.21':
-    resolution: {integrity: sha512-t2i6lUCG9LekiUsFvcppzgynrCITq/MouHPMF+IIjANevFFav9tF0+aBqZWqGeaAopspfORns/TkSkZI7a4q2g==}
+  '@coralogix/protofetch-darwin-x64@0.1.22':
+    resolution: {integrity: sha512-2rX8yo1pU4euaOgpDUpeWJbhc7S7bb47jhN6F0X/YurM647EL91iFv1/ZXwBWOH7amzt3rc6nbD4aMlWurOSPQ==}
     cpu: [x64]
     os: [darwin]
 
-  '@coralogix/protofetch-linux-arm64@0.1.21':
-    resolution: {integrity: sha512-jTd8A4ErC2MbxjgFR+HcA9hc06wOZtPusdDBsi/BdAHGutcYVNVr2rO2dhG6+BmGEa5z9c6Y5jsA7NGrJeDDkg==}
+  '@coralogix/protofetch-linux-arm64@0.1.22':
+    resolution: {integrity: sha512-oJhHGuFTOkPwdXveGhuGz35nemyjtXtqvCmonMJa2h4pLF1A/+YmSrkSbrNfGCx9EOktfQmIisP2CoI1iGsikg==}
     cpu: [arm64]
     os: [linux]
 
-  '@coralogix/protofetch-linux-x64@0.1.21':
-    resolution: {integrity: sha512-SLk6+zq7W5c1WvEoXVkgZu65I1dthqmAY9v24PNkKU52z1bcI1X8ADJEbYK2YVNw2OLBQC33/aRN/essOr/X2w==}
+  '@coralogix/protofetch-linux-x64@0.1.22':
+    resolution: {integrity: sha512-284pGg1fDyqLs/LIN32kURRJM6W91hp5CFdSQQ9vG+7VYm9/kF8TQoL42RQEnjEPZ7Fxqv5SMQrdANggG4JFMQ==}
     cpu: [x64]
     os: [linux]
 
-  '@coralogix/protofetch-win32-x64@0.1.21':
-    resolution: {integrity: sha512-Zys2Mxh9ceJoC5KDS75DPMkgu/cebnBqIHYp0JRScWoMfzo7tBEZYpUncFK2XJrL96G1m3kuAmET01o8Iidnrg==}
+  '@coralogix/protofetch-win32-x64@0.1.22':
+    resolution: {integrity: sha512-DyL/ZgNJ/CZqO6JG2juq0oFtcp6PspHQT9/aESEapKU7+3DaHBrfreYuz8ab+tSnblvzfBzX8VrhKSbAd9kBAQ==}
     cpu: [x64]
     os: [win32]
 
-  '@coralogix/protofetch@0.1.21':
-    resolution: {integrity: sha512-8tOhiFUShO+Wv/F3n08M2sR2rhzu6QMKUX9YBJ3LLKTSdGrG2IT/I+LchDatIpuTKnQfQq+cnlTWDgxNBtFApw==}
+  '@coralogix/protofetch@0.1.22':
+    resolution: {integrity: sha512-u2iInIpoE4CLV6iG5LtP1kjR+0L0mdq70mtwYU5zfrEvwZHBDAuuvTVDWjUGdOkmkOAoRJxY9MP9ITwA4S6YLQ==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -1005,28 +1005,28 @@ snapshots:
       fast-wrap-ansi: 0.2.0
       sisteransi: 1.0.5
 
-  '@coralogix/protofetch-darwin-arm64@0.1.21':
+  '@coralogix/protofetch-darwin-arm64@0.1.22':
     optional: true
 
-  '@coralogix/protofetch-darwin-x64@0.1.21':
+  '@coralogix/protofetch-darwin-x64@0.1.22':
     optional: true
 
-  '@coralogix/protofetch-linux-arm64@0.1.21':
+  '@coralogix/protofetch-linux-arm64@0.1.22':
     optional: true
 
-  '@coralogix/protofetch-linux-x64@0.1.21':
+  '@coralogix/protofetch-linux-x64@0.1.22':
     optional: true
 
-  '@coralogix/protofetch-win32-x64@0.1.21':
+  '@coralogix/protofetch-win32-x64@0.1.22':
     optional: true
 
-  '@coralogix/protofetch@0.1.21':
+  '@coralogix/protofetch@0.1.22':
     optionalDependencies:
-      '@coralogix/protofetch-darwin-arm64': 0.1.21
-      '@coralogix/protofetch-darwin-x64': 0.1.21
-      '@coralogix/protofetch-linux-arm64': 0.1.21
-      '@coralogix/protofetch-linux-x64': 0.1.21
-      '@coralogix/protofetch-win32-x64': 0.1.21
+      '@coralogix/protofetch-darwin-arm64': 0.1.22
+      '@coralogix/protofetch-darwin-x64': 0.1.22
+      '@coralogix/protofetch-linux-arm64': 0.1.22
+      '@coralogix/protofetch-linux-x64': 0.1.22
+      '@coralogix/protofetch-win32-x64': 0.1.22
 
   '@emnapi/core@1.4.3':
     dependencies:
