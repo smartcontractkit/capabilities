@@ -619,7 +619,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 				ReportContext: []byte{},
 				Sigs:          generateRandomSignatures(),
 			},
-			GasConfig: &evm.GasConfig{GasLimit: uint64(belowMinimum)}, // nolint:gosec // G115: integer overflow conversion
+			GasConfig: &evm.GasConfig{GasLimit: belowMinimum},
 		})
 		require.Error(t, err)
 	})
@@ -1649,7 +1649,6 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				require.NotNil(t, txResult.Response.ReceiverContractExecutionStatus)
 				require.Equal(t, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(), txResult.Response.ReceiverContractExecutionStatus.Enum())
 				evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.000000000000002", "2000")
-
 			})
 		}
 	})
