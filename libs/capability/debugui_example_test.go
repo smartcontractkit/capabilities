@@ -256,6 +256,16 @@ func TestExecuteMismatch(t *testing.T) {
 	assert.JSONEq(t, `{"message": "other"}`, string(r.Instances[1].Output))
 }
 
+func TestRealisticMetadata(t *testing.T) {
+	res := request(t, http.MethodGet, start(t, 1).URL+capability.DebugPath+"/metadata", "")
+	require.Equal(t, http.StatusOK, res.StatusCode)
+	var md capabilities.RequestMetadata
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&md))
+	assert.Len(t, md.WorkflowID, 64)
+	assert.Len(t, md.WorkflowOwner, 40)
+	assert.False(t, md.ExecutionTimestamp.IsZero())
+}
+
 func TestBadInput(t *testing.T) {
 	s := start(t, 1)
 	assert.Equal(t, http.StatusBadRequest, post(t, s, "/invoke", `{"Method": "Execute", "Input": {"message": 1}}`).StatusCode)

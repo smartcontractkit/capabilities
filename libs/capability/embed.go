@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 )
 
 // RunInjector is what the run command builds a capability from. Register what a capability needs on it
@@ -41,7 +42,7 @@ type startConfig struct {
 	capabilities CapabilitiesConfig
 	grpc         GRPCConfig
 	grpcOpts     *loop.GRPCOpts
-	settings     *loop.AtomicSettings
+	settings     *settings.Atomic
 	overrides    []func(*Injector) error
 }
 
@@ -54,7 +55,7 @@ func WithProvider(provide func(*Injector) error) StartOption {
 	return func(c *startConfig) { c.overrides = append(c.overrides, provide) }
 }
 
-func withNode(capabilities CapabilitiesConfig, grpc GRPCConfig, grpcOpts *loop.GRPCOpts, settings *loop.AtomicSettings) StartOption {
+func withNode(capabilities CapabilitiesConfig, grpc GRPCConfig, grpcOpts *loop.GRPCOpts, settings *settings.Atomic) StartOption {
 	return func(c *startConfig) {
 		c.capabilities = capabilities
 		c.grpc = grpc
@@ -117,6 +118,7 @@ func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *I
 		i.ProvideValue(info),
 		i.ProvideValue(lggr),
 		i.ProvideValue[registry.CapabilitiesRegistry](reg),
+		i.ProvideValue(cfg.capabilities),
 		i.ProvideValue(newLimitsFactory(lggr, cfg.settings)),
 		i.ProvideValue[clockwork.Clock](clockwork.NewRealClock()),
 	); err != nil {

@@ -53,15 +53,33 @@ func Execute[C capabilities.Executable](
 	ctx context.Context,
 	cs []C,
 	request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	results, err := each(cs, func(c C) (capabilities.CapabilityResponse, error) {
-		return c.Execute(ctx, cloneCapabilityRequest(request))
+	return ExecuteEach(ctx, cs, repeat(len(cs), request))
+}
+
+// ExecuteEach is Execute with a request per instance rather than one for all, for asking the instances different
+// things. The answers are still compared: whatever the inputs, consensus is every instance returning the same
+// thing, and it returns a *MismatchError when they do not.
+func ExecuteEach[C capabilities.Executable](
+	ctx context.Context,
+	cs []C,
+	requests []capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+	if len(requests) != len(cs) {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("%d requests for %d instances", len(requests), len(cs))
+	}
+
+	results, err := each(cs, func(i int, c C) (capabilities.CapabilityResponse, error) {
+		return c.Execute(ctx, cloneCapabilityRequest(requests[i]))
 	})
+
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
-	return agree(results, func(a, b capabilities.CapabilityResponse) bool {
-		return samePayload(a.Payload, b.Payload) && slices.Equal(a.Metadata.Metering, b.Metadata.Metering)
-	})
+
+	return agree(results, sameCapabilityResponse)
+}
+
+func sameCapabilityResponse(a, b capabilities.CapabilityResponse) bool {
+	return samePayload(a.Payload, b.Payload) && slices.Equal(a.Metadata.Metering, b.Metadata.Metering)
 }
 
 var errNoEvent = errors.New("no event")
@@ -71,8 +89,18 @@ var errNoEvent = errors.New("no event")
 // one some instance never sent by the time every instance's channel has closed. It returns a *MismatchError when
 // the instances disagree on whether registering failed.
 func RegisterTrigger[C capabilities.TriggerExecutable](ctx context.Context, cs []C, request capabilities.TriggerRegistrationRequest) (<-chan Event, error) {
-	results, err := each(cs, func(c C) (<-chan capabilities.TriggerResponse, error) {
-		return c.RegisterTrigger(ctx, cloneTriggerRequest(request))
+	return RegisterTriggerEach(ctx, cs, repeat(len(cs), request))
+}
+
+// RegisterTriggerEach is RegisterTrigger with a request per instance rather than one for all, for registering the
+// instances differently. The events are still matched by ID across every instance.
+func RegisterTriggerEach[C capabilities.TriggerExecutable](ctx context.Context, cs []C, requests []capabilities.TriggerRegistrationRequest) (<-chan Event, error) {
+	if len(requests) != len(cs) {
+		return nil, fmt.Errorf("%d requests for %d instances", len(requests), len(cs))
+	}
+
+	results, err := each(cs, func(i int, c C) (<-chan capabilities.TriggerResponse, error) {
+		return c.RegisterTrigger(ctx, cloneTriggerRequest(requests[i]))
 	})
 
 	if err != nil {
@@ -80,7 +108,7 @@ func RegisterTrigger[C capabilities.TriggerExecutable](ctx context.Context, cs [
 	}
 
 	if _, err = agree(results, func(_, _ <-chan capabilities.TriggerResponse) bool { return true }); err != nil {
-		return nil, errors.Join(err, unregisterRegistered(ctx, cs, results, request))
+		return nil, errors.Join(err, unregisterRegistered(ctx, cs, results, requests))
 	}
 
 	out := make(chan Event)
@@ -200,12 +228,12 @@ func sameEvent(a, b capabilities.TriggerResponse) bool {
 }
 
 func unregisterRegistered[C capabilities.TriggerExecutable](
-	ctx context.Context, cs []C, results []Result[<-chan capabilities.TriggerResponse], request capabilities.TriggerRegistrationRequest,
+	ctx context.Context, cs []C, results []Result[<-chan capabilities.TriggerResponse], requests []capabilities.TriggerRegistrationRequest,
 ) error {
 	var errs []error
 	for i, r := range results {
 		if r.Err == nil {
-			if err := cs[i].UnregisterTrigger(ctx, cloneTriggerRequest(request)); err != nil {
+			if err := cs[i].UnregisterTrigger(ctx, cloneTriggerRequest(requests[i])); err != nil {
 				errs = append(errs, fmt.Errorf("instance %d: failed to roll back registration: %w", i, err))
 			}
 		}
@@ -216,7 +244,7 @@ func unregisterRegistered[C capabilities.TriggerExecutable](
 // UnregisterTrigger unregisters the trigger on every instance.
 // It returns a *MismatchError when the instances disagree on whether it failed.
 func UnregisterTrigger[C capabilities.TriggerExecutable](ctx context.Context, cs []C, request capabilities.TriggerRegistrationRequest) error {
-	results, err := each(cs, func(c C) (struct{}, error) {
+	results, err := each(cs, func(_ int, c C) (struct{}, error) {
 		return struct{}{}, c.UnregisterTrigger(ctx, cloneTriggerRequest(request))
 	})
 	if err != nil {
@@ -271,8 +299,8 @@ func TypedRegisterTrigger[O proto.Message, C capabilities.TriggerExecutable, I p
 	go func() {
 		defer close(out)
 		for e := range events {
-			typed := TypedEvent[O]{Err: e.Err, Mismatch: e.Mismatch}
-			typed.Id = e.Event.ID
+			typed := TypedEvent[O]{Err: e.Err, Mismatch: e.Mismatch,
+				Id: e.Event.ID}
 			if e.Mismatch == nil && e.Err == nil {
 				typed.Trigger = newMessage[O]()
 				typed.Err = e.Event.Payload.UnmarshalTo(typed.Trigger)
@@ -333,7 +361,7 @@ func cloneAny(a *anypb.Any) *anypb.Any {
 }
 
 // each calls every instance at once, since a DON's instances may wait on each other.
-func each[C, T any](cs []C, call func(C) (T, error)) ([]Result[T], error) {
+func each[C, T any](cs []C, call func(int, C) (T, error)) ([]Result[T], error) {
 	if len(cs) == 0 {
 		return nil, errors.New("no instances to call")
 	}
@@ -342,12 +370,21 @@ func each[C, T any](cs []C, call func(C) (T, error)) ([]Result[T], error) {
 	var wg sync.WaitGroup
 	for i, c := range cs {
 		wg.Go(func() {
-			v, err := call(c)
+			v, err := call(i, c)
 			results[i] = Result[T]{Value: v, Err: err}
 		})
 	}
 	wg.Wait()
 	return results, nil
+}
+
+// repeat is v, n times: the per-instance requests of a call that asks every instance the same thing.
+func repeat[T any](n int, v T) []T {
+	repeated := make([]T, n)
+	for i := range repeated {
+		repeated[i] = v
+	}
+	return repeated
 }
 
 // agree is the result every instance returned, or a *MismatchError when they differ.

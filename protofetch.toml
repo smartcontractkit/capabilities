@@ -4,7 +4,7 @@ proto_out_dir = ".deps"
 
 [chainlink-protos]
 url = "github.com/smartcontractkit/chainlink-protos"
-revision = "e622e8b83b6b28c99a9c12270e4d5a39c87381af"
+revision = "aa8c64acc53c074f5fef93a901d1b06fd321922a"
 content_roots = ["/cre"]
 # Capabilities' protos are their own, not chainlink-protos' copies, which are at the same paths.
 deny_policies = ["/capabilities/*"]

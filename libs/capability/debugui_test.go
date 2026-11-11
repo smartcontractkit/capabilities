@@ -1,6 +1,7 @@
 package capability
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -185,6 +186,46 @@ func TestSchemaMetadata(t *testing.T) {
 	assert.Equal(t, "timestamp", fields["ExecutionTimestamp"].Kind)
 	assert.True(t, fields["SpendLimits"].List)
 	assert.Equal(t, "message", fields["SpendLimits"].Kind)
+}
+
+func TestGroupPayloads(t *testing.T) {
+	h := &debugHandler{instances: make([]Capability, 3)}
+	m := Method{Name: "Do", Input: &valuespb.Value{}}
+	group := func(input string, instances ...int) debugGroup {
+		return debugGroup{Instances: instances, Input: json.RawMessage(input)}
+	}
+
+	payloads, err := h.groupPayloads(m, []debugGroup{group(`{"string_value": "a"}`, 0, 2), group(`{"string_value": "b"}`, 1)})
+	require.NoError(t, err)
+	require.Len(t, payloads, 3)
+	got := &valuespb.Value{}
+	require.NoError(t, payloads[0].UnmarshalTo(got))
+	assert.Equal(t, "a", got.GetStringValue())
+	require.NoError(t, payloads[1].UnmarshalTo(got))
+	assert.Equal(t, "b", got.GetStringValue())
+	require.NoError(t, payloads[2].UnmarshalTo(got))
+	assert.Equal(t, "a", got.GetStringValue(), "instances in a group get the same payload")
+
+	payloads, err = h.groupPayloads(m, []debugGroup{group(`{}`, 0, 1)})
+	require.NoError(t, err)
+	assert.Nil(t, payloads[2], "an instance in no group is not called")
+
+	for _, tt := range []struct {
+		name   string
+		groups []debugGroup
+		want   string
+	}{
+		{"no instance in any group", []debugGroup{}, "no instance is in any group"},
+		{"an instance in two groups", []debugGroup{group(`{}`, 0, 1), group(`{}`, 1, 2)}, "instance 1 is in two groups"},
+		{"an instance there is not", []debugGroup{group(`{}`, 0, 1, 2, 3)}, "no instance 3"},
+		{"a group claiming nothing", []debugGroup{group(`{}`), group(`{}`, 0, 1, 2)}, "claims no instances"},
+		{"an input that is not the method's", []debugGroup{group(`{"nope": 1}`, 0, 1, 2)}, "group 1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := h.groupPayloads(m, tt.groups)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
 }
 
 func TestFillDebugMetadata(t *testing.T) {
