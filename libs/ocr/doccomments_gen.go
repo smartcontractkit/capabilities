@@ -9,8 +9,6 @@ func (Config) DocComments() map[string]commentparsing.FieldDoc {
 		"Bootstrappers":   {Comment: "Bootstrappers are the DON's bootstrap peers (e.g. 12D3KooWFirst@127.0.0.1:6690)."},
 		"PeerID":          {Comment: "PeerID is the node's peer ID (e.g. 12D3KooWKh28EhBVfiiFh39w3zqtBxzYJhmGfBZNmoL4tRjMWSor)."},
 		"ProxyURL":        {Comment: "ProxyURL is the gRPC target the node serves its peer and OCR keys on (e.g. localhost:9001)."},
-		"RegistryAddress": {Comment: "RegistryAddress is the address of the capabilities registry."},
-		"RegistryChainID": {Comment: "RegistryChainID is the chain ID of the capabilities registry."},
 		"TransmitAccount": {Comment: "TransmitAccount is the account the node is registered to transmit from\n(e.g. 0x5994a5155e9b81ab7794b79bfbf076ef5ef7c437)."},
 	}
 }

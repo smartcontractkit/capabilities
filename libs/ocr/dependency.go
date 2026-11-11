@@ -22,8 +22,7 @@ import (
 // ConfigNamespace is the namespace Config is set under.
 const ConfigNamespace = "ocr"
 
-// Config is how a capability's oracles run for the node: over its peer and keys, and under the config the
-// capabilities registry holds for them. The node sets it for compat.
+// Config is how a capability's oracles run for the node, over its peer and keys. The node sets it for compat.
 type Config struct {
 	// ProxyURL is the gRPC target the node serves its peer and OCR keys on (e.g. localhost:9001).
 	ProxyURL string
@@ -34,10 +33,6 @@ type Config struct {
 	TransmitAccount string
 	// Bootstrappers are the DON's bootstrap peers (e.g. 12D3KooWFirst@127.0.0.1:6690).
 	Bootstrappers []commontypes.BootstrapperLocator
-	// RegistryChainID is the chain ID of the capabilities registry.
-	RegistryChainID uint64
-	// RegistryAddress is the address of the capabilities registry.
-	RegistryAddress string
 }
 
 // Dependencies are what a capability's oracle needs from the node it runs for.
@@ -68,8 +63,8 @@ func newNodeDependencies(i do.Injector) (Dependencies, error) {
 		return Dependencies{}, err
 	}
 
-	if cfg.ProxyURL == "" || cfg.PeerID == "" || cfg.RegistryAddress == "" {
-		return Dependencies{}, errors.New("an OCR capability needs ocr.proxy-url, ocr.peer-id and ocr.registry-address")
+	if cfg.ProxyURL == "" || cfg.PeerID == "" {
+		return Dependencies{}, errors.New("an OCR capability needs ocr.proxy-url and ocr.peer-id")
 	}
 
 	lggr, err := do.Invoke[logger.Logger](i)
@@ -109,13 +104,7 @@ func newNodeDependencies(i do.Injector) (Dependencies, error) {
 		V2Bootstrappers: cfg.Bootstrappers,
 		TransmitAccount: ocrtypes.Account(cfg.TransmitAccount),
 		Config: func(capabilityID string) (ocrtypes.ContractConfigTracker, ocrtypes.OffchainConfigDigester) {
-			c := &registryConfig{
-				registry:        reg,
-				capabilityID:    capabilityID,
-				donID:           capabilities.CapabilityDonID,
-				chainID:         cfg.RegistryChainID,
-				registryAddress: cfg.RegistryAddress,
-			}
+			c := &registryConfig{registry: reg, capabilityID: capabilityID, donID: capabilities.CapabilityDonID}
 			return c, c
 		},
 	}, nil
