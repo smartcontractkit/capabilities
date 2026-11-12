@@ -14,11 +14,11 @@ import (
 
 // capDurationBucketBoundariesMs covers the full lifecycle of a Stellar write-report:
 // from fast read-contract calls (~10ms) through ledger confirmation wait times
-// (~5,000-30,000ms) and up to the max-retry timeout (~60,000ms).
+// (~5,000-30,000ms) and up to the max-retry timeout (~60,000ms) with headroom to 90,000ms.
 var capDurationBucketBoundariesMs = []float64{
 	10, 25, 50, 100, 250, 500,
 	1000, 2500, 5000,
-	10000, 20000, 30000, 60000,
+	10000, 20000, 30000, 45000, 60000, 90000,
 }
 
 var newMetricsCapBasic = capmonitoring.NewMetricsCapBasic
