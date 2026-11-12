@@ -13,6 +13,13 @@ import (
 
 func ns(name string) string { return fmt.Sprintf("apt_capability_%s", name) }
 
+var latencyBucketBoundariesMs = []float64{
+	0, 5, 10, 25, 50, 75, 100,
+	250, 500, 750, 1000,
+	2500, 5000, 7500, 10000,
+	15000, 30000, 45000, 60000, 90000,
+}
+
 // Metrics holds all per-method instruments
 type Metrics struct {
 	ViewSuccess struct {
@@ -56,19 +63,19 @@ func NewMetrics() (Metrics, error) {
 	m := Metrics{}
 	var err error
 
-	viewSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("view_success"), commonbeholder.ToSchemaFullName(&ViewSuccess{}))
+	viewSuccess := commoncapbeholder.NewMetricsInfoCapBasicWithBuckets(ns("view_success"), commonbeholder.ToSchemaFullName(&ViewSuccess{}), latencyBucketBoundariesMs)
 	m.ViewSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(viewSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create view success metric: %w", err)
 	}
 
-	viewErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("view_error"), commonbeholder.ToSchemaFullName(&ViewError{}))
+	viewErr := commoncapbeholder.NewMetricsInfoCapBasicWithBuckets(ns("view_error"), commonbeholder.ToSchemaFullName(&ViewError{}), latencyBucketBoundariesMs)
 	m.ViewError.basic, err = commoncapbeholder.NewMetricsCapBasic(viewErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create view error metric: %w", err)
 	}
 
-	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}))
+	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasicWithBuckets(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}), latencyBucketBoundariesMs)
 	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report success metric: %w", err)
