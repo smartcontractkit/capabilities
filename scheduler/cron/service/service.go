@@ -1,4 +1,4 @@
-package trigger
+package service
 
 import (
 	"context"
@@ -13,33 +13,30 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/smartcontractkit/capabilities/scheduler/cron/protos"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 )
 
-const ServiceName = "CronCapabilities"
-
 const defaultSendChannelBufferSize = 1000
 
 var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
-	server.CronID,
+	protos.CronID,
 	capabilities.CapabilityTypeTrigger,
 	"A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.",
 )
 
 type Config struct {
-	// FastestScheduleIntervalSeconds is the shortest interval a cron schedule may have. Zero keeps the
+	// FastestScheduleIntervalSeconds is the shortest interval a schedule may run at. Unset uses the
 	// CRE settings default.
 	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
 }
@@ -63,26 +60,10 @@ type cronTrigger struct {
 	close      func()
 }
 
-// TODO: Remove when the generated server.CronCapability no longer requires
-// these methods.
-type unimplemented struct{}
-
-func (u unimplemented) Initialise(context.Context, core.StandardCapabilitiesDependencies) error {
-	return errors.ErrUnsupported
-}
-func (u unimplemented) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
-	return nil, caperrors.NewPublicSystemError(errors.ErrUnsupported, caperrors.Unimplemented)
-}
-
-func (u unimplemented) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
-	return caperrors.NewPublicSystemError(errors.ErrUnsupported, caperrors.Unimplemented)
-}
-
+// Service is the cron trigger, served by protos.NewCronServer.
 type Service struct {
-	unimplemented
 	services.StateMachine
 	capabilities.CapabilityInfo
-	limitsFactory           limits.Factory
 	fastestScheduleInterval limits.TimeLimiter
 	clock                   clockwork.Clock
 	lggr                    logger.Logger
@@ -97,9 +78,10 @@ type Service struct {
 
 var _ services.Service = &Service{}
 
-// NewService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
-// the system clock will be used.
-func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory, cfg Config) (_ *Service, err error) {
+// NewService creates a new trigger service, scheduling on clock, for the node shard shardIndex. The orgResolver is
+// optional and can be nil, but should be set in live environments.
+func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory, cfg Config, orgResolver orgresolver.OrgResolver,
+	shardIndex uint32) (_ *Service, err error) {
 	lggr := logger.Named(parentLggr, "CRONTrigger")
 
 	fastestScheduleInterval, err := newFastestScheduleInterval(limitsFactory, cfg)
@@ -117,6 +99,10 @@ func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory l
 		return nil, fmt.Errorf("error creating metrics: %w", err)
 	}
 
+	if orgResolver == nil {
+		lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
+	}
+
 	var options []gocron.SchedulerOption
 	options = append(options, gocron.WithMonitor(NewCronMonitor(metrics)))
 	// Set scheduler location to UTC for consistency across nodes.
@@ -124,12 +110,7 @@ func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory l
 	// Adapt chainlink logger to gocron logger interface.
 	cronLogger := NewCronLogger(lggr)
 	options = append(options, gocron.WithLogger(cronLogger))
-	// Allow injecting a clock for testing. Otherwise use system clock.
-	if clock != nil {
-		options = append(options, gocron.WithClock(clock))
-	} else {
-		clock = clockwork.NewRealClock()
-	}
+	options = append(options, gocron.WithClock(clock))
 
 	scheduler, err := gocron.NewScheduler(options...)
 	if err != nil {
@@ -139,7 +120,6 @@ func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory l
 	return &Service{
 		lggr:                    lggr,
 		CapabilityInfo:          cronTriggerInfo,
-		limitsFactory:           limitsFactory,
 		fastestScheduleInterval: fastestScheduleInterval,
 		triggers:                NewCronStore(),
 		scheduler:               scheduler,
@@ -150,11 +130,13 @@ func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory l
 			"capabilityVersion", cronTriggerInfo.Version(),
 			"capabilityName", cronTriggerInfo.ID,
 		),
-		metrics: metrics,
+		metrics:     metrics,
+		orgResolver: orgResolver,
+		shardIndex:  shardIndex,
 	}, nil
 }
 
-func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], caperrors.Error) {
+func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *protos.Config) (<-chan capabilities.TriggerAndId[*protos.Payload], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
 	var muCh sync.RWMutex // extra synchronization to prevent the cron task from racing to send on the closed chan and re-register itself
 	// hold the lock until we call triggers.Write
@@ -167,7 +149,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	}
 
 	var job gocron.Job
-	callbackCh := make(chan capabilities.TriggerAndId[*crontypedapi.Payload], defaultSendChannelBufferSize)
+	callbackCh := make(chan capabilities.TriggerAndId[*protos.Payload], defaultSendChannelBufferSize)
 
 	closeCh := func() {
 		muCh.Lock()
@@ -344,7 +326,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	return callbackCh, nil
 }
 
-func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.TriggerAndId[*crontypedapi.Payload] {
+func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.TriggerAndId[*protos.Payload] {
 	// Ensure UTC time is used for consistency across nodes.
 	scheduledExecutionTimeUTC := scheduledExecutionTime.UTC()
 
@@ -354,8 +336,8 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 	scheduledExecutionTimeFormatted := scheduledExecutionTimeUTC.Format(time.RFC3339)
 	triggerEventID := scheduledExecutionTimeFormatted
 
-	return capabilities.TriggerAndId[*crontypedapi.Payload]{
-		Trigger: &crontypedapi.Payload{
+	return capabilities.TriggerAndId[*protos.Payload]{
+		Trigger: &protos.Payload{
 			ScheduledExecutionTime: timestamppb.New(scheduledExecutionTimeUTC),
 		},
 		Id: triggerEventID,
@@ -366,7 +348,7 @@ func (s *Service) AckEvent(ctx context.Context, triggerID string, eventID string
 	return nil
 }
 
-func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
+func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *protos.Config) caperrors.Error {
 	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
 		s.lggr.Warnw("trigger not found", "triggerID", triggerID)
@@ -423,13 +405,16 @@ func (s *Service) start() error {
 
 // Close stops the Service.
 // After this call the Service cannot be started again,
-// The service will need to be re-built to start scheduling again.
+// The service will need to be re-built to start scheduling again. Closing it again does nothing.
 func (s *Service) Close() error {
 	err := s.StopOnce(s.Name(), s.close)
-	if errors.Is(err, services.ErrCannotStopUnstarted) {
+	switch {
+	case errors.Is(err, services.ErrCannotStopUnstarted):
 		// gocron runs a goroutine from construction rather than from Start, so a service closed
 		// without having started, e.g. when Initialise fails, still has to shut the scheduler down.
 		return s.close()
+	case errors.Is(err, services.ErrAlreadyStopped):
+		return nil
 	}
 	return err
 }
