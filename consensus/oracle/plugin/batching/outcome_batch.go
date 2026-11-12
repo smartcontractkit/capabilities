@@ -240,7 +240,6 @@ func (o *OutcomeBatch) outcomeWouldFit(startingSize int, requestID string, reque
 
 func (o *OutcomeBatch) checkOutcomeBatchHasCapacity(requestID string, requestOutcome proto.Message,
 	historicalSeqNr uint64) bool {
-
 	// The number of outcomes should never exceed the max number of reports as this would cause outcomes to be lost and need recalculating on subsequent rounds
 	if len(o.Outcomes) == o.maxNumberOfReports {
 		o.lggr.Debugw("outcome batch has reached maximum number of reports", "maxNumberOfReports", o.maxNumberOfReports)

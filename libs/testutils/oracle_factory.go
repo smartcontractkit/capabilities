@@ -9,7 +9,6 @@ import (
 
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -153,10 +152,10 @@ func (o *oracle) Start(ctx context.Context) error {
 
 					err = o.config.ContractTransmitter.Transmit(
 						ctx,
-						types.ConfigDigest{},
+						ocrtypes.ConfigDigest{},
 						outcomeCtx.SeqNr,
 						report.ReportWithInfo,
-						[]types.AttributedOnchainSignature{},
+						[]ocrtypes.AttributedOnchainSignature{},
 					)
 					if err != nil {
 						o.lggr.Errorf("failed to transmit report: %v", err)

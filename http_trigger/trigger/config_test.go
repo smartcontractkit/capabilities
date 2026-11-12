@@ -53,5 +53,4 @@ func TestServiceConfig_AllDefaults(t *testing.T) {
 	require.Equal(t, uint16(defaultSendChannelBufferSize), appliedCfg.SendChannelBufferSize)
 	require.Equal(t, uint16(defaultMaxAuthorizedKeysPerWorkflow), appliedCfg.MaxAuthorizedKeysPerWorkflow)
 	require.Equal(t, uint32(defaultRequestCacheTTL), appliedCfg.RequestCacheTTL)
-
 }
