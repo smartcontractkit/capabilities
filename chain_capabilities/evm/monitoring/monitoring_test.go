@@ -289,7 +289,7 @@ func TestMetricViews_ReadLatencyBuckets(t *testing.T) {
 		0, 5, 10, 25, 50, 75, 100,
 		250, 500, 750, 1000,
 		2500, 5000, 7500, 10000,
-		15000, 30000,
+		15000, 30000, 45000, 60000, 90000,
 	}
 	expectedMetricNames := []string{
 		"evm_capability_read_success_cap_duration",
@@ -321,7 +321,7 @@ func TestMetricViews_ReadLatencyBuckets(t *testing.T) {
 	}
 
 	_, ok := metricViewStream(views, "evm_capability_write_report_success_cap_duration")
-	require.False(t, ok, "write report latency should keep the default buckets")
+	require.False(t, ok, "write report latency buckets are set on the instrument, not via a view")
 }
 
 func metricViewStream(views []sdkmetric.View, name string) (sdkmetric.Stream, bool) {
