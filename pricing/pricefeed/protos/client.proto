@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package capabilities.pricing.pricefeed.x.v1;
+
+import "capability/feature/feature.proto";
+import "google/protobuf/timestamp.proto";
+import "tools/generator/v1alpha/cre_metadata.proto";
+import "values/v1/values.proto";
+
+option (cre.feature.v1.released) = "price";
+
+// GetPriceRequest asks for the current price of one ticker.
+message GetPriceRequest {
+  // ticker is the pair to price, as BASE-QUOTE, such as BTC-USD. The separator can also be "/" or "_", and the case
+  // does not matter: the pair is normalised to upper case BASE-QUOTE.
+  string ticker = 1 [(cre.feature.v1.field) = "price"];
+}
+
+// GetPriceResponse is the current price of a ticker, as one node fetched it. Workflows reach consensus on it across
+// nodes, such as with the median of price and timestamp.
+message GetPriceResponse {
+  // ticker is the normalised pair the price is for, such as BTC-USD.
+  string ticker = 1 [(cre.feature.v1.field) = "price"];
+  // price is the amount of the quote currency one unit of the base currency costs. It is a decimal, so no precision
+  // is lost.
+  values.v1.Decimal price = 2 [(cre.feature.v1.field) = "price"];
+  // timestamp is when the provider observed the price. For a provider that does not give one, it is when the node
+  // received the price.
+  google.protobuf.Timestamp timestamp = 3 [(cre.feature.v1.field) = "price"];
+}
+
+// Client fetches current cryptocurrency prices from the provider the node operator configured, so workflows need
+// no API keys of their own.
+service Client {
+  option (tools.generator.v1alpha.capability) = {
+    mode: MODE_NODE
+    capability_id: "price-feed@1.0.0-alpha"
+  };
+
+  // GetPrice returns the current price of a ticker.
+  rpc GetPrice(GetPriceRequest) returns (GetPriceResponse) {
+    option (cre.feature.v1.method) = "price";
+  }
+}

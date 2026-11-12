@@ -33,6 +33,8 @@ flowchart LR
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common/x/config
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
+	capabilities/pricing/pricefeed --> capabilities/libs
+	click capabilities/pricing/pricefeed href "https://github.com/smartcontractkit/capabilities"
 	ccip-contract-examples/chains/evm
 	click ccip-contract-examples/chains/evm href "https://github.com/smartcontractkit/ccip-contract-examples"
 	ccip-owner-contracts
@@ -245,6 +247,7 @@ flowchart LR
 		 capabilities/http_trigger
 		 capabilities/integration_tests
 		 capabilities/libs
+		 capabilities/pricing/pricefeed
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 
