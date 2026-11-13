@@ -18,7 +18,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	commonocr "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr"
+	commonkeyring "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/keyring"
 )
 
 // An embedded run's instances are a DON on their own: each derives its keys from its index, they talk over the
@@ -76,12 +76,9 @@ func embeddedDependencies(net *network, id, total int) (Dependencies, error) {
 	}
 
 	return Dependencies{
-		Node: commonocr.Node{
-			BinaryNetworkEndpointFactory: ocr2Factory{net: net, peerID: keys.peerID, bufferSize: defaultBufferSize},
-			OffchainKeyring:              keys,
-			OnchainKeyring:               keys,
-		},
-		TransmitAccount: keys.transmitAccount(),
+		BinaryNetworkEndpointFactory: ocr2Factory{net: net, peerID: keys.peerID, bufferSize: defaultBufferSize},
+		Keyrings:                     commonkeyring.Keyrings{OffchainKeyring: keys, OnchainKeyring: keys},
+		TransmitAccount:              keys.transmitAccount(),
 		Config: func(string) (ocrtypes.ContractConfigTracker, ocrtypes.OffchainConfigDigester) {
 			return staticConfig{config: config}, staticConfig{config: config}
 		},

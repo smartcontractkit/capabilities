@@ -18,7 +18,8 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	commonocr "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr"
+	commonkeyring "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/keyring"
+	commonnetwork "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/network"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ocrutil"
 )
@@ -42,10 +43,13 @@ func TestRemoteOraclesReachConsensus(t *testing.T) {
 		deps, err := embeddedDependencies(network, id, total)
 		require.NoError(t, err)
 
-		node := deps.Node
 		lis := bufconn.Listen(1024 * 1024)
-		s := grpc.NewServer(commonocr.ServerOptions()...)
-		commonocr.RegisterServer(s, logger.Test(t), func(context.Context) (commonocr.Node, error) { return node, nil })
+		s := grpc.NewServer(grpc.MaxRecvMsgSize(max(commonnetwork.MaxMessageSize, commonkeyring.MaxMessageSize)))
+		factory := deps.BinaryNetworkEndpointFactory
+		commonnetwork.RegisterServer(s, logger.Test(t), func(context.Context) (ocrtypes.BinaryNetworkEndpointFactory, error) {
+			return factory, nil
+		})
+		commonkeyring.RegisterServer(s, deps.Keyrings)
 		go func() { _ = s.Serve(lis) }()
 		t.Cleanup(s.Stop)
 
@@ -56,8 +60,10 @@ func TestRemoteOraclesReachConsensus(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = conn.Close() })
 
-		deps.Node, err = commonocr.Connect(t.Context(), logger.Test(t), conn, node.BinaryNetworkEndpointFactory.PeerID(),
-			commonocr.Config{}, node.OnchainKeyring.Verify)
+		verify := deps.OnchainKeyring.Verify
+		deps.BinaryNetworkEndpointFactory, err = commonnetwork.Connect(logger.Test(t), conn, factory.PeerID(), commonnetwork.Config{})
+		require.NoError(t, err)
+		deps.Keyrings, err = commonkeyring.Connect(t.Context(), conn, commonkeyring.Config{}, verify)
 		require.NoError(t, err)
 		return deps
 	})
