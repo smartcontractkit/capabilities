@@ -99,12 +99,14 @@ func newNodeDependencies(i do.Injector) (Dependencies, error) {
 		return Dependencies{}, err
 	}
 
+	transmitAccount := ocrtypes.Account(cfg.TransmitAccount)
 	return Dependencies{
 		Node:            node,
 		V2Bootstrappers: cfg.Bootstrappers,
-		TransmitAccount: ocrtypes.Account(cfg.TransmitAccount),
+		TransmitAccount: transmitAccount,
 		Config: func(capabilityID string) (ocrtypes.ContractConfigTracker, ocrtypes.OffchainConfigDigester) {
-			c := &registryConfig{registry: reg, capabilityID: capabilityID, donID: capabilities.CapabilityDonID}
+			c := &registryConfig{registry: reg, capabilityID: capabilityID, donID: capabilities.CapabilityDonID,
+				transmitAccount: transmitAccount}
 			return c, c
 		},
 	}, nil

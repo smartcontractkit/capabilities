@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
@@ -22,6 +23,8 @@ type registryConfig struct {
 	registry     registry.CapabilitiesRegistry
 	capabilityID string
 	donID        uint32
+	// transmitAccount is the node's, as its oracles give it.
+	transmitAccount ocrtypes.Account
 }
 
 func (c *registryConfig) Notify() <-chan struct{} { return nil }
@@ -74,5 +77,20 @@ func (c *registryConfig) latest(ctx context.Context) (ocrtypes.ContractConfig, e
 		return ocrtypes.ContractConfig{}, fmt.Errorf("the registry has no OCR config for %s on DON %d", c.capabilityID, c.donID)
 	}
 
+	// libocr finds this oracle in the config by comparing its transmit account as a string, but the registry gives
+	// accounts as bare hex, while the node may give its own with a prefix or checksum.
+	transmitters := make([]ocrtypes.Account, len(cc.Transmitters))
+	for i, t := range cc.Transmitters {
+		transmitters[i] = t
+		if bareHex(t) == bareHex(c.transmitAccount) {
+			transmitters[i] = c.transmitAccount
+		}
+	}
+
+	cc.Transmitters = transmitters
 	return cc, nil
+}
+
+func bareHex(a ocrtypes.Account) string {
+	return strings.ToLower(strings.TrimPrefix(string(a), "0x"))
 }

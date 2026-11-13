@@ -20,11 +20,12 @@ func TestRegistryConfig(t *testing.T) {
 		ConfigDigest: ocrtypes.ConfigDigest{0, 14, 1},
 		ConfigCount:  2,
 		Signers:      []ocrtypes.OnchainPublicKey{{1}},
-		Transmitters: []ocrtypes.Account{"0xf98665742002D7212B9a74c37Bb17dcd0f96FF9D"},
+		Transmitters: []ocrtypes.Account{"f98665742002d7212b9a74c37bb17dcd0f96ff9d", "5994a5155e9b81ab7794b79bfbf076ef5ef7c437"},
 	}
 
 	reg := &fakeRegistry{configs: map[string]ocrtypes.ContractConfig{capabilitiespb.OCR3ConfigDefaultKey: cc}}
-	c := &registryConfig{registry: reg, capabilityID: "test@1.0.0", donID: 3}
+	c := &registryConfig{registry: reg, capabilityID: "test@1.0.0", donID: 3,
+		transmitAccount: "0xf98665742002D7212B9a74c37Bb17dcd0f96FF9D"}
 
 	count, digest, err := c.LatestConfigDetails(t.Context())
 	require.NoError(t, err)
@@ -33,7 +34,9 @@ func TestRegistryConfig(t *testing.T) {
 
 	latest, err := c.LatestConfig(t.Context(), count)
 	require.NoError(t, err)
-	assert.Equal(t, cc, latest)
+	want := cc
+	want.Transmitters = []ocrtypes.Account{"0xf98665742002D7212B9a74c37Bb17dcd0f96FF9D", "5994a5155e9b81ab7794b79bfbf076ef5ef7c437"}
+	assert.Equal(t, want, latest)
 
 	digest, err = c.ConfigDigest(t.Context(), latest)
 	require.NoError(t, err)
