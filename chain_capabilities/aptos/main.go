@@ -16,6 +16,7 @@ import (
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
@@ -341,12 +342,12 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 // CapabilityConfiguration, then extracts the "p2pToTransmitterMap" key from SpecConfig.
 // This is the fallback path used when the JSON config (produced by buildConfigJSON)
 // does not already contain the map.
-func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry core.CapabilitiesRegistry) (map[string]string, error) {
+func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, capRegistry registry.CapabilitiesRegistry) (map[string]string, error) {
 	c.lggr.Debugw("fetchP2PConfig: calling ConfigForCapability",
 		"capabilityID", c.id, "donID", c.DON.ID,
 	)
 
-	capCfg, err := registry.ConfigForCapability(ctx, c.id, c.DON.ID)
+	capCfg, err := capRegistry.ConfigForCapability(ctx, c.id, c.DON.ID)
 	if err != nil {
 		c.lggr.Errorw("fetchP2PConfig: ConfigForCapability failed", "error", err)
 		return nil, fmt.Errorf("failed to get capability config: %w", err)
