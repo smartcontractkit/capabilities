@@ -19,12 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OCRKeystore_ListKeyBundles_FullMethodName      = "/capabilities.keystore.pb.OCRKeystore/ListKeyBundles"
-	OCRKeystore_GetKeyBundle_FullMethodName        = "/capabilities.keystore.pb.OCRKeystore/GetKeyBundle"
-	OCRKeystore_SignOnchain_FullMethodName         = "/capabilities.keystore.pb.OCRKeystore/SignOnchain"
-	OCRKeystore_VerifyOnchain_FullMethodName       = "/capabilities.keystore.pb.OCRKeystore/VerifyOnchain"
-	OCRKeystore_SignOffchain_FullMethodName        = "/capabilities.keystore.pb.OCRKeystore/SignOffchain"
-	OCRKeystore_ConfigDiffieHellman_FullMethodName = "/capabilities.keystore.pb.OCRKeystore/ConfigDiffieHellman"
+	OCRKeystore_ListKeyBundles_FullMethodName      = "/capabilities.keystore.ocr.remote.pb.OCRKeystore/ListKeyBundles"
+	OCRKeystore_GetKeyBundle_FullMethodName        = "/capabilities.keystore.ocr.remote.pb.OCRKeystore/GetKeyBundle"
+	OCRKeystore_SignOnchain_FullMethodName         = "/capabilities.keystore.ocr.remote.pb.OCRKeystore/SignOnchain"
+	OCRKeystore_VerifyOnchain_FullMethodName       = "/capabilities.keystore.ocr.remote.pb.OCRKeystore/VerifyOnchain"
+	OCRKeystore_SignOffchain_FullMethodName        = "/capabilities.keystore.ocr.remote.pb.OCRKeystore/SignOffchain"
+	OCRKeystore_ConfigDiffieHellman_FullMethodName = "/capabilities.keystore.ocr.remote.pb.OCRKeystore/ConfigDiffieHellman"
 )
 
 // OCRKeystoreClient is the client API for OCRKeystore service.
@@ -288,7 +288,7 @@ func _OCRKeystore_ConfigDiffieHellman_Handler(srv interface{}, ctx context.Conte
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var OCRKeystore_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "capabilities.keystore.pb.OCRKeystore",
+	ServiceName: "capabilities.keystore.ocr.remote.pb.OCRKeystore",
 	HandlerType: (*OCRKeystoreServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
