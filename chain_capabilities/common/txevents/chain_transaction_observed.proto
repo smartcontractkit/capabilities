@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+// Package txevents defines the transaction event every chain capability emits for the CRE
+// Transactions Viewer. Aptos, EVM, Solana and Stellar emit this schema for the transaction
+// whose fee the capability bills.
+package chain_capabilities.txevents.v1;
+
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents;txevents";
+
+// TxStatus is the on-chain outcome of the billed transaction, as known when the capability
+// reports its fee. Consumers fetch the receipt for anything beyond that.
+enum TxStatus {
+  TX_STATUS_UNSPECIFIED = 0;
+  TX_STATUS_SUCCESS = 1;
+  TX_STATUS_REVERTED = 2;
+}
+
+// ChainTransactionObserved is emitted once per write, for the transaction whose fee the
+// capability puts in its billing metadata. That is the first successful transmission when
+// the report landed, or the failed transmission the capability still charges for. It carries
+// only what is needed to attribute that transaction to the execution; the Blockchain Finality
+// Service dedups events by (chain_selector, tx_hash) and resolves the receipt, fee and
+// finality itself.
+message ChainTransactionObserved {
+  string workflow_execution_id = 1;
+  string workflow_id = 2;
+  uint64 chain_selector = 3;
+  // Chain-native encoding. EVM: 0x-prefixed lowercase hex. Solana: base58 signature.
+  string tx_hash = 4;
+  TxStatus tx_status = 5;
+  // Unix milliseconds at which the node observed the transaction.
+  int64 observed_at_ms = 6;
+}
