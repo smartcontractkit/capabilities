@@ -13,6 +13,7 @@ import (
 	breaking "github.com/smartcontractkit/capabilities/libs/capability/cmd/protobreaking/options"
 	"github.com/smartcontractkit/capabilities/libs/capability/internal/example/capability/service"
 	"github.com/smartcontractkit/capabilities/libs/capability/keystore"
+	"github.com/smartcontractkit/capabilities/libs/ocr"
 )
 
 func main() {
@@ -28,6 +29,7 @@ func main() {
 			&breaking.Options{},
 			&service.Config{},
 			&keystore.Config{},
+			&ocr.Config{},
 		},
 		Tool:        "github.com/smartcontractkit/capabilities/libs/capability/internal/docgen",
 		LocalPrefix: "github.com/smartcontractkit",
