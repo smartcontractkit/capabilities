@@ -28,6 +28,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -56,9 +57,9 @@ type WriteReport struct {
 
 	gasMeter *gasmeter.Meter
 
-	// txReporter emits ChainTransactionObserved the moment a transaction is known to be mined.
+	// txReporter emits ChainTransactionObserved for the transaction this write bills.
 	// Nil when transaction events are disabled.
-	txReporter *txEventReporter
+	txReporter *txevents.Reporter
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -106,7 +107,7 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		transmissionScheduler:  e.transmissionScheduler,
 		executionTimestamp:     metadata.ExecutionTimestamp,
 		gasMeter:               e.gasMeter,
-		txReporter:             e.newTxEventReporter(lggr, metadata),
+		txReporter:             txevents.NewReporter(e.txEvents, e.chainSelector, metadata, lggr),
 	}
 
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
@@ -153,7 +154,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission succeeded", "txHash", common.Bytes2Hex(txHash[:]))
-		e.txReporter.landed(ctx, *txHash)
 		reply, err := e.buildSuccessReply(ctx, *txHash)
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
@@ -171,7 +171,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission marked receiver invalid", "txHash", common.Bytes2Hex(txHash[:]))
-		e.txReporter.landed(ctx, *txHash)
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 		if err != nil {
 			// Surface the known revert reason so the user learns their receiver is invalid even
@@ -197,7 +196,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				"receiverGasBudget", calculatedReceiverGasBudget,
 				"transmissionReceiverGasBudget", transmissionInfo.GasLimit,
 			)
-			e.txReporter.landed(ctx, *txHash)
 			reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 			if err != nil {
 				// The receiver reverted despite sufficient gas (user contract fault); surface the
@@ -225,8 +223,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		e.lggr.Errorw("Transaction failed", "error", err.Error())
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	e.txReporter.sent(ctx, transactionResult)
-
 	newTransmissionInfo, err := capcommon.WithPollingRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		if readTransmissionErr != nil {
@@ -250,7 +246,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		e.txReporter.landed(ctx, *txHash)
 		switch transactionResult.TxStatus {
 		case evmtypes.TxReverted:
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
@@ -282,8 +277,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			txHash = originalTxHash
 		}
 		e.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", common.Bytes2Hex(txHash[:]), "transmissionState", newTransmissionInfo.State.String())
-		e.txReporter.landed(ctx, *txHash)
-
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, newTransmissionInfo, transmissionID)
 		if err != nil {
 			// Surface the known revert reason (invalid receiver / contract execution failure) so the
@@ -551,7 +544,28 @@ func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabiliti
 		return capabilities.ResponseMetadata{}
 	}
 	e.gasMeter.Emit(ctx, metadata, hex.EncodeToString(reply.TxHash), feeInWei)
+	e.txReporter.Charged(ctx, formatTxHashBytes(reply.TxHash), txStatusFromReply(reply.TxStatus))
 	return metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
+}
+
+// formatTxHashBytes renders an EVM hash the way explorers and the Transactions Viewer expect.
+func formatTxHashBytes(b []byte) string {
+	return "0x" + hex.EncodeToString(b)
+}
+
+func formatTxHash(h evmtypes.Hash) string {
+	return formatTxHashBytes(h[:])
+}
+
+func txStatusFromReply(s evm.TxStatus) txevents.TxStatus {
+	switch s {
+	case evm.TxStatus_TX_STATUS_SUCCESS:
+		return txevents.TxStatus_TX_STATUS_SUCCESS
+	case evm.TxStatus_TX_STATUS_REVERTED:
+		return txevents.TxStatus_TX_STATUS_REVERTED
+	default:
+		return txevents.TxStatus_TX_STATUS_UNSPECIFIED
+	}
 }
 
 func (e *WriteReport) includeL1FeeInReceiptFee(ctx context.Context) bool {
