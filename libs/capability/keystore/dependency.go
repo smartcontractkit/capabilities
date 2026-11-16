@@ -27,6 +27,7 @@ type Config struct {
 func init() {
 	capability.RunInjector.MustProvideConfig(ConfigNamespace, &Config{})
 	capability.RunInjector.MustProvide(newNodeOCRClient)
+	capability.EmbedInjector.MustProvide(newEmbeddedOCRClient)
 }
 
 // newNodeOCRClient connects to the node's OCR keystore. The connection lives as long as the process.
@@ -56,4 +57,13 @@ func newNodeOCRClient(i do.Injector) (ocr.Client, error) {
 	}
 
 	return ocrremote.NewClient(lggr, conn), nil
+}
+
+func newEmbeddedOCRClient(i do.Injector) (ocr.Client, error) {
+	info, err := do.Invoke[capability.InstanceInfo](i)
+	if err != nil {
+		return nil, err
+	}
+
+	return ocr.NewEmbeddedClient(info.ID)
 }
