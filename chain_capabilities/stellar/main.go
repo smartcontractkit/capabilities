@@ -19,6 +19,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
@@ -244,6 +245,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return err
 	}
+	txEmitter, err := txevents.NewEmitter(c.lggr, cfg.TxEvents)
+	if err != nil {
+		return err
+	}
+	c.WithTxEvents(txEmitter)
 
 	for _, service := range []interface{ Start(context.Context) error }{c.requestPoller, c.consensusHandler, c.blocksProvider, c.oracle} {
 		if err = service.Start(ctx); err != nil {
@@ -299,6 +305,7 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
+	cfg.TxEvents = cfg.TxEvents.Normalized()
 
 	return &cfg, nil
 }

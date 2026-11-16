@@ -24,6 +24,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/monitoring"
 )
@@ -43,6 +44,7 @@ type writeReport struct {
 	transmissionScheduler ts.TransmissionScheduler
 	messageBuilder        *monitoring.MessageBuilder
 	beholderProcessor     beholder.ProtoProcessor
+	txReporter            *txevents.Reporter
 }
 
 func (s *Stellar) WriteReport(
@@ -102,6 +104,7 @@ func (s *Stellar) executeWriteReport(
 		transmissionScheduler: s.transmissionScheduler,
 		messageBuilder:        s.messageBuilder,
 		beholderProcessor:     s.beholderProcessor,
+		txReporter:            txevents.NewReporter(s.txEvents, s.chainSelector, metadata, s.lggr),
 	}
 	return wr.execute(ctx, request, metadata, telemetryContext)
 }
@@ -156,7 +159,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, wr.meteringFromReply(reply), nil
+		return reply, wr.billed(ctx, txHash, txevents.TxStatus_TX_STATUS_SUCCESS, wr.meteringFromReply(reply)), nil
 	case TransmissionStateInvalidReceiver:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -171,7 +174,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
-		return reply, wr.meteringFromReply(reply), nil
+		return reply, wr.billed(ctx, txHash, txevents.TxStatus_TX_STATUS_SUCCESS, wr.meteringFromReply(reply)), nil
 	case TransmissionStateFailed:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
@@ -186,7 +189,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
 		}
-		return reply, wr.meteringFromReply(reply), nil
+		return reply, wr.billed(ctx, txHash, txevents.TxStatus_TX_STATUS_SUCCESS, wr.meteringFromReply(reply)), nil
 	case TransmissionStateNotAttempted:
 	case TransmissionStateUnknown:
 		// Unknown state must not authorize spend.
@@ -230,7 +233,7 @@ func (wr *writeReport) execute(
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	ownMeteringMetadata := wr.meteringFromSubmitResponse(submitResp)
+	ownMeteringMetadata := wr.billed(ctx, submitTxHash(submitResp), stellarSubmitStatus(submitResp), wr.meteringFromSubmitResponse(submitResp))
 
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
@@ -434,6 +437,35 @@ func (wr *writeReport) pollTransmissionInfo(
 			return lastValidInfo, nil
 		case <-time.After(wait):
 		}
+	}
+}
+
+// billed emits ChainTransactionObserved when meta charges for txHash.
+func (wr *writeReport) billed(ctx context.Context, txHash string, status txevents.TxStatus, meta capabilities.ResponseMetadata) capabilities.ResponseMetadata {
+	if len(meta.Metering) > 0 {
+		wr.txReporter.Charged(ctx, txHash, status)
+	}
+	return meta
+}
+
+func submitTxHash(resp *stellartypes.SubmitTransactionResponse) string {
+	if resp == nil {
+		return ""
+	}
+	return resp.TxHash
+}
+
+func stellarSubmitStatus(resp *stellartypes.SubmitTransactionResponse) txevents.TxStatus {
+	if resp == nil {
+		return txevents.TxStatus_TX_STATUS_UNSPECIFIED
+	}
+	switch resp.TxStatus {
+	case stellartypes.TxSuccess:
+		return txevents.TxStatus_TX_STATUS_SUCCESS
+	case stellartypes.TxFailed:
+		return txevents.TxStatus_TX_STATUS_REVERTED
+	default:
+		return txevents.TxStatus_TX_STATUS_UNSPECIFIED
 	}
 }
 
