@@ -619,7 +619,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 				ReportContext: []byte{},
 				Sigs:          generateRandomSignatures(),
 			},
-			GasConfig: &evm.GasConfig{GasLimit: uint64(belowMinimum)}, // nolint:gosec // G115: integer overflow conversion
+			GasConfig: &evm.GasConfig{GasLimit: belowMinimum},
 		})
 		require.Error(t, err)
 	})
