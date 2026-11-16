@@ -1651,7 +1651,6 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				require.NotNil(t, txResult.Response.ReceiverContractExecutionStatus)
 				require.Equal(t, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(), txResult.Response.ReceiverContractExecutionStatus.Enum())
 				evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.000000000000002", "2000")
-
 			})
 		}
 	})
