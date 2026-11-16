@@ -28,6 +28,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 )
 
 // ForwarderGasOverhead is the gas consumed by the forwarder contract before dispatching
@@ -89,6 +90,7 @@ type writeReport struct {
 	txSearchStartingBuffer          time.Duration
 	beholderProcessor               beholder.ProtoProcessor
 	messageBuilder                  *monitoring.MessageBuilder
+	txReporter                      *txevents.Reporter
 }
 
 func (s *Aptos) executeWriteReport(
@@ -112,6 +114,7 @@ func (s *Aptos) executeWriteReport(
 		txSearchStartingBuffer:          s.txSearchStartingBuffer,
 		beholderProcessor:               s.beholderProcessor,
 		messageBuilder:                  s.messageBuilder,
+		txReporter:                      txevents.NewReporter(s.txEvents, s.chainSelector, metadata, s.lggr),
 	}
 	return wr.execute(ctx, request, metadata, telemetryContext)
 }
@@ -199,7 +202,7 @@ func (wr *writeReport) execute(
 			TransactionFee:                  &feeOctas,
 			BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, txResult.BlockTimestamp),
 		}
-		return reply, metering.GetResponseMetadataWriteReport(feeOctas, wr.chainSelector), nil
+		return reply, wr.billed(ctx, txResult.TxHash, txevents.TxStatus_TX_STATUS_SUCCESS, metering.GetResponseMetadataWriteReport(feeOctas, wr.chainSelector)), nil
 	}
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
@@ -295,7 +298,7 @@ func (wr *writeReport) execute(
 				TransactionFee:                  &feeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, successResult.BlockTimestamp),
-			}, meteringMetadata, nil
+			}, wr.billed(ctx, successResult.TxHash, txevents.TxStatus_TX_STATUS_SUCCESS, meteringMetadata), nil
 		case aptostypes.TxSuccess:
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
@@ -303,7 +306,7 @@ func (wr *writeReport) execute(
 				TransactionFee:                  &ownFeeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, ownBlockTimestamp),
-			}, ownMeteringMetadata, nil
+			}, wr.billed(ctx, txReply.TxHash, txevents.TxStatus_TX_STATUS_SUCCESS, ownMeteringMetadata), nil
 		default:
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %v", txReply.TxStatus)
 		}
@@ -325,7 +328,7 @@ func (wr *writeReport) execute(
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
 			wr.lggr.Debugw("Position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVMStatus)
-			return ownReply, ownMeteringMetadata, nil
+			return ownReply, wr.billed(ctx, txReply.TxHash, txevents.TxStatus_TX_STATUS_REVERTED, ownMeteringMetadata), nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
@@ -363,14 +366,22 @@ func (wr *writeReport) execute(
 				ErrorMessage:                    ptrIfNonEmpty(failedResult.VMStatus),
 				ReceiverContractExecutionStatus: recvStatus,
 				BlockTimestamp:                  wr.maybeBlockTimestamp(ctx, failedResult.BlockTimestamp),
-			}, replyMeta, nil
+			}, wr.billed(ctx, failedResult.TxHash, txevents.TxStatus_TX_STATUS_REVERTED, replyMeta), nil
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
 		wr.lggr.Debugw("No prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVMStatus)
-		return ownReply, ownMeteringMetadata, nil
+		return ownReply, wr.billed(ctx, txReply.TxHash, txevents.TxStatus_TX_STATUS_REVERTED, ownMeteringMetadata), nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
+}
+
+// billed emits ChainTransactionObserved when this reply carries write-report metering for txHash.
+func (wr *writeReport) billed(ctx context.Context, txHash string, status txevents.TxStatus, meta capabilities.ResponseMetadata) capabilities.ResponseMetadata {
+	if len(meta.Metering) > 0 {
+		wr.txReporter.Charged(ctx, txHash, status)
+	}
+	return meta
 }
 
 // getTxnInfoFromChain returns the committed ledger version, fee in octas (gasUsed * gasUnitPrice),

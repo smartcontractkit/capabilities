@@ -30,6 +30,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	consmetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
@@ -296,6 +297,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
+	txEmitter, err := txevents.NewEmitter(c.lggr, cfg.TxEvents)
+	if err != nil {
+		return err
+	}
+	c.WithTxEvents(txEmitter)
 	c.lggr.Debugw("Created Aptos actions")
 
 	startServices := []interface{ Start(context.Context) error }{c.heightProvider, c.consensusHandler, c.requestPoller, c.oracle}
@@ -434,5 +440,6 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
+	cfg.TxEvents = cfg.TxEvents.Normalized()
 	return &cfg, nil
 }
