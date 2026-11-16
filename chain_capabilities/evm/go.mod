@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/ethereum/go-ethereum v1.17.4
 	github.com/google/go-cmp v0.7.0
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261009182120-372f846f528c
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261116142150-ead8de3e4748
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961
 	github.com/smartcontractkit/chain-selectors v1.0.112
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261006175240-29594528f464
@@ -209,5 +209,3 @@ require (
 )
 
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df
-
-replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common
