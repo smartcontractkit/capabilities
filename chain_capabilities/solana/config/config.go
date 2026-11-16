@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 )
 
 type Config struct {
@@ -22,6 +24,8 @@ type Config struct {
 	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
 	UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
 	MaxUnknownRequestsCacheSize   int           `json:"maxUnknownRequestsCacheSize"`
+	// TxEvents controls emission of ChainTransactionObserved for the transaction WriteReport bills.
+	TxEvents txevents.Config `json:"txEvents"`
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {
@@ -34,11 +38,12 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		ChainID             string        `json:"chainId"`
 		DeltaStage          time.Duration `json:"deltaStage"`
 
-		ReadsEnabled                  bool          `json:"readsEnabled"`
-		ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
-		ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
-		UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
-		MaxUnknownRequestsCacheSize   int           `json:"maxUnknownRequestsCacheSize"`
+		ReadsEnabled                  bool            `json:"readsEnabled"`
+		ObservationPollerWorkersCount uint            `json:"observationPollerWorkersCount"`
+		ObservationPollPeriod         time.Duration   `json:"observationPollPeriod"`
+		UnknownRequestsTTL            time.Duration   `json:"unknownRequestsTTL"`
+		MaxUnknownRequestsCacheSize   int             `json:"maxUnknownRequestsCacheSize"`
+		TxEvents                      txevents.Config `json:"txEvents"`
 	}
 	var cfg config
 
@@ -69,6 +74,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.ObservationPollPeriod = cfg.ObservationPollPeriod
 	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL
 	c.MaxUnknownRequestsCacheSize = cfg.MaxUnknownRequestsCacheSize
+	c.TxEvents = cfg.TxEvents
 
 	return nil
 }

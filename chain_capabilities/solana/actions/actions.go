@@ -36,6 +36,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
@@ -57,6 +58,16 @@ type Solana struct {
 	handler                  chainconsensus.RequestHandler
 	forwarderState           solgo.PublicKey
 	gasMeter                 *gasmeter.Meter
+	txEvents                 txevents.Emitter
+}
+
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func (s *Solana) WithTxEvents(emitter txevents.Emitter) {
+	if emitter == nil {
+		emitter = txevents.NopEmitter{}
+	}
+	s.txEvents = emitter
 }
 
 // WithGasMeter enables cre:workflow:gas usage MeterRecords for write reports.

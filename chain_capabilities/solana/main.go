@@ -29,6 +29,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -255,6 +256,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return err
 	}
+	txEmitter, err := txevents.NewEmitter(c.lggr, cfg.TxEvents)
+	if err != nil {
+		return err
+	}
+	c.WithTxEvents(txEmitter)
 	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, dependencies.CapabilityDonID)
 	c.WithGasMeter(c.gasMeter)
 	if c.gasMeter != nil {
@@ -352,6 +358,7 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
+	cfg.TxEvents = cfg.TxEvents.Normalized()
 
 	return &cfg, nil
 }
