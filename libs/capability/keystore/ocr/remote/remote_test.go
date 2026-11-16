@@ -26,7 +26,7 @@ import (
 func TestRoundTrip(t *testing.T) {
 	t.Parallel()
 	evm, sol := ocrtest.NewKeyBundle("evm-1", "evm"), ocrtest.NewKeyBundle("sol-1", "solana")
-	client := serve(t, ocrtest.Keystore{evm, sol})
+	client := serve(t, ocr.StaticKeystore{evm, sol})
 
 	all, err := client.ListKeyBundles(t.Context())
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestRoundTrip(t *testing.T) {
 func TestDelegatesToBundle(t *testing.T) {
 	t.Parallel()
 	evm := ocrtest.NewKeyBundle("evm-1", "evm")
-	kb, err := serve(t, ocrtest.Keystore{evm}).GetKeyBundle(t.Context(), "evm-1")
+	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), "evm-1")
 	require.NoError(t, err)
 
 	rc := ocrtypes.ReportContext{
@@ -82,7 +82,7 @@ func TestDelegatesToBundle(t *testing.T) {
 
 func TestServerErrors(t *testing.T) {
 	t.Parallel()
-	srv := &server{ks: ocrtest.Keystore{ocrtest.NewKeyBundle("evm-1", "evm")}}
+	srv := &server{ks: ocr.StaticKeystore{ocrtest.NewKeyBundle("evm-1", "evm")}}
 	validRC := reportContextToPB(ocrtypes.ReportContext{})
 
 	for name, tc := range map[string]struct {
@@ -162,7 +162,7 @@ func TestServerErrors(t *testing.T) {
 func TestVerifyFailsClosed(t *testing.T) {
 	t.Parallel()
 	evm := ocrtest.NewKeyBundle("evm-1", "evm")
-	kb, err := serve(t, ocrtest.Keystore{evm}).GetKeyBundle(t.Context(), "evm-1")
+	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), "evm-1")
 	require.NoError(t, err)
 
 	rc := ocrtypes.ReportContext{}

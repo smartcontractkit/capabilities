@@ -1,10 +1,7 @@
 package ocr
 
 import (
-	"context"
 	"crypto/sha256"
-	"fmt"
-	"slices"
 	"strconv"
 )
 
@@ -23,26 +20,5 @@ func EmbeddedKeyBundle(instance int) KeyBundle {
 
 // NewEmbeddedClient is the Client of instance of an embedded run, which holds only EmbeddedKeyBundle(instance).
 func NewEmbeddedClient(instance int) Client {
-	kb := EmbeddedKeyBundle(instance)
-	return embeddedClient{kb: KeyBundleClient{ID: kb.ID(), ChainType: kb.ChainType(), Onchain: kb, Offchain: kb}}
-}
-
-type embeddedClient struct {
-	kb KeyBundleClient
-}
-
-func (c embeddedClient) ListKeyBundles(_ context.Context, chainTypes ...string) ([]KeyBundleClient, error) {
-	if len(chainTypes) > 0 && !slices.Contains(chainTypes, c.kb.ChainType) {
-		return nil, nil
-	}
-
-	return []KeyBundleClient{c.kb}, nil
-}
-
-func (c embeddedClient) GetKeyBundle(_ context.Context, id string) (KeyBundleClient, error) {
-	if id != c.kb.ID {
-		return KeyBundleClient{}, fmt.Errorf("%s: %w", id, ErrKeyBundleNotFound)
-	}
-
-	return c.kb, nil
+	return NewLocalClient(StaticKeystore{EmbeddedKeyBundle(instance)})
 }
