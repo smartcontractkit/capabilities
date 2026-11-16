@@ -6,8 +6,6 @@ package keystore
 import (
 	"google.golang.org/grpc"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
 	"github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr"
 	ocrremote "github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr/remote"
 )
@@ -18,8 +16,8 @@ type Keystores struct {
 }
 
 // RegisterServers registers the service of each keystore in ks.
-func RegisterServers(s grpc.ServiceRegistrar, lggr logger.Logger, ks Keystores) {
+func RegisterServers(s grpc.ServiceRegistrar, ks Keystores) {
 	if ks.OCR != nil {
-		ocrremote.RegisterServer(s, lggr, ks.OCR)
+		ocrremote.RegisterServer(s, ks.OCR)
 	}
 }

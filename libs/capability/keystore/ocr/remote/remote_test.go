@@ -82,7 +82,7 @@ func TestDelegatesToBundle(t *testing.T) {
 
 func TestServerErrors(t *testing.T) {
 	t.Parallel()
-	srv := &server{lggr: logger.Test(t), ks: ocrtest.Keystore{ocrtest.NewKeyBundle("evm-1", "evm")}}
+	srv := &server{ks: ocrtest.Keystore{ocrtest.NewKeyBundle("evm-1", "evm")}}
 	validRC := reportContextToPB(ocrtypes.ReportContext{})
 
 	for name, tc := range map[string]struct {
@@ -146,7 +146,7 @@ func TestServerErrors(t *testing.T) {
 		},
 		"keystore failure": {
 			call: func() error {
-				_, err := (&server{lggr: logger.Test(t), ks: failingKeystore{}}).ListKeyBundles(t.Context(), &pb.ListKeyBundlesRequest{})
+				_, err := (&server{ks: failingKeystore{}}).ListKeyBundles(t.Context(), &pb.ListKeyBundlesRequest{})
 				return err
 			},
 			want: codes.Internal,
@@ -178,7 +178,7 @@ func serve(t *testing.T, ks ocr.Keystore) ocr.Client {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	RegisterServer(s, logger.Test(t), ks)
+	RegisterServer(s, ks)
 	go func() { _ = s.Serve(lis) }()
 	t.Cleanup(s.Stop)
 
