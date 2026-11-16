@@ -9,21 +9,18 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
 	"github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr"
 	"github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr/remote/pb"
 )
 
 // RegisterServer serves ks as the OCRKeystore service on s.
-func RegisterServer(s grpc.ServiceRegistrar, lggr logger.Logger, ks ocr.Keystore) {
-	pb.RegisterOCRKeystoreServer(s, &server{lggr: logger.Named(lggr, "OCRKeystoreServer"), ks: ks})
+func RegisterServer(s grpc.ServiceRegistrar, ks ocr.Keystore) {
+	pb.RegisterOCRKeystoreServer(s, &server{ks: ks})
 }
 
 type server struct {
 	pb.UnimplementedOCRKeystoreServer
-	lggr logger.Logger
-	ks   ocr.Keystore
+	ks ocr.Keystore
 }
 
 func (s *server) ListKeyBundles(ctx context.Context, req *pb.ListKeyBundlesRequest) (*pb.ListKeyBundlesReply, error) {
