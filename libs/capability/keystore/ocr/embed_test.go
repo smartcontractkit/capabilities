@@ -25,7 +25,7 @@ func TestEmbeddedKeyBundle(t *testing.T) {
 	assert.NotEqual(t, a.PublicKey(), b.PublicKey())
 	assert.NotEqual(t, a.OffchainPublicKey(), b.OffchainPublicKey())
 
-	rc := ocrtypes.ReportContext{ReportTimestamp: ocrtypes.ReportTimestamp{Epoch: 1, Round: 2}}
+	rc := ocrtypes.ReportContext{Epoch: 1, Round: 2}
 	sig, err := a.Sign(rc, ocrtypes.Report("report"))
 	require.NoError(t, err)
 	assert.True(t, b.Verify(a.PublicKey(), rc, ocrtypes.Report("report"), sig))
