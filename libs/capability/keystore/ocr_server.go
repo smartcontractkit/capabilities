@@ -201,7 +201,7 @@ func reportContextFromPB(rc *pb.ReportContext) (ocrtypes.ReportContext, error) {
 
 	copy(extraHash[:], rc.ExtraHash)
 	return ocrtypes.ReportContext{
-		ReportTimestamp: ocrtypes.ReportTimestamp{ConfigDigest: digest, Epoch: rc.Epoch, Round: uint8(rc.Round)},
-		ExtraHash:       extraHash,
+		ConfigDigest: digest, Epoch: rc.Epoch, Round: uint8(rc.Round),
+		ExtraHash: extraHash,
 	}, nil
 }

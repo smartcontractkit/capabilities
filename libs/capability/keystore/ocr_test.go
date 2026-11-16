@@ -52,8 +52,8 @@ func TestOCRKeystore_DelegatesToBundle(t *testing.T) {
 	require.NoError(t, err)
 
 	rc := ocrtypes.ReportContext{
-		ReportTimestamp: ocrtypes.ReportTimestamp{ConfigDigest: ocrtypes.ConfigDigest{1, 2, 3}, Epoch: 7, Round: 255},
-		ExtraHash:       [32]byte{9},
+		ConfigDigest: ocrtypes.ConfigDigest{1, 2, 3}, Epoch: 7, Round: 255,
+		ExtraHash: [32]byte{9},
 	}
 	report := ocrtypes.Report("report")
 
@@ -301,7 +301,9 @@ func (b *fakeBundle) Verify(publicKey ocrtypes.OnchainPublicKey, rc ocrtypes.Rep
 
 func (b *fakeBundle) MaxSignatureLength() int { return ed25519.SignatureSize }
 
-func (b *fakeBundle) OffchainSign(msg []byte) ([]byte, error) { return ed25519.Sign(b.offchain, msg), nil }
+func (b *fakeBundle) OffchainSign(msg []byte) ([]byte, error) {
+	return ed25519.Sign(b.offchain, msg), nil
+}
 
 func (b *fakeBundle) ConfigDiffieHellman(point [32]byte) ([32]byte, error) {
 	return sha256.Sum256(append(b.configSecret[:], point[:]...)), nil

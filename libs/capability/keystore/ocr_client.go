@@ -183,7 +183,9 @@ func (k *remoteOffchainKeyring) ConfigDiffieHellman(point [32]byte) ([32]byte, e
 	return secret, nil
 }
 
-func (k *remoteOffchainKeyring) OffchainPublicKey() ocrtypes.OffchainPublicKey { return k.offchainPublicKey }
+func (k *remoteOffchainKeyring) OffchainPublicKey() ocrtypes.OffchainPublicKey {
+	return k.offchainPublicKey
+}
 
 func (k *remoteOffchainKeyring) ConfigEncryptionPublicKey() ocrtypes.ConfigEncryptionPublicKey {
 	return k.configEncryptionPublicKey
