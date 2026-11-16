@@ -19,13 +19,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr"
-	"github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr/ocrtest"
 	"github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr/remote/pb"
 )
 
 func TestRoundTrip(t *testing.T) {
 	t.Parallel()
-	evm, sol := ocrtest.NewKeyBundle("evm-1", "evm"), ocrtest.NewKeyBundle("sol-1", "solana")
+	evm, sol := ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1}), ocr.NewSeededKeyBundle("sol-1", "solana", [32]byte{2})
 	client := serve(t, ocr.StaticKeystore{evm, sol})
 
 	all, err := client.ListKeyBundles(t.Context())
@@ -49,7 +48,7 @@ func TestRoundTrip(t *testing.T) {
 
 func TestDelegatesToBundle(t *testing.T) {
 	t.Parallel()
-	evm := ocrtest.NewKeyBundle("evm-1", "evm")
+	evm := ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1})
 	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), "evm-1")
 	require.NoError(t, err)
 
@@ -82,7 +81,7 @@ func TestDelegatesToBundle(t *testing.T) {
 
 func TestServerErrors(t *testing.T) {
 	t.Parallel()
-	srv := &server{ks: ocr.StaticKeystore{ocrtest.NewKeyBundle("evm-1", "evm")}}
+	srv := &server{ks: ocr.StaticKeystore{ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1})}}
 	validRC := reportContextToPB(ocrtypes.ReportContext{})
 
 	for name, tc := range map[string]struct {
@@ -161,7 +160,7 @@ func TestServerErrors(t *testing.T) {
 
 func TestVerifyFailsClosed(t *testing.T) {
 	t.Parallel()
-	evm := ocrtest.NewKeyBundle("evm-1", "evm")
+	evm := ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1})
 	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), "evm-1")
 	require.NoError(t, err)
 
