@@ -39,8 +39,7 @@ func TestNewEmbeddedOCRClient(t *testing.T) {
 
 	client, err := newEmbeddedOCRClient(i)
 	require.NoError(t, err)
-	want, err := ocr.EmbeddedKeyBundle(1)
-	require.NoError(t, err)
+	want := ocr.EmbeddedKeyBundle(1)
 
 	kbs, err := client.ListKeyBundles(t.Context())
 	require.NoError(t, err)

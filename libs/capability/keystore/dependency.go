@@ -65,5 +65,5 @@ func newEmbeddedOCRClient(i do.Injector) (ocr.Client, error) {
 		return nil, err
 	}
 
-	return ocr.NewEmbeddedClient(info.ID)
+	return ocr.NewEmbeddedClient(info.ID), nil
 }

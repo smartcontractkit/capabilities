@@ -5,19 +5,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/curve25519"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 )
 
 func TestEmbeddedKeyBundle(t *testing.T) {
 	t.Parallel()
-	a, err := EmbeddedKeyBundle(0)
-	require.NoError(t, err)
-	again, err := EmbeddedKeyBundle(0)
-	require.NoError(t, err)
-	b, err := EmbeddedKeyBundle(1)
-	require.NoError(t, err)
+	a, again, b := EmbeddedKeyBundle(0), EmbeddedKeyBundle(0), EmbeddedKeyBundle(1)
 
 	assert.Equal(t, a.PublicKey(), again.PublicKey())
 	assert.Equal(t, a.OffchainPublicKey(), again.OffchainPublicKey())
@@ -38,7 +32,7 @@ func TestEmbeddedKeyBundle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ab, ba)
 
-	basepoint := [32]byte(curve25519.Basepoint)
+	basepoint := [32]byte{9}
 	pub, err := a.ConfigDiffieHellman(basepoint)
 	require.NoError(t, err)
 	assert.Equal(t, [32]byte(a.ConfigEncryptionPublicKey()), pub)
@@ -46,10 +40,7 @@ func TestEmbeddedKeyBundle(t *testing.T) {
 
 func TestEmbeddedClient(t *testing.T) {
 	t.Parallel()
-	client, err := NewEmbeddedClient(2)
-	require.NoError(t, err)
-	want, err := EmbeddedKeyBundle(2)
-	require.NoError(t, err)
+	client, want := NewEmbeddedClient(2), EmbeddedKeyBundle(2)
 
 	kbs, err := client.ListKeyBundles(t.Context())
 	require.NoError(t, err)
