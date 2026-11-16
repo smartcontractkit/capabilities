@@ -10,6 +10,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 
 	"github.com/smartcontractkit/capabilities/libs/capability"
+	"github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr"
+	ocrremote "github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr/remote"
 )
 
 // ConfigNamespace is the namespace Config is set under.
@@ -24,11 +26,11 @@ type Config struct {
 
 func init() {
 	capability.RunInjector.MustProvideConfig(ConfigNamespace, &Config{})
-	capability.RunInjector.MustProvide(newNodeOCRKeystoreClient)
+	capability.RunInjector.MustProvide(newNodeOCRClient)
 }
 
-// newNodeOCRKeystoreClient connects to the node's OCR keystore. The connection lives as long as the process.
-func newNodeOCRKeystoreClient(i do.Injector) (OCRKeystoreClient, error) {
+// newNodeOCRClient connects to the node's OCR keystore. The connection lives as long as the process.
+func newNodeOCRClient(i do.Injector) (ocr.Client, error) {
 	cfg, err := do.Invoke[*Config](i)
 	if err != nil {
 		return nil, err
@@ -53,5 +55,5 @@ func newNodeOCRKeystoreClient(i do.Injector) (OCRKeystoreClient, error) {
 		return nil, fmt.Errorf("failed to create keystore client for %s: %w", cfg.URL, err)
 	}
 
-	return NewOCRKeystoreClient(lggr, conn), nil
+	return ocrremote.NewClient(lggr, conn), nil
 }

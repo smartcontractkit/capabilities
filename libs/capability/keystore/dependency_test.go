@@ -11,7 +11,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
-func TestNewNodeOCRKeystoreClient(t *testing.T) {
+func TestNewNodeOCRClient(t *testing.T) {
 	t.Parallel()
 	newInjector := func(cfg *Config) do.Injector {
 		i := do.New()
@@ -21,10 +21,10 @@ func TestNewNodeOCRKeystoreClient(t *testing.T) {
 		return i
 	}
 
-	_, err := newNodeOCRKeystoreClient(newInjector(&Config{}))
+	_, err := newNodeOCRClient(newInjector(&Config{}))
 	require.ErrorContains(t, err, "keystore.url is not set")
 
-	client, err := newNodeOCRKeystoreClient(newInjector(&Config{URL: "localhost:9001"}))
+	client, err := newNodeOCRClient(newInjector(&Config{URL: "localhost:9001"}))
 	require.NoError(t, err)
 	assert.NotNil(t, client)
 }

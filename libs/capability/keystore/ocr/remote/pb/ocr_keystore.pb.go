@@ -781,7 +781,7 @@ var File_ocr_keystore_proto protoreflect.FileDescriptor
 
 const file_ocr_keystore_proto_rawDesc = "" +
 	"\n" +
-	"\x12ocr_keystore.proto\x12\x18capabilities.keystore.pb\"\x9a\x02\n" +
+	"\x12ocr_keystore.proto\x12#capabilities.keystore.ocr.remote.pb\"\x9a\x02\n" +
 	"\tKeyBundle\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -792,32 +792,32 @@ const file_ocr_keystore_proto_rawDesc = "" +
 	"\x1cconfig_encryption_public_key\x18\x06 \x01(\fR\x19configEncryptionPublicKey\"8\n" +
 	"\x15ListKeyBundlesRequest\x12\x1f\n" +
 	"\vchain_types\x18\x01 \x03(\tR\n" +
-	"chainTypes\"[\n" +
-	"\x13ListKeyBundlesReply\x12D\n" +
-	"\vkey_bundles\x18\x01 \x03(\v2#.capabilities.keystore.pb.KeyBundleR\n" +
+	"chainTypes\"f\n" +
+	"\x13ListKeyBundlesReply\x12O\n" +
+	"\vkey_bundles\x18\x01 \x03(\v2..capabilities.keystore.ocr.remote.pb.KeyBundleR\n" +
 	"keyBundles\"%\n" +
 	"\x13GetKeyBundleRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"W\n" +
-	"\x11GetKeyBundleReply\x12B\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"b\n" +
+	"\x11GetKeyBundleReply\x12M\n" +
 	"\n" +
-	"key_bundle\x18\x01 \x01(\v2#.capabilities.keystore.pb.KeyBundleR\tkeyBundle\"\x7f\n" +
+	"key_bundle\x18\x01 \x01(\v2..capabilities.keystore.ocr.remote.pb.KeyBundleR\tkeyBundle\"\x7f\n" +
 	"\rReportContext\x12#\n" +
 	"\rconfig_digest\x18\x01 \x01(\fR\fconfigDigest\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\rR\x05epoch\x12\x14\n" +
 	"\x05round\x18\x03 \x01(\rR\x05round\x12\x1d\n" +
 	"\n" +
-	"extra_hash\x18\x04 \x01(\fR\textraHash\"\xa0\x01\n" +
+	"extra_hash\x18\x04 \x01(\fR\textraHash\"\xab\x01\n" +
 	"\x12SignOnchainRequest\x12\"\n" +
-	"\rkey_bundle_id\x18\x01 \x01(\tR\vkeyBundleId\x12N\n" +
-	"\x0ereport_context\x18\x02 \x01(\v2'.capabilities.keystore.pb.ReportContextR\rreportContext\x12\x16\n" +
+	"\rkey_bundle_id\x18\x01 \x01(\tR\vkeyBundleId\x12Y\n" +
+	"\x0ereport_context\x18\x02 \x01(\v22.capabilities.keystore.ocr.remote.pb.ReportContextR\rreportContext\x12\x16\n" +
 	"\x06report\x18\x03 \x01(\fR\x06report\"0\n" +
 	"\x10SignOnchainReply\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\fR\tsignature\"\xdf\x01\n" +
+	"\tsignature\x18\x01 \x01(\fR\tsignature\"\xea\x01\n" +
 	"\x14VerifyOnchainRequest\x12\"\n" +
 	"\rkey_bundle_id\x18\x01 \x01(\tR\vkeyBundleId\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x02 \x01(\fR\tpublicKey\x12N\n" +
-	"\x0ereport_context\x18\x03 \x01(\v2'.capabilities.keystore.pb.ReportContextR\rreportContext\x12\x16\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\x12Y\n" +
+	"\x0ereport_context\x18\x03 \x01(\v22.capabilities.keystore.ocr.remote.pb.ReportContextR\rreportContext\x12\x16\n" +
 	"\x06report\x18\x04 \x01(\fR\x06report\x12\x1c\n" +
 	"\tsignature\x18\x05 \x01(\fR\tsignature\"*\n" +
 	"\x12VerifyOnchainReply\x12\x14\n" +
@@ -831,14 +831,14 @@ const file_ocr_keystore_proto_rawDesc = "" +
 	"\rkey_bundle_id\x18\x01 \x01(\tR\vkeyBundleId\x12\x14\n" +
 	"\x05point\x18\x02 \x01(\fR\x05point\"?\n" +
 	"\x18ConfigDiffieHellmanReply\x12#\n" +
-	"\rshared_secret\x18\x01 \x01(\fR\fsharedSecret2\xb0\x05\n" +
-	"\vOCRKeystore\x12p\n" +
-	"\x0eListKeyBundles\x12/.capabilities.keystore.pb.ListKeyBundlesRequest\x1a-.capabilities.keystore.pb.ListKeyBundlesReply\x12j\n" +
-	"\fGetKeyBundle\x12-.capabilities.keystore.pb.GetKeyBundleRequest\x1a+.capabilities.keystore.pb.GetKeyBundleReply\x12g\n" +
-	"\vSignOnchain\x12,.capabilities.keystore.pb.SignOnchainRequest\x1a*.capabilities.keystore.pb.SignOnchainReply\x12m\n" +
-	"\rVerifyOnchain\x12..capabilities.keystore.pb.VerifyOnchainRequest\x1a,.capabilities.keystore.pb.VerifyOnchainReply\x12j\n" +
-	"\fSignOffchain\x12-.capabilities.keystore.pb.SignOffchainRequest\x1a+.capabilities.keystore.pb.SignOffchainReply\x12\x7f\n" +
-	"\x13ConfigDiffieHellman\x124.capabilities.keystore.pb.ConfigDiffieHellmanRequest\x1a2.capabilities.keystore.pb.ConfigDiffieHellmanReplyBFZDgithub.com/smartcontractkit/capabilities/libs/capability/keystore/pbb\x06proto3"
+	"\rshared_secret\x18\x01 \x01(\fR\fsharedSecret2\xb9\x06\n" +
+	"\vOCRKeystore\x12\x86\x01\n" +
+	"\x0eListKeyBundles\x12:.capabilities.keystore.ocr.remote.pb.ListKeyBundlesRequest\x1a8.capabilities.keystore.ocr.remote.pb.ListKeyBundlesReply\x12\x80\x01\n" +
+	"\fGetKeyBundle\x128.capabilities.keystore.ocr.remote.pb.GetKeyBundleRequest\x1a6.capabilities.keystore.ocr.remote.pb.GetKeyBundleReply\x12}\n" +
+	"\vSignOnchain\x127.capabilities.keystore.ocr.remote.pb.SignOnchainRequest\x1a5.capabilities.keystore.ocr.remote.pb.SignOnchainReply\x12\x83\x01\n" +
+	"\rVerifyOnchain\x129.capabilities.keystore.ocr.remote.pb.VerifyOnchainRequest\x1a7.capabilities.keystore.ocr.remote.pb.VerifyOnchainReply\x12\x80\x01\n" +
+	"\fSignOffchain\x128.capabilities.keystore.ocr.remote.pb.SignOffchainRequest\x1a6.capabilities.keystore.ocr.remote.pb.SignOffchainReply\x12\x95\x01\n" +
+	"\x13ConfigDiffieHellman\x12?.capabilities.keystore.ocr.remote.pb.ConfigDiffieHellmanRequest\x1a=.capabilities.keystore.ocr.remote.pb.ConfigDiffieHellmanReplyBQZOgithub.com/smartcontractkit/capabilities/libs/capability/keystore/ocr/remote/pbb\x06proto3"
 
 var (
 	file_ocr_keystore_proto_rawDescOnce sync.Once
@@ -854,38 +854,38 @@ func file_ocr_keystore_proto_rawDescGZIP() []byte {
 
 var file_ocr_keystore_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_ocr_keystore_proto_goTypes = []any{
-	(*KeyBundle)(nil),                  // 0: capabilities.keystore.pb.KeyBundle
-	(*ListKeyBundlesRequest)(nil),      // 1: capabilities.keystore.pb.ListKeyBundlesRequest
-	(*ListKeyBundlesReply)(nil),        // 2: capabilities.keystore.pb.ListKeyBundlesReply
-	(*GetKeyBundleRequest)(nil),        // 3: capabilities.keystore.pb.GetKeyBundleRequest
-	(*GetKeyBundleReply)(nil),          // 4: capabilities.keystore.pb.GetKeyBundleReply
-	(*ReportContext)(nil),              // 5: capabilities.keystore.pb.ReportContext
-	(*SignOnchainRequest)(nil),         // 6: capabilities.keystore.pb.SignOnchainRequest
-	(*SignOnchainReply)(nil),           // 7: capabilities.keystore.pb.SignOnchainReply
-	(*VerifyOnchainRequest)(nil),       // 8: capabilities.keystore.pb.VerifyOnchainRequest
-	(*VerifyOnchainReply)(nil),         // 9: capabilities.keystore.pb.VerifyOnchainReply
-	(*SignOffchainRequest)(nil),        // 10: capabilities.keystore.pb.SignOffchainRequest
-	(*SignOffchainReply)(nil),          // 11: capabilities.keystore.pb.SignOffchainReply
-	(*ConfigDiffieHellmanRequest)(nil), // 12: capabilities.keystore.pb.ConfigDiffieHellmanRequest
-	(*ConfigDiffieHellmanReply)(nil),   // 13: capabilities.keystore.pb.ConfigDiffieHellmanReply
+	(*KeyBundle)(nil),                  // 0: capabilities.keystore.ocr.remote.pb.KeyBundle
+	(*ListKeyBundlesRequest)(nil),      // 1: capabilities.keystore.ocr.remote.pb.ListKeyBundlesRequest
+	(*ListKeyBundlesReply)(nil),        // 2: capabilities.keystore.ocr.remote.pb.ListKeyBundlesReply
+	(*GetKeyBundleRequest)(nil),        // 3: capabilities.keystore.ocr.remote.pb.GetKeyBundleRequest
+	(*GetKeyBundleReply)(nil),          // 4: capabilities.keystore.ocr.remote.pb.GetKeyBundleReply
+	(*ReportContext)(nil),              // 5: capabilities.keystore.ocr.remote.pb.ReportContext
+	(*SignOnchainRequest)(nil),         // 6: capabilities.keystore.ocr.remote.pb.SignOnchainRequest
+	(*SignOnchainReply)(nil),           // 7: capabilities.keystore.ocr.remote.pb.SignOnchainReply
+	(*VerifyOnchainRequest)(nil),       // 8: capabilities.keystore.ocr.remote.pb.VerifyOnchainRequest
+	(*VerifyOnchainReply)(nil),         // 9: capabilities.keystore.ocr.remote.pb.VerifyOnchainReply
+	(*SignOffchainRequest)(nil),        // 10: capabilities.keystore.ocr.remote.pb.SignOffchainRequest
+	(*SignOffchainReply)(nil),          // 11: capabilities.keystore.ocr.remote.pb.SignOffchainReply
+	(*ConfigDiffieHellmanRequest)(nil), // 12: capabilities.keystore.ocr.remote.pb.ConfigDiffieHellmanRequest
+	(*ConfigDiffieHellmanReply)(nil),   // 13: capabilities.keystore.ocr.remote.pb.ConfigDiffieHellmanReply
 }
 var file_ocr_keystore_proto_depIdxs = []int32{
-	0,  // 0: capabilities.keystore.pb.ListKeyBundlesReply.key_bundles:type_name -> capabilities.keystore.pb.KeyBundle
-	0,  // 1: capabilities.keystore.pb.GetKeyBundleReply.key_bundle:type_name -> capabilities.keystore.pb.KeyBundle
-	5,  // 2: capabilities.keystore.pb.SignOnchainRequest.report_context:type_name -> capabilities.keystore.pb.ReportContext
-	5,  // 3: capabilities.keystore.pb.VerifyOnchainRequest.report_context:type_name -> capabilities.keystore.pb.ReportContext
-	1,  // 4: capabilities.keystore.pb.OCRKeystore.ListKeyBundles:input_type -> capabilities.keystore.pb.ListKeyBundlesRequest
-	3,  // 5: capabilities.keystore.pb.OCRKeystore.GetKeyBundle:input_type -> capabilities.keystore.pb.GetKeyBundleRequest
-	6,  // 6: capabilities.keystore.pb.OCRKeystore.SignOnchain:input_type -> capabilities.keystore.pb.SignOnchainRequest
-	8,  // 7: capabilities.keystore.pb.OCRKeystore.VerifyOnchain:input_type -> capabilities.keystore.pb.VerifyOnchainRequest
-	10, // 8: capabilities.keystore.pb.OCRKeystore.SignOffchain:input_type -> capabilities.keystore.pb.SignOffchainRequest
-	12, // 9: capabilities.keystore.pb.OCRKeystore.ConfigDiffieHellman:input_type -> capabilities.keystore.pb.ConfigDiffieHellmanRequest
-	2,  // 10: capabilities.keystore.pb.OCRKeystore.ListKeyBundles:output_type -> capabilities.keystore.pb.ListKeyBundlesReply
-	4,  // 11: capabilities.keystore.pb.OCRKeystore.GetKeyBundle:output_type -> capabilities.keystore.pb.GetKeyBundleReply
-	7,  // 12: capabilities.keystore.pb.OCRKeystore.SignOnchain:output_type -> capabilities.keystore.pb.SignOnchainReply
-	9,  // 13: capabilities.keystore.pb.OCRKeystore.VerifyOnchain:output_type -> capabilities.keystore.pb.VerifyOnchainReply
-	11, // 14: capabilities.keystore.pb.OCRKeystore.SignOffchain:output_type -> capabilities.keystore.pb.SignOffchainReply
-	13, // 15: capabilities.keystore.pb.OCRKeystore.ConfigDiffieHellman:output_type -> capabilities.keystore.pb.ConfigDiffieHellmanReply
+	0,  // 0: capabilities.keystore.ocr.remote.pb.ListKeyBundlesReply.key_bundles:type_name -> capabilities.keystore.ocr.remote.pb.KeyBundle
+	0,  // 1: capabilities.keystore.ocr.remote.pb.GetKeyBundleReply.key_bundle:type_name -> capabilities.keystore.ocr.remote.pb.KeyBundle
+	5,  // 2: capabilities.keystore.ocr.remote.pb.SignOnchainRequest.report_context:type_name -> capabilities.keystore.ocr.remote.pb.ReportContext
+	5,  // 3: capabilities.keystore.ocr.remote.pb.VerifyOnchainRequest.report_context:type_name -> capabilities.keystore.ocr.remote.pb.ReportContext
+	1,  // 4: capabilities.keystore.ocr.remote.pb.OCRKeystore.ListKeyBundles:input_type -> capabilities.keystore.ocr.remote.pb.ListKeyBundlesRequest
+	3,  // 5: capabilities.keystore.ocr.remote.pb.OCRKeystore.GetKeyBundle:input_type -> capabilities.keystore.ocr.remote.pb.GetKeyBundleRequest
+	6,  // 6: capabilities.keystore.ocr.remote.pb.OCRKeystore.SignOnchain:input_type -> capabilities.keystore.ocr.remote.pb.SignOnchainRequest
+	8,  // 7: capabilities.keystore.ocr.remote.pb.OCRKeystore.VerifyOnchain:input_type -> capabilities.keystore.ocr.remote.pb.VerifyOnchainRequest
+	10, // 8: capabilities.keystore.ocr.remote.pb.OCRKeystore.SignOffchain:input_type -> capabilities.keystore.ocr.remote.pb.SignOffchainRequest
+	12, // 9: capabilities.keystore.ocr.remote.pb.OCRKeystore.ConfigDiffieHellman:input_type -> capabilities.keystore.ocr.remote.pb.ConfigDiffieHellmanRequest
+	2,  // 10: capabilities.keystore.ocr.remote.pb.OCRKeystore.ListKeyBundles:output_type -> capabilities.keystore.ocr.remote.pb.ListKeyBundlesReply
+	4,  // 11: capabilities.keystore.ocr.remote.pb.OCRKeystore.GetKeyBundle:output_type -> capabilities.keystore.ocr.remote.pb.GetKeyBundleReply
+	7,  // 12: capabilities.keystore.ocr.remote.pb.OCRKeystore.SignOnchain:output_type -> capabilities.keystore.ocr.remote.pb.SignOnchainReply
+	9,  // 13: capabilities.keystore.ocr.remote.pb.OCRKeystore.VerifyOnchain:output_type -> capabilities.keystore.ocr.remote.pb.VerifyOnchainReply
+	11, // 14: capabilities.keystore.ocr.remote.pb.OCRKeystore.SignOffchain:output_type -> capabilities.keystore.ocr.remote.pb.SignOffchainReply
+	13, // 15: capabilities.keystore.ocr.remote.pb.OCRKeystore.ConfigDiffieHellman:output_type -> capabilities.keystore.ocr.remote.pb.ConfigDiffieHellmanReply
 	10, // [10:16] is the sub-list for method output_type
 	4,  // [4:10] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
