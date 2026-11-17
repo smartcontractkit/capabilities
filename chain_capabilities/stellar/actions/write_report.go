@@ -140,47 +140,8 @@ func (wr *writeReport) execute(
 	}
 
 	switch info.State {
-	case TransmissionStateSucceeded:
-		txHash, hashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
-		if hashErr != nil {
-			wr.lggr.Errorw("Returning without a transmission attempt - prior transmission succeeded, but failed to retrieve its tx hash", "error", hashErr)
-			return nil, capabilities.ResponseMetadata{}, hashErr
-		}
-		reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
-		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, err
-		}
-		return reply, wr.meteringFromReply(reply), nil
-	case TransmissionStateInvalidReceiver:
-		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
-		if hashErr != nil {
-			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
-				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
-			} else {
-				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash", "error", hashErr)
-			}
-			return nil, capabilities.ResponseMetadata{}, hashErr
-		}
-		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID)
-		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
-		}
-		return reply, wr.meteringFromReply(reply), nil
-	case TransmissionStateFailed:
-		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
-		if hashErr != nil {
-			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
-				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
-			} else {
-				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission failed, but failed to retrieve its tx hash", "error", hashErr)
-			}
-			return nil, capabilities.ResponseMetadata{}, hashErr
-		}
-		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID)
-		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
-		}
-		return reply, wr.meteringFromReply(reply), nil
+	case TransmissionStateSucceeded, TransmissionStateInvalidReceiver, TransmissionStateFailed:
+		return wr.replyFromRecordedTransmission(ctx, request, telemetryContext, info, transmissionID, txHashRetriever)
 	case TransmissionStateNotAttempted:
 	case TransmissionStateUnknown:
 		// Unknown state must not authorize spend.
@@ -198,14 +159,17 @@ func (wr *writeReport) execute(
 	}
 	simResp, err := wr.forwarderClient.SimulateReport(ctx, transmitter, request.ContractId, request.Report)
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s pre-submit report simulation failed: %w", capcommon.UserError, err)
+		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever,
+			fmt.Errorf("%s pre-submit report simulation failed: %w", capcommon.UserError, err))
 	}
 	if simResp.Error != "" || !simResp.Success {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s pre-submit report simulation indicated receiver cannot accept the report: %s", capcommon.UserError, simResp.Error)
+		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever,
+			fmt.Errorf("%s pre-submit report simulation indicated receiver cannot accept the report: %s", capcommon.UserError, simResp.Error))
 	}
 	// The forwarder can return Ok while recording receiver failure; verify the event too.
 	if err = wr.forwarderClient.ValidateReportSimulation(simResp, transmissionID); err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s %w", capcommon.UserError, err)
+		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever,
+			fmt.Errorf("%s %w", capcommon.UserError, err))
 	}
 	if simResp.MinResourceFee > 0 {
 		if err = wr.maxResourceFeeLimit.Check(ctx, uint64(simResp.MinResourceFee)); err != nil {
@@ -222,15 +186,7 @@ func (wr *writeReport) execute(
 
 	submitResp, err := wr.forwarderClient.InvokeOnReport(ctx, transmitter, request.ContractId, request.Report, transmissionID, maxResourceFee)
 	if err != nil {
-		// A peer's transmission can land while this node is submitting, which makes the
-		// submit fail (for example AlreadyProcessed at simulation). The report is on-chain
-		// then, so return its outcome instead of an error.
-		info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
-		if infoErr != nil || !isRecordedTransmission(info.State) {
-			return nil, capabilities.ResponseMetadata{}, err
-		}
-		wr.lggr.Infow("Submit failed but the transmission is recorded on-chain, returning its outcome", "submitError", err, "state", info.State)
-		submitResp = &stellartypes.SubmitTransactionResponse{}
+		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever, err)
 	}
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
@@ -439,6 +395,82 @@ func (wr *writeReport) pollTransmissionInfo(
 		case <-time.After(wait):
 		}
 	}
+}
+
+// replyFromRecordedTransmission builds the reply for a transmission the forwarder already
+// recorded, without a transmission attempt from this node.
+func (wr *writeReport) replyFromRecordedTransmission(
+	ctx context.Context,
+	request *stellarcap.WriteReportRequest,
+	telemetryContext monitoring.TelemetryContext,
+	info TransmissionInfo,
+	transmissionID TransmissionID,
+	txHashRetriever TxHashRetriever,
+) (*stellarcap.WriteReportReply, capabilities.ResponseMetadata, error) {
+	switch info.State {
+	case TransmissionStateSucceeded:
+		txHash, hashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
+		if hashErr != nil {
+			wr.lggr.Errorw("Returning without a transmission attempt - prior transmission succeeded, but failed to retrieve its tx hash", "error", hashErr)
+			return nil, capabilities.ResponseMetadata{}, hashErr
+		}
+		reply, err := wr.buildSuccessReply(ctx, request, telemetryContext, txHash)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
+		return reply, wr.meteringFromReply(reply), nil
+	case TransmissionStateInvalidReceiver:
+		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
+		if hashErr != nil {
+			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
+				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
+			} else {
+				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash", "error", hashErr)
+			}
+			return nil, capabilities.ResponseMetadata{}, hashErr
+		}
+		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
+		}
+		return reply, wr.meteringFromReply(reply), nil
+	case TransmissionStateFailed:
+		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
+		if hashErr != nil {
+			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
+				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
+			} else {
+				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission failed, but failed to retrieve its tx hash", "error", hashErr)
+			}
+			return nil, capabilities.ResponseMetadata{}, hashErr
+		}
+		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
+		}
+		return reply, wr.meteringFromReply(reply), nil
+	default:
+		return nil, capabilities.ResponseMetadata{}, invalidTransmissionStateError(info.State)
+	}
+}
+
+// recordedOutcomeOr returns the recorded on-chain outcome when a peer's transmission landed
+// while this node was simulating or submitting, which makes the forwarder reject this node's
+// report (AlreadyProcessed). Otherwise it returns cause.
+func (wr *writeReport) recordedOutcomeOr(
+	ctx context.Context,
+	request *stellarcap.WriteReportRequest,
+	telemetryContext monitoring.TelemetryContext,
+	transmissionID TransmissionID,
+	txHashRetriever TxHashRetriever,
+	cause error,
+) (*stellarcap.WriteReportReply, capabilities.ResponseMetadata, error) {
+	info, err := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	if err != nil || !isRecordedTransmission(info.State) {
+		return nil, capabilities.ResponseMetadata{}, cause
+	}
+	wr.lggr.Infow("Transmission was recorded on-chain while this node was simulating or submitting, returning its outcome", "cause", cause, "state", info.State)
+	return wr.replyFromRecordedTransmission(ctx, request, telemetryContext, info, transmissionID, txHashRetriever)
 }
 
 func isRecordedTransmission(state TransmissionState) bool {
