@@ -23,6 +23,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
@@ -44,6 +45,16 @@ type Aptos struct {
 	txSearchStartingBuffer          time.Duration
 	beholderProcessor               beholder.ProtoProcessor
 	messageBuilder                  *monitoring.MessageBuilder
+	txEvents                        txevents.Emitter
+}
+
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func (a *Aptos) WithTxEvents(emitter txevents.Emitter) {
+	if emitter == nil {
+		emitter = txevents.NopEmitter{}
+	}
+	a.txEvents = emitter
 }
 
 func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler chainconsensus.RequestHandler, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {

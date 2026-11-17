@@ -6,6 +6,8 @@ import (
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 )
 
 type Config struct {
@@ -20,6 +22,8 @@ type Config struct {
 	ChainID                       string            `json:"chainId"`
 	P2PToTransmitterMap           map[string]string // peerID-hex → Aptos transmitter address, populated from specConfig
 	TxSearchStartingBuffer        time.Duration     `json:"txSearchStartingBuffer"` // lookback buffer for tx hash search (default 1m)
+	// TxEvents controls emission of ChainTransactionObserved for the transaction WriteReport bills.
+	TxEvents txevents.Config `json:"txEvents"`
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {
@@ -35,6 +39,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		ChainID                       string            `json:"chainId"`
 		P2PToTransmitterMap           map[string]string `json:"p2pToTransmitterMap,omitempty"`
 		TxSearchStartingBuffer        time.Duration     `json:"txSearchStartingBuffer"`
+		TxEvents                      txevents.Config   `json:"txEvents"`
 	}
 	var cfg config
 
@@ -52,6 +57,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.Network = cfg.Network
 	c.P2PToTransmitterMap = cfg.P2PToTransmitterMap
 	c.TxSearchStartingBuffer = cfg.TxSearchStartingBuffer
+	c.TxEvents = cfg.TxEvents
 
 	addr, err := aptos_sdk.ConvertToAddress(cfg.CREForwarderAddress)
 	if err != nil {
