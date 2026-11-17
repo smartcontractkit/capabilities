@@ -24,7 +24,7 @@ func TestRegistryConfig(t *testing.T) {
 	}
 
 	reg := &fakeRegistry{configs: map[string]ocrtypes.ContractConfig{capabilitiespb.OCR3ConfigDefaultKey: cc}}
-	c := &registryConfig{registry: reg, capabilityID: "test@1.0.0", donID: 3,
+	c := &registryConfig{registry: reg, capabilityID: func() (string, error) { return "test@1.0.0", nil }, donID: 3,
 		transmitAccount: "0xf98665742002D7212B9a74c37Bb17dcd0f96FF9D"}
 
 	count, digest, err := c.LatestConfigDetails(t.Context())

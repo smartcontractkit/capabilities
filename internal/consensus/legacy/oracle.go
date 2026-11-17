@@ -16,6 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/capabilities/internal/consensus/oracle/plugin"
+	"github.com/smartcontractkit/capabilities/libs/ocr"
 )
 
 // oracleTimeout is how long the node has to make or stop the oracle.
@@ -30,7 +31,7 @@ const (
 // newOracle makes the consensus oracle with the node's oracle factory. The node runs it over report infos that are
 // bytes, so each report's info is encoded with its key bundle where the node's keyring finds it, and decoded again
 // before it reaches the plugin or the transmitter.
-func newOracle(factory core.OracleFactory) func(libocr.OCR3OracleArgs2[plugin.ReportInfo]) (libocr.Oracle, error) {
+func newOracle(factory core.OracleFactory) ocr.NewOracle[plugin.ReportInfo] {
 	return func(args libocr.OCR3OracleArgs2[plugin.ReportInfo]) (libocr.Oracle, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), oracleTimeout)
 		defer cancel()
@@ -142,12 +143,12 @@ func (t transmitter) FromAccount(ctx context.Context) (ocrtypes.Account, error) 
 }
 
 func encodeInfo(info plugin.ReportInfo) ([]byte, error) {
-	value, err := json.Marshal(info.Value)
+	value, err := json.Marshal(info)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode report info: %w", err)
 	}
 
-	s, err := structpb.NewStruct(map[string]any{keyBundleNameField: info.KeyBundle, infoField: string(value)})
+	s, err := structpb.NewStruct(map[string]any{keyBundleNameField: info.KeyBundleName, infoField: string(value)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode report info: %w", err)
 	}
@@ -161,8 +162,8 @@ func decodeReport(r ocr3types.ReportWithInfo[[]byte]) (ocr3types.ReportWithInfo[
 		return ocr3types.ReportWithInfo[plugin.ReportInfo]{}, fmt.Errorf("failed to decode report info: %w", err)
 	}
 
-	info := plugin.ReportInfo{KeyBundle: s.GetFields()[keyBundleNameField].GetStringValue()}
-	if err := json.Unmarshal([]byte(s.GetFields()[infoField].GetStringValue()), &info.Value); err != nil {
+	var info plugin.ReportInfo
+	if err := json.Unmarshal([]byte(s.GetFields()[infoField].GetStringValue()), &info); err != nil {
 		return ocr3types.ReportWithInfo[plugin.ReportInfo]{}, fmt.Errorf("failed to decode report info: %w", err)
 	}
 

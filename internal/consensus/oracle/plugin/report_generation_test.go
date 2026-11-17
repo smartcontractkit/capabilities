@@ -98,8 +98,8 @@ func Test_ReceivedIdenticalReportFromAllNodes(t *testing.T) {
 			newRR([]byte("somerandombytes"), md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[plugin.ReportInfo], info plugin.ReportInfo) {
 				require.True(t, bytes.HasSuffix(report.ReportWithInfo.Report, []byte("somerandombytes")), "Report does not end with 'somerandombytes'")
-				require.Equal(t, md1.RequestID(), info.Value.RequestID, "RequestID does not match md1.RequestID")
-				require.Equal(t, md1.KeyBundleID, info.KeyBundle, "KeyBundleID does not match md1.KeyBundleID")
+				require.Equal(t, md1.RequestID(), info.RequestID, "RequestID does not match md1.RequestID")
+				require.Equal(t, md1.KeyBundleID, info.KeyBundleName, "KeyBundleID does not match md1.KeyBundleID")
 
 				meta, _, err := ocrtypes.Decode(report.ReportWithInfo.Report)
 				require.NoError(t, err, "Failed to extract metadata fields from report")
@@ -131,8 +131,8 @@ func Test_ReceivedIdenticalReportFromSufficientNodes(t *testing.T) {
 			newRR([]byte("somerandombytes2"), md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[plugin.ReportInfo], info plugin.ReportInfo) {
 				require.True(t, bytes.HasSuffix(report.ReportWithInfo.Report, []byte("somerandombytes")), "Report does not end with 'somerandombytes'")
-				require.Equal(t, md1.RequestID(), info.Value.RequestID, "RequestID does not match md1.RequestID")
-				require.Equal(t, md1.KeyBundleID, info.KeyBundle, "KeyBundleID does not match md1.KeyBundleID")
+				require.Equal(t, md1.RequestID(), info.RequestID, "RequestID does not match md1.RequestID")
+				require.Equal(t, md1.KeyBundleID, info.KeyBundleName, "KeyBundleID does not match md1.KeyBundleID")
 
 				meta, _, err := ocrtypes.Decode(report.ReportWithInfo.Report)
 				require.NoError(t, err, "Failed to extract metadata fields from report")
@@ -169,7 +169,7 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 			newRR([]byte("somerandombytes"), md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[plugin.ReportInfo], info plugin.ReportInfo) {
 				require.True(t, bytes.HasSuffix(report.ReportWithInfo.Report, []byte("somerandombytes")), "Report does not end with 'somerandombytes'")
-				require.Equal(t, md1.RequestID(), info.Value.RequestID, "RequestID does not match md1.RequestID")
+				require.Equal(t, md1.RequestID(), info.RequestID, "RequestID does not match md1.RequestID")
 			}},
 
 		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
@@ -278,7 +278,7 @@ func Test_ReportTooLarge_ReturnsFailure(t *testing.T) {
 	// Verify the report is a failure report (empty report body)
 	require.Empty(t, reports[0].ReportWithInfo.Report, "Oversized report should have empty report body")
 
-	info := reports[0].ReportWithInfo.Info.Value
+	info := reports[0].ReportWithInfo.Info
 	require.Equal(t, "req-too-large", info.RequestID)
 	require.NotNil(t, info.Failure)
 	require.Equal(t, oracletypes.ConsensusFailureCode_REPORT_TOO_LARGE, info.Failure.Code)
@@ -344,7 +344,7 @@ func Test_ReportWithinLimit_Succeeds(t *testing.T) {
 	// Verify the report is NOT empty (successful report)
 	require.NotEmpty(t, reports[0].ReportWithInfo.Report, "Successful report should have non-empty report body")
 
-	info := reports[0].ReportWithInfo.Info.Value
+	info := reports[0].ReportWithInfo.Info
 	require.Equal(t, "req-small", info.RequestID)
 	require.Nil(t, info.Failure, "Should not have failure code for successful report")
 }

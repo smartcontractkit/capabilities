@@ -6,6 +6,7 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/samber/do/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/stretchr/testify/assert"
@@ -121,4 +122,23 @@ func TestEmbedRejectsANonPositiveCount(t *testing.T) {
 		_, err := embedFakes(t, NewInjector(), total, func(do.Injector) (*fake, error) { return newFake(), nil })
 		require.ErrorContains(t, err, "instances must be positive", total)
 	}
+}
+
+// TestStartProvidesTheCapabilitysInfo covers what a capability can only resolve from its Start, such as an oracle
+// that finds its config by the capability's ID.
+func TestStartProvidesTheCapabilitysInfo(t *testing.T) {
+	var injector do.Injector
+	fakes, err := embedFakes(t, NewInjector(), 1, func(i do.Injector) (*fake, error) {
+		injector = i
+		_, err := do.Invoke[capabilities.CapabilityInfo](i)
+		assert.Error(t, err, "not provided before the capability is built")
+		return newFakeNamed(do.MustInvoke[logger.Logger](i)), nil
+	})
+	require.NoError(t, err)
+
+	want, err := fakes[0].Info(t.Context())
+	require.NoError(t, err)
+	got, err := do.Invoke[capabilities.CapabilityInfo](injector)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
 }

@@ -25,13 +25,13 @@ import (
 	"github.com/smartcontractkit/capabilities/internal/consensus/oracle/transmitter"
 	"github.com/smartcontractkit/capabilities/internal/consensus/oracle/types"
 	"github.com/smartcontractkit/capabilities/internal/consensus/protos"
+	"github.com/smartcontractkit/capabilities/libs/ocr"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ocrutil"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -72,7 +72,7 @@ var _ protos.ConsensusCapability = &consensusCapability{}
 
 type consensusCapability struct {
 	lggr       logger.Logger
-	newOracle  func(libocr.OCR3OracleArgs2[plugin.ReportInfo]) (libocr.Oracle, error)
+	newOracle  ocr.NewOracle[plugin.ReportInfo]
 	oracle     libocr.Oracle
 	reqStore   *requests.Store[*oracle.ConsensusRequest]
 	reqHandler *requests.Handler[*oracle.ConsensusRequest, oracle.ConsensusResponse]
@@ -101,7 +101,7 @@ func (s *storeStatsCollector) SetRequestCount(requestCount int) {
 
 // newConsensusCapability makes the consensus capability, which makes its oracle with newOracle once it is started.
 func newConsensusCapability(lggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory, cfg Config,
-	newOracle func(libocr.OCR3OracleArgs2[plugin.ReportInfo]) (libocr.Oracle, error)) (*consensusCapability, error) {
+	newOracle ocr.NewOracle[plugin.ReportInfo]) (*consensusCapability, error) {
 	metrics, err := metrics.NewMetrics()
 	if err != nil {
 		return nil, fmt.Errorf("error creating metrics: %w", err)
@@ -207,7 +207,7 @@ func (c *consensusCapability) Start(ctx context.Context) error {
 		LocalConfig:            localOcrConfig,
 		ReportingPluginFactory: reportingPlugin,
 		ContractTransmitter:    contractTransmitter,
-		Database:               ocrutil.NewMemoryDB(c.Name(), c.lggr),
+		Database:               ocr.NewMemoryDB(c.Name(), c.lggr),
 		Logger:                 logger.NewOCRWrapper(c.lggr, true, func(string) {}),
 		MetricsRegisterer:      prometheus.DefaultRegisterer,
 	})

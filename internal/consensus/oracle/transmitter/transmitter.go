@@ -26,12 +26,12 @@ type ContractTransmitter struct {
 }
 
 func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.ConfigDigest, seqNr uint64, rwi ocr3types.ReportWithInfo[plugin.ReportInfo], signatures []types.AttributedOnchainSignature) error {
-	requestID := rwi.Info.Value.RequestID
+	requestID := rwi.Info.RequestID
 	if requestID == "" {
 		return errors.New("report info has no request ID")
 	}
 
-	if failure := rwi.Info.Value.Failure; failure != nil {
+	if failure := rwi.Info.Failure; failure != nil {
 		c.lggr.Debugw("received consensus failure message report", "requestID", requestID,
 			"failureMessage", failure.Message, "failureCode", failure.Code)
 

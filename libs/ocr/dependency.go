@@ -9,15 +9,17 @@ import (
 	"github.com/samber/do/v2"
 
 	"github.com/smartcontractkit/libocr/commontypes"
+	libocr "github.com/smartcontractkit/libocr/offchainreporting2plus"
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	commonkeyring "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/keyring"
-	commonnetwork "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/network"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 
 	"github.com/smartcontractkit/capabilities/libs/capability"
+	nodekeyring "github.com/smartcontractkit/capabilities/libs/ocr/keyring"
+	nodenetwork "github.com/smartcontractkit/capabilities/libs/ocr/network"
 )
 
 // ConfigNamespace is the namespace Config is set under.
@@ -38,100 +40,142 @@ type Config struct {
 	Bootstrappers []commontypes.BootstrapperLocator
 }
 
-// Dependencies are what a capability's oracle needs from the node it runs for.
-type Dependencies struct {
+// Network is the node's networking, which a capability's oracles talk to each other over.
+type Network struct {
 	BinaryNetworkEndpointFactory ocrtypes.BinaryNetworkEndpointFactory
-	commonkeyring.Keyrings
-	V2Bootstrappers []commontypes.BootstrapperLocator
-	TransmitAccount ocrtypes.Account
-	// Config returns the config tracker and digester of the oracle of the capability with capabilityID.
-	Config func(capabilityID string) (ocrtypes.ContractConfigTracker, ocrtypes.OffchainConfigDigester)
+	V2Bootstrappers              []commontypes.BootstrapperLocator
 }
 
-// init provides the OCR dependencies however the capability is run: from the node at Config.NetworkURL and
-// Config.KeyringURL for run and compat, and over the in-process network for each instance of embed.
+// Signing is the node's OCR keys, and the OCR config the capabilities registry has them in.
+type Signing struct {
+	OffchainKeyring ocrtypes.OffchainKeyring
+	// onchainKeyring signs with the key bundle a report's info names, such as evm. OnchainKeyring is it for a
+	// capability's report info.
+	onchainKeyring ocr3types.OnchainKeyring[string]
+	// TransmitAccount is the account the config lists the node under.
+	TransmitAccount        ocrtypes.Account
+	ContractConfigTracker  ocrtypes.ContractConfigTracker
+	OffchainConfigDigester ocrtypes.OffchainConfigDigester
+}
+
+// init provides the node's networking and signing however the capability is run, and the Oracles made over them:
+// from the node at Config.NetworkURL and Config.KeyringURL for run and compat, and over the in-process network for each
+// instance of embed.
 func init() {
 	capability.RunInjector.MustProvideConfig(ConfigNamespace, &Config{})
-	capability.RunInjector.MustProvide(newNodeDependencies)
-	capability.EmbedInjector.MustProvide(newEmbeddedDependencies)
+	capability.RunInjector.MustProvide(newNodeNetwork)
+	capability.RunInjector.MustProvide(newNodeSigning)
+	capability.EmbedInjector.MustProvide(newEmbeddedNetwork)
+	capability.EmbedInjector.MustProvide(newEmbeddedSigning)
+	capability.Injectors.MustProvideValue[NewOracleFunc](libocr.NewOracle)
+	capability.Injectors.MustProvide(newOracles)
 }
 
 // connectTimeout is how long the node has to give its OCR public keys.
 const connectTimeout = time.Minute
 
-// newNodeDependencies connects to the node's OCR networking and keys. The connections live as long as the process, which
-// is as long as a run has its capability.
-func newNodeDependencies(i do.Injector) (Dependencies, error) {
+// newNodeNetwork connects to the node's networking. The connection lives as long as the process, which is as long as a
+// run has its capability.
+func newNodeNetwork(i do.Injector) (Network, error) {
 	cfg, err := do.Invoke[*Config](i)
 	if err != nil {
-		return Dependencies{}, err
+		return Network{}, err
 	}
 
-	if cfg.NetworkURL == "" || cfg.KeyringURL == "" || cfg.PeerID == "" {
-		return Dependencies{}, errors.New("an OCR capability needs ocr.network-url, ocr.keyring-url and ocr.peer-id")
+	if cfg.NetworkURL == "" || cfg.PeerID == "" {
+		return Network{}, errors.New("an OCR capability needs ocr.network-url and ocr.peer-id")
 	}
 
 	lggr, err := do.Invoke[logger.Logger](i)
 	if err != nil {
-		return Dependencies{}, err
+		return Network{}, err
 	}
 
 	grpcOpts, err := do.Invoke[loop.GRPCOpts](i)
 	if err != nil {
-		return Dependencies{}, err
+		return Network{}, err
+	}
+
+	conn, err := capability.Dial(grpcOpts, cfg.NetworkURL)
+	if err != nil {
+		return Network{}, fmt.Errorf("failed to create OCR network client for %s: %w", cfg.NetworkURL, err)
+	}
+
+	factory, err := nodenetwork.Connect(lggr, conn, cfg.PeerID, nodenetwork.Config{})
+	if err != nil {
+		return Network{}, err
+	}
+
+	return Network{BinaryNetworkEndpointFactory: factory, V2Bootstrappers: cfg.Bootstrappers}, nil
+}
+
+// newNodeSigning connects to the node's OCR keys, and finds the capability's OCR config through the registry. The
+// connection lives as long as the process, which is as long as a run has its capability.
+func newNodeSigning(i do.Injector) (Signing, error) {
+	cfg, err := do.Invoke[*Config](i)
+	if err != nil {
+		return Signing{}, err
+	}
+
+	if cfg.KeyringURL == "" {
+		return Signing{}, errors.New("an OCR capability needs ocr.keyring-url")
+	}
+
+	grpcOpts, err := do.Invoke[loop.GRPCOpts](i)
+	if err != nil {
+		return Signing{}, err
 	}
 
 	reg, err := do.Invoke[registry.CapabilitiesRegistry](i)
 	if err != nil {
-		return Dependencies{}, err
+		return Signing{}, err
 	}
 
 	capabilities, err := do.Invoke[capability.CapabilitiesConfig](i)
 	if err != nil {
-		return Dependencies{}, err
+		return Signing{}, err
 	}
 
-	networkConn, err := capability.Dial(grpcOpts, cfg.NetworkURL)
+	conn, err := capability.Dial(grpcOpts, cfg.KeyringURL)
 	if err != nil {
-		return Dependencies{}, fmt.Errorf("failed to create OCR network client for %s: %w", cfg.NetworkURL, err)
-	}
-
-	factory, err := commonnetwork.Connect(lggr, networkConn, cfg.PeerID, commonnetwork.Config{})
-	if err != nil {
-		return Dependencies{}, err
-	}
-
-	keyringConn, err := capability.Dial(grpcOpts, cfg.KeyringURL)
-	if err != nil {
-		return Dependencies{}, fmt.Errorf("failed to create OCR keyring client for %s: %w", cfg.KeyringURL, err)
+		return Signing{}, fmt.Errorf("failed to create OCR keyring client for %s: %w", cfg.KeyringURL, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
-	keyrings, err := commonkeyring.Connect(ctx, keyringConn, commonkeyring.Config{}, verify)
+	keyrings, err := nodekeyring.Connect(ctx, conn, nodekeyring.Config{}, verify)
 	if err != nil {
-		return Dependencies{}, err
+		return Signing{}, err
 	}
 
 	transmitAccount := ocrtypes.Account(cfg.TransmitAccount)
-	return Dependencies{
-		BinaryNetworkEndpointFactory: factory,
-		Keyrings:                     keyrings,
-		V2Bootstrappers:              cfg.Bootstrappers,
-		TransmitAccount:              transmitAccount,
-		Config: func(capabilityID string) (ocrtypes.ContractConfigTracker, ocrtypes.OffchainConfigDigester) {
-			c := &registryConfig{registry: reg, capabilityID: capabilityID, donID: capabilities.CapabilityDonID,
-				transmitAccount: transmitAccount}
-			return c, c
-		},
+	config := &registryConfig{registry: reg, capabilityID: capabilityIDFrom(i), donID: capabilities.CapabilityDonID,
+		transmitAccount: transmitAccount}
+	return Signing{
+		OffchainKeyring:        keyrings.OffchainKeyring,
+		onchainKeyring:         keyrings.OnchainKeyring,
+		TransmitAccount:        transmitAccount,
+		ContractConfigTracker:  config,
+		OffchainConfigDigester: config,
 	}, nil
 }
 
-func newEmbeddedDependencies(i do.Injector) (Dependencies, error) {
+func newEmbeddedNetwork(i do.Injector) (Network, error) {
 	info, err := do.Invoke[capability.InstanceInfo](i)
 	if err != nil {
-		return Dependencies{}, err
+		return Network{}, err
 	}
 
-	return embeddedDependencies(embedNetwork, info.ID, info.Total)
+	network, _, err := embeddedDependencies(embedNetwork, info.ID, info.Total)
+	return network, err
+}
+
+func newEmbeddedSigning(i do.Injector) (Signing, error) {
+	info, err := do.Invoke[capability.InstanceInfo](i)
+	if err != nil {
+		return Signing{}, err
+	}
+
+	_, signing, err := embeddedDependencies(embedNetwork, info.ID, info.Total)
+	return signing, err
 }

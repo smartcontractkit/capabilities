@@ -1,8 +1,7 @@
 package ocr
 
-// ReportInfo is the info of a report of an oracle that runs over the node's OCR. KeyBundle names the node's key bundle
-// that signs the report, such as evm. Value is the capability's, for its transmitter.
-type ReportInfo[T any] struct {
-	KeyBundle string
-	Value     T
+// ReportInfo is what ocr needs of a report's info: the name of the node's key bundle that signs the report, such as
+// evm. A capability's own report info implements it, so its oracle keeps the capability's type.
+type ReportInfo interface {
+	KeyBundle() string
 }

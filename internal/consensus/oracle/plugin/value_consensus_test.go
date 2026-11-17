@@ -896,8 +896,8 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	receivedFailureCodeForRequestIDs := map[string]bool{}
 	for _, report := range reports {
 		info := report.ReportWithInfo.Info
-		reqID := info.Value.RequestID
-		if failure := info.Value.Failure; failure != nil {
+		reqID := info.RequestID
+		if failure := info.Failure; failure != nil {
 			expectedOutcome, ok := requestIDToOutcome[reqID]
 			require.True(t, ok, "got report for a request without a test outcome %s", reqID)
 
@@ -1006,9 +1006,9 @@ func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[plugin
 	require.NotNil(t, report.ReportWithInfo, "report should not be nil")
 	require.NotNil(t, report.ReportWithInfo.Report, "report value should not be nil")
 
-	require.NotEmpty(t, info.Value.RequestID, "report info should contain request ID")
+	require.NotEmpty(t, info.RequestID, "report info should contain request ID")
 	if expectedKeyBundleName != "" {
-		require.Equal(t, expectedKeyBundleName, info.KeyBundle, "keyBundle name should match expected value")
+		require.Equal(t, expectedKeyBundleName, info.KeyBundleName, "keyBundle name should match expected value")
 	}
 
 	// Verify the value in the report matches the expected result

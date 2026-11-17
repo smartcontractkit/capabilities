@@ -1,0 +1,113 @@
+package keyring
+
+import (
+	"context"
+	"fmt"
+
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	"github.com/smartcontractkit/capabilities/libs/ocr/keyring/internal/pb"
+)
+
+// Connect returns the Keyrings served by [RegisterServer] on conn. Its onchain keyring signs on the node, but checks
+// signatures with verify: verifying needs no secret, so the process does it itself.
+func Connect(ctx context.Context, conn grpc.ClientConnInterface, cfg Config,
+	verify func(ocrtypes.OnchainPublicKey, ocrtypes.ConfigDigest, uint64, ocr3types.ReportWithInfo[string], []byte) bool) (Keyrings, error) {
+	version, err := resolveVersion(cfg.Version)
+	if err != nil {
+		return Keyrings{}, err
+	}
+
+	switch version {
+	case VersionV1:
+		return connectV1(ctx, pb.NewKeyringClient(conn), verify)
+	default:
+		return Keyrings{}, fmt.Errorf("unknown OCR keyring version %d", version)
+	}
+}
+
+func connectV1(ctx context.Context, client pb.KeyringClient,
+	verify func(ocrtypes.OnchainPublicKey, ocrtypes.ConfigDigest, uint64, ocr3types.ReportWithInfo[string], []byte) bool) (Keyrings, error) {
+	keys, err := client.PublicKeys(ctx, &emptypb.Empty{})
+	if err != nil {
+		return Keyrings{}, fmt.Errorf("failed to read the node's OCR public keys: %w", err)
+	}
+
+	k := &keyring{
+		client:             client,
+		verify:             verify,
+		onchainPublicKey:   keys.OnchainPublicKey,
+		maxSignatureLength: int(keys.MaxSignatureLength),
+	}
+	copy(k.offchainPublicKey[:], keys.OffchainPublicKey)
+	copy(k.configEncryptionPublicKey[:], keys.ConfigEncryptionPublicKey)
+
+	return Keyrings{OffchainKeyring: k, OnchainKeyring: k}, nil
+}
+
+var (
+	_ ocrtypes.OffchainKeyring         = (*keyring)(nil)
+	_ ocr3types.OnchainKeyring[string] = (*keyring)(nil)
+)
+
+// keyring signs with the node's keys. Its public keys cannot change, so they are read once.
+type keyring struct {
+	client                    pb.KeyringClient
+	verify                    func(ocrtypes.OnchainPublicKey, ocrtypes.ConfigDigest, uint64, ocr3types.ReportWithInfo[string], []byte) bool
+	offchainPublicKey         ocrtypes.OffchainPublicKey
+	configEncryptionPublicKey ocrtypes.ConfigEncryptionPublicKey
+	onchainPublicKey          ocrtypes.OnchainPublicKey
+	maxSignatureLength        int
+}
+
+func (k *keyring) OffchainSign(msg []byte) ([]byte, error) {
+	reply, err := k.client.OffchainSign(context.Background(), &pb.OffchainSignRequest{Message: msg})
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign offchain: %w", err)
+	}
+
+	return reply.Signature, nil
+}
+
+func (k *keyring) ConfigDiffieHellman(point [32]byte) ([32]byte, error) {
+	var secret [32]byte
+	reply, err := k.client.ConfigDiffieHellman(context.Background(), &pb.ConfigDiffieHellmanRequest{Point: point[:]})
+	if err != nil {
+		return secret, fmt.Errorf("failed to compute the config shared secret: %w", err)
+	}
+
+	copy(secret[:], reply.SharedSecret)
+	return secret, nil
+}
+
+func (k *keyring) OffchainPublicKey() ocrtypes.OffchainPublicKey { return k.offchainPublicKey }
+
+func (k *keyring) ConfigEncryptionPublicKey() ocrtypes.ConfigEncryptionPublicKey {
+	return k.configEncryptionPublicKey
+}
+
+func (k *keyring) PublicKey() ocrtypes.OnchainPublicKey { return k.onchainPublicKey }
+
+func (k *keyring) Sign(digest ocrtypes.ConfigDigest, seqNr uint64, report ocr3types.ReportWithInfo[string]) ([]byte, error) {
+	reply, err := k.client.Sign(context.Background(), &pb.SignRequest{
+		ConfigDigest: digest[:],
+		SeqNr:        seqNr,
+		Report:       &pb.Report{Report: report.Report, KeyBundle: report.Info},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign report: %w", err)
+	}
+
+	return reply.Signature, nil
+}
+
+func (k *keyring) Verify(publicKey ocrtypes.OnchainPublicKey, digest ocrtypes.ConfigDigest, seqNr uint64,
+	report ocr3types.ReportWithInfo[string], signature []byte) bool {
+	return k.verify(publicKey, digest, seqNr, report, signature)
+}
+
+func (k *keyring) MaxSignatureLength() int { return k.maxSignatureLength }

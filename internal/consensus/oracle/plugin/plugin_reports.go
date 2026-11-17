@@ -17,9 +17,11 @@ import (
 
 const ReportMetaDataPrependLength = 109
 
-// Info is what the transmitter needs of a report.
-type Info struct {
-	RequestID string
+// ReportInfo is what the transmitter needs of a consensus report, and the node's key bundle that signs it.
+type ReportInfo struct {
+	// KeyBundleName names the node's key bundle that signs the report, such as evm.
+	KeyBundleName string
+	RequestID     string
 	// Failure is set when consensus on the request failed.
 	Failure *Failure
 }
@@ -29,8 +31,10 @@ type Failure struct {
 	Message string
 }
 
-// ReportInfo is the info of a consensus report. Its KeyBundle names the node's key bundle that signs the report.
-type ReportInfo = ocr.ReportInfo[Info]
+var _ ocr.ReportInfo = ReportInfo{}
+
+// KeyBundle is the node's key bundle that signs the report.
+func (r ReportInfo) KeyBundle() string { return r.KeyBundleName }
 
 func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr3types.Outcome) ([]ocr3types.ReportPlus[ReportInfo], error) {
 	requestsOutcome := &oracletypes.Outcome{}
@@ -105,7 +109,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 				continue
 			}
 
-			info := ReportInfo{KeyBundle: reqMetadata.KeyBundleId, Value: Info{RequestID: reqMetadata.RequestId}}
+			info := ReportInfo{KeyBundleName: reqMetadata.KeyBundleId, RequestID: reqMetadata.RequestId}
 			reports = append(reports, ocr3types.ReportPlus[ReportInfo]{
 				ReportWithInfo: ocr3types.ReportWithInfo[ReportInfo]{
 					Report: reportWithMetaData,
@@ -144,7 +148,8 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 func failedReportInfo(requestID string, keyBundleID string, failureMessage string,
 	failureCode oracletypes.ConsensusFailureCode) ReportInfo {
 	return ReportInfo{
-		KeyBundle: keyBundleID,
-		Value:     Info{RequestID: requestID, Failure: &Failure{Code: failureCode, Message: failureMessage}},
+		KeyBundleName: keyBundleID,
+		RequestID:     requestID,
+		Failure:       &Failure{Code: failureCode, Message: failureMessage},
 	}
 }

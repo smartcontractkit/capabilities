@@ -16,6 +16,7 @@ import (
 	"github.com/smartcontractkit/capabilities/internal/consensus/protos/protostest"
 	"github.com/smartcontractkit/capabilities/libs/capability"
 	"github.com/smartcontractkit/capabilities/libs/capability/capabilitytest"
+	"github.com/smartcontractkit/capabilities/libs/ocr"
 )
 
 // TestNew runs a DON of embedded instances, each with its own oracle, and checks they agree on a median.
@@ -31,17 +32,21 @@ func TestNew(t *testing.T) {
 	assert.True(t, proto.Equal(values.Proto(values.NewInt64(10)), result.Response), "got %v", result.Response)
 }
 
-// TestNew_OracleFromInjector checks the oracle is made by whatever the run provides, so tests can swap it.
+// TestNew_OracleFromInjector checks the oracle is made by whatever the run provides, so tests can swap libocr for
+// their own.
 func TestNew_OracleFromInjector(t *testing.T) {
 	var made atomic.Int32
-	newOracle := func(args libocr.OCR3OracleArgs2[plugin.ReportInfo]) (libocr.Oracle, error) {
+	newOracle := func(args libocr.OracleArgs) (libocr.Oracle, error) {
 		made.Add(1)
-		assert.NotNil(t, args.ReportingPluginFactory)
+		ocr3Args, ok := args.(libocr.OCR3OracleArgs2[plugin.ReportInfo])
+		assert.True(t, ok, "consensus runs an OCR3 oracle")
+		assert.NotNil(t, ocr3Args.ReportingPluginFactory)
+		assert.NotNil(t, ocr3Args.BinaryNetworkEndpointFactory, "the node's networking is filled in")
 		return noopOracle{}, nil
 	}
 
 	capabilitytest.Start(t, New, 1, capability.WithProvider(func(i *capability.Injector) error {
-		return i.ProvideValue(newOracle)
+		return i.ProvideValue[ocr.NewOracleFunc](newOracle)
 	}))
 
 	assert.Equal(t, int32(1), made.Load())

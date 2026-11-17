@@ -17,15 +17,13 @@ import (
 )
 
 var failedInfo = plugin.ReportInfo{
-	KeyBundle: "aptos",
-	Value: plugin.Info{
-		RequestID: "request",
-		Failure:   &plugin.Failure{Code: oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, Message: "too many errors"},
-	},
+	KeyBundleName: "aptos",
+	RequestID:     "request",
+	Failure:       &plugin.Failure{Code: oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, Message: "too many errors"},
 }
 
 func TestInfo_RoundTrips(t *testing.T) {
-	for _, info := range []plugin.ReportInfo{failedInfo, {KeyBundle: "evm", Value: plugin.Info{RequestID: "ok"}}} {
+	for _, info := range []plugin.ReportInfo{failedInfo, {KeyBundleName: "evm", RequestID: "ok"}} {
 		encoded, err := encodeInfo(info)
 		require.NoError(t, err)
 

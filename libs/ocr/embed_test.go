@@ -18,19 +18,19 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	commonkeyring "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/keyring"
-	commonnetwork "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/network"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ocrutil"
+
+	nodekeyring "github.com/smartcontractkit/capabilities/libs/ocr/keyring"
+	nodenetwork "github.com/smartcontractkit/capabilities/libs/ocr/network"
 )
 
 func TestEmbeddedOraclesReachConsensus(t *testing.T) {
 	t.Parallel()
 	network := newNetwork()
-	testOraclesReachConsensus(t, func(id, total int) Dependencies {
-		deps, err := embeddedDependencies(network, id, total)
+	testOraclesReachConsensus(t, func(id, total int) (Network, Signing) {
+		n, s, err := embeddedDependencies(network, id, total)
 		require.NoError(t, err)
-		return deps
+		return n, s
 	})
 }
 
@@ -39,17 +39,17 @@ func TestEmbeddedOraclesReachConsensus(t *testing.T) {
 func TestRemoteOraclesReachConsensus(t *testing.T) {
 	t.Parallel()
 	network := newNetwork()
-	testOraclesReachConsensus(t, func(id, total int) Dependencies {
-		deps, err := embeddedDependencies(network, id, total)
+	testOraclesReachConsensus(t, func(id, total int) (Network, Signing) {
+		n, sg, err := embeddedDependencies(network, id, total)
 		require.NoError(t, err)
 
 		lis := bufconn.Listen(1024 * 1024)
-		s := grpc.NewServer(grpc.MaxRecvMsgSize(max(commonnetwork.MaxMessageSize, commonkeyring.MaxMessageSize)))
-		factory := deps.BinaryNetworkEndpointFactory
-		commonnetwork.RegisterServer(s, logger.Test(t), func(context.Context) (ocrtypes.BinaryNetworkEndpointFactory, error) {
+		s := grpc.NewServer(grpc.MaxRecvMsgSize(max(nodenetwork.MaxMessageSize, nodekeyring.MaxMessageSize)))
+		factory := n.BinaryNetworkEndpointFactory
+		nodenetwork.RegisterServer(s, logger.Test(t), func(context.Context) (ocrtypes.BinaryNetworkEndpointFactory, error) {
 			return factory, nil
 		})
-		commonkeyring.RegisterServer(s, deps.Keyrings)
+		nodekeyring.RegisterServer(s, nodekeyring.Keyrings{OffchainKeyring: sg.OffchainKeyring, OnchainKeyring: sg.onchainKeyring})
 		go func() { _ = s.Serve(lis) }()
 		t.Cleanup(s.Stop)
 
@@ -60,29 +60,31 @@ func TestRemoteOraclesReachConsensus(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = conn.Close() })
 
-		verify := deps.OnchainKeyring.Verify
-		deps.BinaryNetworkEndpointFactory, err = commonnetwork.Connect(logger.Test(t), conn, factory.PeerID(), commonnetwork.Config{})
+		n.BinaryNetworkEndpointFactory, err = nodenetwork.Connect(logger.Test(t), conn, factory.PeerID(), nodenetwork.Config{})
 		require.NoError(t, err)
-		deps.Keyrings, err = commonkeyring.Connect(t.Context(), conn, commonkeyring.Config{}, verify)
+		keyrings, err := nodekeyring.Connect(t.Context(), conn, nodekeyring.Config{}, sg.onchainKeyring.Verify)
 		require.NoError(t, err)
-		return deps
+		sg.OffchainKeyring = keyrings.OffchainKeyring
+		sg.onchainKeyring = keyrings.OnchainKeyring
+		return n, sg
 	})
 }
 
 // testOraclesReachConsensus runs a DON of 4 embedded instances, each over the dependencies newDependencies returns.
-func testOraclesReachConsensus(t *testing.T, newDependencies func(id, total int) Dependencies) {
+func testOraclesReachConsensus(t *testing.T, newDependencies func(id, total int) (Network, Signing)) {
 	const instances = 4
 	transmitted := make(chan transmission, 100)
 	for id := range instances {
 		lggr := logger.Test(t)
-		oracle, err := libocr.NewOracle(WithNode("test@1.0.0", libocr.OCR3OracleArgs2[ReportInfo[string]]{
+		network, signing := newDependencies(id, instances)
+		oracle, err := libocr.NewOracle(wire(libocr.OCR3OracleArgs2[echoInfo]{
 			LocalConfig:            testLocalConfig(),
 			ReportingPluginFactory: echoPluginFactory{},
 			ContractTransmitter:    &recordingTransmitter{id: id, transmitted: transmitted},
-			Database:               ocrutil.NewMemoryDB(fmt.Sprint(id), lggr),
+			Database:               NewMemoryDB(fmt.Sprint(id), lggr),
 			Logger:                 logger.NewOCRWrapper(lggr, true, func(string) {}),
 			MetricsRegisterer:      prometheus.NewRegistry(),
-		}, newDependencies(id, instances)))
+		}, network, signing))
 		require.NoError(t, err)
 		require.NoError(t, oracle.Start())
 		t.Cleanup(func() { assert.NoError(t, oracle.Close()) })
@@ -94,7 +96,7 @@ func testOraclesReachConsensus(t *testing.T, newDependencies func(id, total int)
 		select {
 		case tr := <-transmitted:
 			assert.Equal(t, []byte("report"), tr.report)
-			assert.Equal(t, ReportInfo[string]{KeyBundle: "evm", Value: "value"}, tr.info)
+			assert.Equal(t, echoInfo{keyBundle: "evm", value: "value"}, tr.info)
 			assert.GreaterOrEqual(t, tr.signatures, 2, "a report is attested by more than f oracles")
 			seen[tr.id] = true
 		case <-timeout:
@@ -105,22 +107,20 @@ func testOraclesReachConsensus(t *testing.T, newDependencies func(id, total int)
 
 func TestEmbeddedConfigIsSharedByInstances(t *testing.T) {
 	t.Parallel()
-	first, err := embeddedDependencies(newNetwork(), 0, 4)
+	firstNetwork, first, err := embeddedDependencies(newNetwork(), 0, 4)
 	require.NoError(t, err)
-	second, err := embeddedDependencies(newNetwork(), 3, 4)
+	secondNetwork, second, err := embeddedDependencies(newNetwork(), 3, 4)
 	require.NoError(t, err)
 
-	firstTracker, _ := first.Config("test@1.0.0")
-	firstConfig, err := firstTracker.LatestConfig(t.Context(), 0)
+	firstConfig, err := first.ContractConfigTracker.LatestConfig(t.Context(), 0)
 	require.NoError(t, err)
-	secondTracker, _ := second.Config("test@1.0.0")
-	secondConfig, err := secondTracker.LatestConfig(t.Context(), 0)
+	secondConfig, err := second.ContractConfigTracker.LatestConfig(t.Context(), 0)
 	require.NoError(t, err)
 	assert.Equal(t, firstConfig, secondConfig)
 	assert.Equal(t, firstConfig.Transmitters[3], second.TransmitAccount)
-	assert.NotEqual(t, first.BinaryNetworkEndpointFactory.PeerID(), second.BinaryNetworkEndpointFactory.PeerID())
+	assert.NotEqual(t, firstNetwork.BinaryNetworkEndpointFactory.PeerID(), secondNetwork.BinaryNetworkEndpointFactory.PeerID())
 
-	_, err = embeddedDependencies(newNetwork(), 4, 4)
+	_, _, err = embeddedDependencies(newNetwork(), 4, 4)
 	require.Error(t, err)
 }
 
@@ -159,7 +159,7 @@ func testLocalConfig() ocrtypes.LocalConfig {
 type transmission struct {
 	id         int
 	report     []byte
-	info       ReportInfo[string]
+	info       echoInfo
 	signatures int
 }
 
@@ -169,7 +169,7 @@ type recordingTransmitter struct {
 }
 
 func (r *recordingTransmitter) Transmit(_ context.Context, _ ocrtypes.ConfigDigest, _ uint64,
-	report ocr3types.ReportWithInfo[ReportInfo[string]], sigs []ocrtypes.AttributedOnchainSignature) error {
+	report ocr3types.ReportWithInfo[echoInfo], sigs []ocrtypes.AttributedOnchainSignature) error {
 	select {
 	case r.transmitted <- transmission{id: r.id, report: report.Report, info: report.Info, signatures: len(sigs)}:
 	default:
@@ -182,10 +182,18 @@ func (r *recordingTransmitter) FromAccount(context.Context) (ocrtypes.Account, e
 	return "", nil
 }
 
+// echoInfo is the info of an echo plugin's report.
+type echoInfo struct {
+	keyBundle string
+	value     string
+}
+
+func (i echoInfo) KeyBundle() string { return i.keyBundle }
+
 // echoPluginFactory makes a plugin that reports the same thing every round.
 type echoPluginFactory struct{}
 
-func (echoPluginFactory) NewReportingPlugin(context.Context, ocr3types.ReportingPluginConfig) (ocr3types.ReportingPlugin[ReportInfo[string]], ocr3types.ReportingPluginInfo, error) {
+func (echoPluginFactory) NewReportingPlugin(context.Context, ocr3types.ReportingPluginConfig) (ocr3types.ReportingPlugin[echoInfo], ocr3types.ReportingPluginInfo, error) {
 	return echoPlugin{}, ocr3types.ReportingPluginInfo{
 		Name: "echo",
 		Limits: ocr3types.ReportingPluginLimits{
@@ -220,18 +228,18 @@ func (echoPlugin) Outcome(context.Context, ocr3types.OutcomeContext, ocrtypes.Qu
 	return ocr3types.Outcome("outcome"), nil
 }
 
-func (echoPlugin) Reports(context.Context, uint64, ocr3types.Outcome) ([]ocr3types.ReportPlus[ReportInfo[string]], error) {
-	return []ocr3types.ReportPlus[ReportInfo[string]]{{ReportWithInfo: ocr3types.ReportWithInfo[ReportInfo[string]]{
+func (echoPlugin) Reports(context.Context, uint64, ocr3types.Outcome) ([]ocr3types.ReportPlus[echoInfo], error) {
+	return []ocr3types.ReportPlus[echoInfo]{{ReportWithInfo: ocr3types.ReportWithInfo[echoInfo]{
 		Report: []byte("report"),
-		Info:   ReportInfo[string]{KeyBundle: "evm", Value: "value"},
+		Info:   echoInfo{keyBundle: "evm", value: "value"},
 	}}}, nil
 }
 
-func (echoPlugin) ShouldAcceptAttestedReport(context.Context, uint64, ocr3types.ReportWithInfo[ReportInfo[string]]) (bool, error) {
+func (echoPlugin) ShouldAcceptAttestedReport(context.Context, uint64, ocr3types.ReportWithInfo[echoInfo]) (bool, error) {
 	return true, nil
 }
 
-func (echoPlugin) ShouldTransmitAcceptedReport(context.Context, uint64, ocr3types.ReportWithInfo[ReportInfo[string]]) (bool, error) {
+func (echoPlugin) ShouldTransmitAcceptedReport(context.Context, uint64, ocr3types.ReportWithInfo[echoInfo]) (bool, error) {
 	return true, nil
 }
 

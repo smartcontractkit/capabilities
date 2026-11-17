@@ -17,8 +17,6 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
-
-	commonkeyring "github.com/smartcontractkit/chainlink-common/pkg/capabilities/ocr/keyring"
 )
 
 // An embedded run's instances are a DON on their own: each derives its keys from its index, they talk over the
@@ -42,47 +40,30 @@ var embeddedPublicConfig = ocr3confighelper.PublicConfig{
 	MaxDurationShouldTransmitAcceptedReport: 300 * time.Millisecond,
 }
 
-// EmbeddedDON is the OCR dependencies of each of n instances of a DON over a network of their own in this process,
-// as embed gives them.
-func EmbeddedDON(n int) ([]Dependencies, error) {
-	net := newNetwork()
-	deps := make([]Dependencies, n)
-	for i := range deps {
-		d, err := embeddedDependencies(net, i, n)
-		if err != nil {
-			return nil, err
-		}
-
-		deps[i] = d
-	}
-
-	return deps, nil
-}
-
 // embeddedDependencies are those of instance id of an embedded run of total instances, talking over net.
-func embeddedDependencies(net *network, id, total int) (Dependencies, error) {
+func embeddedDependencies(net *network, id, total int) (Network, Signing, error) {
 	if id < 0 || id >= total {
-		return Dependencies{}, fmt.Errorf("instance %d is not one of the %d instances of this run", id, total)
+		return Network{}, Signing{}, fmt.Errorf("instance %d is not one of the %d instances of this run", id, total)
 	}
 
 	keys, err := deriveKeys(id)
 	if err != nil {
-		return Dependencies{}, err
+		return Network{}, Signing{}, err
 	}
 
 	config, err := embeddedConfig(total)
 	if err != nil {
-		return Dependencies{}, err
+		return Network{}, Signing{}, err
 	}
 
-	return Dependencies{
-		BinaryNetworkEndpointFactory: ocr2Factory{net: net, peerID: keys.peerID, bufferSize: defaultBufferSize},
-		Keyrings:                     commonkeyring.Keyrings{OffchainKeyring: keys, OnchainKeyring: keys},
-		TransmitAccount:              keys.transmitAccount(),
-		Config: func(string) (ocrtypes.ContractConfigTracker, ocrtypes.OffchainConfigDigester) {
-			return staticConfig{config: config}, staticConfig{config: config}
-		},
-	}, nil
+	return Network{BinaryNetworkEndpointFactory: ocr2Factory{net: net, peerID: keys.peerID, bufferSize: defaultBufferSize}},
+		Signing{
+			OffchainKeyring:        keys,
+			onchainKeyring:         keys,
+			TransmitAccount:        keys.transmitAccount(),
+			ContractConfigTracker:  staticConfig{config: config},
+			OffchainConfigDigester: staticConfig{config: config},
+		}, nil
 }
 
 // embeddedConfig is the config of a DON of the first oracles instances, the same for every instance.

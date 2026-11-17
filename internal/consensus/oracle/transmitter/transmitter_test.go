@@ -50,7 +50,7 @@ func Test_Transmit(t *testing.T) {
 
 	rwi := ocr3types.ReportWithInfo[plugin.ReportInfo]{
 		Report: report,
-		Info:   plugin.ReportInfo{Value: plugin.Info{RequestID: "test-request-id"}},
+		Info:   plugin.ReportInfo{RequestID: "test-request-id"},
 	}
 
 	err := transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
@@ -93,7 +93,7 @@ func Test_Transmit_FailureMessage(t *testing.T) {
 
 	rwi := ocr3types.ReportWithInfo[plugin.ReportInfo]{
 		Report: report,
-		Info:   plugin.ReportInfo{Value: plugin.Info{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, Message: failureMsg}}},
+		Info:   plugin.ReportInfo{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, Message: failureMsg}},
 	}
 
 	err := transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
@@ -137,7 +137,7 @@ func Test_Transmit_ReturnsUserError_Cases(t *testing.T) {
 
 	rwi := ocr3types.ReportWithInfo[plugin.ReportInfo]{
 		Report: report,
-		Info:   plugin.ReportInfo{Value: plugin.Info{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, Message: failureMsg}}},
+		Info:   plugin.ReportInfo{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, Message: failureMsg}},
 	}
 
 	err := transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
@@ -181,7 +181,7 @@ func Test_Transmit_ReturnsUserError_When_More_Than_One_Valid_Outcome(t *testing.
 
 	rwi := ocr3types.ReportWithInfo[plugin.ReportInfo]{
 		Report: report,
-		Info:   plugin.ReportInfo{Value: plugin.Info{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS, Message: failureMsg}}},
+		Info:   plugin.ReportInfo{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS, Message: failureMsg}},
 	}
 
 	err := transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
@@ -225,7 +225,7 @@ func Test_Transmit_ReturnsUserError_When_No_Values_Met_FPlus1_IdenticalConsensus
 
 	rwi := ocr3types.ReportWithInfo[plugin.ReportInfo]{
 		Report: report,
-		Info:   plugin.ReportInfo{Value: plugin.Info{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS, Message: failureMsg}}},
+		Info:   plugin.ReportInfo{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS, Message: failureMsg}},
 	}
 
 	err := transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
@@ -269,7 +269,7 @@ func Test_Transmit_ReturnsUserError_When_No_Single_Value_Type_Met_FPlus1(t *test
 
 	rwi := ocr3types.ReportWithInfo[plugin.ReportInfo]{
 		Report: report,
-		Info:   plugin.ReportInfo{Value: plugin.Info{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS, Message: failureMsg}}},
+		Info:   plugin.ReportInfo{RequestID: "test-request-id-failure", Failure: &plugin.Failure{Code: oracletypes.ConsensusFailureCode_NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS, Message: failureMsg}},
 	}
 
 	err := transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)

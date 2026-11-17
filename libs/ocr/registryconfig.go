@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/do/v2"
+
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 )
@@ -20,8 +23,10 @@ var (
 // registryConfig is the config of a capability's oracle as the node gives it through the capabilities registry: as
 // the node's own oracles run it, digest included.
 type registryConfig struct {
-	registry     registry.CapabilitiesRegistry
-	capabilityID string
+	registry registry.CapabilitiesRegistry
+	// capabilityID is the ID of the capability whose config this is. It is only known once the capability is built,
+	// which is before its oracle reads its config.
+	capabilityID func() (string, error)
 	donID        uint32
 	// transmitAccount is the node's, as its oracles give it.
 	transmitAccount ocrtypes.Account
@@ -67,14 +72,19 @@ func (c *registryConfig) ConfigDigestPrefix(context.Context) (ocrtypes.ConfigDig
 }
 
 func (c *registryConfig) latest(ctx context.Context) (ocrtypes.ContractConfig, error) {
-	cfg, err := c.registry.ConfigForCapability(ctx, c.capabilityID, c.donID)
+	capabilityID, err := c.capabilityID()
+	if err != nil {
+		return ocrtypes.ContractConfig{}, err
+	}
+
+	cfg, err := c.registry.ConfigForCapability(ctx, capabilityID, c.donID)
 	if err != nil {
 		return ocrtypes.ContractConfig{}, err
 	}
 
 	cc, ok := cfg.Ocr3Configs[capabilitiespb.OCR3ConfigDefaultKey]
 	if !ok {
-		return ocrtypes.ContractConfig{}, fmt.Errorf("the registry has no OCR config for %s on DON %d", c.capabilityID, c.donID)
+		return ocrtypes.ContractConfig{}, fmt.Errorf("the registry has no OCR config for %s on DON %d", capabilityID, c.donID)
 	}
 
 	// libocr finds this oracle in the config by comparing its transmit account as a string, but the registry gives
@@ -93,4 +103,16 @@ func (c *registryConfig) latest(ctx context.Context) (ocrtypes.ContractConfig, e
 
 func bareHex(a ocrtypes.Account) string {
 	return strings.ToLower(strings.TrimPrefix(string(a), "0x"))
+}
+
+// capabilityIDFrom is the ID of the capability i builds, which the run provides once the capability is built.
+func capabilityIDFrom(i do.Injector) func() (string, error) {
+	return func() (string, error) {
+		info, err := do.Invoke[capabilities.CapabilityInfo](i)
+		if err != nil {
+			return "", fmt.Errorf("failed to get the capability's ID: %w", err)
+		}
+
+		return info.ID, nil
+	}
 }
