@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package capabilities.test.split.x.v1;
+
+import "capability/feature/feature.proto";
+
+option (cre.feature.v1.released) = "launch";
+
+message Request {
+  string id = 1 [(cre.feature.v1.field) = "launch"];
+}

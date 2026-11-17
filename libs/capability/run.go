@@ -11,25 +11,25 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/hashicorp/go-plugin"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
+	"github.com/smartcontractkit/chainlink-common/x/config/markup"
 	"github.com/spf13/cobra"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
-// Run builds and runs the capability constructor makes, and does not return until ctx is cancelled or the
-// process is signalled.
+// Run builds and runs the capability constructor makes, and does not return until the process is
+// signalled. To stop it with a context, use RunErr.
 //
-//	func main() { capability.Run(context.Background(), trigger.NewCron) }
-func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, error), opts ...Option) {
-	lggr, err := NewLogger()
-	if err != nil {
+//	func main() { capability.Run("cron", trigger.NewCron) }
+func Run[T Capability](appName string, constructor func(do.Injector) (T, error), opts ...Option) {
+	if err := RunErr(context.Background(), appName, constructor, opts...); err != nil {
 		log.Fatal(err)
-	}
-
-	if err := RunErr(ctx, lggr, constructor, opts...); err != nil {
-		lggr.Fatal(err)
 	}
 }
 
@@ -37,9 +37,9 @@ func Run[T Capability](ctx context.Context, constructor func(do.Injector) (T, er
 //
 // A run blocks until it is told to stop, which is either ctx being cancelled or this process being
 // signalled - see below.
-func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.Injector) (T, error), opts ...Option) error {
-	if lggr == nil {
-		return errors.New("must provide a logger")
+func RunErr[T Capability](ctx context.Context, appName string, ctor func(do.Injector) (T, error), opts ...Option) error {
+	if appName == "" {
+		return errors.New("must provide an app name")
 	}
 	if ctor == nil {
 		return errors.New("must provide a capability constructor")
@@ -52,15 +52,56 @@ func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.
 		Short: "A CRE capability",
 	}
 
-	lggr = logger.Named(lggr, root.Name())
-
-	cfg := defaultConfig()
-	for _, opt := range opts {
-		opt(cfg)
+	args := os.Args[1:]
+	if len(args) == 0 {
+		args = []string{"compat"}
 	}
+	root.SetArgs(args)
+
+	cfg := defaultConfig(appName)
+	cfg.runInjector = RunInjector.Clone()
+	cfg.embedInjector = EmbedInjector.Clone()
+	for _, opt := range opts {
+		err := opt(cfg)
+		if err != nil {
+			return err
+		}
+	}
+
+	lggr := cfg.lggr
+	if lggr == nil {
+		l, err := loop.NewLogger()
+		if err != nil {
+			return fmt.Errorf("failed to create logger: %w", err)
+		}
+
+		lggr = l
+	}
+	lggr = logger.Named(lggr, appName)
+
 	b, err := cfg.bind(root)
 	if err != nil {
 		return err
+	}
+
+	compatCmd := &cobra.Command{
+		Use:    "compat",
+		Short:  "Run the capability as a LOOP of the core node",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !underPluginHost() {
+				return errors.New("compatibility mode must be started by a go-plugin host, such as the core node. To run the capability alone, use the run command")
+			}
+			if cfg.observability.PrometheusPort == 0 {
+				return errors.New("compatibility mode needs CL_PROMETHEUS_PORT")
+			}
+			serve := func(_ context.Context, s services.Service) { loop.ServeEmpty(s, plugin.DefaultGRPCServer) }
+			if cfg.serve != nil {
+				serve = cfg.serve
+			}
+			return newRunner(lggr, appName, cfg, constructor, cfg.runInjector, 1, cfg.capabilities, HTTPConfig{Port: cfg.observability.PrometheusPort}, serve).run(cmd.Context())
+		},
 	}
 
 	runCmd := &cobra.Command{
@@ -68,7 +109,7 @@ func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.
 		Short: "Run the capability",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, RunInjector, 1, cfg.capabilities)
+			return newRunner(lggr, appName, cfg, constructor, cfg.runInjector, 1, cfg.capabilities, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
@@ -83,14 +124,18 @@ func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.
 			}
 			capCfg := cfg.capabilities
 			capCfg.ProxyURL = ""
-			return run(cmd.Context(), lggr, cmd.Root().Name(), cfg, constructor, EmbedInjector, total, capCfg)
+			return newRunner(lggr, appName, cfg, constructor, cfg.embedInjector, total, capCfg, cfg.observability.http, nil).run(cmd.Context())
 		},
 	}
 
-	if err := errors.Join(RunInjector.RegisterConfig(runCmd, b), EmbedInjector.RegisterConfig(embedCmd, b)); err != nil {
+	if err := errors.Join(
+		cfg.runInjector.RegisterConfig(compatCmd, b),
+		cfg.runInjector.RegisterConfig(runCmd, b),
+		cfg.embedInjector.RegisterConfig(embedCmd, b),
+	); err != nil {
 		return err
 	}
-	root.AddCommand(runCmd, embedCmd)
+	root.AddCommand(compatCmd, runCmd, embedCmd, newDocgenCmd())
 
 	// Wire up SIGTERM + SIGINT to the context
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -99,12 +144,61 @@ func RunErr[T Capability](ctx context.Context, lggr logger.Logger, ctor func(do.
 	return root.ExecuteContext(ctx)
 }
 
-type Option func(*config)
+type Option func(*config) error
+
+// withLogger gives a run the logger of a test. Other runs make their own logger.
+func withLogger(lggr logger.Logger) Option {
+	return func(c *config) error {
+		c.lggr = lggr
+		return nil
+	}
+}
+
+// withServe replaces plugin.Serve in compatibility mode. plugin.Serve takes over the stdio of the
+// process, so tests can't call it.
+func withServe(serve func(context.Context, services.Service)) Option {
+	return func(c *config) error {
+		c.serve = serve
+		return nil
+	}
+}
+
+// withRegisterer gives a run its own metrics registry. Tests start many runs in one process.
+// The default registry panics if you register the same metrics two times.
+func withRegisterer(r prometheus.Registerer) Option {
+	return func(c *config) error {
+		c.grpc.Registerer = r
+		return nil
+	}
+}
 
 // WithOtelViews sets otel metric views - histogram bucket boundaries, typically - on the beholder
 // client this process reports through.
 //
-//	capability.Run(ctx, trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
+//	capability.Run("cron", trigger.NewCron, capability.WithOtelViews(trigger.MetricViews()...))
 func WithOtelViews(views ...sdkmetric.View) Option {
-	return func(c *config) { c.observability.otelViews = append(c.observability.otelViews, views...) }
+	return func(c *config) error {
+		c.observability.otelViews = append(c.observability.otelViews, views...)
+		return nil
+	}
+}
+
+// WithMarkup sets the markup language to use for config files.
+// When unset, YAML is used
+func WithMarkup(m markup.Markup) Option {
+	return func(c *config) error {
+		c.markup = m
+		return nil
+	}
+}
+
+// WithConfig provides a *T to the capability constructor, which gets it with do.MustInvoke[*T]. The
+// keys of T are under the app name: flags are --<app>.<key> and env vars are CL_<APP>_<KEY>. Giving the
+// same T two times via WithConfig is an error.
+//
+//	capability.Run("cron", trigger.NewCron, capability.WithConfig[trigger.CronConfig]())
+func WithConfig[T any]() Option {
+	return func(c *config) error {
+		return MultiInjector{c.runInjector, c.embedInjector}.ProvideConfig(c.appName, new(T))
+	}
 }

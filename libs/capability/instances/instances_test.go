@@ -20,14 +20,15 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
-// fake is an untyped capability: it answers with its input plus reply, or fails with err, and streams its
-// events, each "id" or "id=payload".
+// fake is an untyped capability: it answers with its input plus reply and any metering, or fails with err,
+// and streams its events, each "id" or "id=payload".
 type fake struct {
 	capabilities.Executable
 	capabilities.TriggerExecutable
-	reply  string
-	err    caperrors.Error
-	events []string
+	reply    string
+	metering string
+	err      caperrors.Error
+	events   []string
 }
 
 func (f fake) Execute(_ context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
@@ -39,7 +40,11 @@ func (f fake) Execute(_ context.Context, request capabilities.CapabilityRequest)
 		return capabilities.CapabilityResponse{}, err
 	}
 	payload, err := anypb.New(valuespb.NewStringValue(in.GetStringValue() + f.reply))
-	return capabilities.CapabilityResponse{Payload: payload}, err
+	response := capabilities.CapabilityResponse{Payload: payload}
+	if f.metering != "" {
+		response.Metadata.Metering = []capabilities.MeteringNodeDetail{{SpendUnit: "GAS", SpendValue: f.metering}}
+	}
+	return response, err
 }
 
 func (f fake) RegisterTrigger(ctx context.Context, _ capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
@@ -101,6 +106,20 @@ func TestExecuteDisagreeing(t *testing.T) {
 	assert.Contains(t, err.Error(), "instance 2: error")
 }
 
+func TestExecuteComparesMetering(t *testing.T) {
+	got, err := TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "a", metering: "1"}, {reply: "a", metering: "1"}}, "Do", metadata, in)
+	require.NoError(t, err)
+	assert.Equal(t, []capabilities.MeteringNodeDetail{{SpendUnit: "GAS", SpendValue: "1"}}, got.ResponseMetadata.Metering)
+
+	_, err = TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "a", metering: "1"}, {reply: "a", metering: "2"}}, "Do", metadata, in)
+	var mismatch *MismatchError[capabilities.CapabilityResponse]
+	require.ErrorAs(t, err, &mismatch, "the same response with different metering")
+	assert.Contains(t, err.Error(), "instance 1: ")
+
+	_, err = TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "a", metering: "1"}, {reply: "a"}}, "Do", metadata, in)
+	require.ErrorAs(t, err, &mismatch, "metering from only one instance")
+}
+
 func TestExecuteAgreeingOnAnError(t *testing.T) {
 	_, err := TypedExecute[*valuespb.Value](t.Context(), []fake{{err: failed("no")}, {err: failed("no")}}, "Do", metadata, in)
 
@@ -108,6 +127,66 @@ func TestExecuteAgreeingOnAnError(t *testing.T) {
 	require.ErrorAs(t, err, &capErr, "an error they agree on is returned as it is")
 	var mismatch *MismatchError[capabilities.CapabilityResponse]
 	assert.False(t, errors.As(err, &mismatch))
+}
+
+func TestExecuteEach(t *testing.T) {
+	requests := make([]capabilities.CapabilityRequest, 2)
+	for i, input := range []string{"a", "b"} {
+		payload, err := anypb.New(valuespb.NewStringValue(input))
+		require.NoError(t, err)
+		requests[i] = capabilities.CapabilityRequest{Payload: payload}
+	}
+
+	// Different inputs, but the instances answer with their input echoed: the answers differ, and differing
+	// answers are a mismatch whatever the inputs were.
+	_, err := ExecuteEach(t.Context(), []fake{{reply: "-x"}, {reply: "-x"}}, requests)
+	var mismatch *MismatchError[capabilities.CapabilityResponse]
+	require.ErrorAs(t, err, &mismatch)
+	require.Len(t, mismatch.Results, 2)
+	for i, want := range []string{"a-x", "b-x"} {
+		got := &valuespb.Value{}
+		require.NoError(t, mismatch.Results[i].Value.Payload.UnmarshalTo(got))
+		assert.Equal(t, want, got.GetStringValue(), "each instance got its own request")
+	}
+
+	// Instances that ignore their input answer the same, and agree.
+	got, err := TypedExecute[*valuespb.Value](t.Context(), []fake{{reply: "same"}, {reply: "same"}}, "Do", metadata, in)
+	require.NoError(t, err)
+	assert.Equal(t, "in-same", got.Response.GetStringValue())
+
+	_, err = ExecuteEach(t.Context(), []fake{{}}, requests)
+	require.ErrorContains(t, err, "2 requests for 1 instances")
+}
+
+func TestRegisterTriggerEach(t *testing.T) {
+	requests := repeat(2, capabilities.TriggerRegistrationRequest{TriggerID: "t", Method: "Trigger"})
+	payload, err := anypb.New(valuespb.NewStringValue("different"))
+	require.NoError(t, err)
+	requests[1].Payload = payload
+
+	ch, err := RegisterTriggerEach(t.Context(), []fake{{events: []string{"1", "2"}}, {events: []string{"2", "1"}}}, requests)
+	require.NoError(t, err)
+	for range 2 {
+		e := <-ch
+		assert.Nil(t, e.Mismatch, "events are still matched by ID across differently-registered instances")
+	}
+	_, open := <-ch
+	assert.False(t, open)
+
+	_, err = RegisterTriggerEach(t.Context(), []fake{{}}, requests)
+	require.ErrorContains(t, err, "2 requests for 1 instances")
+}
+
+func TestRegisterTriggerEachRollsBack(t *testing.T) {
+	registered, failed := &atomic.Bool{}, &atomic.Bool{}
+	_, err := RegisterTriggerEach(t.Context(),
+		[]registrationFake{{unregistered: registered}, {err: errors.New("no"), unregistered: failed}},
+		repeat(2, capabilities.TriggerRegistrationRequest{}))
+
+	var mismatch *MismatchError[<-chan capabilities.TriggerResponse]
+	require.ErrorAs(t, err, &mismatch)
+	assert.True(t, registered.Load(), "the instance that registered is unregistered again")
+	assert.False(t, failed.Load(), "the one that failed had nothing to undo")
 }
 
 func TestRegisterTrigger(t *testing.T) {

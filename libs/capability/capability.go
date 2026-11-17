@@ -1,6 +1,8 @@
 package capability
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
@@ -8,6 +10,16 @@ import (
 type Capability interface {
 	services.Service
 	capabilities.ExecutableAndTriggerCapability
+	// Methods are the methods the capability serves, which generated servers list.
+	Methods() []Method
+}
+
+// Method is a method a capability serves, and the messages it takes and returns.
+type Method struct {
+	Name    string
+	Trigger bool
+	Input   proto.Message
+	Output  proto.Message
 }
 
 // CapabilitiesConfig is what a capability binary needs from the node it runs beside.
@@ -18,6 +30,9 @@ type CapabilitiesConfig struct {
 	ProxyURL string
 	// CapabilityDonID is the on-chain DON ID of the capability DON this process was spawned for.
 	CapabilityDonID uint32
+	// ShardIndex is the shard of the node this process was spawned for, from the node's [Sharding] config. Zero for
+	// unsharded nodes.
+	ShardIndex uint32
 	// HTTPDebug serves the capability debug UI on the shared HTTP server, under /debug/capabilities.
 	HTTPDebug bool
 }

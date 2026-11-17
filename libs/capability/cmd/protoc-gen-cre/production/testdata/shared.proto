@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package capabilities.test.client.x.v1;
+
+import "capability/feature/feature.proto";
+
+option go_package = "example.com/test/protos";
+
+// Shared is kept: a released field in another file uses it.
+message Shared {
+  string id = 1 [(cre.feature.v1.field) = "launch"];
+  string later = 2 [(cre.feature.v1.field) = "new_field"];
+  // zone is released with the rest of timezones, which is in client.proto too.
+  string zone = 3 [(cre.feature.v1.field) = "timezones"];
+}

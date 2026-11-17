@@ -76,7 +76,7 @@ func newTestProvider(t *testing.T) (*mocks.SolanaService, *OnChainTransmissionIn
 
 // forwarderLogQueryMatcher matches QueryTrackedLogs expressions built for a forwarder event:
 // event signature, forwarder program address, transmission id subkey and forwarder state subkey.
-func forwarderLogQueryMatcher(sig soltypes.EventSignature, transmissionID [32]byte, programID, forwarderState solana.PublicKey) interface{} {
+func forwarderLogQueryMatcher(sig soltypes.EventSignature, transmissionID [32]byte, programID, forwarderState solana.PublicKey) any {
 	return mock.MatchedBy(func(exprs []query.Expression) bool {
 		if len(exprs) != 4 {
 			return false

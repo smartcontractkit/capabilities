@@ -54,6 +54,46 @@ func TestInjector(t *testing.T) {
 	require.Error(t, s.RegisterConfig(cmd, b))
 }
 
+func TestInjector_Must(t *testing.T) {
+	s := NewInjector()
+	// Each provides a different key, so only the second call of each is a duplicate.
+	for name, provide := range map[string]func(){
+		"Provide":            func() { s.MustProvide(func(do.Injector) (*depB, error) { return &depB{}, nil }) },
+		"ProvideValue":       func() { s.MustProvideValue(&depA{}) },
+		"ProvideNamed":       func() { s.MustProvideNamed("a", func(do.Injector) (*depA, error) { return &depA{}, nil }) },
+		"ProvideNamedValue":  func() { s.MustProvideNamedValue("b", &depB{}) },
+		"ProvideConfig":      func() { s.MustProvideConfig("test", &testConfig{}) },
+		"ProvideNamedConfig": func() { s.MustProvideNamedConfig("named", "conf", &testConfig{}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.NotPanics(t, provide)
+			assert.Panics(t, provide)
+		})
+	}
+}
+
+func TestInjector_Configs(t *testing.T) {
+	s := NewInjector()
+	assert.Empty(t, s.Configs())
+
+	conf := &testConfig{}
+	named := &testConfig{}
+	require.NoError(t, s.ProvideConfig("test", conf))
+	require.NoError(t, s.ProvideNamedConfig("named", "conf", named))
+	require.NoError(t, s.ProvideValue(&depB{}))
+
+	configs := s.Configs()
+	require.Len(t, configs, 2)
+	assert.Same(t, conf, configs[0])
+	assert.Same(t, named, configs[1])
+
+	clone := s.Clone()
+	replacement := &testConfig{}
+	require.NoError(t, clone.ProvideConfig("test", replacement))
+	assert.Same(t, replacement, clone.Configs()[0])
+	assert.Same(t, conf, s.Configs()[0])
+}
+
 func TestInjector_Clone(t *testing.T) {
 	orig := NewInjector()
 	conf := &testConfig{}

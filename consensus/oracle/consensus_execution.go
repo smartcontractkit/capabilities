@@ -27,10 +27,54 @@ var (
 	ErrDecimalExponentOutOfRange                         = errors.New("decimal exponent out of range")
 )
 
-// Comparing decimals rescales them to a common exponent, which costs time and memory
-// proportional to the exponent gap, so a single observation with an extreme exponent
-// could stall every node computing the median.
-const maxDecimalExponent = 1000
+// MaxAggregatableExponent bounds the base-10 exponent of an aggregatable value.
+// Comparing decimals with different exponents rescales them to a common exponent,
+// and that cost grows with the exponent gap. Every in-tree producer reports
+// exponent 0; the symmetric window leaves room for scaled values.
+const MaxAggregatableExponent = 128
+
+// ValidateAggregatableValue validates values used in aggregation and bounds
+// decimal exponents that could make comparisons allocate unbounded memory.
+func ValidateAggregatableValue(value *valuespb.Value) error {
+	if value == nil {
+		return nil
+	}
+
+	switch v := value.Value.(type) {
+	case nil:
+		// nil observations are valid; consensus falls back to the default
+		return nil
+	case *valuespb.Value_DecimalValue:
+		if exponent := v.DecimalValue.GetExponent(); exponent > MaxAggregatableExponent || exponent < -MaxAggregatableExponent {
+			return fmt.Errorf("%w: got %d, allowed [%d, %d]", ErrDecimalExponentOutOfRange, exponent, -MaxAggregatableExponent, MaxAggregatableExponent)
+		}
+	case *valuespb.Value_MapValue:
+		for _, field := range v.MapValue.GetFields() {
+			if err := ValidateAggregatableValue(field); err != nil {
+				return err
+			}
+		}
+	case *valuespb.Value_ListValue:
+		for _, field := range v.ListValue.GetFields() {
+			if err := ValidateAggregatableValue(field); err != nil {
+				return err
+			}
+		}
+	case *valuespb.Value_StringValue,
+		*valuespb.Value_BoolValue,
+		*valuespb.Value_BytesValue,
+		*valuespb.Value_Int64Value,
+		*valuespb.Value_BigintValue,
+		*valuespb.Value_TimeValue,
+		*valuespb.Value_Float64Value,
+		*valuespb.Value_Uint64Value:
+		return nil
+	default:
+		return fmt.Errorf("unsupported value type %T", value.Value)
+	}
+
+	return nil
+}
 
 // Constants for type names used in aggregation logic.
 var (
@@ -258,8 +302,8 @@ func handleMedianAggregation(
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
-				if exp := val.GetDecimalValue().GetExponent(); exp > maxDecimalExponent || exp < -maxDecimalExponent {
-					return d, fmt.Errorf("%w: %d", ErrDecimalExponentOutOfRange, exp)
+				if err := ValidateAggregatableValue(val); err != nil {
+					return d, err
 				}
 				v, err := values.FromProto(val)
 				if err != nil {

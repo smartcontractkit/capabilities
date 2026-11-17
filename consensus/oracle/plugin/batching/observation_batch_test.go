@@ -52,7 +52,7 @@ func generateRandomStringBetweenBounds(lowerBound int, upperBound int) string {
 	n := rand.Intn(upperBound-lowerBound) + lowerBound
 	runes := make([]rune, n)
 	for i := range runes {
-		runes[i] = 'A' + rune(rand.Intn(25))
+		runes[i] = 'A' + rune(rand.Intn(25)) //nolint:gosec // G115: below 25
 	}
 	return string(runes)
 }
