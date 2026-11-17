@@ -222,7 +222,15 @@ func (wr *writeReport) execute(
 
 	submitResp, err := wr.forwarderClient.InvokeOnReport(ctx, transmitter, request.ContractId, request.Report, transmissionID, maxResourceFee)
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, err
+		// A peer's transmission can land while this node is submitting, which makes the
+		// submit fail (for example AlreadyProcessed at simulation). The report is on-chain
+		// then, so return its outcome instead of an error.
+		info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+		if infoErr != nil || !isRecordedTransmission(info.State) {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
+		wr.lggr.Infow("Submit failed but the transmission is recorded on-chain, returning its outcome", "submitError", err, "state", info.State)
+		submitResp = &stellartypes.SubmitTransactionResponse{}
 	}
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
@@ -431,6 +439,10 @@ func (wr *writeReport) pollTransmissionInfo(
 		case <-time.After(wait):
 		}
 	}
+}
+
+func isRecordedTransmission(state TransmissionState) bool {
+	return state == TransmissionStateSucceeded || state == TransmissionStateFailed || state == TransmissionStateInvalidReceiver
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain fee of the transaction the
