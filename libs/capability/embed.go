@@ -118,6 +118,7 @@ func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *I
 		i.ProvideValue(info),
 		i.ProvideValue(lggr),
 		i.ProvideValue[registry.CapabilitiesRegistry](reg),
+		i.ProvideValue(cfg.capabilities),
 		i.ProvideValue(newLimitsFactory(lggr, cfg.settings)),
 		i.ProvideValue[clockwork.Clock](clockwork.NewRealClock()),
 	); err != nil {

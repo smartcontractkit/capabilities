@@ -27,11 +27,11 @@ const (
 	readActionErrorMetricEventRef   = "chain_capabilities.evm.ReadActionError"
 )
 
-var readLatencyBucketBoundariesMs = []float64{
+var latencyBucketBoundariesMs = []float64{
 	0, 5, 10, 25, 50, 75, 100,
 	250, 500, 750, 1000,
 	2500, 5000, 7500, 10000,
-	15000, 30000,
+	15000, 30000, 45000, 60000, 90000,
 }
 
 func MetricViews() []sdkmetric.View {
@@ -59,7 +59,7 @@ func MetricViews() []sdkmetric.View {
 		views = append(views, sdkmetric.NewView(
 			sdkmetric.Instrument{Name: name},
 			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
-				Boundaries: readLatencyBucketBoundariesMs,
+				Boundaries: latencyBucketBoundariesMs,
 			}},
 		))
 	}
@@ -185,7 +185,7 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create call contract error metric: %w", err)
 	}
 	// -- WriteReport --
-	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}))
+	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasicWithBuckets(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}), latencyBucketBoundariesMs)
 	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report success metric: %w", err)

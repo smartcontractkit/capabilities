@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/cron
+module github.com/smartcontractkit/capabilities/scheduler/cron
 
 go 1.27.3
 
@@ -7,8 +7,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/samber/do/v2 v2.1.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20261028150945-49616d404694
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261102201435-1c6d22d0a5ad
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20261111153410-ba1b3e1a95f6
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261109175429-6cfabeb021f5
+	github.com/smartcontractkit/chainlink-common/x/config v0.0.0-20261102161601-beffc93e226e
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261103151748-aa8c64acc53c
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
@@ -84,8 +86,6 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.104 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20261005132539-b7d63d5fd549 // indirect
-	github.com/smartcontractkit/chainlink-common/x/config v0.0.0-20261014172408-e5560b3eeb33 // indirect
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261013212015-e622e8b83b6b // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260709145319-7782fb89eb16 // indirect
@@ -135,4 +135,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	sigs.k8s.io/yaml v1.6.0 // indirect
 )

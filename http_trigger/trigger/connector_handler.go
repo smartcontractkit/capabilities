@@ -13,7 +13,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -116,7 +115,7 @@ func (h *connectorHandler) HealthReport() map[string]error {
 }
 
 func (h *connectorHandler) Ready() error {
-	return h.StateMachine.Healthy()
+	return h.Healthy()
 }
 
 func (h *connectorHandler) Name() string {
@@ -288,7 +287,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	}
 
 	workflowExecutionID, err := h.generateWorkflowExecutionID(
-		ctx,
 		workflowMetadata.WorkflowID,
 		workflowMetadata.WorkflowOwner,
 		orgID,
@@ -447,7 +445,6 @@ func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metad
 }
 
 func (h *connectorHandler) generateWorkflowExecutionID(
-	ctx context.Context,
 	workflowID, workflowOwner, orgID, reqID, referenceID string,
 	l logger.Logger,
 ) (string, error) {
@@ -460,12 +457,6 @@ func (h *connectorHandler) generateWorkflowExecutionID(
 		triggerIndex = 0
 	}
 	l = logger.With(l, "triggerIndex", triggerIndex)
-
-	ctx = contexts.WithCRE(ctx, contexts.CRE{
-		Org:      orgID,
-		Owner:    workflowOwner,
-		Workflow: workflowID,
-	})
 
 	strippedWorkflowID := strings.TrimPrefix(workflowID, "0x")
 	workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(strippedWorkflowID, reqID, triggerIndex)

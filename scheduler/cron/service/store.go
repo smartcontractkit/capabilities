@@ -1,4 +1,4 @@
-package trigger
+package service
 
 import (
 	"maps"

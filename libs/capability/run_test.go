@@ -162,7 +162,7 @@ func httpGet(ctx context.Context, url string) (*http.Response, error) {
 func freePort(t *testing.T) int {
 	t.Helper()
 
-	l, err := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := l.Addr().(*net.TCPAddr).Port
 	require.NoError(t, l.Close())
@@ -230,6 +230,18 @@ func TestRunProvidesItsDependencies(t *testing.T) {
 	assert.NotNil(t, gotLimits.Settings)
 	assert.NotNil(t, gotLimits.Meter)
 	assert.NotNil(t, gotClock)
+}
+
+// TestRunProvidesTheCapabilitiesConfig covers what the node spawned this process with, such as its shard.
+func TestRunProvidesTheCapabilitiesConfig(t *testing.T) {
+	var got CapabilitiesConfig
+
+	require.NoError(t, execute(t, logger.Test(t), func(i do.Injector) (Capability, error) {
+		got = do.MustInvoke[CapabilitiesConfig](i)
+		return newFake(), nil
+	}, "run", "--capabilities.shard-index", "3"))
+
+	assert.Equal(t, uint32(3), got.ShardIndex)
 }
 
 // TestBareCommandRunsInCompatibilityMode covers a bare <command>, which is how the core node starts

@@ -16,16 +16,13 @@ A trigger that uses a cron schedule to run periodically at fixed times, dates, o
 ### Sample
 
 ```
-{
+payload, _ := anypb.New(&protos.Config{Schedule: "0 * * * * *"})
+
+capabilities.TriggerRegistrationRequest{
 	TriggerID: "test-id-1",
-	Metadata:  capabilities.RequestMetadata{
-		WorkflowID: "workflow-id-1",
-	},
-	Config:    values.NewMap(
-        map[string]interface{}{
-		    "schedule": "0 * * * * *",
-	    }
-    ),
+	Metadata:  capabilities.RequestMetadata{WorkflowID: "workflow-id-1"},
+	Method:    "Trigger",
+	Payload:   payload,
 }
 ```
 
@@ -33,20 +30,16 @@ A trigger that uses a cron schedule to run periodically at fixed times, dates, o
 
 |          Name          |                               Description                                |  Type  | Default |
 |:----------------------:|:------------------------------------------------------------------------:|:------:|:-------:|
-| ScheduledExecutionTime |   Time that cron trigger's task execution had been scheduled to occur    | string |    -    |
+| ScheduledExecutionTime |   Time that cron trigger's task execution had been scheduled to occur    | google.protobuf.Timestamp |    -    |
 
 ### Sample
 
 ```
-type Response struct {
-// The ID of the trigger capability
-TriggerType string
-// The ID of the trigger event
-ID string
-// Trigger-specific payload
-Outputs *values.Map
-Payload: {  
-    ScheduledExecutionTime: '2022-07-14T12:01:25.000000+08:00',
-}
+capabilities.TriggerEvent{
+	TriggerType: "cron-trigger@1.0.0",
+	// The scheduled execution time, RFC3339 in UTC
+	ID: "2022-07-14T04:01:25Z",
+	// A protos.Payload
+	Payload: anypb.Any{ScheduledExecutionTime: 2022-07-14T04:01:25Z},
 }
 ```

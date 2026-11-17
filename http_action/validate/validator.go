@@ -41,22 +41,22 @@ type Validator struct {
 
 // NewValidator creates a new Validator with initialized limiters
 func NewValidator(lggr logger.Logger, limitsFactory limits.Factory) (*Validator, error) {
-	responseSizeLimiter, err := limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.ResponseSizeLimit)
+	responseSizeLimiter, err := limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.ResponseSizeLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create response size limiter: %w", err)
 	}
 
-	requestSizeLimiter, err := limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.RequestSizeLimit)
+	requestSizeLimiter, err := limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.RequestSizeLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request size limiter: %w", err)
 	}
 
-	connectionTimeoutLimiter, err := limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout)
+	connectionTimeoutLimiter, err := limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection timeout limiter: %w", err)
 	}
 
-	cacheAgeLimiter, err := limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit)
+	cacheAgeLimiter, err := limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache age limiter: %w", err)
 	}

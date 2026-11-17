@@ -30,6 +30,9 @@ type CapabilitiesConfig struct {
 	ProxyURL string
 	// CapabilityDonID is the on-chain DON ID of the capability DON this process was spawned for.
 	CapabilityDonID uint32
+	// ShardIndex is the shard of the node this process was spawned for, from the node's [Sharding] config. Zero for
+	// unsharded nodes.
+	ShardIndex uint32
 	// HTTPDebug serves the capability debug UI on the shared HTTP server, under /debug/capabilities.
 	HTTPDebug bool
 }
