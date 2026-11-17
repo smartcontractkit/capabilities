@@ -50,6 +50,7 @@ type EVM struct {
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
+	forwarderGasOverhead     uint64
 	LookbackBlocks           uint64
 
 	lggr              logger.SugaredLogger
@@ -95,6 +96,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		keystoneForwarderAddress: keystoneForwarderAddress,
 		forwarderClient:          kfc,
 		ReceiverGasMinimum:       cfg.ReceiverGasMinimum,
+		forwarderGasOverhead:     contracts.ForwarderGasOverhead(cfg.ForwarderGasOverheadMargin),
 		lggr:                     logger.Sugared(lggr),
 		beholderProcessor:        beholderProcessor,
 		messageBuilder:           messageBuilder,

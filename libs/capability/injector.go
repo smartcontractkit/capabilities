@@ -21,6 +21,7 @@ type Injector struct {
 
 type injectedConfig struct {
 	name     string
+	value    any
 	register func(cmd *cobra.Command, b *cli.Binder) error
 }
 
@@ -79,7 +80,8 @@ func (s *Injector) ProvideNamedConfig[T any](namespace, diName string, conf *T, 
 	}
 
 	c := injectedConfig{
-		name: diName,
+		name:  diName,
+		value: conf,
 		register: func(cmd *cobra.Command, b *cli.Binder) error {
 			return b.RegisterInNamespace(cmd, namespace, conf, opts...)
 		},
@@ -93,6 +95,36 @@ func (s *Injector) ProvideNamedConfig[T any](namespace, diName string, conf *T, 
 	}
 
 	return nil
+}
+
+// MustProvide is [Injector.Provide], panicking on error.
+func (s *Injector) MustProvide[T any](provider do.Provider[T]) {
+	must(s.Provide(provider))
+}
+
+// MustProvideValue is [Injector.ProvideValue], panicking on error.
+func (s *Injector) MustProvideValue[T any](v T) {
+	must(s.ProvideValue(v))
+}
+
+// MustProvideNamed is [Injector.ProvideNamed], panicking on error.
+func (s *Injector) MustProvideNamed[T any](name string, provider do.Provider[T]) {
+	must(s.ProvideNamed(name, provider))
+}
+
+// MustProvideNamedValue is [Injector.ProvideNamedValue], panicking on error.
+func (s *Injector) MustProvideNamedValue[T any](name string, v T) {
+	must(s.ProvideNamedValue(name, v))
+}
+
+// MustProvideConfig is [Injector.ProvideConfig], panicking on error.
+func (s *Injector) MustProvideConfig[T any](namespace string, conf *T, opts ...cli.RegisterOption[T]) {
+	must(s.ProvideConfig(namespace, conf, opts...))
+}
+
+// MustProvideNamedConfig is [Injector.ProvideNamedConfig], panicking on error.
+func (s *Injector) MustProvideNamedConfig[T any](namespace, diName string, conf *T, opts ...cli.RegisterOption[T]) {
+	must(s.ProvideNamedConfig(namespace, diName, conf, opts...))
 }
 
 // Do is the underlying injector, which is what constructors resolve their dependencies from.
@@ -110,6 +142,15 @@ func (s *Injector) RegisterConfig(cmd *cobra.Command, binder *cli.Binder) error 
 	return nil
 }
 
+// Configs are the configs provided with [Injector.ProvideConfig] and [Injector.ProvideNamedConfig].
+func (s *Injector) Configs() []any {
+	configs := make([]any, len(s.configs))
+	for i, c := range s.configs {
+		configs[i] = c.value
+	}
+	return configs
+}
+
 // Clone copies all providers and configs into a new Injector.
 // Newly cloned scopes can override values provided by the original scope
 // Clones are not kept up to date if later values are added to the original.
@@ -119,5 +160,11 @@ func (s *Injector) Clone() *Injector {
 		injector:         s.injector.Clone(),
 		directlyProvided: map[string]bool{},
 		configs:          slices.Clone(s.configs),
+	}
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
 	}
 }

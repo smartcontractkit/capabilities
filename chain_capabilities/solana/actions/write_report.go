@@ -97,7 +97,6 @@ func (s *Solana) WriteReport(
 		}
 
 		return nil, GetError(err, false)
-
 	}
 
 	report, billingMetadata, err := s.executeWriteReport(ctx, input, metadata, telemetryContext)
