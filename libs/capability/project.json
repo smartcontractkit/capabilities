@@ -31,6 +31,13 @@
         "cwd": "{projectRoot}",
         "command": "go mod tidy"
       }
+    },
+    "generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "go generate -x ./..."
+      }
     }
   }
 }

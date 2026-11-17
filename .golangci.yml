@@ -173,6 +173,17 @@ linters:
       - linters:
           - depguard
         path: integration_tests
+      # A context only covers resolving the address, and listeners here bind
+      # local or configured addresses, so net.Listen is fine.
+      - linters:
+          - noctx
+        text: "net.Listen must not be called"
+      # http_action still reads and writes the deprecated Headers for callers
+      # that don't use MultiHeaders yet.
+      - linters:
+          - staticcheck
+        path: http_action/
+        text: "SA1019: .*\\.Headers is deprecated"
     paths:
       - third_party$
       - builtin$
