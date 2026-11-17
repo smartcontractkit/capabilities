@@ -2215,6 +2215,8 @@ func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
 		// setupHeader registers the HeaderByNumber expectation; nil asserts HeaderByNumber is never called.
 		setupHeader       func(m *mocks2.EVMService)
 		expectedTimestamp *uint64
+		// expectedErr, when set, is a substring of the error replyFromReceipt must return.
+		expectedErr string
 	}{
 		{
 			name:               "inactive flag omits block timestamp without fetching the header",
@@ -2263,7 +2265,7 @@ func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
 			expectedTimestamp: new(blockTimestampSeconds * 1_000_000),
 		},
 		{
-			name:               "header lookup failure omits block timestamp without failing the reply",
+			name:               "header lookup failure fails the reply",
 			executionTimestamp: activeFrom,
 			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
 			receiptBlockNumber: blockNumber,
@@ -2272,10 +2274,10 @@ func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
 					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
 					Return(nil, errors.New("rpc unavailable"))
 			},
-			expectedTimestamp: nil,
+			expectedErr: "rpc unavailable",
 		},
 		{
-			name:               "empty header omits block timestamp",
+			name:               "empty header fails the reply",
 			executionTimestamp: activeFrom,
 			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
 			receiptBlockNumber: blockNumber,
@@ -2284,10 +2286,10 @@ func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
 					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
 					Return(&evmtypes.HeaderByNumberReply{}, nil)
 			},
-			expectedTimestamp: nil,
+			expectedErr: "empty header returned",
 		},
 		{
-			name:               "zero header timestamp omits block timestamp",
+			name:               "zero header timestamp fails the reply",
 			executionTimestamp: activeFrom,
 			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
 			receiptBlockNumber: blockNumber,
@@ -2297,14 +2299,14 @@ func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
 					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: blockHash}}, nil).
 					Once()
 			},
-			expectedTimestamp: nil,
+			expectedErr: "invalid timestamp 0",
 		},
 		{
-			name:               "receipt without block number omits block timestamp without fetching the header",
+			name:               "receipt without block number fails the reply without fetching the header",
 			executionTimestamp: activeFrom,
 			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
 			receiptBlockNumber: nil,
-			expectedTimestamp:  nil,
+			expectedErr:        "receipt has no valid block number",
 		},
 	}
 
@@ -2349,6 +2351,12 @@ func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
 			defer cancel()
 
 			reply, err := wr.replyFromReceipt(ctx, txHash, tc.receiverStatus, nil)
+			if tc.expectedErr != "" {
+				require.Nil(t, reply)
+				require.ErrorContains(t, err, fmt.Sprintf("failed to get block timestamp for tx hash 0x%x", txHash[:]))
+				require.ErrorContains(t, err, tc.expectedErr)
+				return
+			}
 			require.NoError(t, err)
 			require.NotNil(t, reply)
 			require.Equal(t, txHash[:], reply.TxHash)

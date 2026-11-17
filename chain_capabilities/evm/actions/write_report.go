@@ -606,7 +606,10 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		txStatus = evm.TxStatus_TX_STATUS_REVERTED
 	}
 
-	blockTimestamp := e.maybeBlockTimestamp(ctx, txHash, txReceipt)
+	blockTimestamp, err := e.maybeBlockTimestamp(ctx, txHash, txReceipt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block timestamp for tx hash 0x%x: %w", txHash[:], err)
+	}
 
 	logAttrs := []any{
 		"txHash", hex.EncodeToString(txHash[:]),
@@ -630,18 +633,16 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 	}, nil
 }
 
-// maybeBlockTimestamp returns the tx's block timestamp in microseconds, or nil if the feature
-// is inactive or the timestamp is unavailable. It never fails the write.
-func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, hash evmtypes.Hash, txReceipt *evmtypes.Receipt) *uint64 {
+// maybeBlockTimestamp returns the tx's block timestamp in microseconds, or nil if the feature is
+// inactive. Lookup failures are errors so a node never replies without the field.
+func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, hash evmtypes.Hash, txReceipt *evmtypes.Receipt) (*uint64, error) {
 	if !e.includeBlockTimestampInReply(ctx) {
 		e.lggr.Debugw("WriteReport block timestamp feature flag is inactive; omitting block_timestamp from reply")
-		return nil
+		return nil, nil
 	}
 
-	txHash := hex.EncodeToString(hash[:])
 	if txReceipt.BlockNumber == nil || txReceipt.BlockNumber.Sign() <= 0 {
-		e.lggr.Errorw("Receipt has no valid block number; omitting block_timestamp from reply", "txHash", txHash, "blockNumber", txReceipt.BlockNumber)
-		return nil
+		return nil, fmt.Errorf("receipt has no valid block number: %v", txReceipt.BlockNumber)
 	}
 
 	header, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Header, error) {
@@ -655,23 +656,21 @@ func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, hash evmtypes.Has
 		return reply.Header, nil
 	})
 	if err != nil {
-		e.lggr.Errorw("Failed to get block header; omitting block_timestamp from reply", "txHash", txHash, "blockNumber", txReceipt.BlockNumber.String(), "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to get block header %s: %w", txReceipt.BlockNumber.String(), err)
 	}
 	if header.Timestamp == 0 || header.Timestamp > math.MaxUint64/microsecondsPerSecond {
-		e.lggr.Errorw("Invalid block timestamp; omitting block_timestamp from reply", "txHash", txHash, "blockNumber", txReceipt.BlockNumber.String(), "timestamp", header.Timestamp)
-		return nil
+		return nil, fmt.Errorf("invalid timestamp %d in block header %s", header.Timestamp, txReceipt.BlockNumber.String())
 	}
 	if header.Hash != (evmtypes.Hash{}) && txReceipt.BlockHash != (evmtypes.Hash{}) && header.Hash != txReceipt.BlockHash {
 		// The block at this height changed since the receipt was read (reorg). Its timestamp is
 		// still the best available inclusion time, so keep it but surface the mismatch.
 		e.lggr.Warnw("Block hash mismatch between receipt and header, possible reorg",
-			"txHash", txHash,
+			"txHash", hex.EncodeToString(hash[:]),
 			"blockNumber", txReceipt.BlockNumber.String(),
 			"receiptBlockHash", hex.EncodeToString(txReceipt.BlockHash[:]),
 			"headerBlockHash", hex.EncodeToString(header.Hash[:]))
 	}
-	return new(header.Timestamp * microsecondsPerSecond)
+	return new(header.Timestamp * microsecondsPerSecond), nil
 }
 
 func (e *WriteReport) includeBlockTimestampInReply(ctx context.Context) bool {
