@@ -2,34 +2,20 @@ package capability
 
 import (
 	"context"
-	"fmt"
-	"runtime/debug"
 
-	"github.com/grafana/pyroscope-go"
-
-	commonconfig "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop/pyroscope"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 )
 
-// PyroscopeConfig configures continuous profiling. An empty ServerAddress leaves profiling off.
-type PyroscopeConfig struct {
-	// ServerAddress is the pyroscope server address. Profiling is disabled when unset.
-	ServerAddress string
-	// AuthToken is the pyroscope auth token.
-	AuthToken commonconfig.SecretString
-	// Environment is the environment tag attached to profiles.
-	Environment string
-}
-
 // newProfiler returns continuous profiling as a service, or nil when no pyroscope server is
 // configured.
-func newProfiler(lggr logger.Logger, appName string, cfg PyroscopeConfig) *profilerService {
-	if cfg.ServerAddress == "" {
+func newProfiler(lggr logger.Logger, appName string, cfg pyroscope.PyroscopeConfig, tracingEnabled bool) *profilerService {
+	if cfg.PyroscopeServerAddress == "" {
 		return nil
 	}
 
-	p := &profilerService{appName: appName, cfg: cfg}
+	p := &profilerService{lggr: lggr, appName: appName, cfg: cfg, tracingEnabled: tracingEnabled}
 	p.Service, _ = services.Config{
 		Name:  "Profiler",
 		Start: p.start,
@@ -38,8 +24,8 @@ func newProfiler(lggr logger.Logger, appName string, cfg PyroscopeConfig) *profi
 	return p
 }
 
-func startProfiler(ctx context.Context, lggr logger.Logger, appName string, cfg PyroscopeConfig) (*profilerService, error) {
-	profiler := newProfiler(lggr, appName, cfg)
+func startProfiler(ctx context.Context, lggr logger.Logger, appName string, cfg pyroscope.PyroscopeConfig, tracingEnabled bool) (*profilerService, error) {
+	profiler := newProfiler(lggr, appName, cfg, tracingEnabled)
 	if profiler == nil {
 		return nil, nil
 	}
@@ -50,8 +36,11 @@ func startProfiler(ctx context.Context, lggr logger.Logger, appName string, cfg 
 type profilerService struct {
 	services.Service
 
+	lggr    logger.Logger
 	appName string
-	cfg     PyroscopeConfig
+	cfg     pyroscope.PyroscopeConfig
+	// tracingEnabled lets the profiler link traces to profiles, if cfg also asks for it.
+	tracingEnabled bool
 
 	// profiler is what start made and close stops. Written by one hook and read by the other, which
 	// the state machine's lock orders: a service cannot be closed unless it started.
@@ -59,34 +48,9 @@ type profilerService struct {
 }
 
 func (p *profilerService) start(context.Context) error {
-	var ver, sha string
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		ver = bi.Main.Version
-		sha = bi.Main.Sum
-		if len(sha) > 7 {
-			sha = sha[:7]
-		}
-	}
-
-	profiler, err := pyroscope.Start(pyroscope.Config{
-		ApplicationName: p.appName,
-		ServerAddress:   p.cfg.ServerAddress,
-		AuthToken:       string(p.cfg.AuthToken),
-		Tags: map[string]string{
-			"version":     ver,
-			"sha":         sha,
-			"environment": p.cfg.Environment,
-		},
-		ProfileTypes: []pyroscope.ProfileType{
-			pyroscope.ProfileCPU,
-			pyroscope.ProfileAllocObjects,
-			pyroscope.ProfileAllocSpace,
-			pyroscope.ProfileInuseObjects,
-			pyroscope.ProfileInuseSpace,
-		},
-	})
+	profiler, err := pyroscope.Start(p.lggr, p.cfg, p.appName, p.tracingEnabled)
 	if err != nil {
-		return fmt.Errorf("failed to start profiler: %w", err)
+		return err
 	}
 
 	p.profiler = profiler

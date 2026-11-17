@@ -42,6 +42,36 @@ func (m MultiInjector) ProvideNamedConfig[T any](namespace, diName string, conf 
 	return m.each(func(i *Injector) error { return i.ProvideNamedConfig(namespace, diName, conf, opts...) })
 }
 
+// MustProvide is [MultiInjector.Provide], panicking on error.
+func (m MultiInjector) MustProvide[T any](provider do.Provider[T]) {
+	must(m.Provide(provider))
+}
+
+// MustProvideValue is [MultiInjector.ProvideValue], panicking on error.
+func (m MultiInjector) MustProvideValue[T any](v T) {
+	must(m.ProvideValue(v))
+}
+
+// MustProvideNamed is [MultiInjector.ProvideNamed], panicking on error.
+func (m MultiInjector) MustProvideNamed[T any](name string, provider do.Provider[T]) {
+	must(m.ProvideNamed(name, provider))
+}
+
+// MustProvideNamedValue is [MultiInjector.ProvideNamedValue], panicking on error.
+func (m MultiInjector) MustProvideNamedValue[T any](name string, v T) {
+	must(m.ProvideNamedValue(name, v))
+}
+
+// MustProvideConfig is [MultiInjector.ProvideConfig], panicking on error.
+func (m MultiInjector) MustProvideConfig[T any](namespace string, conf *T, opts ...cli.RegisterOption[T]) {
+	must(m.ProvideConfig(namespace, conf, opts...))
+}
+
+// MustProvideNamedConfig is [MultiInjector.ProvideNamedConfig], panicking on error.
+func (m MultiInjector) MustProvideNamedConfig[T any](namespace, diName string, conf *T, opts ...cli.RegisterOption[T]) {
+	must(m.ProvideNamedConfig(namespace, diName, conf, opts...))
+}
+
 // each calls fn on every injector, joining their errors.
 func (m MultiInjector) each(fn func(*Injector) error) error {
 	errs := make([]error, 0, len(m))

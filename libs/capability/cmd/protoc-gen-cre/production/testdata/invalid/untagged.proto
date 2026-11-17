@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package capabilities.test.untagged.x.v1;
+
+import "capability/feature/feature.proto";
+
+option (cre.feature.v1.released) = "launch";
+
+enum Level {
+  LEVEL_UNSPECIFIED = 0 [(cre.feature.v1.value) = "launch"];
+  LEVEL_HIGH = 1;
+}
+
+message Request {
+  string id = 1 [(cre.feature.v1.field) = "launch"];
+  string forgotten = 2;
+  Level level = 3 [(cre.feature.v1.field) = "launch"];
+  map<string, string> labels = 4 [(cre.feature.v1.field) = "launch"];
+}
+
+service Untagged {
+  rpc Get(Request) returns (Request);
+}

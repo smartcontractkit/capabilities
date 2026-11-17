@@ -280,7 +280,7 @@ func TestTruncatedFailureMessageRemainsValidUTF8(t *testing.T) {
 	ctx := t.Context()
 	const maxRequestOutcomeSize = 10000
 
-	for pad := 0; pad < 4; pad++ {
+	for pad := range 4 {
 		outcome, err := batching.NewOutcomeBatch(ctx, logger.Test(t), ocr3types.OutcomeContext{SeqNr: 1}, 1000,
 			1_000_000, "evm", newTestMetrics(t, "outcome"), maxRequestOutcomeSize, 100)
 		require.NoError(t, err)

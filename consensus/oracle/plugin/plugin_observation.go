@@ -36,8 +36,8 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			Input:      req.Input,
 			// Emit true for these flags even though nothing uses them in the Outcome phase.
 			// This ensures that the flag doesn't accidentally revert during the rollout of the new version.
-			RemoveLibUseInFailureMessageFormattingFlag: true,
-			UpdateErrorHandlingFlag:                    true,
+			RemoveLibUseInFailureMessageFormattingFlag: true, //nolint:staticcheck // SA1019: see above
+			UpdateErrorHandlingFlag:                    true, //nolint:staticcheck // SA1019: see above
 			Median_2Fplus1QuorumFlag:                   req.StricterMedianQuorum,
 			IncludeAllTimestampsFlag:                   req.IncludeAllTimestamps,
 		}

@@ -7,12 +7,14 @@ import (
 	"reflect"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 )
 
 // RunInjector is what the run command builds a capability from. Register what a capability needs on it
@@ -39,7 +41,8 @@ type InstanceInfo struct {
 type startConfig struct {
 	capabilities CapabilitiesConfig
 	grpc         GRPCConfig
-	settings     *loop.AtomicSettings
+	grpcOpts     *loop.GRPCOpts
+	settings     *settings.Atomic
 	overrides    []func(*Injector) error
 }
 
@@ -52,10 +55,11 @@ func WithProvider(provide func(*Injector) error) StartOption {
 	return func(c *startConfig) { c.overrides = append(c.overrides, provide) }
 }
 
-func withNode(capabilities CapabilitiesConfig, grpc GRPCConfig, settings *loop.AtomicSettings) StartOption {
+func withNode(capabilities CapabilitiesConfig, grpc GRPCConfig, grpcOpts *loop.GRPCOpts, settings *settings.Atomic) StartOption {
 	return func(c *startConfig) {
 		c.capabilities = capabilities
 		c.grpc = grpc
+		c.grpcOpts = grpcOpts
 		c.settings = settings
 	}
 }
@@ -69,9 +73,16 @@ func StartCapabilities[T Capability](ctx context.Context, lggr logger.Logger, ba
 		return nil, nil, fmt.Errorf("instances must be positive, got %d", total)
 	}
 
-	cfg := &startConfig{grpc: defaultConfig().grpc, settings: newSettings(lggr)}
+	cfg := &startConfig{grpc: defaultGRPCConfig(), settings: newSettings(lggr)}
 	for _, opt := range opts {
 		opt(cfg)
+	}
+	if cfg.grpcOpts == nil {
+		// Only run() gives gRPC options. Other callers, for example capabilitytest, come here.
+		// Tests call this function many times in one process. Each call must use a new registry,
+		// because the default registry panics if you register the same metrics two times.
+		grpcOpts := loop.GRPCOptsConfig{Registerer: prometheus.NewRegistry()}.New(lggr)
+		cfg.grpcOpts = &grpcOpts
 	}
 
 	var built []T
@@ -82,7 +93,7 @@ func StartCapabilities[T Capability](ctx context.Context, lggr logger.Logger, ba
 			instLggr = logger.Named(lggr, fmt.Sprintf("Instance%d", id))
 		}
 
-		reg, err := startRegistry(ctx, instLggr, cfg.capabilities, cfg.grpc)
+		reg, err := startRegistry(ctx, instLggr, cfg.capabilities, cfg.grpc, *cfg.grpcOpts)
 		if err != nil {
 			return built, svcs, fmt.Errorf("failed to start registry: %w", err)
 		}
@@ -107,6 +118,7 @@ func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *I
 		i.ProvideValue(info),
 		i.ProvideValue(lggr),
 		i.ProvideValue[registry.CapabilitiesRegistry](reg),
+		i.ProvideValue(cfg.capabilities),
 		i.ProvideValue(newLimitsFactory(lggr, cfg.settings)),
 		i.ProvideValue[clockwork.Clock](clockwork.NewRealClock()),
 	); err != nil {

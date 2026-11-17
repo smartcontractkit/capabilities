@@ -3,15 +3,14 @@ package loopserver
 import (
 	"context"
 
-	"github.com/cenkalti/backoff/v5"
 	"github.com/hashicorp/go-plugin"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
-	"github.com/smartcontractkit/chainlink-common/pkg/timeutil"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -21,7 +20,8 @@ func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer f
 }
 
 func ServeNew[T loop.StandardCapabilities](serviceName string, newServer func(*loop.Server) T, opts ...loop.ServerOpt) {
-	atomicSettings := loop.NewAtomicSettings(cresettings.DefaultGetter)
+	atomicSettings := &settings.Atomic{}
+	atomicSettings.SetGetter(cresettings.DefaultGetter)
 	opts = append(opts, loop.WithSettingsGetter(atomicSettings))
 	s := loop.MustNewStartedServer(serviceName, opts...)
 	defer s.Stop()
@@ -34,7 +34,7 @@ func ServeNew[T loop.StandardCapabilities](serviceName string, newServer func(*l
 		HandshakeConfig: loop.StandardCapabilitiesHandshakeConfig(),
 		Plugins: map[string]plugin.Plugin{
 			loop.PluginStandardCapabilitiesName: &loop.StandardCapabilitiesLoop{
-				PluginServer: &settingsInterceptor{lggr: s.Logger, StandardCapabilities: newServer(s), updateSettings: atomicSettings.Store},
+				PluginServer: &settingsInterceptor{lggr: s.Logger, StandardCapabilities: newServer(s), settings: atomicSettings},
 				BrokerConfig: loop.BrokerConfig{Logger: s.Logger, StopCh: stopCh, GRPCOpts: s.GRPCOpts},
 			},
 		},
@@ -50,34 +50,13 @@ func ServeNewWithOtelViews[T loop.StandardCapabilities](serviceName string, newS
 // settingsInterceptor overrides Initialise in order to intercept CRESettings, if set.
 type settingsInterceptor struct {
 	loop.StandardCapabilities
-	lggr           logger.Logger
-	updateSettings func(settings core.SettingsUpdate) error
+	lggr     logger.Logger
+	settings *settings.Atomic
 }
 
 func (i *settingsInterceptor) Initialise(ctx context.Context, deps core.StandardCapabilitiesDependencies) error {
 	if deps.CRESettings != nil {
-		go func(ctx context.Context) {
-			bo := backoff.NewExponentialBackOff()
-			for {
-				ch, err := deps.CRESettings.Subscribe(ctx)
-				if err != nil {
-					i.lggr.Errorf("failed to subscribe to settings updates: %v", err)
-					if !timeutil.Sleep(ctx.Done(), bo.NextBackOff()) {
-						return
-					}
-					continue // retry
-				}
-				i.lggr.Info("Subscribed to settings updates")
-				bo.Reset()
-				for update := range ch {
-					if err := i.updateSettings(update); err != nil {
-						i.lggr.Errorf("failed to update settings: %v", err)
-						continue
-					}
-					i.lggr.Infow("Updated settings", "hash", update.Hash)
-				}
-			}
-		}(context.WithoutCancel(ctx))
+		go settings.Follow(context.WithoutCancel(ctx), i.lggr, deps.CRESettings, i.settings)
 	}
 	return i.StandardCapabilities.Initialise(ctx, deps)
 }

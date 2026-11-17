@@ -1,0 +1,50 @@
+{{- $pkg := .GoPackageName }}
+package {{$pkg}}test
+
+import (
+    "context"
+
+    {{- addImport .GoImportPath "" }}
+    {{- range .Services }}
+        {{- range .Methods }}
+            {{- addImport .Input.GoIdent.GoImportPath "" }}
+            {{- addImport .Output.GoIdent.GoImportPath "" }}
+        {{- end }}
+    {{- end }}
+
+    {{- range allimports }}
+    {{.}}
+    {{- end }}
+
+    "github.com/smartcontractkit/capabilities/libs/capability/instances"
+    "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+)
+
+{{- range .Services }}
+{{- $service := .GoName }}
+{{- $server := printf "%s.%sServer" $pkg .GoName }}
+
+// {{.GoName}}Instances calls each method on every instance at once, checking that they agree. A node capability
+// has one.
+type {{.GoName}}Instances []*{{$server}}
+
+{{- range .Methods }}
+{{- $in := name .Input.GoIdent "" }}
+{{- $out := name .Output.GoIdent "" }}
+{{- if isTrigger . }}
+
+func (s {{$service}}Instances) Register{{.GoName}}(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *{{$in}}) (<-chan instances.TypedEvent[*{{$out}}], error) {
+    return instances.TypedRegisterTrigger[*{{$out}}](ctx, s, "{{.GoName}}", triggerID, metadata, input)
+}
+
+func (s {{$service}}Instances) Unregister{{.GoName}}(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *{{$in}}) error {
+    return instances.TypedUnregisterTrigger(ctx, s, "{{.GoName}}", triggerID, metadata, input)
+}
+{{- else }}
+
+func (s {{$service}}Instances) {{.GoName}}(ctx context.Context, metadata capabilities.RequestMetadata, input *{{$in}}) (*capabilities.ResponseAndMetadata[*{{$out}}], error) {
+    return instances.TypedExecute[*{{$out}}](ctx, s, "{{.GoName}}", metadata, input)
+}
+{{- end }}
+{{- end }}
+{{- end }}
