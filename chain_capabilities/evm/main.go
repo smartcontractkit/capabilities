@@ -179,11 +179,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
-	txEventsOpt, err := c.txEventsOption(cfg)
+	txEmitter, err := txevents.NewEmitter(c.lggr, cfg.TxEvents)
 	if err != nil {
 		return err
 	}
-	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler, txEventsOpt)
+	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler, actions.WithTxEvents(txEmitter))
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
@@ -192,7 +192,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
-	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, capabilityDonID, processor, messageBuilder,
+	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, capabilityDonID, dependencies.ShardIndex, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
 		dependencies.OrgResolver, dependencies.TriggerEventStore)
 	if err != nil {
@@ -230,17 +230,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
-}
-
-// txEventsOption wires ChainTransactionObserved emission for the transaction WriteReport bills.
-// Events go to ChIP through the process-global durable emitter. Without
-// CL_CHIP_INGRESS_DURABLE_EMITTER_ENABLED they are dropped and counted.
-func (c *capabilityGRPCService) txEventsOption(cfg *config.Config) (actions.Option, error) {
-	emitter, err := txevents.NewEmitter(c.lggr, cfg.TxEvents)
-	if err != nil {
-		return nil, err
-	}
-	return actions.WithTxEvents(emitter), nil
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
@@ -286,9 +275,7 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
 
-	if cfg.TxEvents.Domain == "" {
-		cfg.TxEvents.Domain = txevents.DefaultDomain
-	}
+	cfg.TxEvents = cfg.TxEvents.Normalized()
 
 	// DeltaStage is optional - if not set, transmission scheduling will be disabled
 	return &cfg, nil

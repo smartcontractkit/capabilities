@@ -27,11 +27,11 @@ const (
 	readActionErrorMetricEventRef   = "chain_capabilities.evm.ReadActionError"
 )
 
-var readLatencyBucketBoundariesMs = []float64{
+var latencyBucketBoundariesMs = []float64{
 	0, 5, 10, 25, 50, 75, 100,
 	250, 500, 750, 1000,
 	2500, 5000, 7500, 10000,
-	15000, 30000,
+	15000, 30000, 45000, 60000, 90000,
 }
 
 func MetricViews() []sdkmetric.View {
@@ -59,7 +59,7 @@ func MetricViews() []sdkmetric.View {
 		views = append(views, sdkmetric.NewView(
 			sdkmetric.Instrument{Name: name},
 			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
-				Boundaries: readLatencyBucketBoundariesMs,
+				Boundaries: latencyBucketBoundariesMs,
 			}},
 		))
 	}
@@ -99,6 +99,9 @@ type Metrics struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
 	WriteReportInsufficientGasRetry struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
+	WriteReportGasMismatch struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
 	LogTriggerSuccess struct {
@@ -182,7 +185,7 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create call contract error metric: %w", err)
 	}
 	// -- WriteReport --
-	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}))
+	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasicWithBuckets(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}), latencyBucketBoundariesMs)
 	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report success metric: %w", err)
@@ -216,6 +219,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportInsufficientGasRetry.basic, err = commoncapbeholder.NewMetricsCapBasic(wrInsufficientGasRetry)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report insufficient gas retry metric: %w", err)
+	}
+	wrGasMismatch := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_gas_mismatch"), commonbeholder.ToSchemaFullName(&WriteReportGasMismatch{}))
+	m.WriteReportGasMismatch.basic, err = commoncapbeholder.NewMetricsCapBasic(wrGasMismatch)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report gas mismatch metric: %w", err)
 	}
 
 	// -- LogTrigger --
@@ -381,6 +389,12 @@ func (m *Metrics) OnWriteReportDuplicateTx(ctx context.Context, msg *WriteReport
 func (m *Metrics) OnWriteReportInsufficientGasRetry(ctx context.Context, msg *WriteReportInsufficientGasRetry) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportInsufficientGasRetry.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportGasMismatch(ctx context.Context, msg *WriteReportGasMismatch) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportGasMismatch.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -655,6 +669,16 @@ func (r *WriteReportInsufficientGasRetry) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportInsufficientGasRetry) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportGasMismatch) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportGasMismatch) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
