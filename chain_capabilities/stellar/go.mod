@@ -3,10 +3,17 @@ module github.com/smartcontractkit/capabilities/chain_capabilities/stellar
 go 1.27.3
 
 require (
+<<<<<<< HEAD
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261127172933-7a505b6cc3f3
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961
 	github.com/smartcontractkit/chain-selectors v1.0.104
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261120142832-4bf2efe972ea
+=======
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261117130336-1bd4c1124f9e
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961
+	github.com/smartcontractkit/chain-selectors v1.0.104
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261102201435-1c6d22d0a5ad
+>>>>>>> 0908860d (make tidy)
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261118180951-353e61fe935a
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
