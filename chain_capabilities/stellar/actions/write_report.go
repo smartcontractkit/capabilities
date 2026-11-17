@@ -227,8 +227,6 @@ func (wr *writeReport) execute(
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	ownMeteringMetadata := wr.billed(ctx, submitTxHash(submitResp), stellarSubmitStatus(submitResp), wr.meteringFromSubmitResponse(submitResp))
-
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
 	postInfo, pollErr := capcommon.WithPollingRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
@@ -259,7 +257,7 @@ func (wr *writeReport) execute(
 			if err != nil {
 				return nil, capabilities.ResponseMetadata{}, err
 			}
-			return reply, wr.meteringFromReply(reply), nil
+			return reply, wr.billed(ctx, submitResp.TxHash, txevents.TxStatus_TX_STATUS_SUCCESS, wr.meteringFromReply(reply)), nil
 		}
 
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
@@ -275,7 +273,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, wr.meteringFromReply(reply), nil
+		return reply, wr.billed(ctx, txHash, txevents.TxStatus_TX_STATUS_SUCCESS, wr.meteringFromReply(reply)), nil
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		if submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
 			wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", submitResp.TxHash, "transmissionState", postInfo.State)
@@ -283,7 +281,7 @@ func (wr *writeReport) execute(
 			if err != nil {
 				return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(postInfo, transmissionID, err)
 			}
-			return reply, wr.meteringFromReply(reply), nil
+			return reply, wr.billed(ctx, submitResp.TxHash, txevents.TxStatus_TX_STATUS_SUCCESS, wr.meteringFromReply(reply)), nil
 		}
 
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
@@ -305,7 +303,7 @@ func (wr *writeReport) execute(
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(postInfo, transmissionID, err)
 		}
-		return reply, wr.meteringFromReply(reply), nil
+		return reply, wr.billed(ctx, txHash, txevents.TxStatus_TX_STATUS_SUCCESS, wr.meteringFromReply(reply)), nil
 	default:
 		wr.lggr.Errorw("Invalid transmission state after submit", "state", postInfo.State, "localTxStatus", submitResp.TxStatus)
 		wr.emitInvalidTransmissionState(ctx, request, telemetryContext, postInfo, transmissionID, "WriteReport invalid transmission state after submit", invalidTransmissionStateError(postInfo.State).Error())
@@ -444,27 +442,6 @@ func (wr *writeReport) billed(ctx context.Context, txHash string, status txevent
 		wr.txReporter.Charged(ctx, txHash, status)
 	}
 	return meta
-}
-
-func submitTxHash(resp *stellartypes.SubmitTransactionResponse) string {
-	if resp == nil {
-		return ""
-	}
-	return resp.TxHash
-}
-
-func stellarSubmitStatus(resp *stellartypes.SubmitTransactionResponse) txevents.TxStatus {
-	if resp == nil {
-		return txevents.TxStatus_TX_STATUS_UNSPECIFIED
-	}
-	switch resp.TxStatus {
-	case stellartypes.TxSuccess:
-		return txevents.TxStatus_TX_STATUS_SUCCESS
-	case stellartypes.TxFailed:
-		return txevents.TxStatus_TX_STATUS_REVERTED
-	default:
-		return txevents.TxStatus_TX_STATUS_UNSPECIFIED
-	}
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain transaction fee contained

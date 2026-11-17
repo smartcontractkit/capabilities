@@ -67,7 +67,7 @@ func TestWriteReport_EmitsChargedTransaction(t *testing.T) {
 		require.Equal(t, txevents.TxStatus_TX_STATUS_SUCCESS, rec.events[0].TxStatus)
 	})
 
-	t.Run("duplicate submit emits the local transaction that was charged", func(t *testing.T) {
+	t.Run("duplicate submit emits the canonical transaction that was charged", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
 		rec := &recordingTxEventEmitter{}
@@ -92,7 +92,8 @@ func TestWriteReport_EmitsChargedTransaction(t *testing.T) {
 		_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Len(t, rec.events, 1)
-		require.Equal(t, "mytx", rec.events[0].TxHash)
-		require.Equal(t, txevents.TxStatus_TX_STATUS_REVERTED, rec.events[0].TxStatus)
+		// The canonical transaction is the one billed, not the local duplicate submit.
+		require.Equal(t, "abc123txhash", rec.events[0].TxHash)
+		require.Equal(t, txevents.TxStatus_TX_STATUS_SUCCESS, rec.events[0].TxStatus)
 	})
 }
