@@ -3,19 +3,13 @@ module github.com/smartcontractkit/capabilities/chain_capabilities/stellar
 go 1.27.3
 
 require (
-<<<<<<< HEAD
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261127172933-7a505b6cc3f3
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961
 	github.com/smartcontractkit/chain-selectors v1.0.104
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261120142832-4bf2efe972ea
-=======
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20261117130336-1bd4c1124f9e
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961
-	github.com/smartcontractkit/chain-selectors v1.0.104
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261102201435-1c6d22d0a5ad
->>>>>>> 0908860d (make tidy)
-	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
+	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20261118112459-1195bbccafcf
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261118180951-353e61fe935a
+	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20261119151352-033d47887ddd
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
 	github.com/stellar/go-stellar-sdk v0.8.0
 	github.com/stretchr/testify v1.12.1
@@ -92,7 +86,6 @@ require (
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260709145319-7782fb89eb16 // indirect
-	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20261119151352-033d47887ddd // indirect
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/stellar/go-xdr v0.0.0-20260806060815-dc590f17552a // indirect
