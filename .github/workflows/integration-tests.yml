@@ -30,6 +30,9 @@ jobs:
           project: integration_tests
           go-module-file: ./integration_tests/go.mod
           task: "integrationtest"
+          # Cache bust: the gomod cache restore was repeatedly failing with
+          # "tar: Cannot open: File exists" on corrupted entries.
+          cache-version: "v2"
 
       - name: Support private Go modules
         env:
