@@ -179,11 +179,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
-	txEventsOpt, err := c.txEventsOption(cfg)
-	if err != nil {
-		return err
-	}
-	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler, txEventsOpt)
+	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
@@ -192,7 +188,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
-	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, capabilityDonID, processor, messageBuilder,
+	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, capabilityDonID, dependencies.ShardIndex, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
 		dependencies.OrgResolver, dependencies.TriggerEventStore)
 	if err != nil {
@@ -284,10 +280,6 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.MaxUnknownRequestsCacheSize == 0 {
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
-	}
-
-	if cfg.TxEvents.Domain == "" {
-		cfg.TxEvents.Domain = txevents.DefaultDomain
 	}
 
 	// DeltaStage is optional - if not set, transmission scheduling will be disabled

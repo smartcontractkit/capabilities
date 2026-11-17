@@ -50,6 +50,7 @@ type EVM struct {
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
+	forwarderGasOverhead     uint64
 	LookbackBlocks           uint64
 
 	lggr              logger.SugaredLogger
@@ -64,22 +65,10 @@ type EVM struct {
 	writeReportL1FeeActive                     limits.RangeLimiter[commoncfg.Timestamp]
 
 	transmissionScheduler ts.TransmissionScheduler
-
-	// txEvents publishes ChainTransactionObserved events for the Transactions Viewer.
-	txEvents txevents.Emitter
-}
-
-// Option configures optional behaviour of the EVM capability.
-type Option func(*EVM)
-
-// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
-// disables emission.
-func WithTxEvents(emitter txevents.Emitter) Option {
-	return func(e *EVM) { e.txEvents = emitter }
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, opts ...Option) (*EVM, caperrors.Error) {
+	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.FailedPrecondition)
@@ -95,16 +84,13 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		keystoneForwarderAddress: keystoneForwarderAddress,
 		forwarderClient:          kfc,
 		ReceiverGasMinimum:       cfg.ReceiverGasMinimum,
+		forwarderGasOverhead:     contracts.ForwarderGasOverhead(cfg.ForwarderGasOverheadMargin),
 		lggr:                     logger.Sugared(lggr),
 		beholderProcessor:        beholderProcessor,
 		messageBuilder:           messageBuilder,
 		consensusHandler:         handler,
 		chainSelector:            chainSelector,
 		transmissionScheduler:    transmissionScheduler,
-		txEvents:                 txevents.NopEmitter{},
-	}
-	for _, opt := range opts {
-		opt(e)
 	}
 	err = e.initLimiters(limitsFactory)
 	if err != nil {
