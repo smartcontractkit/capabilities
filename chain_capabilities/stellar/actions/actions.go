@@ -27,6 +27,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
@@ -46,6 +47,16 @@ type Stellar struct {
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	maxResourceFeeLimit   limits.BoundLimiter[uint64]
 	transmissionScheduler ts.TransmissionScheduler
+	txEvents              txevents.Emitter
+}
+
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func (s *Stellar) WithTxEvents(emitter txevents.Emitter) {
+	if emitter == nil {
+		emitter = txevents.NopEmitter{}
+	}
+	s.txEvents = emitter
 }
 
 func NewStellar(
