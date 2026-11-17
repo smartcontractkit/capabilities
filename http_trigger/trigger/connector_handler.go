@@ -13,7 +13,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -39,6 +38,7 @@ type connectorHandler struct {
 	gatewayConnector         core.GatewayConnector
 	config                   ServiceConfig
 	capabilityDonID          uint32 // authoritative sending DON ID; 0 = unknown, falls back to WorkflowDONID
+	shardIndex               uint32
 	requestCache             *requestCache
 	workflowStore            *workflowStore
 	gatewayMetadataPublisher GatewayMetadataPublisher
@@ -48,7 +48,7 @@ type connectorHandler struct {
 	orgResolver              orgresolver.OrgResolver
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32,
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32, shardIndex uint32,
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics,
 	orgResolver orgresolver.OrgResolver, limitsFactory limits.Factory,
 ) (*connectorHandler, error) {
@@ -57,6 +57,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		gatewayConnector:         gc,
 		config:                   config,
 		capabilityDonID:          capabilityDonID,
+		shardIndex:               shardIndex,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
@@ -114,7 +115,7 @@ func (h *connectorHandler) HealthReport() map[string]error {
 }
 
 func (h *connectorHandler) Ready() error {
-	return h.StateMachine.Healthy()
+	return h.Healthy()
 }
 
 func (h *connectorHandler) Name() string {
@@ -286,7 +287,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	}
 
 	workflowExecutionID, err := h.generateWorkflowExecutionID(
-		ctx,
 		workflowMetadata.WorkflowID,
 		workflowMetadata.WorkflowOwner,
 		orgID,
@@ -337,6 +337,8 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
 		events.KeyDonID, strconv.Itoa(int(donIDForEvent)),
+		events.KeyShardIndex, strconv.FormatUint(uint64(h.shardIndex), 10),
+		events.KeyWorkflowDonID, strconv.Itoa(int(workflowMetadata.WorkflowDONID)),
 	)
 	if orgID != "" {
 		labeler = labeler.With(events.KeyOrganizationID, orgID)
@@ -443,7 +445,6 @@ func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metad
 }
 
 func (h *connectorHandler) generateWorkflowExecutionID(
-	ctx context.Context,
 	workflowID, workflowOwner, orgID, reqID, referenceID string,
 	l logger.Logger,
 ) (string, error) {
@@ -456,12 +457,6 @@ func (h *connectorHandler) generateWorkflowExecutionID(
 		triggerIndex = 0
 	}
 	l = logger.With(l, "triggerIndex", triggerIndex)
-
-	ctx = contexts.WithCRE(ctx, contexts.CRE{
-		Org:      orgID,
-		Owner:    workflowOwner,
-		Workflow: workflowID,
-	})
 
 	strippedWorkflowID := strings.TrimPrefix(workflowID, "0x")
 	workflowExecutionID, execIDErr := workflows.GenerateExecutionIDWithTriggerIndex(strippedWorkflowID, reqID, triggerIndex)

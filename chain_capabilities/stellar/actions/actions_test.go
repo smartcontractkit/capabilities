@@ -72,10 +72,36 @@ func validReadContractRequest() *stellarcap.ReadContractRequest {
 
 func validLatestLedgerInfo(t *testing.T, sequence uint32) (stellartypes.LedgerInfo, []byte, []byte) {
 	t.Helper()
+	return latestLedgerInfoWithHeader(t, sequence, xdr.LedgerHeader{LedgerVersion: 22, LedgerSeq: xdr.Uint32(sequence)})
+}
 
-	hist := xdr.LedgerHeaderHistoryEntry{
-		Header: xdr.LedgerHeader{LedgerVersion: 22, LedgerSeq: xdr.Uint32(sequence)},
+// protocol30LedgerHeader returns a header as closed by Protocol 30 (Bell) validators: the SCP value
+// carries the CAP-0088 STELLAR_VALUE_SIGNED_MS extension with a millisecond close time.
+func protocol30LedgerHeader(sequence uint32, closeTimeMs uint64) xdr.LedgerHeader {
+	return xdr.LedgerHeader{
+		LedgerVersion: 30,
+		LedgerSeq:     xdr.Uint32(sequence),
+		ScpValue: xdr.StellarValue{
+			CloseTime: xdr.TimePoint(closeTimeMs / 1000),
+			Ext: xdr.StellarValueExt{
+				V: xdr.StellarValueTypeStellarValueSignedMs,
+				SignedMsValue: &xdr.StellarValueSignedMsValue{
+					CloseTimeMs: xdr.TimePointMs(closeTimeMs),
+					LcValueSignature: xdr.LedgerCloseValueSignature{
+						NodeId: xdr.NodeId{Type: xdr.PublicKeyTypePublicKeyTypeEd25519, Ed25519: &xdr.Uint256{}},
+					},
+				},
+			},
+		},
 	}
+}
+
+// latestLedgerInfoWithHeader builds the RPC ledger payload for header, embedding it both as the
+// LedgerHeaderHistoryEntry and inside the LedgerCloseMetaV2, the way Stellar RPC returns it.
+func latestLedgerInfoWithHeader(t *testing.T, sequence uint32, header xdr.LedgerHeader) (stellartypes.LedgerInfo, []byte, []byte) {
+	t.Helper()
+
+	hist := xdr.LedgerHeaderHistoryEntry{Header: header}
 	headerB64, err := xdr.MarshalBase64(hist)
 	require.NoError(t, err)
 	headerBin, err := hist.Header.MarshalBinary()
@@ -83,7 +109,7 @@ func validLatestLedgerInfo(t *testing.T, sequence uint32) (stellartypes.LedgerIn
 
 	txSet, err := xdr.NewGeneralizedTransactionSet(1, xdr.TransactionSetV1{})
 	require.NoError(t, err)
-	v2 := xdr.LedgerCloseMetaV2{TxSet: txSet}
+	v2 := xdr.LedgerCloseMetaV2{LedgerHeader: hist, TxSet: txSet}
 	closeMeta, err := xdr.NewLedgerCloseMeta(2, v2)
 	require.NoError(t, err)
 	metaB64, err := xdr.MarshalBase64(closeMeta)
@@ -271,6 +297,35 @@ func TestGetLatestLedger(t *testing.T) {
 		_, err = helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "ledger metadata xdr version 0 is unsupported")
+	})
+
+	t.Run("protocol 30 header with millisecond close time", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedStellar(t)
+		helper.stellar.handler = testConsensusHandler{handle: runLockableToBlockHandle(&ctypes.ChainHeight{Latest: 123})}
+
+		ledgerInfo, wantHeaderBin, wantMetaBin := latestLedgerInfoWithHeader(t, 123, protocol30LedgerHeader(123, 456_789))
+
+		helper.stellarService.EXPECT().
+			GetLedgers(mock.Anything, stellartypes.GetLedgersRequest{
+				StartLedger: 123,
+				Pagination:  &stellartypes.LedgerPaginationOptions{Limit: 1},
+			}).
+			Return(stellartypes.GetLedgersResponse{Ledgers: []stellartypes.LedgerInfo{ledgerInfo}}, nil).
+			Once()
+
+		resp, err := helper.stellar.GetLatestLedger(t.Context(), capabilities.RequestMetadata{}, &stellarcap.GetLatestLedgerRequest{})
+		require.NoError(t, err)
+		require.Equal(t, uint32(30), resp.Response.GetProtocolVersion())
+		require.Equal(t, wantHeaderBin, resp.Response.GetLedgerHeaderXdr())
+		require.Equal(t, wantMetaBin, resp.Response.GetLedgerMetadataXdr())
+
+		// The returned header round-trips through the Protocol 30 XDR with the millisecond close time intact.
+		var header xdr.LedgerHeader
+		require.NoError(t, header.UnmarshalBinary(resp.Response.GetLedgerHeaderXdr()))
+		signedMs, ok := header.ScpValue.Ext.GetSignedMsValue()
+		require.True(t, ok)
+		require.Equal(t, xdr.TimePointMs(456_789), signedMs.CloseTimeMs)
 	})
 }
 

@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"math/big"
 	"sync"
@@ -45,6 +46,10 @@ func recordingEmitter(t *testing.T, service *EVM) *recordingTxEventEmitter {
 	rec, ok := service.txEvents.(*recordingTxEventEmitter)
 	require.True(t, ok, "service must use the recording emitter")
 	return rec
+}
+
+func formatTxHash(h evmtypes.Hash) string {
+	return "0x" + hex.EncodeToString(h[:])
 }
 
 func recordedTxEvents(t *testing.T, service *EVM) []*txevents.ChainTransactionObserved {

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -14,9 +15,16 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/remote"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
 var testGRPC = GRPCConfig{AdvertiseHost: defaultHost}
+
+// newTestGRPCOpts makes gRPC options that register their metrics on reg. Each test must use a new
+// reg. Then the test can read its own metrics.
+func newTestGRPCOpts(t *testing.T, reg *prometheus.Registry) loop.GRPCOpts {
+	return loop.GRPCOptsConfig{Registerer: reg}.New(logger.Test(t))
+}
 
 // TestNewRegistryDoesNotDial is the property the boot sequence rests on: the node starts this
 // process and the two race, so a registry proxy that is not up yet has to delay the first lookup
@@ -24,7 +32,7 @@ var testGRPC = GRPCConfig{AdvertiseHost: defaultHost}
 //
 // Nothing is listening on the port below, and building the registry still succeeds.
 func TestNewRegistryDoesNotDial(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 
 	require.NoError(t, err, "an unreachable proxy should not fail construction")
 	require.NotNil(t, reg.fallback)
@@ -42,7 +50,7 @@ func TestNewRegistryDoesNotDial(t *testing.T) {
 func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 	for _, target := range []string{"!://not a target", "unknownscheme:///x"} {
 		t.Run(target, func(t *testing.T) {
-			reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: target}, testGRPC)
+			reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: target}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 			require.NoError(t, err)
 			require.NoError(t, reg.Start(t.Context()))
 			assert.NoError(t, reg.Close())
@@ -56,7 +64,7 @@ func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 // The metadata calls failing is the point rather than a shortcoming. A process holding capability
 // values has no way to know which DONs exist, so saying so beats answering with something invented.
 func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{CapabilityDonID: 1}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{CapabilityDonID: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
 	require.NoError(t, reg.Start(t.Context()))
@@ -71,7 +79,7 @@ func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
 // TestRegistryAddHoldsUntilClose covers the local half: this process's registry resolves what was
 // added to it, and stops doing so once it closes.
 func TestRegistryAddHoldsUntilClose(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 
@@ -98,7 +106,7 @@ func TestRegistryAddHoldsUntilClose(t *testing.T) {
 func TestRegistryAddAnnouncesToTheNode(t *testing.T) {
 	node := newSpyRegistry(t)
 
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 
@@ -113,6 +121,57 @@ func TestRegistryAddAnnouncesToTheNode(t *testing.T) {
 
 	require.NoError(t, reg.Close())
 	assert.Equal(t, []string{fakeID}, node.removedIDs(), "shutdown should take the announcement back")
+}
+
+// TestRegistryDialsWithTheRunsInterceptors makes sure that calls to the node use the gRPC options.
+// The client metrics must count the call.
+func TestRegistryDialsWithTheRunsInterceptors(t *testing.T) {
+	metrics := prometheus.NewRegistry()
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, newSpyRegistry(t))}, testGRPC, newTestGRPCOpts(t, metrics))
+	require.NoError(t, err)
+	require.NoError(t, reg.Start(t.Context()))
+	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
+
+	require.NoError(t, reg.Add(t.Context(), newFake()))
+
+	assert.Positive(t, counterTotal(t, metrics, "grpc_client_handled_total"), "the announcement should be counted")
+}
+
+// TestRegistryServesWithTheRunsInterceptors makes sure that calls from the node use the gRPC options.
+// The server metrics must count the call.
+func TestRegistryServesWithTheRunsInterceptors(t *testing.T) {
+	node := newSpyRegistry(t)
+	metrics := prometheus.NewRegistry()
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC, newTestGRPCOpts(t, metrics))
+	require.NoError(t, err)
+	require.NoError(t, reg.Start(t.Context()))
+	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
+	require.NoError(t, reg.Add(t.Context(), newFake()))
+
+	held, err := node.Get(t.Context(), fakeID)
+	require.NoError(t, err)
+	_, err = held.Info(t.Context())
+	require.NoError(t, err)
+
+	assert.Positive(t, counterTotal(t, metrics, "grpc_server_handled_total"), "the node's call should be counted")
+}
+
+// counterTotal adds the values of all series of the counter with this name.
+func counterTotal(t *testing.T, g prometheus.Gatherer, name string) float64 {
+	t.Helper()
+	families, err := g.Gather()
+	require.NoError(t, err)
+
+	var total float64
+	for _, f := range families {
+		if f.GetName() != name {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			total += m.GetCounter().GetValue()
+		}
+	}
+	return total
 }
 
 // spyRegistry is the node's registry, recording what is announced to it and what is taken back.
@@ -167,7 +226,7 @@ func serveNodeRegistry(t *testing.T, reg registry.CapabilitiesRegistry) string {
 	transport, err := remote.NewListenerTransport(remote.ListenerTransportParams{
 		Lggr:    lggr,
 		Listen:  func() (net.Listener, error) { return net.Listen("tcp", "localhost:0") },
-		Connect: dial,
+		Connect: dialer(loop.GRPCOpts{}),
 	})
 	require.NoError(t, err)
 

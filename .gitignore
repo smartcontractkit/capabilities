@@ -50,3 +50,9 @@ bin
 # Used for changesets
 node_modules
 
+
+# AI
+.claude
+
+# Protos fetched by protofetch, from the commits in protofetch.lock
+**/.deps/

@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	stellarcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -26,6 +27,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
@@ -45,6 +47,16 @@ type Stellar struct {
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	maxResourceFeeLimit   limits.BoundLimiter[uint64]
 	transmissionScheduler ts.TransmissionScheduler
+	txEvents              txevents.Emitter
+}
+
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func (s *Stellar) WithTxEvents(emitter txevents.Emitter) {
+	if emitter == nil {
+		emitter = txevents.NopEmitter{}
+	}
+	s.txEvents = emitter
 }
 
 func NewStellar(
@@ -94,6 +106,16 @@ func (s *Stellar) initLimiters(limitsFactory limits.Factory) (err error) {
 
 func (s *Stellar) Close() error {
 	return services.CloseAll(s.reportSizeLimit, s.maxResourceFeeLimit)
+}
+
+// MonitoringContext exposes the logger and capability-scoped metric labels consumed by the
+// generated v2 server wrapper (--with-monitoring). The wrapper emits lifecycle logs and
+// OTel metrics for every RPC; action code should not duplicate that emission.
+func (s *Stellar) MonitoringContext() capmon.MonitoringContext {
+	return capmon.MonitoringContext{
+		Logger:            s.lggr,
+		MetricsAttributes: s.messageBuilder.CapabilityMetricsAttributes,
+	}
 }
 
 // GetLatestLedger performs a consensus read of the current ledger. Each node
