@@ -606,7 +606,7 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		txStatus = evm.TxStatus_TX_STATUS_REVERTED
 	}
 
-	blockTimestamp, err := e.maybeBlockTimestamp(ctx, txHash, txReceipt)
+	blockTimestamp, err := e.maybeBlockTimestamp(ctx, txReceipt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block timestamp for tx hash 0x%x: %w", txHash[:], err)
 	}
@@ -635,7 +635,7 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 
 // maybeBlockTimestamp returns the tx's block timestamp in microseconds, or nil if the feature is
 // inactive. Lookup failures are errors so a node never replies without the field.
-func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, hash evmtypes.Hash, txReceipt *evmtypes.Receipt) (*uint64, error) {
+func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, txReceipt *evmtypes.Receipt) (*uint64, error) {
 	if !e.includeBlockTimestampInReply(ctx) {
 		e.lggr.Debugw("WriteReport block timestamp feature flag is inactive; omitting block_timestamp from reply")
 		return nil, nil
@@ -653,6 +653,11 @@ func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, hash evmtypes.Has
 		if reply == nil || reply.Header == nil {
 			return nil, errors.New("empty header returned")
 		}
+		// The header is fetched by number, so a different hash means it is another block at this
+		// height (RPC lag or reorg); retry rather than return that block's timestamp.
+		if reply.Header.Hash != (evmtypes.Hash{}) && txReceipt.BlockHash != (evmtypes.Hash{}) && reply.Header.Hash != txReceipt.BlockHash {
+			return nil, fmt.Errorf("header hash 0x%x does not match receipt block hash 0x%x", reply.Header.Hash[:], txReceipt.BlockHash[:])
+		}
 		return reply.Header, nil
 	})
 	if err != nil {
@@ -660,15 +665,6 @@ func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, hash evmtypes.Has
 	}
 	if header.Timestamp == 0 || header.Timestamp > math.MaxUint64/microsecondsPerSecond {
 		return nil, fmt.Errorf("invalid timestamp %d in block header %s", header.Timestamp, txReceipt.BlockNumber.String())
-	}
-	if header.Hash != (evmtypes.Hash{}) && txReceipt.BlockHash != (evmtypes.Hash{}) && header.Hash != txReceipt.BlockHash {
-		// The block at this height changed since the receipt was read (reorg). Its timestamp is
-		// still the best available inclusion time, so keep it but surface the mismatch.
-		e.lggr.Warnw("Block hash mismatch between receipt and header, possible reorg",
-			"txHash", hex.EncodeToString(hash[:]),
-			"blockNumber", txReceipt.BlockNumber.String(),
-			"receiptBlockHash", hex.EncodeToString(txReceipt.BlockHash[:]),
-			"headerBlockHash", hex.EncodeToString(header.Hash[:]))
 	}
 	return new(header.Timestamp * microsecondsPerSecond), nil
 }

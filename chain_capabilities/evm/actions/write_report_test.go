@@ -2252,17 +2252,33 @@ func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
 			expectedTimestamp: new(blockTimestampSeconds * 1_000_000),
 		},
 		{
-			name:               "header hash mismatch still includes block timestamp",
+			name:               "header hash mismatch is retried until the header matches the receipt",
 			executionTimestamp: activeFrom,
 			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
 			receiptBlockNumber: blockNumber,
 			setupHeader: func(m *mocks2.EVMService) {
 				m.EXPECT().
 					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
-					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: evmtypes.Hash(test.RandomBytes(32)), Timestamp: blockTimestampSeconds}}, nil).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: evmtypes.Hash(test.RandomBytes(32)), Timestamp: blockTimestampSeconds + 12}}, nil).
+					Once()
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: blockHash, Timestamp: blockTimestampSeconds}}, nil).
 					Once()
 			},
 			expectedTimestamp: new(blockTimestampSeconds * 1_000_000),
+		},
+		{
+			name:               "persistent header hash mismatch fails the reply",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: evmtypes.Hash(test.RandomBytes(32)), Timestamp: blockTimestampSeconds}}, nil)
+			},
+			expectedErr: "does not match receipt block hash",
 		},
 		{
 			name:               "header lookup failure fails the reply",
@@ -2462,6 +2478,11 @@ func TestWriteReportBlockTimestamp_FeatureFlagWiring(t *testing.T) {
 			md := fixture.metadata
 			md.ExecutionTimestamp = tc.executionTimestamp
 
+			var expectedTimestamp *uint64
+			if tc.expectHeaderFetch {
+				expectedTimestamp = new(blockTimestampSeconds * 1_000_000)
+			}
+
 			txResult, err := service.WriteReport(t.Context(), md, fixture.request)
 			require.NoError(t, err)
 			equalWriteReportReply(t, &evm.WriteReportReply{
@@ -2469,12 +2490,8 @@ func TestWriteReportBlockTimestamp_FeatureFlagWiring(t *testing.T) {
 				TxHash:                          txHash[:],
 				ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 				TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+				BlockTimestamp:                  expectedTimestamp,
 			}, txResult.Response)
-			if tc.expectHeaderFetch {
-				require.Equal(t, new(blockTimestampSeconds*1_000_000), txResult.Response.BlockTimestamp)
-			} else {
-				require.Nil(t, txResult.Response.BlockTimestamp)
-			}
 		})
 	}
 }
@@ -2759,6 +2776,7 @@ func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual 
 		require.Equal(t, expected.ReceiverContractExecutionStatus.Enum(), actual.ReceiverContractExecutionStatus.Enum())
 	}
 	require.Equal(t, expected.ErrorMessage, actual.ErrorMessage)
+	require.Equal(t, expected.BlockTimestamp, actual.BlockTimestamp)
 }
 
 func generateRandomSignatures() []*workflowpb.AttributedSignature {
