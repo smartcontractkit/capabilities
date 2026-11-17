@@ -22,6 +22,7 @@ import (
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -2412,20 +2413,22 @@ func TestReplyFromReceiptBlockTimestamp_NilLimiterOmitsTimestamp(t *testing.T) {
 func TestWriteReportBlockTimestamp_FeatureFlagWiring(t *testing.T) {
 	t.Parallel()
 
+	activePeriod := cresettings.Default.PerWorkflow.FeatureEVMWriteReportBlockTimestampActivePeriod.DefaultValue
+	activeFrom := time.Unix(int64(activePeriod.Lower), 0).UTC()
+
 	testCases := []struct {
 		name               string
 		executionTimestamp time.Time
 		expectHeaderFetch  bool
 	}{
 		{
-			name:               "default settings keep the feature inactive",
-			executionTimestamp: time.Now(),
+			name:               "execution timestamp before the default active period",
+			executionTimestamp: activeFrom.Add(-time.Second),
 			expectHeaderFetch:  false,
 		},
 		{
-			// Aligns with the cresettings default FeatureEVMWriteReportBlockTimestampActivePeriod.
 			name:               "execution timestamp within the default active period",
-			executionTimestamp: time.Date(2100, 6, 1, 0, 0, 0, 0, time.UTC),
+			executionTimestamp: activeFrom,
 			expectHeaderFetch:  true,
 		},
 	}
