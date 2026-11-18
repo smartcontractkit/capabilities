@@ -419,28 +419,13 @@ func (wr *writeReport) replyFromRecordedTransmission(
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 		return reply, wr.meteringFromReply(reply), nil
-	case TransmissionStateInvalidReceiver:
+	case TransmissionStateInvalidReceiver, TransmissionStateFailed:
 		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if hashErr != nil {
 			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
 				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
 			} else {
-				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash", "error", hashErr)
-			}
-			return nil, capabilities.ResponseMetadata{}, hashErr
-		}
-		reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, txHash, info, transmissionID)
-		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(info, transmissionID, err)
-		}
-		return reply, wr.meteringFromReply(reply), nil
-	case TransmissionStateFailed:
-		txHash, hashErr := txHashRetriever.GetFailedTransmissionHash(ctx)
-		if hashErr != nil {
-			if errors.Is(hashErr, ErrUnexpectedSuccessfulTransmission) {
-				wr.emitInvalidTransmissionState(ctx, request, telemetryContext, info, transmissionID, writeReportUnexpectedSuccessfulTransmissionMessage, hashErr.Error())
-			} else {
-				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission failed, but failed to retrieve its tx hash", "error", hashErr)
+				wr.lggr.Errorw("Returning without a transmission attempt - prior transmission did not succeed, but failed to retrieve its tx hash", "error", hashErr, "transmissionState", info.State)
 			}
 			return nil, capabilities.ResponseMetadata{}, hashErr
 		}
