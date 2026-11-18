@@ -236,7 +236,9 @@ func (wr *writeReport) execute(
 		}
 		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
-		if submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
+		// Only InvalidReceiver may return the local hash, because it is terminal so a single tx can
+		// record it, while Failed is retryable and must use the earliest failed hash so all nodes agree.
+		if postInfo.State == TransmissionStateInvalidReceiver && submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
 			wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", submitResp.TxHash, "transmissionState", postInfo.State)
 			reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, submitResp.TxHash, postInfo, transmissionID)
 			if err != nil {

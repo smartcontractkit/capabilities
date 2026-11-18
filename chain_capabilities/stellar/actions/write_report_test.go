@@ -808,10 +808,10 @@ func TestWriteReport_Submit(t *testing.T) {
 		h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 	})
 
-	t.Run("post-submit shows Failed from own tx - receiver revert error message", func(t *testing.T) {
+	t.Run("post-submit shows Failed from own tx - returns the earliest failed tx hash, not the local one", func(t *testing.T) {
 		t.Parallel()
 		h := newWriteReportHelper(t)
-		_, reqMeta, req := newWRReportFixture(t)
+		rm, reqMeta, req := newWRReportFixture(t)
 		h.expectSigningAccount(t, reqMeta, req)
 
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
@@ -820,17 +820,33 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(successSubmitResp(), nil).Once()
 		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
 			Return(transmissionResp(failedXDR(t)), nil).Once()
-		h.expectGetTransaction(t)
+
+		// A peer landed a failed transmission one ledger before this node's own failed tx.
+		// The forwarder allows a retry after Failed, so both are on chain.
+		const peerTxHash = "peerfailedtxhash"
+		events := reportProcessedEventsForFixture(t, rm, req.ContractId, false)
+		peerEvent := events.Events[0]
+		peerEvent.Ledger = events.Events[0].Ledger - 1
+		peerEvent.TransactionHash = peerTxHash
+		events.Events = append(events.Events, peerEvent)
+		h.svc.EXPECT().GetLatestLedger(mock.Anything).
+			Return(stellartypes.GetLatestLedgerResponse{Sequence: 200}, nil).Once()
+		h.svc.EXPECT().GetEvents(mock.Anything, mock.Anything).Return(events, nil).Once()
+		h.svc.EXPECT().GetTransaction(mock.Anything, stellartypes.GetTransactionRequest{TxHash: peerTxHash}).
+			Return(stellartypes.GetTransactionResponse{
+				FeeStroops:      testFee,
+				LedgerSequence:  99,
+				LedgerCloseTime: int64(testBlockTimestamp / 1_000_000),
+			}, nil).Once()
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.NotNil(t, result.Response.TxHash)
-		require.Equal(t, testTxHash, *result.Response.TxHash)
+		require.Equal(t, peerTxHash, *result.Response.TxHash)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Contains(t, *result.Response.ErrorMessage, "receiver contract execution failed")
 		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
-		h.svc.AssertNotCalled(t, "GetEvents", mock.Anything, mock.Anything)
 	})
 
 	t.Run("own TxFailed with unavailable canonical outcome returns error", func(t *testing.T) {
