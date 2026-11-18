@@ -3,9 +3,11 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+    open-pull-requests-limit: 0
     groups:
       minor-and-patch:
+        applies-to: "security-updates"
         patterns:
           - "*"
         update-types:
