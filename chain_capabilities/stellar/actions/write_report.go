@@ -159,16 +159,16 @@ func (wr *writeReport) execute(
 	}
 	simResp, err := wr.forwarderClient.SimulateReport(ctx, transmitter, request.ContractId, request.Report)
 	if err != nil {
-		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever,
+		return wr.determineOutcome(ctx, request, telemetryContext, transmissionID, txHashRetriever,
 			fmt.Errorf("%s pre-submit report simulation failed: %w", capcommon.UserError, err))
 	}
 	if simResp.Error != "" || !simResp.Success {
-		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever,
+		return wr.determineOutcome(ctx, request, telemetryContext, transmissionID, txHashRetriever,
 			fmt.Errorf("%s pre-submit report simulation indicated receiver cannot accept the report: %s", capcommon.UserError, simResp.Error))
 	}
 	// The forwarder can return Ok while recording receiver failure; verify the event too.
 	if err = wr.forwarderClient.ValidateReportSimulation(simResp, transmissionID); err != nil {
-		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever,
+		return wr.determineOutcome(ctx, request, telemetryContext, transmissionID, txHashRetriever,
 			fmt.Errorf("%s %w", capcommon.UserError, err))
 	}
 	if simResp.MinResourceFee > 0 {
@@ -186,7 +186,7 @@ func (wr *writeReport) execute(
 
 	submitResp, err := wr.forwarderClient.InvokeOnReport(ctx, transmitter, request.ContractId, request.Report, transmissionID, maxResourceFee)
 	if err != nil {
-		return wr.recordedOutcomeOr(ctx, request, telemetryContext, transmissionID, txHashRetriever, err)
+		return wr.determineOutcome(ctx, request, telemetryContext, transmissionID, txHashRetriever, err)
 	}
 	// Poll for the canonical on-chain transmission state. The forwarder may record the
 	// outcome after the tx confirms; retry until it is visible or the context expires.
@@ -454,10 +454,10 @@ func (wr *writeReport) replyFromRecordedTransmission(
 	}
 }
 
-// recordedOutcomeOr returns the recorded on-chain outcome when a peer's transmission landed
+// determineOutcome returns the recorded on-chain outcome when a peer's transmission landed
 // while this node was simulating or submitting, which makes the forwarder reject this node's
 // report (AlreadyProcessed). Otherwise it returns cause.
-func (wr *writeReport) recordedOutcomeOr(
+func (wr *writeReport) determineOutcome(
 	ctx context.Context,
 	request *stellarcap.WriteReportRequest,
 	telemetryContext monitoring.TelemetryContext,
