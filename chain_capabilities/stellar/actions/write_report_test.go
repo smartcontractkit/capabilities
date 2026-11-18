@@ -685,10 +685,75 @@ func TestWriteReport_Submit(t *testing.T) {
 			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
 			Return(nil, errors.New("TXM: context deadline exceeded")).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 
 		_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to submit forwarder report transaction")
+	})
+
+	t.Run("SubmitTransaction fails and transmission info read fails - submit error propagated", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		_, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t, reqMeta, req)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+			Return(nil, errors.New("submit transaction: pipeline failure")).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc unavailable")).Once()
+
+		_, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "submit transaction: pipeline failure")
+	})
+
+	t.Run("SubmitTransaction fails after a peer landed the report - returns the peer's success", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		rm, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t, reqMeta, req)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+			Return(nil, errors.New("submit transaction: pipeline failure")).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(succeededXDR(t)), nil).Once()
+		h.expectPostSubmitSuccessTxLookup(t, rm, req.ContractId)
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		rcSuccess := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
+		require.Equal(t, &rcSuccess, result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
+	})
+
+	t.Run("SubmitTransaction fails after a peer's transmission failed - returns the peer's revert", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		rm, reqMeta, req := newWRReportFixture(t)
+		h.expectSigningAccount(t, reqMeta, req)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().SubmitTransaction(mock.Anything, mock.Anything).
+			Return(nil, errors.New("submit transaction: pipeline failure")).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(failedXDR(t)), nil).Once()
+		h.expectPostSubmitFailedTxLookup(t, rm, req.ContractId)
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		rcReverted := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
+		require.Equal(t, &rcReverted, result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.ErrorMessage)
 	})
 
 	t.Run("post-submit poll fails - returns error without event-only success", func(t *testing.T) {
@@ -888,6 +953,10 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 		})).
 			Return(stellartypes.SimulateTransactionResponse{Error: "host function trapped"}, nil).Once()
 
+		// The transmission is still not recorded, so the simulation error stands.
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
 		require.NotNil(t, capErr)
@@ -909,6 +978,10 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 			return req.Function == forwarderReportFunction
 		})).
 			Return(stellartypes.SimulateTransactionResponse{Success: false, Error: "not a Wasm contract"}, nil).Once()
+
+		// The transmission is still not recorded, so the simulation error stands.
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
 
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
@@ -936,6 +1009,10 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 				EventsXDR: []string{reportProcessedEventXDR(t, transmissionID, false)},
 			}, nil).Once()
 
+		// The transmission is still not recorded, so the simulation error stands.
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
 		require.NotNil(t, capErr)
@@ -957,10 +1034,67 @@ func TestWriteReport_PreSubmitSimulationGate(t *testing.T) {
 		})).
 			Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc unavailable")).Once()
 
+		// The transmission is still not recorded, so the simulation error stands.
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+
 		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, result)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "pre-submit report simulation failed")
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("simulation rejected because a peer landed the report - returns the peer's success", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		rm, reqMeta, req := newWRReportFixture(t)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+			return req.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{Error: "HostError: Error(Contract, #13)"}, nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(succeededXDR(t)), nil).Once()
+		h.expectObservedTxHashLookup(t, rm, req.ContractId, true)
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, stellarcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		rcSuccess := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
+		require.Equal(t, &rcSuccess, result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.TxHash)
+		require.Equal(t, testTxHash, *result.Response.TxHash)
+		validateWRMetering(t, result.ResponseMetadata, testWRChainSelector, testFee)
+		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
+	})
+
+	t.Run("simulation RPC error after a peer's transmission failed - returns the peer's revert", func(t *testing.T) {
+		t.Parallel()
+		h := newWriteReportHelper(t)
+		rm, reqMeta, req := newWRReportFixture(t)
+
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(notAttemptedXDR(t)), nil).Once()
+		h.svc.EXPECT().GetSigningAccount(mock.Anything).
+			Return(signingAccountResp(), nil).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.MatchedBy(func(req stellartypes.SimulateTransactionRequest) bool {
+			return req.Function == forwarderReportFunction
+		})).
+			Return(stellartypes.SimulateTransactionResponse{}, errors.New("rpc unavailable")).Once()
+		h.svc.EXPECT().SimulateTransaction(mock.Anything, mock.Anything).
+			Return(transmissionResp(failedXDR(t)), nil).Once()
+		h.expectObservedTxHashLookup(t, rm, req.ContractId, false)
+
+		result, capErr := h.stellar.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		rcReverted := stellarcap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
+		require.Equal(t, &rcReverted, result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.ErrorMessage)
 		h.svc.AssertNotCalled(t, "SubmitTransaction", mock.Anything, mock.Anything)
 	})
 
