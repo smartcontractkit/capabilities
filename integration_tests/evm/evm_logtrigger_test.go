@@ -41,7 +41,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 
-	events2 "github.com/smartcontractkit/chainlink-protos/workflows/go/events"
+	eventsv2 "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 )
 
 // NonMatching is a constant string used to denote non-matching events in tests. This literal value must not be printed by the workflow
@@ -382,17 +382,9 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 		}
 
 		sawUnexpectedNonMatching := false
-		for index, logs := range workflowLogs {
-			// Each beholder UserLogs message typically carries one LogLine; bursty workflows
-			// may batch more than one. Treat anything other than 1 as a transient signal and
-			// retry rather than failing the test outright.
-			if len(logs) != 1 {
-				lggr.Infow("Beholder UserLogs message had unexpected line count, retrying", "index", index, "lineCount", len(logs))
-				return false
-			}
-			log := logs[0]
-			logMessage := log.GetMessage()
-			lggr.Infow("Beholder log line", "index", index, "message", logMessage, "nodeTimestamp", log.GetNodeTimestamp())
+		for index, log := range workflowLogs {
+			logMessage := log.GetMsg()
+			lggr.Infow("Beholder log line", "index", index, "message", logMessage, "nodeTimestamp", log.GetTimestamp())
 			for _, matchingMessage := range matchingMessages {
 				if strings.Contains(logMessage, matchingMessage) {
 					foundEventsByMessage[matchingMessage]++
@@ -552,18 +544,14 @@ func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowNam
 	require.NoError(t, err)
 }
 
-func getBeholderLogsForWorkflow(beholderTester beholdertest.Observer, t *testing.T) [][]*events2.LogLine {
-	var workflowLogs [][]*events2.LogLine
+func getBeholderLogsForWorkflow(beholderTester beholdertest.Observer, t *testing.T) []*eventsv2.WorkflowUserLog {
+	var workflowLogs []*eventsv2.WorkflowUserLog
 
-	userMsgs := beholderTester.Messages(t, "beholder_data_schema", "/cre-events-user-logs/v1")
-	if len(userMsgs) > 0 {
-		for _, userMsg := range userMsgs {
-			userLog := events2.UserLogs{}
-			err := proto.Unmarshal(userMsg.Body, &userLog)
-			require.NoError(t, err)
-			t.Logf("Beholder Observer logs: Payload.msg: %v\n", &userLog.LogLines)
-			workflowLogs = append(workflowLogs, userLog.LogLines)
-		}
+	for _, userMsg := range beholderTester.Messages(t, "beholder_data_schema", "/cre-events-user-logs/v2") {
+		userLog := &eventsv2.WorkflowUserLog{}
+		require.NoError(t, proto.Unmarshal(userMsg.Body, userLog))
+		t.Logf("Beholder Observer logs: Payload.msg: %v\n", userLog.GetMsg())
+		workflowLogs = append(workflowLogs, userLog)
 	}
 
 	return workflowLogs
