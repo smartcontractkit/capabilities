@@ -236,10 +236,8 @@ func (wr *writeReport) execute(
 		}
 		return reply, wr.meteringFromReply(reply), nil
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
-		// InvalidReceiver is terminal in the forwarder, so the transaction that recorded it is the
-		// only one and the local hash is safe. The forwarder allows a retry after Failed, so more
-		// than one node can land a failed transaction: every node must then return the same
-		// hash, which is the earliest failed transmission, not the local one.
+		// Only InvalidReceiver may return the local hash, because it is terminal so a single tx can
+		// record it, while Failed is retryable and must use the earliest failed hash so all nodes agree.
 		if postInfo.State == TransmissionStateInvalidReceiver && submitResp.TxStatus == stellartypes.TxSuccess && submitResp.TxHash != "" {
 			wr.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", submitResp.TxHash, "transmissionState", postInfo.State)
 			reply, err := wr.buildRevertReplyFromTx(ctx, request, telemetryContext, submitResp.TxHash, postInfo, transmissionID)
