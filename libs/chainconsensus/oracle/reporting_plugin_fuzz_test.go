@@ -30,11 +30,11 @@ const (
 func newFuzzPlugin(t *testing.T) *reportingPlugin {
 	t.Helper()
 	cfg := Config{
-		ReportingPluginConfig: ocr3types.ReportingPluginConfig{N: fuzzN, F: fuzzF},
-		MaxBatchSize:          10,
-		MaxObservationLength:  1 << 20,
-		MaxReportLengthBytes:  fuzzMaxReportLenBytes,
-		MaxReportCount:        fuzzMaxReportCount,
+		N: fuzzN, F: fuzzF,
+		MaxBatchSize:         10,
+		MaxObservationLength: 1 << 20,
+		MaxReportLengthBytes: fuzzMaxReportLenBytes,
+		MaxReportCount:       fuzzMaxReportCount,
 	}
 	p, err := newReportingPlugin(cfg, logger.Sugared(logger.Nop()), nil, nil, test.GetConsensusMetrics(t), limits.Factory{})
 	require.NoError(t, err)
