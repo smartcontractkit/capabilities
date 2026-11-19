@@ -34,9 +34,6 @@ func New(lggr logger.Logger, cfg resourcemanager.Config, chainSelector uint64, c
 	if !cfg.MeterRecordsEnabled {
 		return nil
 	}
-	// Dual logger: every line also emits as a Beholder event, so the meter's
-	// emission and error lines are structured and queryable like the workflow
-	// engine's. Without a configured client the emitter is a no-op.
 	lggr = logger.Sugared(custmsg.NewBeholderLogger(lggr, custmsg.NewLabelerWithEmitter(beholder.GetEmitter())))
 	rmCfg := cfg.ResourceManagerConfig
 	rmCfg.MeterSnapshotsEnabled = false
