@@ -15,6 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	commonmocks "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
@@ -24,21 +25,21 @@ import (
 // recordingTxEventEmitter captures emitted events so tests can assert on them.
 type recordingTxEventEmitter struct {
 	mu     sync.Mutex
-	events []*txevents.ChainTransactionObserved
+	events []*eventspb.ChainTransactionObserved
 	err    error
 }
 
-func (r *recordingTxEventEmitter) Emit(_ context.Context, ev *txevents.ChainTransactionObserved) error {
+func (r *recordingTxEventEmitter) Emit(_ context.Context, ev *eventspb.ChainTransactionObserved) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)
 	return r.err
 }
 
-func (r *recordingTxEventEmitter) recorded() []*txevents.ChainTransactionObserved {
+func (r *recordingTxEventEmitter) recorded() []*eventspb.ChainTransactionObserved {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]*txevents.ChainTransactionObserved(nil), r.events...)
+	return append([]*eventspb.ChainTransactionObserved(nil), r.events...)
 }
 
 func recordingEmitter(t *testing.T, service *EVM) *recordingTxEventEmitter {
@@ -52,7 +53,7 @@ func formatTxHash(h evmtypes.Hash) string {
 	return "0x" + hex.EncodeToString(h[:])
 }
 
-func recordedTxEvents(t *testing.T, service *EVM) []*txevents.ChainTransactionObserved {
+func recordedTxEvents(t *testing.T, service *EVM) []*eventspb.ChainTransactionObserved {
 	t.Helper()
 	return recordingEmitter(t, service).recorded()
 }
@@ -71,7 +72,7 @@ func TestWriteReport_EmitsChainTransactionObserved(t *testing.T) {
 			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2000)}, nil)
 	}
 
-	assertEvent := func(t *testing.T, ev *txevents.ChainTransactionObserved, fixture writeReportTestFixture, txHash evmtypes.Hash, status txevents.TxStatus) {
+	assertEvent := func(t *testing.T, ev *eventspb.ChainTransactionObserved, fixture writeReportTestFixture, txHash evmtypes.Hash, status eventspb.TxStatus) {
 		t.Helper()
 		require.Equal(t, fixture.metadata.WorkflowExecutionID, ev.WorkflowExecutionId)
 		require.Equal(t, fixture.metadata.WorkflowID, ev.WorkflowId)
@@ -97,7 +98,7 @@ func TestWriteReport_EmitsChainTransactionObserved(t *testing.T) {
 
 		events := recordedTxEvents(t, service)
 		require.Len(t, events, 1)
-		assertEvent(t, events[0], fixture, txHash, txevents.TxStatus_TX_STATUS_SUCCESS)
+		assertEvent(t, events[0], fixture, txHash, eventspb.TxStatus_TX_STATUS_SUCCESS)
 	})
 
 	t.Run("prior transmission with an invalid receiver is reported when it is billed", func(t *testing.T) {
@@ -116,7 +117,7 @@ func TestWriteReport_EmitsChainTransactionObserved(t *testing.T) {
 
 		events := recordedTxEvents(t, service)
 		require.Len(t, events, 1)
-		assertEvent(t, events[0], fixture, txHash, txevents.TxStatus_TX_STATUS_SUCCESS)
+		assertEvent(t, events[0], fixture, txHash, eventspb.TxStatus_TX_STATUS_SUCCESS)
 		mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
@@ -144,7 +145,7 @@ func TestWriteReport_EmitsChainTransactionObserved(t *testing.T) {
 
 		events := recordedTxEvents(t, service)
 		require.Len(t, events, 1)
-		assertEvent(t, events[0], fixture, txHash, txevents.TxStatus_TX_STATUS_SUCCESS)
+		assertEvent(t, events[0], fixture, txHash, eventspb.TxStatus_TX_STATUS_SUCCESS)
 	})
 
 	t.Run("duplicate transmission reports only the successful transaction that is billed", func(t *testing.T) {
@@ -169,7 +170,7 @@ func TestWriteReport_EmitsChainTransactionObserved(t *testing.T) {
 
 		events := recordedTxEvents(t, service)
 		require.Len(t, events, 1)
-		assertEvent(t, events[0], fixture, landedHash, txevents.TxStatus_TX_STATUS_SUCCESS)
+		assertEvent(t, events[0], fixture, landedHash, eventspb.TxStatus_TX_STATUS_SUCCESS)
 	})
 
 	t.Run("receipt lookup failure does not bill and does not emit", func(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -639,14 +640,14 @@ func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabiliti
 	return metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
 }
 
-func txStatusFromReply(s evm.TxStatus) txevents.TxStatus {
+func txStatusFromReply(s evm.TxStatus) eventspb.TxStatus {
 	switch s {
 	case evm.TxStatus_TX_STATUS_SUCCESS:
-		return txevents.TxStatus_TX_STATUS_SUCCESS
+		return eventspb.TxStatus_TX_STATUS_SUCCESS
 	case evm.TxStatus_TX_STATUS_REVERTED:
-		return txevents.TxStatus_TX_STATUS_REVERTED
+		return eventspb.TxStatus_TX_STATUS_REVERTED
 	default:
-		return txevents.TxStatus_TX_STATUS_UNSPECIFIED
+		return eventspb.TxStatus_TX_STATUS_UNSPECIFIED
 	}
 }
 

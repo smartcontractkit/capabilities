@@ -7,6 +7,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 )
 
 // Reporter emits at most one ChainTransactionObserved per write, for the transaction whose
@@ -47,13 +48,13 @@ func NewReporter(emitter Emitter, chainSelector uint64, md capabilities.RequestM
 
 // Charged emits the event for the transaction the write charges for. Later calls in the same
 // write are ignored, and an empty hash is skipped. Emission never changes the write outcome.
-func (r *Reporter) Charged(ctx context.Context, txHash string, status TxStatus) {
+func (r *Reporter) Charged(ctx context.Context, txHash string, status eventspb.TxStatus) {
 	if r == nil || r.emitted || txHash == "" {
 		return
 	}
 	r.emitted = true
 
-	ev := &ChainTransactionObserved{
+	ev := &eventspb.ChainTransactionObserved{
 		WorkflowExecutionId: r.metadata.WorkflowExecutionID,
 		WorkflowId:          r.metadata.WorkflowID,
 		ChainSelector:       r.chainSelector,

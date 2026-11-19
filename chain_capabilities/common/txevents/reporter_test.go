@@ -11,14 +11,15 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 )
 
 type recordingEmitter struct {
-	events []*ChainTransactionObserved
+	events []*eventspb.ChainTransactionObserved
 	err    error
 }
 
-func (r *recordingEmitter) Emit(_ context.Context, ev *ChainTransactionObserved) error {
+func (r *recordingEmitter) Emit(_ context.Context, ev *eventspb.ChainTransactionObserved) error {
 	r.events = append(r.events, ev)
 	return r.err
 }
@@ -36,7 +37,7 @@ func TestReporter(t *testing.T) {
 		require.Nil(t, NewReporter(nil, 1, testMetadata(), lggr))
 		require.Nil(t, NewReporter(NopEmitter{}, 1, testMetadata(), lggr))
 		var r *Reporter
-		r.Charged(ctx, "0xabc", TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
 	})
 
 	t.Run("emits the charged transaction once", func(t *testing.T) {
@@ -44,17 +45,17 @@ func TestReporter(t *testing.T) {
 		r := NewReporter(rec, 1, testMetadata(), logger.Test(t))
 		r.now = func() time.Time { return time.UnixMilli(1_700_000_000_000) }
 
-		r.Charged(ctx, "0xabc", TxStatus_TX_STATUS_SUCCESS)
-		r.Charged(ctx, "0xdef", TxStatus_TX_STATUS_REVERTED)
-		r.Charged(ctx, "", TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(ctx, "0xdef", eventspb.TxStatus_TX_STATUS_REVERTED)
+		r.Charged(ctx, "", eventspb.TxStatus_TX_STATUS_SUCCESS)
 
 		require.Len(t, rec.events, 1)
-		want := &ChainTransactionObserved{
+		want := &eventspb.ChainTransactionObserved{
 			WorkflowExecutionId: "exec-1",
 			WorkflowId:          "wf-id",
 			ChainSelector:       1,
 			TxHash:              "0xabc",
-			TxStatus:            TxStatus_TX_STATUS_SUCCESS,
+			TxStatus:            eventspb.TxStatus_TX_STATUS_SUCCESS,
 			ObservedAtMs:        1_700_000_000_000,
 		}
 		require.True(t, proto.Equal(want, rec.events[0]), "got %v", rec.events[0])
@@ -63,34 +64,34 @@ func TestReporter(t *testing.T) {
 	t.Run("survives emitter errors", func(t *testing.T) {
 		rec := &recordingEmitter{err: errors.New("chip down")}
 		r := NewReporter(rec, 1, testMetadata(), logger.Test(t))
-		r.Charged(ctx, "0xabc", TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
 		require.Len(t, rec.events, 1)
 
-		unavailable := NewReporter(EmitterFunc(func(context.Context, *ChainTransactionObserved) error {
+		unavailable := NewReporter(EmitterFunc(func(context.Context, *eventspb.ChainTransactionObserved) error {
 			return ErrEmitterUnavailable
 		}), 1, testMetadata(), logger.Test(t))
-		unavailable.Charged(ctx, "0xabc", TxStatus_TX_STATUS_SUCCESS)
+		unavailable.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
 	})
 
 	t.Run("emits even after the request context is done", func(t *testing.T) {
 		var gotCtx context.Context
-		r := NewReporter(EmitterFunc(func(ctx context.Context, _ *ChainTransactionObserved) error {
+		r := NewReporter(EmitterFunc(func(ctx context.Context, _ *eventspb.ChainTransactionObserved) error {
 			gotCtx = ctx
 			return nil
 		}), 1, testMetadata(), logger.Test(t))
 		cancelled, cancel := context.WithCancel(t.Context())
 		cancel()
-		r.Charged(cancelled, "0xabc", TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(cancelled, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
 		require.NotNil(t, gotCtx)
 		require.NoError(t, gotCtx.Err())
 	})
 }
 
 // EmitterFunc adapts a function to Emitter.
-type EmitterFunc func(ctx context.Context, event *ChainTransactionObserved) error
+type EmitterFunc func(ctx context.Context, event *eventspb.ChainTransactionObserved) error
 
 // Emit implements Emitter.
-func (f EmitterFunc) Emit(ctx context.Context, event *ChainTransactionObserved) error {
+func (f EmitterFunc) Emit(ctx context.Context, event *eventspb.ChainTransactionObserved) error {
 	return f(ctx, event)
 }
 
