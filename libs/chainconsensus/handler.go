@@ -212,7 +212,10 @@ func (s *handler) completeRequest(id string, reply types.Reply) error {
 	defer s.lock.Unlock()
 	request := s.requests.Get(id)
 	if request == nil {
-		if s.maxUnknownRequestsCacheSize > 0 && len(s.unknownRequestsResultByID) >= s.maxUnknownRequestsCacheSize {
+		if existing, ok := s.unknownRequestsResultByID[id]; ok {
+			// Replacing an entry must also drop its list element, otherwise the list outgrows the map and the cache cap.
+			s.unknownRequestsOrderedByTimeout.Remove(existing.Element)
+		} else if s.maxUnknownRequestsCacheSize > 0 && len(s.unknownRequestsResultByID) >= s.maxUnknownRequestsCacheSize {
 			s.lggr.Warnf("unknown requests cache is full, evicting oldest request")
 			if oldest := s.unknownRequestsOrderedByTimeout.Front(); oldest != nil {
 				delete(s.unknownRequestsResultByID, oldest.Value.ID)
