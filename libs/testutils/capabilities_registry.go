@@ -10,10 +10,11 @@ import (
 	"github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-var _ core.CapabilitiesRegistry = (*capabilitiesRegistry)(nil)
+var _ registry.CapabilitiesRegistry = (*capabilitiesRegistry)(nil)
 
 type capabilitiesRegistry struct {
 	core.UnimplementedCapabilitiesRegistry
