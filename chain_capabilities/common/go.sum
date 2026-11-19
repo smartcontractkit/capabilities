@@ -115,6 +115,8 @@ github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-202510021
 github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b/go.mod h1:qSTSwX3cBP3FKQwQacdjArqv0g6QnukjV4XuzO6UyoY=
 github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe h1:MDnY5wQbWTpFdDnMRicEnoMfSP5nM/KncARr4skP1ug=
 github.com/smartcontractkit/chainlink-protos/metering/go v0.0.0-20260710151514-27b5a126dabe/go.mod h1:z7lx7wI3XZ4u9kmUtAVdwn1BCC9T8aieWSDcuDgPTdQ=
+github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20261119151352-033d47887ddd h1:ZT90FLwxZriX+DxfgIfCdaFJ6Q5QQCYcXPYxnF9paSc=
+github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20261119151352-033d47887ddd/go.mod h1:9cjvCME22gVZthWieZDmjWbdWvwOzv0RPfPjAkqZ0oc=
 github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342 h1:pEcgcjTGA83MzpqbTbyIg9AJrOs62s77SooDdJGIg9w=
 github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342/go.mod h1:5JPtsRwjugpyfsdEALC4RopfvohqK/G+3DHaR8uv+Bc=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

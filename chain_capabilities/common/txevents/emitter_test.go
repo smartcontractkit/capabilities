@@ -10,21 +10,22 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/durableemitter"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 )
 
-func testEvent() *ChainTransactionObserved {
-	return &ChainTransactionObserved{
+func testEvent() *eventspb.ChainTransactionObserved {
+	return &eventspb.ChainTransactionObserved{
 		WorkflowExecutionId: "exec-1",
 		WorkflowId:          "wf-1",
 		ChainSelector:       16015286601757825753,
 		TxHash:              "0xabc",
-		TxStatus:            TxStatus_TX_STATUS_REVERTED,
+		TxStatus:            eventspb.TxStatus_TX_STATUS_REVERTED,
 		ObservedAtMs:        1,
 	}
 }
 
 func TestEntityType(t *testing.T) {
-	require.Equal(t, "chain_capabilities.txevents.v1.ChainTransactionObserved", EntityType())
+	require.Equal(t, "workflows.v2.ChainTransactionObserved", EntityType())
 }
 
 func TestKey(t *testing.T) {
@@ -32,9 +33,9 @@ func TestKey(t *testing.T) {
 	require.Equal(t, "16015286601757825753:0xabc", Key(ev))
 
 	// The key depends only on the transaction, not on who observed it, when, or what it reported.
-	other := proto.Clone(ev).(*ChainTransactionObserved)
+	other := proto.Clone(ev).(*eventspb.ChainTransactionObserved)
 	other.ObservedAtMs = 42
-	other.TxStatus = TxStatus_TX_STATUS_SUCCESS
+	other.TxStatus = eventspb.TxStatus_TX_STATUS_SUCCESS
 	other.WorkflowExecutionId = "exec-2"
 	require.Equal(t, Key(ev), Key(other))
 
@@ -74,7 +75,7 @@ func TestDurableEmitter_Emit(t *testing.T) {
 		ev := testEvent()
 		require.NoError(t, d.Emit(t.Context(), ev))
 
-		var decoded ChainTransactionObserved
+		var decoded eventspb.ChainTransactionObserved
 		require.NoError(t, proto.Unmarshal(gotBody, &decoded))
 		require.True(t, proto.Equal(ev, &decoded))
 		require.Equal(t, []any{

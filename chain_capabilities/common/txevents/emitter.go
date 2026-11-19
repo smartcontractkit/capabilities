@@ -15,6 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/durableemitter"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 )
 
 const (
@@ -37,7 +38,7 @@ const (
 // It is a function because the generated proto registers itself in an init function that runs
 // after package-level variables are initialised.
 func EntityType() string {
-	return string(proto.MessageName(&ChainTransactionObserved{}))
+	return string(proto.MessageName(&eventspb.ChainTransactionObserved{}))
 }
 
 // ErrEmitterUnavailable is returned when the process has no durable emitter, which is the case
@@ -78,24 +79,24 @@ func GlobalSink() Sink {
 
 // Emitter publishes ChainTransactionObserved events.
 type Emitter interface {
-	Emit(ctx context.Context, event *ChainTransactionObserved) error
+	Emit(ctx context.Context, event *eventspb.ChainTransactionObserved) error
 }
 
 // NopEmitter discards events. Used when transaction events are disabled.
 type NopEmitter struct{}
 
 // Emit implements Emitter.
-func (NopEmitter) Emit(context.Context, *ChainTransactionObserved) error { return nil }
+func (NopEmitter) Emit(context.Context, *eventspb.ChainTransactionObserved) error { return nil }
 
 // Key identifies the transaction independently of the node that observed it. Every node that
 // saw the same transaction produces the same key, so ChIP and the Blockchain Finality Service
 // can dedup on it. It is used both as the CloudEvent subject and as the idempotency key.
-func Key(ev *ChainTransactionObserved) string {
+func Key(ev *eventspb.ChainTransactionObserved) string {
 	return fmt.Sprintf("%d:%s", ev.GetChainSelector(), ev.GetTxHash())
 }
 
 // LogKVs returns the event's identifying fields as logger key/values.
-func LogKVs(ev *ChainTransactionObserved) []any {
+func LogKVs(ev *eventspb.ChainTransactionObserved) []any {
 	return []any{
 		"txHash", ev.GetTxHash(),
 		"chainSelector", ev.GetChainSelector(),
@@ -138,7 +139,7 @@ func NewDurableEmitter(lggr logger.Logger, domain string, sink Sink) (*DurableEm
 
 // Emit implements Emitter. When the sink reports ErrEmitterUnavailable the event is counted as
 // dropped and the condition is logged once per process.
-func (d *DurableEmitter) Emit(ctx context.Context, ev *ChainTransactionObserved) error {
+func (d *DurableEmitter) Emit(ctx context.Context, ev *eventspb.ChainTransactionObserved) error {
 	if ev == nil {
 		return errors.New("nil ChainTransactionObserved")
 	}
@@ -193,15 +194,15 @@ func newEmitterMetrics() (*emitterMetrics, error) {
 	return &emitterMetrics{emitted: emitted, errors: errs}, nil
 }
 
-func (m *emitterMetrics) recordEmitted(ctx context.Context, ev *ChainTransactionObserved) {
+func (m *emitterMetrics) recordEmitted(ctx context.Context, ev *eventspb.ChainTransactionObserved) {
 	m.emitted.Add(ctx, 1, metric.WithAttributes(eventAttrs(ev)...))
 }
 
-func (m *emitterMetrics) recordError(ctx context.Context, ev *ChainTransactionObserved, reason string) {
+func (m *emitterMetrics) recordError(ctx context.Context, ev *eventspb.ChainTransactionObserved, reason string) {
 	m.errors.Add(ctx, 1, metric.WithAttributes(append(eventAttrs(ev), attribute.String("reason", reason))...))
 }
 
-func eventAttrs(ev *ChainTransactionObserved) []attribute.KeyValue {
+func eventAttrs(ev *eventspb.ChainTransactionObserved) []attribute.KeyValue {
 	return []attribute.KeyValue{
 		attribute.String("chain_selector", strconv.FormatUint(ev.GetChainSelector(), 10)),
 		attribute.String("tx_status", ev.GetTxStatus().String()),
