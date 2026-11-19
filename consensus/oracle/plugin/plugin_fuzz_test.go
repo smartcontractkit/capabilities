@@ -163,7 +163,7 @@ type fuzzCase struct {
 
 func sanitizeIDs(ids string) []string {
 	var out []string
-	for _, id := range strings.Split(strings.ToValidUTF8(ids, "?"), ",") {
+	for id := range strings.SplitSeq(strings.ToValidUTF8(ids, "?"), ",") {
 		if id != "" {
 			out = append(out, id)
 		}
@@ -323,9 +323,7 @@ func requireOutcomeInvariants(t *testing.T, c fuzzCase, raw, prev []byte, seqNr 
 	}
 
 	wantHistory := map[string]uint64{}
-	for id, s := range previousHistory {
-		wantHistory[id] = s
-	}
+	maps.Copy(wantHistory, previousHistory)
 	for id := range outcomeIDs {
 		wantHistory[id] = seqNr
 	}
