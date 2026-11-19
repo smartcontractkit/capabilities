@@ -18,7 +18,6 @@ import (
 
 	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	httpclient "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
@@ -30,6 +29,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/connector"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 const (
@@ -137,7 +137,7 @@ func setupMultiDonRoutingEnv(
 
 	httpCapability := httpcap.NewService(lggr, limits.Factory{
 		Logger:   lggr,
-		Meter:    beholder.GetMeter(),
+		Meter:    noop.NewMeterProvider().Meter("test"),
 		Settings: settingsGetter,
 	})
 	err = httpCapability.Initialise(ctx, core.StandardCapabilitiesDependencies{
