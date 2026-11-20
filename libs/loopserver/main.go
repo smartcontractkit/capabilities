@@ -57,6 +57,12 @@ type settingsInterceptor struct {
 func (i *settingsInterceptor) Initialise(ctx context.Context, deps core.StandardCapabilitiesDependencies) error {
 	if deps.CRESettings != nil {
 		go settings.Follow(context.WithoutCancel(ctx), i.lggr, deps.CRESettings, i.settings)
+	} else {
+		// The host's pushed settings never reach this process, so every limit
+		// and feature flag resolves to its compiled-in default. Loud, because
+		// the failure is silent downstream: capabilities meter and gate on
+		// defaults that the operators believe they have overridden.
+		i.lggr.Errorw("Host provided no CRE settings; every setting stays at its compiled-in default")
 	}
 	return i.StandardCapabilities.Initialise(ctx, deps)
 }
