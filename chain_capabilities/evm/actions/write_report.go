@@ -638,10 +638,6 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 	}, nil
 }
 
-// meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
-// in the reply, so that every node reports the gas spent on chain, regardless of which node
-// transmitted. Deriving it from the reply guarantees the metered fee matches the reply's
-// TransactionFee. An absent fee yields empty metadata.
 // recoverSuccessFromLogs answers from the transmission logs when the state
 // read is stale or the poll stalled: a successful tx in the logs is ground
 // truth, so its receipt is fetched and metered like the normal success path.
@@ -665,6 +661,10 @@ func (e *WriteReport) recoverSuccessFromLogs(ctx context.Context, metadata capab
 	return reply, e.meteringFromReply(ctx, metadata, reply), true
 }
 
+// meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
+// in the reply, so that every node reports the gas spent on chain, regardless of which node
+// transmitted. Deriving it from the reply guarantees the metered fee matches the reply's
+// TransactionFee. An absent fee yields empty metadata.
 func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabilities.RequestMetadata, reply *evm.WriteReportReply) capabilities.ResponseMetadata {
 	feeInWei := pb.NewIntFromBigInt(reply.TransactionFee)
 	if feeInWei == nil {
