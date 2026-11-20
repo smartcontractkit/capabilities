@@ -37,6 +37,18 @@ func TestSettingsServiceWithoutAURL(t *testing.T) {
 	require.NoError(t, s.Close())
 }
 
+// TestSettingsURLFollowsTheHostEnvVar covers the host's contract: it picks the settings address at
+// launch and exports it as CL_SETTINGS_URL, so the env var fills in where the config cannot.
+func TestSettingsURLFollowsTheHostEnvVar(t *testing.T) {
+	assert.Empty(t, settingsURL(SettingsConfig{}), "no config and no env var resolves to nothing")
+
+	t.Setenv("CL_SETTINGS_URL", "localhost:9001")
+	assert.Equal(t, "localhost:9001", settingsURL(SettingsConfig{}), "the env var is the fallback")
+
+	assert.Equal(t, "localhost:9002", settingsURL(SettingsConfig{URL: "localhost:9002"}),
+		"an explicit config URL wins over the env var")
+}
+
 // TestSettingsServiceFollowsTheHost covers --settings.url end to end, against the settings server the
 // node runs: the host stores new settings, and a limit made from this process's factory resolves
 // against them.

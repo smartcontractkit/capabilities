@@ -3,6 +3,7 @@ package capability
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"google.golang.org/grpc"
 
@@ -21,6 +22,16 @@ type SettingsConfig struct {
 	// URL is the gRPC target of the host's CRE settings service (e.g. localhost:9001), which pushes
 	// settings updates to this process. Unset leaves every limit at its compiled-in default.
 	URL string
+}
+
+// settingsURL resolves the address to follow the host's CRE settings at. The host picks its
+// settings gRPC address at launch and exports it as CL_SETTINGS_URL, so a config file cannot name
+// it in advance - the env var is the fallback when the config does not set a URL.
+func settingsURL(cfg SettingsConfig) string {
+	if cfg.URL != "" {
+		return cfg.URL
+	}
+	return os.Getenv("CL_SETTINGS_URL")
 }
 
 // settingsService holds this process's CRE settings and, when the host serves them, keeps them

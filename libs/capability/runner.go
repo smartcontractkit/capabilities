@@ -103,7 +103,7 @@ func (r runner) run(ctx context.Context) error {
 	// telemetry providers when you make them.
 	grpcOpts := r.cfg.grpc.New(lggr)
 
-	settings, err := startSettings(ctx, lggr, r.cfg.settings, grpcOpts)
+	settings, err := startSettings(ctx, lggr, SettingsConfig{URL: settingsURL(r.cfg.settings)}, grpcOpts)
 	if err != nil {
 		return fmt.Errorf("failed to start settings: %w", err)
 	}
