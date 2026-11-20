@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -162,7 +163,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(contracts.TransmissionStateSucceeded)), nil
 	case contracts.TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
@@ -181,7 +182,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			// though the receipt/fee lookup failed (e.g. flaky RPC), as a user error.
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(transmissionInfo.State)), nil
 	case contracts.TransmissionStateFailed:
 		decision, err := e.assessFailedTransmission(ctx, request, transmissionInfo, txHashRetriever, telemetryContext, userProvidedGas)
 		if err != nil {
@@ -198,7 +199,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				// reason even if the receipt/fee lookup failed, as a user error.
 				return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
 			}
-			return reply, e.meteringFromReply(ctx, metadata, reply), nil
+			return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(transmissionInfo.State)), nil
 		}
 		monitoring.LogAndEmitSuccess(ctx, "Retrying a failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, decision.receiverGasBudget, transmissionInfo.GasLimit, queuePosition))
@@ -257,7 +258,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(newTransmissionInfo.State)), nil
 	case contracts.TransmissionStateFailed, contracts.TransmissionStateInvalidReceiver:
 		txHash := &transactionResult.TxHash
 		// if this is a re-attempt find the original failed tx hash
@@ -281,7 +282,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			// user learns the cause even if the receipt/fee lookup failed, as a user error.
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(newTransmissionInfo, transmissionID, err)
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(newTransmissionInfo.State)), nil
 	default:
 		errorMsg := getInvalidStateErrorMessage(newTransmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, fmt.Sprintf("WriteReport invalid transmission state with tx status: %d", transactionResult.TxStatus), errorMsg))
@@ -629,15 +630,31 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 // in the reply, so that every node reports the gas spent on chain, regardless of which node
 // transmitted. Deriving it from the reply guarantees the metered fee matches the reply's
 // TransactionFee. An absent fee yields empty metadata.
-func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabilities.RequestMetadata, reply *evm.WriteReportReply) capabilities.ResponseMetadata {
+func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabilities.RequestMetadata, reply *evm.WriteReportReply, outcome eventspb.TransmissionOutcome) capabilities.ResponseMetadata {
 	feeInWei := pb.NewIntFromBigInt(reply.TransactionFee)
 	if feeInWei == nil {
 		e.lggr.Warnw("Transaction fee unavailable in reply; skipping metering", "txHash", hex.EncodeToString(reply.TxHash))
 		return capabilities.ResponseMetadata{}
 	}
 	e.gasMeter.Emit(ctx, metadata, hex.EncodeToString(reply.TxHash), feeInWei)
-	e.txReporter.Charged(ctx, "0x"+hex.EncodeToString(reply.TxHash), txStatusFromReply(reply.TxStatus))
+	e.txReporter.Charged(ctx, hexutil.Encode(reply.TxHash), txStatusFromReply(reply.TxStatus), outcome)
 	return metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
+}
+
+// transmissionOutcomeFromState maps the forwarder's transmission state to the event outcome.
+func transmissionOutcomeFromState(state contracts.TransmissionState) eventspb.TransmissionOutcome {
+	switch state {
+	case contracts.TransmissionStateSucceeded:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED
+	case contracts.TransmissionStateFailed:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_RECEIVER_REVERTED
+	case contracts.TransmissionStateInvalidReceiver:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_INVALID_RECEIVER
+	case contracts.TransmissionStateNotAttempted:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_NOT_ATTEMPTED
+	default:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_UNSPECIFIED
+	}
 }
 
 func txStatusFromReply(s evm.TxStatus) eventspb.TxStatus {

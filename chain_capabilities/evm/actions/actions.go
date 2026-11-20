@@ -70,17 +70,8 @@ type EVM struct {
 	txEvents txevents.Emitter
 }
 
-// Option configures optional behaviour of the EVM capability.
-type Option func(*EVM)
-
-// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
-// disables emission.
-func WithTxEvents(emitter txevents.Emitter) Option {
-	return func(e *EVM) { e.txEvents = emitter }
-}
-
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, opts ...Option) (*EVM, caperrors.Error) {
+	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.FailedPrecondition)
@@ -105,9 +96,6 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		transmissionScheduler:    transmissionScheduler,
 		txEvents:                 txevents.NopEmitter{},
 	}
-	for _, opt := range opts {
-		opt(e)
-	}
 	err = e.initLimiters(limitsFactory)
 	if err != nil {
 		return e, caperrors.NewPublicSystemError(err, caperrors.Internal)
@@ -120,6 +108,12 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 // A nil meter disables emission.
 func (e *EVM) WithGasMeter(m *gasmeter.Meter) {
 	e.gasMeter = m
+}
+
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func (e *EVM) WithTxEvents(emitter txevents.Emitter) {
+	e.txEvents = emitter
 }
 
 func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
