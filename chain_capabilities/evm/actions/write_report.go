@@ -35,6 +35,10 @@ import (
 
 const UnknownIssueExecutingReceiverContractMessage = "receiver contract execution failure"
 
+// finalReceiptCheckTimeout bounds the last-chance log scan + receipt fetch
+// after a transmission poll failed or timed out on a stalled view.
+const finalReceiptCheckTimeout = 10 * time.Second
+
 // ErrUnexpectedSuccessfulTransmission indicates we expected a failed transmission but found a successful one
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
 
@@ -135,6 +139,13 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
 	transmissionInfo, err := e.pollTransmissionInfo(ctx, request, telemetryContext, transmissionID, queuePosition, txHashRetriever)
 	if err != nil {
+		// The poll can stall or time out on a stale view while the tx lands on
+		// chain; one bounded re-scan on a fresh deadline before erroring.
+		reply, metering, recovered := e.recoverSuccessFromLogs(ctx, metadata, txHashRetriever)
+		if recovered {
+			e.lggr.Infow("Transmission poll failed but a successful transmission was found; returning success", "error", err.Error())
+			return reply, metering, nil
+		}
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
@@ -159,6 +170,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
 			if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
+				// Stale state read: trust the successful tx in the logs.
+				if reply, metering, ok := e.recoverSuccessFromLogs(ctx, metadata, txHashRetriever); ok {
+					e.lggr.Infow("State said receiver invalid but a successful transmission was found; returning success")
+					return reply, metering, nil
+				}
 				monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 			} else {
 				e.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash")
@@ -257,6 +273,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			originalTxHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 			if err != nil {
 				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
+					// Stale state read: trust the successful tx in the logs.
+					if reply, metering, ok := e.recoverSuccessFromLogs(ctx, metadata, txHashRetriever); ok {
+						e.lggr.Infow("New attempt failed but a prior successful transmission was found; returning success")
+						return reply, metering, nil
+					}
 					monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 				} else {
 					e.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve the first transmission tx hash", "error", err.Error(), "originalTxGasLimit", transmissionInfo.GasLimit, "transmissionState", newTransmissionInfo.State.String(), "txHash", common.Bytes2Hex(txHash[:]))
@@ -615,6 +636,29 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
 	}, nil
+}
+
+// recoverSuccessFromLogs answers from the transmission logs when the state
+// read is stale or the poll stalled: a successful tx in the logs is ground
+// truth, so its receipt is fetched and metered like the normal success path.
+// ok=false when the logs hold no successful tx or its receipt is unreadable.
+func (e *WriteReport) recoverSuccessFromLogs(ctx context.Context, metadata capabilities.RequestMetadata, txHashRetriever TxHashRetriever) (*evm.WriteReportReply, capabilities.ResponseMetadata, bool) {
+	if ctx.Err() != nil {
+		// A dead poll ctx must not kill the last-chance receipt check.
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalReceiptCheckTimeout)
+		defer cancel()
+		ctx = fctx
+	}
+	txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
+	if err != nil {
+		return nil, capabilities.ResponseMetadata{}, false
+	}
+	reply, err := e.buildSuccessReply(ctx, *txHash)
+	if err != nil {
+		e.lggr.Warnw("Successful transmission found but its receipt could not be fetched", "error", err)
+		return nil, capabilities.ResponseMetadata{}, false
+	}
+	return reply, e.meteringFromReply(ctx, metadata, reply), true
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain transaction fee contained

@@ -673,6 +673,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		mockForwarderClient.
 			On("GetTransmissionInfo", mock.Anything, mock.Anything).
 			Return(contracts.TransmissionInfo{}, errors.New(errorMsg))
+		// The final receipt check scans the logs once and finds no success.
+		mockForwarderClient.On("GetReportProcessedEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil)
 
 		fixture := newWriteReportTestFixture(t)
 		_, err := service.WriteReport(ctx, fixture.metadata, fixture.request)
@@ -2794,6 +2796,8 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 		// Will be retried until context timeout
 		expectedError := "transmission info error"
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
+		// The final receipt check scans the logs once and finds no success.
+		mockForwarderClient.On("GetReportProcessedEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil)
 
 		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
 		require.Error(t, err)
@@ -2802,6 +2806,76 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 		require.NotContains(t, err.Error(), "context deadline exceeded")
 		require.Nil(t, reply)
 		require.Empty(t, responseMetadata.Metering)
+	})
+
+	t.Run("Poll failure with a successful transmission in the logs recovers and meters", func(t *testing.T) {
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		fixture := newWriteReportTestFixture(t)
+
+		// The node's transmission-info view stalls until the request times out.
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
+		ctx = contexts.WithCRE(ctx, contexts.CRE{Workflow: "wf-id"})
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).Return(contracts.TransmissionInfo{}, errors.New("stale view"))
+
+		// The tx landed on chain anyway: the logs hold a success.
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		expectSuccessfulTransmissionEvent(t, mockForwarderClient, txHash)
+
+		receipt := evmtypes.Receipt{
+			Status:            uint64(contracts.TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+		require.NoError(t, err)
+		require.NotNil(t, reply)
+		require.Equal(t, evm.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
+		evmtest.ValidateMeteringWriteReport(t, responseMetadata, 1, "0.000000000000002", "2000")
+	})
+
+	t.Run("InvalidReceiver state with an unexpected successful transmission returns success and meters", func(t *testing.T) {
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		fixture := newWriteReportTestFixture(t)
+
+		// The state read is stale: it says receiver invalid, but the logs say the write succeeded.
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).Return(contracts.TransmissionInfo{
+			InvalidReceiver: true,
+			State:           contracts.TransmissionStateInvalidReceiver,
+		}, nil)
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		// Scanned twice: once by the failed-hash lookup, once by the recovery.
+		mockForwarderClient.On("GetReportProcessedEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
+
+		receipt := evmtypes.Receipt{
+			Status:            uint64(contracts.TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+		require.NoError(t, err)
+		require.NotNil(t, reply)
+		require.Equal(t, evm.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
+		evmtest.ValidateMeteringWriteReport(t, responseMetadata, 1, "0.000000000000002", "2000")
 	})
 }
 
