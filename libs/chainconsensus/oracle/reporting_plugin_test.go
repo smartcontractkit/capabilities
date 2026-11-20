@@ -1018,6 +1018,34 @@ func TestOutcome(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:       "repeated request IDs in the query produce a single outcome each, in first-seen order",
+			requestIDs: []string{"request_2", "request_1", "request_2", "request_1", "request_2"},
+			nodesObservations: func() []types.Observation {
+				nodeObservations := func() types.Observation {
+					return types.Observation{
+						Observations: map[string]*types.RequestObservation{
+							"request_1": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+							"request_2": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
+						},
+					}
+				}
+				return []types.Observation{nodeObservations(), nodeObservations(), nodeObservations()}
+			}(),
+			expectedOutcome: &types.Outcome{
+				ChainHeight: chainHeight,
+				Outcomes: []*types.RequestOutcome{
+					{
+						RequestID: "request_2",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value2")},
+					},
+					{
+						RequestID: "request_1",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value1")},
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
