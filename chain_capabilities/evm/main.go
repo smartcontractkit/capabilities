@@ -25,6 +25,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -178,12 +179,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
+	txEmitter, err := txevents.NewEmitter(c.lggr, cfg.TxEvents)
+	if err != nil {
+		return err
+	}
 	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, capabilityDonID)
 	c.WithGasMeter(c.gasMeter)
+	c.WithTxEvents(txEmitter)
 
 	// TODO: add org resolver
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
@@ -269,6 +275,8 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
+
+	cfg.TxEvents = cfg.TxEvents.Normalized()
 
 	// DeltaStage is optional - if not set, transmission scheduling will be disabled
 	return &cfg, nil

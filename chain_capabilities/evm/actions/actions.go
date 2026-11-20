@@ -33,6 +33,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
@@ -64,6 +65,9 @@ type EVM struct {
 	writeReportL1FeeActive                     limits.RangeLimiter[commoncfg.Timestamp]
 
 	transmissionScheduler ts.TransmissionScheduler
+
+	// txEvents publishes ChainTransactionObserved events for the Transactions Viewer.
+	txEvents txevents.Emitter
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
@@ -90,6 +94,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		consensusHandler:         handler,
 		chainSelector:            chainSelector,
 		transmissionScheduler:    transmissionScheduler,
+		txEvents:                 txevents.NopEmitter{},
 	}
 	err = e.initLimiters(limitsFactory)
 	if err != nil {
@@ -103,6 +108,12 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 // A nil meter disables emission.
 func (e *EVM) WithGasMeter(m *gasmeter.Meter) {
 	e.gasMeter = m
+}
+
+// WithTxEvents sets the emitter for ChainTransactionObserved events. A nil or NopEmitter
+// disables emission.
+func (e *EVM) WithTxEvents(emitter txevents.Emitter) {
+	e.txEvents = emitter
 }
 
 func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
