@@ -32,6 +32,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
@@ -72,6 +73,10 @@ type WriteReport struct {
 	transmissionScheduler ts.TransmissionScheduler
 
 	gasMeter *gasmeter.Meter
+
+	// txReporter emits ChainTransactionObserved for the transaction this write bills.
+	// Nil when transaction events are disabled.
+	txReporter *txevents.Reporter
 }
 
 func (s *Solana) WriteReport(
@@ -126,6 +131,7 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		messageBuilder:           s.messageBuilder,
 		transmissionScheduler:    s.transmissionScheduler,
 		gasMeter:                 s.gasMeter,
+		txReporter:               txevents.NewReporter(s.txEvents, s.chainSelector, metadata, s.lggr),
 	}
 
 	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
@@ -615,33 +621,44 @@ func (wr *WriteReport) pollTransmissionInfo(
 // A fee lookup failure is surfaced via monitoring and yields empty metadata instead of
 // failing the reply.
 func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature) capabilities.ResponseMetadata {
-	feeInLamports, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (uint64, error) {
-		return wr.getFee(ctx, sig)
+	charged, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (feeAndStatus, error) {
+		fee, txStatus, feeErr := wr.getFee(ctx, sig)
+		return feeAndStatus{fee: fee, status: txStatus}, feeErr
 	})
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, sig, err.Error()))
 		return capabilities.ResponseMetadata{}
 	}
-	wr.gasMeter.Emit(ctx, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(feeInLamports))
-	return metering.GetResponseMetadataWriteReport(feeInLamports, wr.chainSelector)
+	wr.gasMeter.Emit(ctx, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(charged.fee))
+	wr.txReporter.Charged(ctx, sig.String(), charged.status)
+	return metering.GetResponseMetadataWriteReport(charged.fee, wr.chainSelector)
 }
 
-func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, error) {
+type feeAndStatus struct {
+	fee    uint64
+	status txevents.TxStatus
+}
+
+func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, txevents.TxStatus, error) {
 	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
-		return 0, fmt.Errorf("failed to get transaction: %w", err)
+		return 0, txevents.TxStatus_TX_STATUS_UNSPECIFIED, fmt.Errorf("failed to get transaction: %w", err)
 	}
 	if tx == nil {
-		return 0, errors.New("failed to get transaction fee: empty transaction response")
+		return 0, txevents.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction response")
 	}
 	if tx.Meta == nil {
-		return 0, errors.New("failed to get transaction fee: empty transaction meta")
+		return 0, txevents.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction meta")
 	}
 
 	feeInLamports := tx.Meta.Fee
+	status := txevents.TxStatus_TX_STATUS_SUCCESS
+	if tx.Meta.Err != "" {
+		status = txevents.TxStatus_TX_STATUS_REVERTED
+	}
 
-	wr.lggr.Debugw("WriteReport fee", "feeInLamports", feeInLamports)
-	return feeInLamports, nil
+	wr.lggr.Debugw("WriteReport fee", "feeInLamports", feeInLamports, "txStatus", status.String())
+	return feeInLamports, status, nil
 }
 
 func (wr *WriteReport) successWriteReportReply(sig *solana.Signature) *solcap.WriteReportReply {
