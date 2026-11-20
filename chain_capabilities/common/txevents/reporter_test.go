@@ -37,7 +37,7 @@ func TestReporter(t *testing.T) {
 		require.Nil(t, NewReporter(nil, 1, testMetadata(), lggr))
 		require.Nil(t, NewReporter(NopEmitter{}, 1, testMetadata(), lggr))
 		var r *Reporter
-		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED)
 	})
 
 	t.Run("emits the charged transaction once", func(t *testing.T) {
@@ -45,9 +45,9 @@ func TestReporter(t *testing.T) {
 		r := NewReporter(rec, 1, testMetadata(), logger.Test(t))
 		r.now = func() time.Time { return time.UnixMilli(1_700_000_000_000) }
 
-		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
-		r.Charged(ctx, "0xdef", eventspb.TxStatus_TX_STATUS_REVERTED)
-		r.Charged(ctx, "", eventspb.TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED)
+		r.Charged(ctx, "0xdef", eventspb.TxStatus_TX_STATUS_REVERTED, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED)
+		r.Charged(ctx, "", eventspb.TxStatus_TX_STATUS_SUCCESS, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED)
 
 		require.Len(t, rec.events, 1)
 		want := &eventspb.ChainTransactionObserved{
@@ -57,6 +57,8 @@ func TestReporter(t *testing.T) {
 			TxHash:              "0xabc",
 			TxStatus:            eventspb.TxStatus_TX_STATUS_SUCCESS,
 			ObservedAtMs:        1_700_000_000_000,
+			IsBilled:            true,
+			TransmissionOutcome: eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED,
 		}
 		require.True(t, proto.Equal(want, rec.events[0]), "got %v", rec.events[0])
 	})
@@ -64,13 +66,13 @@ func TestReporter(t *testing.T) {
 	t.Run("survives emitter errors", func(t *testing.T) {
 		rec := &recordingEmitter{err: errors.New("chip down")}
 		r := NewReporter(rec, 1, testMetadata(), logger.Test(t))
-		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED)
 		require.Len(t, rec.events, 1)
 
 		unavailable := NewReporter(EmitterFunc(func(context.Context, *eventspb.ChainTransactionObserved) error {
 			return ErrEmitterUnavailable
 		}), 1, testMetadata(), logger.Test(t))
-		unavailable.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
+		unavailable.Charged(ctx, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED)
 	})
 
 	t.Run("emits even after the request context is done", func(t *testing.T) {
@@ -81,7 +83,7 @@ func TestReporter(t *testing.T) {
 		}), 1, testMetadata(), logger.Test(t))
 		cancelled, cancel := context.WithCancel(t.Context())
 		cancel()
-		r.Charged(cancelled, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS)
+		r.Charged(cancelled, "0xabc", eventspb.TxStatus_TX_STATUS_SUCCESS, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED)
 		require.NotNil(t, gotCtx)
 		require.NoError(t, gotCtx.Err())
 	})

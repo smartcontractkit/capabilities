@@ -48,7 +48,7 @@ func NewReporter(emitter Emitter, chainSelector uint64, md capabilities.RequestM
 
 // Charged emits the event for the transaction the write charges for. Later calls in the same
 // write are ignored, and an empty hash is skipped. Emission never changes the write outcome.
-func (r *Reporter) Charged(ctx context.Context, txHash string, status eventspb.TxStatus) {
+func (r *Reporter) Charged(ctx context.Context, txHash string, status eventspb.TxStatus, outcome eventspb.TransmissionOutcome) {
 	if r == nil || r.emitted || txHash == "" {
 		return
 	}
@@ -61,6 +61,8 @@ func (r *Reporter) Charged(ctx context.Context, txHash string, status eventspb.T
 		TxHash:              txHash,
 		TxStatus:            status,
 		ObservedAtMs:        r.now().UnixMilli(),
+		TransmissionOutcome: outcome,
+		IsBilled:            true,
 	}
 	// The request context may already be done (the write failed or timed out); the event must
 	// still go out, bounded by the emitter's own timeout.
