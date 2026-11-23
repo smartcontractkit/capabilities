@@ -140,12 +140,10 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	transmissionInfo, err := e.pollTransmissionInfo(ctx, request, telemetryContext, transmissionID, queuePosition, txHashRetriever)
 	if err != nil {
 		// The poll can stall or time out on a stale view while the tx lands on
-		// chain; one bounded re-scan on a fresh deadline before erroring.
-		reply, metering, recovered := e.recoverSuccessFromLogs(ctx, metadata, txHashRetriever)
-		if recovered {
-			e.lggr.Infow("Transmission poll failed but a successful transmission was found; returning success", "error", err.Error())
-			return reply, metering, nil
-		}
+		// chain; keep trying on a background goroutine with its own deadline, so
+		// the execution's gas usage is still metered even though this call has
+		// failed for the workflow.
+		go e.recoverMeteringAsync(ctx, metadata, transmissionID, txHashRetriever)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
@@ -659,6 +657,43 @@ func (e *WriteReport) recoverSuccessFromLogs(ctx context.Context, metadata capab
 		return nil, capabilities.ResponseMetadata{}, false
 	}
 	return reply, e.meteringFromReply(ctx, metadata, reply), true
+}
+
+// recoverMeteringAsync meters the gas usage for a write report whose
+// transmission poll failed. It runs on a background goroutine with a fresh
+// 30s deadline, retrying until the node's RPC serves the receipt or the
+// budget is exhausted.
+func (e *WriteReport) recoverMeteringAsync(ctx context.Context, metadata capabilities.RequestMetadata, transmissionID contracts.TransmissionID, txHashRetriever TxHashRetriever) {
+	lggr := e.lggr.With(transmissionID.LogAttrs()...)
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
+
+	for {
+		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(fctx)
+		if err == nil {
+			reply, err := e.buildSuccessReply(fctx, *txHash)
+			if err != nil {
+				lggr.Errorw("Failed to build success reply for background recovery", "error", err)
+				return
+			}
+			e.meteringFromReply(fctx, metadata, reply)
+			lggr.Infow("Background recovery: metered gas from the on-chain receipt",
+				"txHash", hex.EncodeToString(txHash[:]),
+			)
+			return
+		}
+
+		select {
+		case <-fctx.Done():
+			lggr.Errorw("Background recovery: budget exhausted, receipt not found")
+			return
+		case <-tick.C:
+			// Retry after a short delay.
+		}
+	}
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
