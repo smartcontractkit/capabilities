@@ -2835,18 +2835,11 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 			TransactionFee: big.NewInt(2000),
 		}, nil)
 
-		_, _, execErr := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
-		require.Error(t, execErr, "the poll failed, so the capability call returns an error")
-
-		// The async recovery meters in the background once the log scan finds the tx.
-		require.Eventually(t, func() bool {
-			for _, call := range evmServiceMock.Calls {
-				if call.Method == "GetTransactionReceipt" {
-					return true
-				}
-			}
-			return false
-		}, 10*time.Second, 100*time.Millisecond, "the background recovery should have fetched the receipt")
+		reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+		require.NoError(t, err)
+		require.NotNil(t, reply)
+		require.Equal(t, evm.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
+		evmtest.ValidateMeteringWriteReport(t, responseMetadata, 1, "0.000000000000002", "2000")
 	})
 
 	t.Run("InvalidReceiver state with an unexpected successful transmission returns success and meters", func(t *testing.T) {
