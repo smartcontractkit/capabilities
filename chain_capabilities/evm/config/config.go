@@ -1,6 +1,10 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
+)
 
 type Config struct {
 	ChainID                         uint64        `json:"chainId"`
@@ -27,4 +31,8 @@ type Config struct {
 	// DeltaStage for staggered transmission scheduling
 	DeltaStage time.Duration `json:"deltaStage"`
 	IsLocaL    bool          `json:"isLocal"` // use in integration-test to skip transmission scheduler initialization for log_trigger
+
+	// TxEvents controls emission of ChainTransactionObserved events, which feed the CRE
+	// Transactions Viewer through ChIP and the Blockchain Finality Service (PLEX-3409).
+	TxEvents txevents.Config `json:"txEvents"`
 }
