@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ import (
 
 const UnknownIssueExecutingReceiverContractMessage = "receiver contract execution failure"
 
+const microsecondsPerSecond = uint64(time.Second / time.Microsecond)
+
 // ErrUnexpectedSuccessfulTransmission indicates we expected a failed transmission but found a successful one
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
 
@@ -52,11 +55,12 @@ type WriteReport struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	txGasLimit             limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	writeReportL1FeeActive limits.RangeLimiter[commoncfg.Timestamp]
-	transmissionScheduler  ts.TransmissionScheduler
-	executionTimestamp     time.Time
+	txGasLimit                      limits.BoundLimiter[uint64]
+	reportSizeLimit                 limits.BoundLimiter[commoncfg.Size]
+	writeReportL1FeeActive          limits.RangeLimiter[commoncfg.Timestamp]
+	writeReportBlockTimestampActive limits.RangeLimiter[commoncfg.Timestamp]
+	transmissionScheduler           ts.TransmissionScheduler
+	executionTimestamp              time.Time
 
 	gasMeter *gasmeter.Meter
 
@@ -105,13 +109,14 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		beholderProcessor: e.beholderProcessor,
 		messageBuilder:    e.messageBuilder,
 
-		txGasLimit:             e.txGasLimit,
-		reportSizeLimit:        e.reportSizeLimit,
-		writeReportL1FeeActive: e.writeReportL1FeeActive,
-		transmissionScheduler:  e.transmissionScheduler,
-		executionTimestamp:     metadata.ExecutionTimestamp,
-		gasMeter:               e.gasMeter,
-		txReporter:             txevents.NewReporter(e.txEvents, e.chainSelector, metadata, lggr),
+		txGasLimit:                      e.txGasLimit,
+		reportSizeLimit:                 e.reportSizeLimit,
+		writeReportL1FeeActive:          e.writeReportL1FeeActive,
+		writeReportBlockTimestampActive: e.writeReportBlockTimestampActive,
+		transmissionScheduler:           e.transmissionScheduler,
+		executionTimestamp:              metadata.ExecutionTimestamp,
+		gasMeter:                        e.gasMeter,
+		txReporter:                      txevents.NewReporter(e.txEvents, e.chainSelector, metadata, lggr),
 	}
 
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
@@ -610,12 +615,22 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		txStatus = evm.TxStatus_TX_STATUS_REVERTED
 	}
 
-	e.lggr.Infow("Successfully fetched tx receipt",
+	blockTimestamp, err := e.maybeBlockTimestamp(ctx, txReceipt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block timestamp for tx hash 0x%x: %w", txHash[:], err)
+	}
+
+	logAttrs := []any{
 		"txHash", hex.EncodeToString(txHash[:]),
 		"txStatus", txReceipt.Status,
 		"transactionFeeWei", transactionFee.TransactionFee.String(),
 		"receiverStatus", receiverStatus,
-		"errorMessage", message)
+		"errorMessage", message,
+	}
+	if blockTimestamp != nil {
+		logAttrs = append(logAttrs, "blockTimestamp", *blockTimestamp)
+	}
+	e.lggr.Infow("Successfully fetched tx receipt", logAttrs...)
 
 	return &evm.WriteReportReply{
 		TxHash:                          (txHash)[:],
@@ -623,7 +638,54 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		TransactionFee:                  pb.NewBigIntFromInt(transactionFee.TransactionFee),
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
+		BlockTimestamp:                  blockTimestamp,
 	}, nil
+}
+
+// maybeBlockTimestamp returns the tx's block timestamp in microseconds, or nil if the feature is
+// inactive. Lookup failures are errors so a node never replies without the field.
+func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, txReceipt *evmtypes.Receipt) (*uint64, error) {
+	if !e.includeBlockTimestampInReply(ctx) {
+		e.lggr.Debugw("WriteReport block timestamp feature flag is inactive; omitting block_timestamp from reply")
+		return nil, nil
+	}
+
+	if txReceipt.BlockNumber == nil || txReceipt.BlockNumber.Sign() <= 0 {
+		return nil, fmt.Errorf("receipt has no valid block number: %v", txReceipt.BlockNumber)
+	}
+
+	header, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Header, error) {
+		reply, err := e.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{Number: txReceipt.BlockNumber})
+		if err != nil {
+			return nil, err
+		}
+		if reply == nil || reply.Header == nil {
+			return nil, errors.New("empty header returned")
+		}
+		// The header is fetched by number, so a different hash means it is another block at this
+		// height (RPC lag or reorg); retry rather than return that block's timestamp.
+		if reply.Header.Hash != (evmtypes.Hash{}) && txReceipt.BlockHash != (evmtypes.Hash{}) && reply.Header.Hash != txReceipt.BlockHash {
+			return nil, fmt.Errorf("header hash 0x%x does not match receipt block hash 0x%x", reply.Header.Hash[:], txReceipt.BlockHash[:])
+		}
+		return reply.Header, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block header %s: %w", txReceipt.BlockNumber.String(), err)
+	}
+	if header.Timestamp == 0 || header.Timestamp > math.MaxUint64/microsecondsPerSecond {
+		return nil, fmt.Errorf("invalid timestamp %d in block header %s", header.Timestamp, txReceipt.BlockNumber.String())
+	}
+	return new(header.Timestamp * microsecondsPerSecond), nil
+}
+
+func (e *WriteReport) includeBlockTimestampInReply(ctx context.Context) bool {
+	if e.writeReportBlockTimestampActive == nil {
+		return false
+	}
+	if e.executionTimestamp.IsZero() {
+		e.lggr.Errorw("ExecutionTimestamp is zero")
+	}
+	return e.writeReportBlockTimestampActive.Check(ctx, commoncfg.NewTimestamp(e.executionTimestamp)) == nil
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
