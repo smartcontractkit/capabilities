@@ -9,7 +9,9 @@ import (
 	"math/big"
 	"strconv"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/resourcemanager"
 )
@@ -32,6 +34,7 @@ func New(lggr logger.Logger, cfg resourcemanager.Config, chainSelector uint64, c
 	if !cfg.MeterRecordsEnabled {
 		return nil
 	}
+	lggr = logger.Sugared(custmsg.NewBeholderLogger(lggr, custmsg.NewLabelerWithEmitter(beholder.GetEmitter())))
 	rmCfg := cfg.ResourceManagerConfig
 	rmCfg.MeterSnapshotsEnabled = false
 	resourceType := resourcemanager.WorkflowGasResourceType(chainSelector)

@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -19,6 +21,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -36,6 +39,8 @@ import (
 
 const UnknownIssueExecutingReceiverContractMessage = "receiver contract execution failure"
 
+const microsecondsPerSecond = uint64(time.Second / time.Microsecond)
+
 // ErrUnexpectedSuccessfulTransmission indicates we expected a failed transmission but found a successful one
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
 
@@ -50,11 +55,12 @@ type WriteReport struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	txGasLimit             limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	writeReportL1FeeActive limits.RangeLimiter[commoncfg.Timestamp]
-	transmissionScheduler  ts.TransmissionScheduler
-	executionTimestamp     time.Time
+	txGasLimit                      limits.BoundLimiter[uint64]
+	reportSizeLimit                 limits.BoundLimiter[commoncfg.Size]
+	writeReportL1FeeActive          limits.RangeLimiter[commoncfg.Timestamp]
+	writeReportBlockTimestampActive limits.RangeLimiter[commoncfg.Timestamp]
+	transmissionScheduler           ts.TransmissionScheduler
+	executionTimestamp              time.Time
 
 	gasMeter *gasmeter.Meter
 
@@ -103,13 +109,14 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		beholderProcessor: e.beholderProcessor,
 		messageBuilder:    e.messageBuilder,
 
-		txGasLimit:             e.txGasLimit,
-		reportSizeLimit:        e.reportSizeLimit,
-		writeReportL1FeeActive: e.writeReportL1FeeActive,
-		transmissionScheduler:  e.transmissionScheduler,
-		executionTimestamp:     metadata.ExecutionTimestamp,
-		gasMeter:               e.gasMeter,
-		txReporter:             txevents.NewReporter(e.txEvents, e.chainSelector, metadata, lggr),
+		txGasLimit:                      e.txGasLimit,
+		reportSizeLimit:                 e.reportSizeLimit,
+		writeReportL1FeeActive:          e.writeReportL1FeeActive,
+		writeReportBlockTimestampActive: e.writeReportBlockTimestampActive,
+		transmissionScheduler:           e.transmissionScheduler,
+		executionTimestamp:              metadata.ExecutionTimestamp,
+		gasMeter:                        e.gasMeter,
+		txReporter:                      txevents.NewReporter(e.txEvents, e.chainSelector, metadata, lggr),
 	}
 
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
@@ -161,7 +168,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(contracts.TransmissionStateSucceeded)), nil
 	case contracts.TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
@@ -180,7 +187,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			// though the receipt/fee lookup failed (e.g. flaky RPC), as a user error.
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(transmissionInfo.State)), nil
 	case contracts.TransmissionStateFailed:
 		decision, err := e.assessFailedTransmission(ctx, request, transmissionInfo, txHashRetriever, telemetryContext, userProvidedGas)
 		if err != nil {
@@ -197,7 +204,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				// reason even if the receipt/fee lookup failed, as a user error.
 				return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
 			}
-			return reply, e.meteringFromReply(ctx, metadata, reply), nil
+			return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(transmissionInfo.State)), nil
 		}
 		monitoring.LogAndEmitSuccess(ctx, "Retrying a failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, decision.receiverGasBudget, transmissionInfo.GasLimit, queuePosition))
@@ -256,7 +263,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(newTransmissionInfo.State)), nil
 	case contracts.TransmissionStateFailed, contracts.TransmissionStateInvalidReceiver:
 		txHash := &transactionResult.TxHash
 		// if this is a re-attempt find the original failed tx hash
@@ -280,7 +287,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			// user learns the cause even if the receipt/fee lookup failed, as a user error.
 			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(newTransmissionInfo, transmissionID, err)
 		}
-		return reply, e.meteringFromReply(ctx, metadata, reply), nil
+		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(newTransmissionInfo.State)), nil
 	default:
 		errorMsg := getInvalidStateErrorMessage(newTransmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, fmt.Sprintf("WriteReport invalid transmission state with tx status: %d", transactionResult.TxStatus), errorMsg))
@@ -608,12 +615,22 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		txStatus = evm.TxStatus_TX_STATUS_REVERTED
 	}
 
-	e.lggr.Infow("Successfully fetched tx receipt",
+	blockTimestamp, err := e.maybeBlockTimestamp(ctx, txReceipt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block timestamp for tx hash 0x%x: %w", txHash[:], err)
+	}
+
+	logAttrs := []any{
 		"txHash", hex.EncodeToString(txHash[:]),
 		"txStatus", txReceipt.Status,
 		"transactionFeeWei", transactionFee.TransactionFee.String(),
 		"receiverStatus", receiverStatus,
-		"errorMessage", message)
+		"errorMessage", message,
+	}
+	if blockTimestamp != nil {
+		logAttrs = append(logAttrs, "blockTimestamp", *blockTimestamp)
+	}
+	e.lggr.Infow("Successfully fetched tx receipt", logAttrs...)
 
 	return &evm.WriteReportReply{
 		TxHash:                          (txHash)[:],
@@ -621,32 +638,95 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		TransactionFee:                  pb.NewBigIntFromInt(transactionFee.TransactionFee),
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
+		BlockTimestamp:                  blockTimestamp,
 	}, nil
+}
+
+// maybeBlockTimestamp returns the tx's block timestamp in microseconds, or nil if the feature is
+// inactive. Lookup failures are errors so a node never replies without the field.
+func (e *WriteReport) maybeBlockTimestamp(ctx context.Context, txReceipt *evmtypes.Receipt) (*uint64, error) {
+	if !e.includeBlockTimestampInReply(ctx) {
+		e.lggr.Debugw("WriteReport block timestamp feature flag is inactive; omitting block_timestamp from reply")
+		return nil, nil
+	}
+
+	if txReceipt.BlockNumber == nil || txReceipt.BlockNumber.Sign() <= 0 {
+		return nil, fmt.Errorf("receipt has no valid block number: %v", txReceipt.BlockNumber)
+	}
+
+	header, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Header, error) {
+		reply, err := e.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{Number: txReceipt.BlockNumber})
+		if err != nil {
+			return nil, err
+		}
+		if reply == nil || reply.Header == nil {
+			return nil, errors.New("empty header returned")
+		}
+		// The header is fetched by number, so a different hash means it is another block at this
+		// height (RPC lag or reorg); retry rather than return that block's timestamp.
+		if reply.Header.Hash != (evmtypes.Hash{}) && txReceipt.BlockHash != (evmtypes.Hash{}) && reply.Header.Hash != txReceipt.BlockHash {
+			return nil, fmt.Errorf("header hash 0x%x does not match receipt block hash 0x%x", reply.Header.Hash[:], txReceipt.BlockHash[:])
+		}
+		return reply.Header, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get block header %s: %w", txReceipt.BlockNumber.String(), err)
+	}
+	if header.Timestamp == 0 || header.Timestamp > math.MaxUint64/microsecondsPerSecond {
+		return nil, fmt.Errorf("invalid timestamp %d in block header %s", header.Timestamp, txReceipt.BlockNumber.String())
+	}
+	return new(header.Timestamp * microsecondsPerSecond), nil
+}
+
+func (e *WriteReport) includeBlockTimestampInReply(ctx context.Context) bool {
+	if e.writeReportBlockTimestampActive == nil {
+		return false
+	}
+	if e.executionTimestamp.IsZero() {
+		e.lggr.Errorw("ExecutionTimestamp is zero")
+	}
+	return e.writeReportBlockTimestampActive.Check(ctx, commoncfg.NewTimestamp(e.executionTimestamp)) == nil
 }
 
 // meteringFromReply returns billing metadata carrying the on-chain transaction fee contained
 // in the reply, so that every node reports the gas spent on chain, regardless of which node
 // transmitted. Deriving it from the reply guarantees the metered fee matches the reply's
 // TransactionFee. An absent fee yields empty metadata.
-func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabilities.RequestMetadata, reply *evm.WriteReportReply) capabilities.ResponseMetadata {
+func (e *WriteReport) meteringFromReply(ctx context.Context, metadata capabilities.RequestMetadata, reply *evm.WriteReportReply, outcome eventspb.TransmissionOutcome) capabilities.ResponseMetadata {
 	feeInWei := pb.NewIntFromBigInt(reply.TransactionFee)
 	if feeInWei == nil {
 		e.lggr.Warnw("Transaction fee unavailable in reply; skipping metering", "txHash", hex.EncodeToString(reply.TxHash))
 		return capabilities.ResponseMetadata{}
 	}
 	e.gasMeter.Emit(ctx, metadata, hex.EncodeToString(reply.TxHash), feeInWei)
-	e.txReporter.Charged(ctx, "0x"+hex.EncodeToString(reply.TxHash), txStatusFromReply(reply.TxStatus))
+	e.txReporter.Charged(ctx, hexutil.Encode(reply.TxHash), txStatusFromReply(reply.TxStatus), outcome)
 	return metering.GetResponseMetadataWriteReport(feeInWei, e.chainSelector)
 }
 
-func txStatusFromReply(s evm.TxStatus) txevents.TxStatus {
+// transmissionOutcomeFromState maps the forwarder's transmission state to the event outcome.
+func transmissionOutcomeFromState(state contracts.TransmissionState) eventspb.TransmissionOutcome {
+	switch state {
+	case contracts.TransmissionStateSucceeded:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED
+	case contracts.TransmissionStateFailed:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_RECEIVER_REVERTED
+	case contracts.TransmissionStateInvalidReceiver:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_INVALID_RECEIVER
+	case contracts.TransmissionStateNotAttempted:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_NOT_ATTEMPTED
+	default:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_UNSPECIFIED
+	}
+}
+
+func txStatusFromReply(s evm.TxStatus) eventspb.TxStatus {
 	switch s {
 	case evm.TxStatus_TX_STATUS_SUCCESS:
-		return txevents.TxStatus_TX_STATUS_SUCCESS
+		return eventspb.TxStatus_TX_STATUS_SUCCESS
 	case evm.TxStatus_TX_STATUS_REVERTED:
-		return txevents.TxStatus_TX_STATUS_REVERTED
+		return eventspb.TxStatus_TX_STATUS_REVERTED
 	default:
-		return txevents.TxStatus_TX_STATUS_UNSPECIFIED
+		return eventspb.TxStatus_TX_STATUS_UNSPECIFIED
 	}
 }
 
