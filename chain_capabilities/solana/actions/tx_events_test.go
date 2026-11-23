@@ -11,15 +11,16 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 )
 
 type recordingTxEventEmitter struct {
-	events []*txevents.ChainTransactionObserved
+	events []*eventspb.ChainTransactionObserved
 }
 
-func (r *recordingTxEventEmitter) Emit(_ context.Context, ev *txevents.ChainTransactionObserved) error {
+func (r *recordingTxEventEmitter) Emit(_ context.Context, ev *eventspb.ChainTransactionObserved) error {
 	r.events = append(r.events, ev)
 	return nil
 }
@@ -45,7 +46,8 @@ func TestWriteReport_EmitsChargedTransaction(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, rec.events, 1)
 		require.Equal(t, sig.String(), rec.events[0].TxHash)
-		require.Equal(t, txevents.TxStatus_TX_STATUS_SUCCESS, rec.events[0].TxStatus)
+		require.Equal(t, eventspb.TxStatus_TX_STATUS_SUCCESS, rec.events[0].TxStatus)
+		require.Equal(t, eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED, rec.events[0].TransmissionOutcome)
 		require.Equal(t, reportMetadata.ExecutionID, rec.events[0].WorkflowExecutionId)
 	})
 
@@ -67,7 +69,7 @@ func TestWriteReport_EmitsChargedTransaction(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, rec.events, 1)
 		require.Equal(t, sig.String(), rec.events[0].TxHash)
-		require.Equal(t, txevents.TxStatus_TX_STATUS_REVERTED, rec.events[0].TxStatus)
+		require.Equal(t, eventspb.TxStatus_TX_STATUS_REVERTED, rec.events[0].TxStatus)
 	})
 
 	t.Run("fee lookup failure does not emit", func(t *testing.T) {

@@ -26,6 +26,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 
@@ -195,7 +196,7 @@ func (wr *WriteReport) executeWriteReport(
 			"returning without a transmission attempt - report already onchain",
 			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.successWriteReportReply(&transmissionInfo.Signature), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature), nil
+		return wr.successWriteReportReply(&transmissionInfo.Signature), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature, transmissionOutcomeFromState(transmissionInfo.State)), nil
 
 	case TransmissionStateFailed:
 		decision := wr.assessFailedTransmission(ctx, request, transmissionInfo, telemetryContext, userProvidedComputeLimit, prior)
@@ -206,7 +207,7 @@ func (wr *WriteReport) executeWriteReport(
 				"priorTxComputeUnitLimit", decision.priorTxComputeUnitLimit,
 				"requestedComputeUnitLimit", request.ComputeConfig.GetComputeLimit(),
 			)
-			return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature), nil
+			return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature, transmissionOutcomeFromState(transmissionInfo.State)), nil
 		}
 		wr.lggr.Infow(
 			"prior transmission attempt failed with a lower compute unit limit than requested - retrying",
@@ -253,7 +254,7 @@ func (wr *WriteReport) executeWriteReport(
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed getting transmission info after submitting report, %w", err)
 	}
 
-	meteringMetadata := wr.meteringFromTxSignature(ctx, telemetryContext, request, last.Signature)
+	meteringMetadata := wr.meteringFromTxSignature(ctx, telemetryContext, request, last.Signature, transmissionOutcomeFromState(last.State))
 
 	switch last.State {
 	case TransmissionStateSucceeded:
@@ -620,7 +621,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 // transaction, so that every node reports the gas spent, regardless of which node transmitted.
 // A fee lookup failure is surfaced via monitoring and yields empty metadata instead of
 // failing the reply.
-func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature) capabilities.ResponseMetadata {
+func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature, outcome eventspb.TransmissionOutcome) capabilities.ResponseMetadata {
 	charged, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (feeAndStatus, error) {
 		fee, txStatus, feeErr := wr.getFee(ctx, sig)
 		return feeAndStatus{fee: fee, status: txStatus}, feeErr
@@ -630,31 +631,31 @@ func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryCon
 		return capabilities.ResponseMetadata{}
 	}
 	wr.gasMeter.Emit(ctx, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(charged.fee))
-	wr.txReporter.Charged(ctx, sig.String(), charged.status)
+	wr.txReporter.Charged(ctx, sig.String(), charged.status, outcome)
 	return metering.GetResponseMetadataWriteReport(charged.fee, wr.chainSelector)
 }
 
 type feeAndStatus struct {
 	fee    uint64
-	status txevents.TxStatus
+	status eventspb.TxStatus
 }
 
-func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, txevents.TxStatus, error) {
+func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, eventspb.TxStatus, error) {
 	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
-		return 0, txevents.TxStatus_TX_STATUS_UNSPECIFIED, fmt.Errorf("failed to get transaction: %w", err)
+		return 0, eventspb.TxStatus_TX_STATUS_UNSPECIFIED, fmt.Errorf("failed to get transaction: %w", err)
 	}
 	if tx == nil {
-		return 0, txevents.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction response")
+		return 0, eventspb.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction response")
 	}
 	if tx.Meta == nil {
-		return 0, txevents.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction meta")
+		return 0, eventspb.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction meta")
 	}
 
 	feeInLamports := tx.Meta.Fee
-	status := txevents.TxStatus_TX_STATUS_SUCCESS
+	status := eventspb.TxStatus_TX_STATUS_SUCCESS
 	if tx.Meta.Err != "" {
-		status = txevents.TxStatus_TX_STATUS_REVERTED
+		status = eventspb.TxStatus_TX_STATUS_REVERTED
 	}
 
 	wr.lggr.Debugw("WriteReport fee", "feeInLamports", feeInLamports, "txStatus", status.String())
@@ -684,4 +685,18 @@ func (wr *WriteReport) fatalWriteReportReply(message string) *solcap.WriteReport
 	r.ErrorMessage = new(message)
 
 	return r
+}
+
+// transmissionOutcomeFromState maps the forwarder's transmission state to the event outcome.
+func transmissionOutcomeFromState(state TransmissionState) eventspb.TransmissionOutcome {
+	switch state {
+	case TransmissionStateSucceeded:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED
+	case TransmissionStateFailed:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_RECEIVER_REVERTED
+	case TransmissionStateNotAttempted:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_NOT_ATTEMPTED
+	default:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_UNSPECIFIED
+	}
 }
