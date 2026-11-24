@@ -14,8 +14,8 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 )
@@ -113,11 +113,11 @@ func transmissionScheduleSeed(transmissionID string) [16]byte {
 //     if multiple DONs match. This happens on a core node that pre-dates CRE-4409,
 //     or on the job-spec boot path where the host cannot disambiguate. Because
 //     both boot paths remain supported, this branch is permanent.
-func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, authoritativeDonID uint32, lggr logger.Logger, isLocal bool) (capabilities.DON, error) {
+func InitMyDON(ctx context.Context, capRegistry registry.CapabilitiesRegistry, capabilityID string, authoritativeDonID uint32, lggr logger.Logger, isLocal bool) (capabilities.DON, error) {
 	if isLocal {
 		return capabilities.DON{}, nil
 	}
-	if registry == nil {
+	if capRegistry == nil {
 		return capabilities.DON{}, fmt.Errorf("capabilities registry is nil")
 	}
 
@@ -128,7 +128,7 @@ func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabili
 	// Retry with backoff until the registry is ready or the host-provided ctx
 	// (bounded by the standard-capabilities startTimeout) expires.
 	donsWithNodes, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) ([]capabilities.DONWithNodes, error) {
-		return registry.DONsForCapability(ctx, capabilityID)
+		return capRegistry.DONsForCapability(ctx, capabilityID)
 	})
 	if err != nil {
 		lggr.Errorw("failed getting DONs for capability", "capabilityID", capabilityID, "error", err)
@@ -153,7 +153,7 @@ func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabili
 	// No retry needed here: DONsForCapability above already gates on the metadata
 	// registry being populated, so by this point LocalNode will not hit the
 	// "metadataRegistry information not available" race.
-	localNode, err := registry.LocalNode(ctx)
+	localNode, err := capRegistry.LocalNode(ctx)
 	if err != nil {
 		lggr.Errorw("failed to get local node", "error", err)
 		return capabilities.DON{}, fmt.Errorf("failed to get local node: %w", err)
@@ -188,7 +188,7 @@ func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabili
 
 func InitialiseTransmissionScheduler(
 	ctx context.Context,
-	capRegistry core.CapabilitiesRegistry,
+	capRegistry registry.CapabilitiesRegistry,
 	deltaStage time.Duration,
 	lggr logger.Logger,
 	don *capabilities.DON,

@@ -13,9 +13,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 
 	commonmon "github.com/smartcontractkit/capabilities/libs/monitoring"
@@ -182,13 +182,13 @@ func WithRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.C
 // differ from regular executable methods. If the config can't be fetched or no
 // eligible RemoteExecutableConfig.RequestTimeout values are found, it returns
 // fallback.
-func MaxRequestTimeoutWithMultiplier(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
-	if registry == nil {
+func MaxRequestTimeoutWithMultiplier(ctx context.Context, capRegistry registry.CapabilitiesRegistry, capabilityID string, donID uint32, fallback time.Duration, lggr logger.Logger) time.Duration {
+	if capRegistry == nil {
 		return fallback
 	}
 
 	cfg, err := WithPollingRetry(ctx, lggr, func(ctx context.Context) (capabilities.CapabilityConfiguration, error) {
-		return registry.ConfigForCapability(ctx, capabilityID, donID)
+		return capRegistry.ConfigForCapability(ctx, capabilityID, donID)
 	})
 	if err != nil {
 		lggr.Errorw("failed getting config for capability", "capabilityID", capabilityID, "error", err)
