@@ -22,6 +22,7 @@ import (
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -2198,6 +2199,306 @@ func TestFetchTransactionReceiptAndCreateReplyL1FeeFeatureFlag(t *testing.T) {
 	}
 }
 
+func TestReplyFromReceiptBlockTimestamp(t *testing.T) {
+	t.Parallel()
+
+	activeFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activeUntil := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	blockNumber := big.NewInt(12345)
+	blockHash := evmtypes.Hash(test.RandomBytes(32))
+	const blockTimestampSeconds = uint64(1_767_225_600)
+
+	testCases := []struct {
+		name               string
+		executionTimestamp time.Time
+		receiverStatus     evm.ReceiverContractExecutionStatus
+		receiptBlockNumber *big.Int
+		// setupHeader registers the HeaderByNumber expectation; nil asserts HeaderByNumber is never called.
+		setupHeader       func(m *mocks2.EVMService)
+		expectedTimestamp *uint64
+		// expectedErr, when set, is a substring of the error replyFromReceipt must return.
+		expectedErr string
+	}{
+		{
+			name:               "inactive flag omits block timestamp without fetching the header",
+			executionTimestamp: activeFrom.Add(-time.Second),
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			expectedTimestamp:  nil,
+		},
+		{
+			name:               "active flag includes block timestamp in microseconds on success",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: blockHash, Timestamp: blockTimestampSeconds}}, nil).
+					Once()
+			},
+			expectedTimestamp: new(blockTimestampSeconds * 1_000_000),
+		},
+		{
+			name:               "active flag includes block timestamp on revert",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: blockHash, Timestamp: blockTimestampSeconds}}, nil).
+					Once()
+			},
+			expectedTimestamp: new(blockTimestampSeconds * 1_000_000),
+		},
+		{
+			name:               "header hash mismatch is retried until the header matches the receipt",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: evmtypes.Hash(test.RandomBytes(32)), Timestamp: blockTimestampSeconds + 12}}, nil).
+					Once()
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: blockHash, Timestamp: blockTimestampSeconds}}, nil).
+					Once()
+			},
+			expectedTimestamp: new(blockTimestampSeconds * 1_000_000),
+		},
+		{
+			name:               "persistent header hash mismatch fails the reply",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: evmtypes.Hash(test.RandomBytes(32)), Timestamp: blockTimestampSeconds}}, nil)
+			},
+			expectedErr: "does not match receipt block hash",
+		},
+		{
+			name:               "header lookup failure fails the reply",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(nil, errors.New("rpc unavailable"))
+			},
+			expectedErr: "rpc unavailable",
+		},
+		{
+			name:               "empty header fails the reply",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{}, nil)
+			},
+			expectedErr: "empty header returned",
+		},
+		{
+			name:               "zero header timestamp fails the reply",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: blockNumber,
+			setupHeader: func(m *mocks2.EVMService) {
+				m.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: blockHash}}, nil).
+					Once()
+			},
+			expectedErr: "invalid timestamp 0",
+		},
+		{
+			name:               "receipt without block number fails the reply without fetching the header",
+			executionTimestamp: activeFrom,
+			receiverStatus:     evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS,
+			receiptBlockNumber: nil,
+			expectedErr:        "receipt has no valid block number",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			lggr := logger.Test(t)
+			mockEVMService := mocks2.NewEVMService(t)
+			txHash := evmtypes.Hash(test.RandomBytes(32))
+			receipt := evmtypes.Receipt{
+				Status:            1,
+				TxHash:            txHash,
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+				BlockHash:         blockHash,
+				BlockNumber:       tc.receiptBlockNumber,
+			}
+
+			mockEVMService.EXPECT().
+				GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+				Return(&receipt, nil)
+			mockEVMService.EXPECT().
+				CalculateTransactionFee(mock.Anything, mock.Anything).
+				Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2000)}, nil)
+			if tc.setupHeader != nil {
+				tc.setupHeader(mockEVMService)
+			}
+
+			wr := &WriteReport{
+				EVMService: mockEVMService,
+				lggr:       logger.Sugared(lggr),
+				writeReportBlockTimestampActive: limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
+					Lower: commoncfg.NewTimestamp(activeFrom),
+					Upper: commoncfg.NewTimestamp(activeUntil),
+				}),
+				executionTimestamp: tc.executionTimestamp,
+			}
+
+			// Short timeout so the internal retry loop gives up quickly on the failure cases.
+			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+			defer cancel()
+
+			reply, err := wr.replyFromReceipt(ctx, txHash, tc.receiverStatus, nil)
+			if tc.expectedErr != "" {
+				require.Nil(t, reply)
+				require.ErrorContains(t, err, fmt.Sprintf("failed to get block timestamp for tx hash 0x%x", txHash[:]))
+				require.ErrorContains(t, err, tc.expectedErr)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, reply)
+			require.Equal(t, txHash[:], reply.TxHash)
+			require.Equal(t, pb.NewBigIntFromInt(big.NewInt(2000)), reply.TransactionFee)
+			require.Equal(t, tc.receiverStatus, reply.GetReceiverContractExecutionStatus())
+			require.Equal(t, tc.expectedTimestamp, reply.BlockTimestamp)
+		})
+	}
+}
+
+func TestReplyFromReceiptBlockTimestamp_NilLimiterOmitsTimestamp(t *testing.T) {
+	t.Parallel()
+
+	mockEVMService := mocks2.NewEVMService(t)
+	txHash := evmtypes.Hash(test.RandomBytes(32))
+	mockEVMService.EXPECT().
+		GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+		Return(&evmtypes.Receipt{Status: 1, TxHash: txHash, GasUsed: 1, EffectiveGasPrice: big.NewInt(1), BlockNumber: big.NewInt(1)}, nil)
+	mockEVMService.EXPECT().
+		CalculateTransactionFee(mock.Anything, mock.Anything).
+		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(1)}, nil)
+
+	wr := &WriteReport{
+		EVMService:         mockEVMService,
+		lggr:               logger.Sugared(logger.Test(t)),
+		executionTimestamp: time.Now(),
+	}
+
+	reply, err := wr.buildSuccessReply(t.Context(), txHash)
+	require.NoError(t, err)
+	require.Nil(t, reply.BlockTimestamp)
+}
+
+// TestWriteReportBlockTimestamp_FeatureFlagWiring exercises the full WriteReport flow with the
+// limiter built by initLimiters from the cresettings default, so it covers the wiring from
+// FeatureEVMWriteReportBlockTimestampActivePeriod through to the reply.
+func TestWriteReportBlockTimestamp_FeatureFlagWiring(t *testing.T) {
+	t.Parallel()
+
+	activePeriod := cresettings.Default.PerWorkflow.FeatureEVMWriteReportBlockTimestampActivePeriod.DefaultValue
+	activeFrom := time.Unix(int64(activePeriod.Lower), 0).UTC()
+
+	testCases := []struct {
+		name               string
+		executionTimestamp time.Time
+		expectHeaderFetch  bool
+	}{
+		{
+			name:               "execution timestamp before the default active period",
+			executionTimestamp: activeFrom.Add(-time.Second),
+			expectHeaderFetch:  false,
+		},
+		{
+			name:               "execution timestamp within the default active period",
+			executionTimestamp: activeFrom,
+			expectHeaderFetch:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			lggr := logger.Test(t)
+			evmServiceMock := mocks2.NewEVMService(t)
+			mockForwarderClient := mocks.NewCREForwarderClient(t)
+			var peerID p2ptypes.PeerID
+			peerID[0] = 0x01
+			scheduler := ts.NewTransmissionScheduler(peerID, []p2ptypes.PeerID{peerID}, 10*time.Millisecond, 2, lggr)
+			service := createMocksAndCapabilityWithScheduler(t, lggr, evmServiceMock, mockForwarderClient, scheduler)
+
+			mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{
+				Success: true,
+				State:   contracts.TransmissionStateSucceeded,
+			}, nil).Once()
+			txHash := evmtypes.Hash(test.RandomBytes(32))
+			expectSuccessfulTransmissionEvent(t, mockForwarderClient, txHash)
+
+			blockNumber := big.NewInt(100)
+			blockHash := evmtypes.Hash(test.RandomBytes(32))
+			receipt := evmtypes.Receipt{
+				Status:            1,
+				TxHash:            txHash,
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+				BlockHash:         blockHash,
+				BlockNumber:       blockNumber,
+			}
+			evmServiceMock.EXPECT().
+				GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+				Return(&receipt, nil)
+			evmServiceMock.EXPECT().
+				CalculateTransactionFee(mock.Anything, mock.Anything).
+				Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2000)}, nil)
+
+			const blockTimestampSeconds = uint64(1_767_225_600)
+			if tc.expectHeaderFetch {
+				evmServiceMock.EXPECT().
+					HeaderByNumber(mock.Anything, evmtypes.HeaderByNumberRequest{Number: blockNumber}).
+					Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: blockNumber, Hash: blockHash, Timestamp: blockTimestampSeconds}}, nil).
+					Once()
+			}
+
+			fixture := newWriteReportTestFixture(t)
+			md := fixture.metadata
+			md.ExecutionTimestamp = tc.executionTimestamp
+
+			var expectedTimestamp *uint64
+			if tc.expectHeaderFetch {
+				expectedTimestamp = new(blockTimestampSeconds * 1_000_000)
+			}
+
+			txResult, err := service.WriteReport(t.Context(), md, fixture.request)
+			require.NoError(t, err)
+			equalWriteReportReply(t, &evm.WriteReportReply{
+				TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
+				TxHash:                          txHash[:],
+				ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
+				TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+				BlockTimestamp:                  expectedTimestamp,
+			}, txResult.Response)
+		})
+	}
+}
+
 // TestReplyFromReceipt_ReceiptErrorIncludesTxHash verifies the format of the error returned when
 // the receipt fetch fails: the message must embed the tx hash as a single 0x-prefixed 64-char
 // lowercase hex string and must wrap the underlying RPC error. This guards against a regression
@@ -2436,6 +2737,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		beholderProcessor:        test.NopBeholderProcessor{},
 		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler:    transmissionScheduler,
+		txEvents:                 &recordingTxEventEmitter{},
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
 	t.Cleanup(func() { assert.NoError(t, service.Close()) })
@@ -2478,6 +2780,7 @@ func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual 
 		require.Equal(t, expected.ReceiverContractExecutionStatus.Enum(), actual.ReceiverContractExecutionStatus.Enum())
 	}
 	require.Equal(t, expected.ErrorMessage, actual.ErrorMessage)
+	require.Equal(t, expected.BlockTimestamp, actual.BlockTimestamp)
 }
 
 func generateRandomSignatures() []*workflowpb.AttributedSignature {
