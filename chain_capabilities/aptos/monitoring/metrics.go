@@ -117,7 +117,7 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create write report p2p config incomplete metric: %w", err)
 	}
 
-	meter := commonbeholder.GetMeter()
+	meter := commonbeholder.GetMeter() //nolint:staticcheck // SA1019: migrate off beholder globals
 	txInfoPhaseCount := commonbeholder.MetricInfo{
 		Name:        ns("write_report_tx_info_retrieval_phase_count"),
 		Unit:        "",

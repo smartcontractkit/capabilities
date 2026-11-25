@@ -56,7 +56,7 @@ func MetricViews() []sdkmetric.View {
 }
 
 func (m *Metrics) init() error {
-	meter := beholder.GetMeter()
+	meter := beholder.GetMeter() //nolint:staticcheck // SA1019: migrate off beholder globals
 	var err error
 
 	m.PendingConsensusRequests, err = meter.Int64Gauge(

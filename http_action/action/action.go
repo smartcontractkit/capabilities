@@ -56,7 +56,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	s.cfg.ApplyDefault()
 
-	s.metrics, err = common.NewMetrics(beholder.GetMeter())
+	s.metrics, err = common.NewMetrics(beholder.GetMeter()) //nolint:staticcheck // SA1019: migrate off beholder globals
 	if err != nil {
 		return err
 	}

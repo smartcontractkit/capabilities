@@ -180,7 +180,7 @@ type emitterMetrics struct {
 }
 
 func newEmitterMetrics() (*emitterMetrics, error) {
-	meter := beholder.GetMeter()
+	meter := beholder.GetMeter() //nolint:staticcheck // SA1019: migrate off beholder globals
 	emitted, err := meter.Int64Counter("chain_capability_tx_events_emitted_count",
 		metric.WithDescription("Count of ChainTransactionObserved events accepted by the durable emitter"))
 	if err != nil {

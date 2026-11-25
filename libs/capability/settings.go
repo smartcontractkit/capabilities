@@ -90,7 +90,7 @@ func newSettings(lggr logger.Logger) *settings.Atomic {
 func newLimitsFactory(lggr logger.Logger, s *settings.Atomic) limits.Factory {
 	return limits.Factory{
 		Settings: s,
-		Meter:    beholder.GetMeter(),
+		Meter:    beholder.GetMeter(), //nolint:staticcheck // SA1019: migrate off beholder globals
 		Logger:   logger.Named(lggr, "Limits"),
 	}
 }

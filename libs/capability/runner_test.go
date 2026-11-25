@@ -130,11 +130,11 @@ func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 
 	var duringBuild *beholder.Client
 	c := func(do.Injector) (Capability, error) {
-		duringBuild = beholder.GetClient()
+		duringBuild = beholder.GetClient() //nolint:staticcheck // SA1019: migrate off beholder globals
 		return newFake(), nil
 	}
 
-	before := beholder.GetClient()
+	before := beholder.GetClient() //nolint:staticcheck // SA1019: migrate off beholder globals
 	// The run leaves its closed client installed; keep it from leaking into later tests.
 	t.Cleanup(func() {
 		beholder.SetClient(before)
@@ -155,14 +155,14 @@ func TestRunInstallsTelemetryBeforeBuildingTheCapability(t *testing.T) {
 // anything, which is the gap documented on the telemetry block in run: the global is swapped when
 // telemetry is built, and the undo only works once the root has started it.
 func TestRunUnwindsWhatStartedBeforeAFailure(t *testing.T) {
-	before := beholder.GetClient()
+	before := beholder.GetClient() //nolint:staticcheck // SA1019: migrate off beholder globals
 	cfg, port := runArgs(t)
 	c := func(do.Injector) (Capability, error) { return nil, errors.New("no schedule") }
 	require.Empty(t, cfg.observability.TelemetryEndpoint, "these settings leave telemetry off")
 
 	require.ErrorContains(t, runToCompletion(t, cfg, c, port), "no schedule")
 
-	assert.Same(t, before, beholder.GetClient(), "nothing was installed, so nothing changed")
+	assert.Same(t, before, beholder.GetClient(), "nothing was installed, so nothing changed") //nolint:staticcheck // SA1019: migrate off beholder globals
 	// The web server never got as far as starting, so the port was never taken.
 	assertPortFree(t, port)
 }
