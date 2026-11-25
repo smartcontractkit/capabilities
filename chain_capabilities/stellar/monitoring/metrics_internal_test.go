@@ -91,7 +91,7 @@ func useManualMetricReader(t *testing.T) *sdkmetric.ManualReader {
 
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	previousClient := beholder.GetClient()
+	previousClient := beholder.GetClient() //nolint:staticcheck // SA1019: migrate off beholder globals
 	client := beholder.NewNoopClient()
 	client.MeterProvider = provider
 	client.Meter = provider.Meter("stellar-monitoring-test")

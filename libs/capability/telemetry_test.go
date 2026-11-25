@@ -305,7 +305,7 @@ func TestRunUsesTheDecodedTelemetrySettings(t *testing.T) {
 // TestStartTelemetryWithoutAnEndpointChangesNothing is the off case: no endpoint means no client,
 // so nothing is installed, nothing joins the root, and there is nothing to undo.
 func TestStartTelemetryWithoutAnEndpointChangesNothing(t *testing.T) {
-	before := beholder.GetClient()
+	before := beholder.GetClient() //nolint:staticcheck // SA1019: migrate off beholder globals
 
 	telemetry, err := startTelemetry(t.Context(), logger.Test(t), &observability{})
 	require.NoError(t, err)
@@ -314,20 +314,20 @@ func TestStartTelemetryWithoutAnEndpointChangesNothing(t *testing.T) {
 	// either way. No client behind it: the process keeps the noop beholder client it already had.
 	require.NotNil(t, telemetry)
 	assert.Nil(t, telemetry.Client(), "there is no client when telemetry is off")
-	assert.Same(t, before, beholder.GetClient(), "nothing should have been installed")
+	assert.Same(t, before, beholder.GetClient(), "nothing should have been installed") //nolint:staticcheck // SA1019: migrate off beholder globals
 
 	require.NoError(t, telemetry.Close())
-	assert.Same(t, before, beholder.GetClient(), "and closing it changes nothing")
+	assert.Same(t, before, beholder.GetClient(), "and closing it changes nothing") //nolint:staticcheck // SA1019: migrate off beholder globals
 }
 
 // TestRunLeavesTelemetryAsItFoundIt is the same guarantee seen from the binary: a run that started
 // telemetry and finished has put the process back the way it was.
 func TestRunLeavesTelemetryAsItFoundIt(t *testing.T) {
-	before := beholder.GetClient()
+	before := beholder.GetClient() //nolint:staticcheck // SA1019: migrate off beholder globals
 
 	require.NoError(t, execute(t, logger.Test(t), fakeConstructor, "run"))
 
-	assert.Same(t, before, beholder.GetClient())
+	assert.Same(t, before, beholder.GetClient()) //nolint:staticcheck // SA1019: migrate off beholder globals
 }
 
 // TestStreamLogsKeepsTheLoggerWhenStreamingIsOff covers the default. The run must keep its logger.

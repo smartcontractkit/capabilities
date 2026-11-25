@@ -191,7 +191,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, cfg.Transmitter.String())
 
-	client := beholder.GetClient().ForName("solana_capability")
+	client := beholder.GetClient().ForName("solana_capability") //nolint:staticcheck // SA1019: migrate off beholder globals
 	metrics, err := monitoring.NewMetrics()
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)

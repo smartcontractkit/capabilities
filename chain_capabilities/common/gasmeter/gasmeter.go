@@ -34,7 +34,7 @@ func New(lggr logger.Logger, cfg resourcemanager.Config, chainSelector uint64, c
 	if !cfg.MeterRecordsEnabled {
 		return nil
 	}
-	lggr = logger.Sugared(custmsg.NewBeholderLogger(lggr, custmsg.NewLabelerWithEmitter(beholder.GetEmitter())))
+	lggr = logger.Sugared(custmsg.NewBeholderLogger(lggr, custmsg.NewLabelerWithEmitter(beholder.GetEmitter()))) //nolint:staticcheck // SA1019: migrate off beholder globals
 	rmCfg := cfg.ResourceManagerConfig
 	rmCfg.MeterSnapshotsEnabled = false
 	resourceType := resourcemanager.WorkflowGasResourceType(chainSelector)

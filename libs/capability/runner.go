@@ -133,7 +133,7 @@ func (r runner) run(ctx context.Context) error {
 		root.addServices(debug)
 	}
 
-	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(root.subServices))
+	health, err := startHealthChecker(ctx, lggr, beholder.GetClient(), servicesToHealthReporters(root.subServices)) //nolint:staticcheck // SA1019: migrate off beholder globals
 	if err != nil {
 		return fmt.Errorf("failed to start health checker: %w", err)
 	}
