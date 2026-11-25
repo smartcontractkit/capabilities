@@ -92,9 +92,11 @@ const (
 	// DefaultForwarderGasOverheadMargin is the default safety margin added on top of the
 	// forwarder's internal reservation to cover the pre-route consumption that is not visible
 	// in the contract constants: tx intrinsic cost, calldata (report + signatures), ecrecover
-	// per signature, storage reads and the external this.route() call. Measured at ~40k gas
-	// for production reports on mainnet; operators may override it per chain via config.
-	DefaultForwarderGasOverheadMargin uint64 = 40_000
+	// per signature and storage reads. It deliberately excludes the EIP-150 63/64 withholding on
+	// the this.route() call, which scales with the gas limit and is modelled separately in
+	// ForwarderRecordedReceiverGas. Observed at ~61k gas on a production mainnet report with a
+	// 5M gas limit, so the default leaves headroom; operators may override it per chain via config.
+	DefaultForwarderGasOverheadMargin uint64 = 70_000
 
 	LatestBlock           = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
 	DefaultLookbackBlocks = 100
@@ -109,6 +111,31 @@ func ForwarderGasOverhead(margin uint64) uint64 {
 		margin = DefaultForwarderGasOverheadMargin
 	}
 	return InternalGasRequirements + margin
+}
+
+// ForwarderRecordedReceiverGas estimates the receiver gas budget KeystoneForwarder.route records
+// onchain (Transmission.gasLimit) for a transmission tx sent with txGasLimit. forwarderGasOverhead
+// is the value returned by ForwarderGasOverhead.
+//
+// report() reaches route() through the external call this.route(), so by EIP-150 route() only
+// receives 63/64 of the gas remaining after the pre-route work (intrinsic cost, calldata,
+// signature checks). route() then subtracts InternalGasRequirements before recording:
+//
+//	recorded = (txGasLimit - preRoute) - (txGasLimit - preRoute)/64 - InternalGasRequirements
+func ForwarderRecordedReceiverGas(txGasLimit, forwarderGasOverhead uint64) uint64 {
+	preRoute := uint64(0)
+	if forwarderGasOverhead > InternalGasRequirements {
+		preRoute = forwarderGasOverhead - InternalGasRequirements
+	}
+	if txGasLimit <= preRoute {
+		return 0
+	}
+	atRoute := txGasLimit - preRoute
+	atRoute -= atRoute / 64 // EIP-150: the callee gets all but one 64th
+	if atRoute <= InternalGasRequirements {
+		return 0
+	}
+	return atRoute - InternalGasRequirements
 }
 
 func NewCREForwarderCodec() (CREForwarderCodec, error) {

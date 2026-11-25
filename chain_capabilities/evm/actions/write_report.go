@@ -490,13 +490,14 @@ func (e *WriteReport) assessFailedTransmission(ctx context.Context, request *evm
 	return failedTransmissionDecision{priorTxHash: *priorTxHash, receiverGasBudget: receiverGasBudget}, nil
 }
 
-// estimateReceiverGasBudget derives the receiver gas budget offchain: the requested gas
-// limit minus the forwarder's gas overhead, or the configured receiver gas minimum when no
-// explicit limit was provided.
+// estimateReceiverGasBudget derives the receiver gas budget offchain: the budget the forwarder
+// would record for the requested gas limit (including the EIP-150 63/64 withholding on the
+// forwarder's internal route call), or the configured receiver gas minimum plus overhead when
+// no explicit limit was provided.
 func (e *WriteReport) estimateReceiverGasBudget(request *evm.WriteReportRequest) uint64 {
 	receiverGasBudget := e.ReceiverGasMinimum + e.forwarderGasOverhead
 	if request.GasConfig != nil && request.GasConfig.GasLimit > receiverGasBudget {
-		receiverGasBudget = request.GasConfig.GasLimit - e.forwarderGasOverhead
+		receiverGasBudget = contracts.ForwarderRecordedReceiverGas(request.GasConfig.GasLimit, e.forwarderGasOverhead)
 	}
 	return receiverGasBudget
 }

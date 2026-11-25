@@ -174,7 +174,7 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 		}, retriever, monitoring.TelemetryContext{}, true)
 		require.NoError(t, err)
 		require.True(t, decision.retry)
-		require.Equal(t, requestedGasLimit-overhead, decision.receiverGasBudget)
+		require.Equal(t, contracts.ForwarderRecordedReceiverGas(requestedGasLimit, overhead), decision.receiverGasBudget)
 	})
 
 	t.Run("prior tx used exactly the requested gas => no retry (genuine revert)", func(t *testing.T) {
@@ -218,7 +218,7 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 		}, retriever, monitoring.TelemetryContext{}, true)
 		require.NoError(t, err)
 		require.False(t, decision.retry)
-		require.Equal(t, requestedGasLimit-overhead, decision.receiverGasBudget)
+		require.Equal(t, contracts.ForwarderRecordedReceiverGas(requestedGasLimit, overhead), decision.receiverGasBudget)
 	})
 
 	t.Run("node-derived gas => estimate comparison as before", func(t *testing.T) {
@@ -242,6 +242,29 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 		}, retriever, monitoring.TelemetryContext{}, false)
 		require.NoError(t, err)
 		require.False(t, decision.retry)
+	})
+
+	t.Run("large gas limit: recorded budget accounts for EIP-150 withholding => no retry", func(t *testing.T) {
+		t.Parallel()
+
+		// Production case: 5M gas limit, forwarder recorded 4,831,510. A flat overhead
+		// estimate (limit - 70k = 4,930,000) wrongly treated this as underfunded.
+		requestedGasLimit := uint64(5_000_000)
+		wr := newWriteReport()
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+		priorTxHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: priorTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
+		retriever := NewTxHashRetriever(mockForwarderClient, logger.Test(t), newWriteReportTestFixture(t).transmissionID)
+		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
+		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
+			State:    contracts.TransmissionStateFailed,
+			GasLimit: big.NewInt(4_831_510),
+		}, retriever, monitoring.TelemetryContext{}, false)
+		require.NoError(t, err)
+		require.False(t, decision.retry)
+		require.True(t, wr.recordedBudgetExceedsEstimate(request, contracts.TransmissionInfo{GasLimit: big.NewInt(4_831_510)}))
 	})
 
 	t.Run("nil recorded gas limit but tx carried requested gas => no retry", func(t *testing.T) {
