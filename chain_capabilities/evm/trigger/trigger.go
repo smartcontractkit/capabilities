@@ -397,7 +397,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 			}
 			logs, err := lts.fetchLogsFromLogPoller(ctx, state)
 			if err != nil {
-				summary := fmt.Sprintf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
+				summary := fmt.Sprintf("Failed to fetch logs for triggerID: %s, fromBlock: %d, error: %v", triggerID, state.lastBlock, err)
 				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// no logs fetched, so we continue to the next iteration
 				continue
@@ -405,7 +405,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 
 			finalizedBlockNumber, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 			if err != nil {
-				summary := fmt.Sprintf("Failed to get latest finalized block number for triggerID: %s, error: %v", triggerID, err)
+				summary := fmt.Sprintf("Failed to get latest finalized block number for triggerID: %s, fromBlock: %d, logsFetched: %d, error: %v", triggerID, state.lastBlock, len(logs), err)
 				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// no finalized block number, so we continue to the next iteration
 				continue
@@ -413,7 +413,8 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 
 			sentCount, err := lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state)
 			if err != nil {
-				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
+				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, fromBlock: %d, finalizedBlock: %d, logsFetched: %d, logsSent: %d, error: %v",
+					triggerID, state.lastBlock, finalizedBlockNumber, len(logs), sentCount, err)
 				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// serious error occurred while sending logs, so we break the loop
 				return
@@ -422,7 +423,8 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
-				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
+				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, fromBlock: %d, finalizedBlock: %d, logsFetched: %d, logsSent: %d, newOffset: %d, error: %v",
+					triggerID, state.lastBlock, finalizedBlockNumber, len(logs), sentCount, calculatedLatestBlock, err)
 				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// serious error occurred while updating the last processed block, so we break the loop
 				return
