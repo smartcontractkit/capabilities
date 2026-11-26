@@ -23,6 +23,8 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/capability/instances"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
 // DebugPath is where ServeDebugUI serves the debug UI.
@@ -167,6 +169,14 @@ type debugResult struct {
 	// Instance is which instance a result is from: a grouped call may skip instances, so position in Instances
 	// need not be the instance's index.
 	Instance *int `json:",omitempty"`
+	// Report is a report shown as its body and its signers separately: the signatures need not match between
+	// instances, so they are not shown as part of the body.
+	Report *debugReport `json:",omitempty"`
+}
+
+// debugReport is a report as the page shows it, with its signatures grouped per instance.
+type debugReport struct {
+	Body json.RawMessage
 }
 
 type debugCall struct {
@@ -229,7 +239,7 @@ func (h *debugHandler) invoke(w http.ResponseWriter, r *http.Request) {
 
 	writeDebugJSON(w, h.execute(r.Context(), show, h.instances, nil, repeatRequest(h.instances, capabilities.CapabilityRequest{
 		Method: m.Name, Metadata: call.Metadata, Payload: payload,
-	})))
+	}), call.HexBytes))
 }
 
 // invokeGrouped answers a call whose groups send each set of instances its own input. Instances in no group are
@@ -277,7 +287,7 @@ func (h *debugHandler) invokeGrouped(w http.ResponseWriter, r *http.Request, m M
 
 	// The inputs differ per group; the answer must not. Consensus is every instance returning the same thing
 	// regardless of input, so the results are compared across every called instance, not within groups.
-	writeDebugJSON(w, h.execute(r.Context(), show, called, indexes, requests))
+	writeDebugJSON(w, h.execute(r.Context(), show, called, indexes, requests, call.HexBytes))
 }
 
 func (h *debugHandler) groupPayloads(m Method, groups []debugGroup) ([]*anypb.Any, error) {
@@ -348,7 +358,8 @@ func fillDebugMetadata(md *capabilities.RequestMetadata) {
 	fill(&md.WorkflowName, randomDebugHex(10))
 	fill(&md.WorkflowExecutionID, randomDebugHex(32))
 	fill(&md.DecodedWorkflowName, "debug")
-	fill(&md.ReferenceID, "debug")
+	// The consensus report method reads the reference ID as an integer, so a non-numeric one fails every call.
+	fill(&md.ReferenceID, "1")
 	fill(&md.EngineVersion, "v1")
 	if md.WorkflowDonID == 0 {
 		md.WorkflowDonID = 1
@@ -367,8 +378,13 @@ type debugDisplay func(payload *anypb.Any, err error) debugResult
 
 // execute runs the requests, one per instance of cs, and shows the response they agree on. indexes, when set,
 // says which instances cs is, so a grouped call's per-instance results are labeled with them.
-func (h *debugHandler) execute(ctx context.Context, show debugDisplay, cs []Capability, indexes []int, requests []capabilities.CapabilityRequest) debugResult {
-	response, err := instances.ExecuteEach(ctx, cs, requests)
+func (h *debugHandler) execute(ctx context.Context, show debugDisplay, cs []Capability, indexes []int, requests []capabilities.CapabilityRequest, hexBytes bool) debugResult {
+	results, err := instances.ExecuteEachResults(ctx, cs, requests)
+	if err != nil {
+		return debugResult{Error: err.Error()}
+	}
+
+	response, err := instances.AgreeResponses(results)
 	if mismatch, ok := errors.AsType[*instances.MismatchError[capabilities.CapabilityResponse]](err); ok {
 		out := debugPerInstance(mismatch, func(r capabilities.CapabilityResponse, err error) debugResult {
 			return show(r.Payload, err)
@@ -381,7 +397,41 @@ func (h *debugHandler) execute(ctx context.Context, show debugDisplay, cs []Capa
 		return out
 	}
 
-	return show(response.Payload, err)
+	out := show(response.Payload, err)
+	if out.Report != nil {
+		// Agreements return one instance's copy, but every instance signs the body with its own signatures.
+		if body, err := agreedReportBody(results, hexBytes); err == nil {
+			out.Report.Body = body
+		}
+	}
+
+	return out
+}
+
+// agreedReportBody is the report the instances agree on, with its signatures grouped per instance.
+func agreedReportBody(results []instances.Result[capabilities.CapabilityResponse], hexBytes bool) (json.RawMessage, error) {
+	var body map[string]any
+	sigs := make([]any, len(results))
+	for i, r := range results {
+		report := &sdk.ReportResponse{}
+		if err := r.Value.Payload.UnmarshalTo(report); err != nil {
+			return nil, err
+		}
+
+		tree, err := reportTree(report, hexBytes)
+		if err != nil {
+			return nil, err
+		}
+
+		if body == nil {
+			body = tree
+		}
+
+		sigs[i] = tree["sigs"]
+	}
+
+	body["sigs"] = sigs
+	return json.Marshal(body)
 }
 
 // subscribe registers the requests on cs, one per instance; cs may be a subset of every instance, as a grouped
@@ -514,12 +564,53 @@ func debugOutput(out proto.Message, payload *anypb.Any, err error, hexBytes bool
 		return debugResult{Error: err.Error()}
 	}
 
+	if report, ok := msg.(*sdk.ReportResponse); ok {
+		return debugReportResult(report, hexBytes)
+	}
+
 	b, err := toPageJSON(msg, hexBytes)
 	if err != nil {
 		return debugResult{Error: err.Error()}
 	}
 
 	return debugResult{Output: b}
+}
+
+// debugReportResult shows a report as the page shows any message, except that its signatures are grouped per
+// instance: one report has one set.
+func debugReportResult(report *sdk.ReportResponse, hexBytes bool) debugResult {
+	b, err := reportBody(report, hexBytes)
+	if err != nil {
+		return debugResult{Error: err.Error()}
+	}
+
+	return debugResult{Report: &debugReport{Body: b}}
+}
+
+// reportBody is a report's page JSON with its list of signatures wrapped as a list of one.
+func reportBody(report *sdk.ReportResponse, hexBytes bool) (json.RawMessage, error) {
+	tree, err := reportTree(report, hexBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	tree["sigs"] = []any{tree["sigs"]}
+	return json.Marshal(tree)
+}
+
+// reportTree is a report's page JSON as a tree, so its signatures can be replaced.
+func reportTree(report *sdk.ReportResponse, hexBytes bool) (map[string]any, error) {
+	b, err := toPageJSON(report, hexBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	var tree map[string]any
+	if err := json.Unmarshal(b, &tree); err != nil {
+		return nil, err
+	}
+
+	return tree, nil
 }
 
 func writeDebugJSON(w http.ResponseWriter, v any) {

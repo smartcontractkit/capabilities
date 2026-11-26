@@ -361,6 +361,7 @@ function render(r) {
   if (r.ID) div.append(h('b', {textContent: 'Event ' + r.ID}));
   if (r.Error) div.append(h('div', {className: 'error', textContent: r.Error}));
   if ('Output' in r) div.append(h('pre', {textContent: JSON.stringify(r.Output, null, 2)}));
+  if (r.Report) div.append(h('pre', {textContent: JSON.stringify(r.Report.Body, null, 2)}));
   (r.Instances || []).forEach((each, i) => div.append('Instance ' + (each.Instance ?? i), render(each)));
   return div;
 }

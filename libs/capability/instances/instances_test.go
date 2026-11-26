@@ -17,6 +17,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
@@ -417,6 +418,54 @@ func TestSamePayloadComparesMessagesNotBytes(t *testing.T) {
 
 	assert.True(t, samePayload(xy, yx))
 	assert.False(t, samePayload(xy, &anypb.Any{TypeUrl: xy.TypeUrl, Value: a}))
+}
+
+func TestSamePayloadIgnoresReportSignatures(t *testing.T) {
+	report := func(signers ...uint32) *anypb.Any {
+		sigs := make([]*sdk.AttributedSignature, len(signers))
+		for i, signer := range signers {
+			sig := []byte{byte(signer)} //nolint:gosec // G115: signer fit in a byte
+			sigs[i] = &sdk.AttributedSignature{SignerId: signer, Signature: sig}
+		}
+
+		payload, err := anypb.New(&sdk.ReportResponse{
+			ConfigDigest: []byte{1}, SeqNr: 2, ReportContext: []byte{3}, RawReport: []byte{4}, Sigs: sigs,
+		})
+		require.NoError(t, err)
+		return payload
+	}
+
+	assert.True(t, samePayload(report(1), report(1, 2)), "the signatures need not match")
+	assert.True(t, samePayload(report(), report()), "nor need there be any")
+
+	other, err := anypb.New(&sdk.ReportResponse{
+		ConfigDigest: []byte{1}, SeqNr: 2, ReportContext: []byte{3}, RawReport: []byte{5},
+	})
+	require.NoError(t, err)
+	assert.False(t, samePayload(report(1), other), "the body must match")
+}
+
+// reportFake answers with a report signed by its signers.
+type reportFake struct {
+	capabilities.Executable
+	signers []uint32
+}
+
+func (f reportFake) Execute(context.Context, capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+	sigs := make([]*sdk.AttributedSignature, len(f.signers))
+	for i, signer := range f.signers {
+		sigs[i] = &sdk.AttributedSignature{SignerId: signer}
+	}
+
+	payload, err := anypb.New(&sdk.ReportResponse{RawReport: []byte{1}, Sigs: sigs})
+	return capabilities.CapabilityResponse{Payload: payload}, err
+}
+
+func TestExecuteEachIgnoresReportSignatures(t *testing.T) {
+	cs := []capabilities.Executable{reportFake{signers: []uint32{1}}, reportFake{signers: []uint32{1, 2}}}
+
+	_, err := ExecuteEach(t.Context(), cs, []capabilities.CapabilityRequest{{}, {}})
+	require.NoError(t, err, "reports that differ only in their signatures agree, as generated clients need")
 }
 
 // mapEntry is the encoding of a values Map holding only key, so entries can be concatenated in any order.
