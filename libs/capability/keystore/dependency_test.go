@@ -39,10 +39,13 @@ func TestNewEmbeddedOCRClient(t *testing.T) {
 
 	client, err := newEmbeddedOCRClient(i)
 	require.NoError(t, err)
-	want := ocr.EmbeddedKeyBundle(1)
+	want, err := ocr.EmbeddedKeyBundles(1)
+	require.NoError(t, err)
 
 	kbs, err := client.ListKeyBundles(t.Context())
 	require.NoError(t, err)
-	require.Len(t, kbs, 1)
-	assert.Equal(t, want.PublicKey(), kbs[0].Onchain.PublicKey())
+	require.Len(t, kbs, len(want))
+	for j, kb := range want {
+		assert.Equal(t, kb.PublicKey(), kbs[j].Onchain.PublicKey())
+	}
 }
