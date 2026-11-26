@@ -1,24 +1,48 @@
 package ocr
 
 import (
-	"crypto/sha256"
-	"strconv"
+	"fmt"
+	"sync"
+
+	"github.com/smartcontractkit/chainlink-common/keystore/corekeys"
 )
 
-// EmbeddedChainType is the chain type of an embedded instance's bundle.
-const EmbeddedChainType = "evm"
+// embedded holds the key bundles of an embedded run's instances, made the first time they are asked for.
+var embedded = struct {
+	mu      sync.Mutex
+	bundles map[int][]KeyBundle
+}{bundles: map[int][]KeyBundle{}}
 
-// embeddedSeedPrefix separates the keys derived here from any other keys derived from an index.
-const embeddedSeedPrefix = "cre/capability/embed/ocr/"
+// EmbeddedKeyBundles are the key bundles of instance of an embedded run, one for each chain type a report may name,
+// so it can sign any report. Every instance runs in one process, so each instance's bundles are made once and are
+// the same wherever they are asked for: in its keystore and in every instance's OCR config.
+func EmbeddedKeyBundles(instance int) ([]KeyBundle, error) {
+	embedded.mu.Lock()
+	defer embedded.mu.Unlock()
+	if bundles, ok := embedded.bundles[instance]; ok {
+		return bundles, nil
+	}
 
-// EmbeddedKeyBundle is the key bundle of instance of an embedded run, derived from its index so every instance can
-// compute every other's public keys.
-func EmbeddedKeyBundle(instance int) KeyBundle {
-	i := strconv.Itoa(instance)
-	return NewSeededKeyBundle("embedded-"+i, EmbeddedChainType, sha256.Sum256([]byte(embeddedSeedPrefix+i)))
+	bundles := make([]KeyBundle, 0, len(corekeys.SupportedChainTypes))
+	for _, chainType := range corekeys.SupportedChainTypes {
+		bundle, err := NewKeyBundle(string(chainType))
+		if err != nil {
+			return nil, fmt.Errorf("failed to make the %s key bundle of instance %d: %w", chainType, instance, err)
+		}
+
+		bundles = append(bundles, bundle)
+	}
+
+	embedded.bundles[instance] = bundles
+	return bundles, nil
 }
 
-// NewEmbeddedClient is the Client of instance of an embedded run, which holds only EmbeddedKeyBundle(instance).
-func NewEmbeddedClient(instance int) Client {
-	return NewLocalClient(StaticKeystore{EmbeddedKeyBundle(instance)})
+// NewEmbeddedClient is the Client of instance of an embedded run, which holds EmbeddedKeyBundles(instance).
+func NewEmbeddedClient(instance int) (Client, error) {
+	bundles, err := EmbeddedKeyBundles(instance)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewLocalClient(StaticKeystore(bundles)), nil
 }

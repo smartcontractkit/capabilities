@@ -24,7 +24,8 @@ import (
 
 func TestRoundTrip(t *testing.T) {
 	t.Parallel()
-	evm, sol := ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1}), ocr.NewSeededKeyBundle("sol-1", "solana", [32]byte{2})
+	evm := newKeyBundle(t, "evm")
+	sol := newKeyBundle(t, "solana")
 	client := serve(t, ocr.StaticKeystore{evm, sol})
 
 	all, err := client.ListKeyBundles(t.Context())
@@ -36,9 +37,9 @@ func TestRoundTrip(t *testing.T) {
 	solana, err := client.ListKeyBundles(t.Context(), "solana")
 	require.NoError(t, err)
 	require.Len(t, solana, 1)
-	assert.Equal(t, "sol-1", solana[0].ID)
+	assert.Equal(t, sol.ID(), solana[0].ID)
 
-	kb, err := client.GetKeyBundle(t.Context(), "evm-1")
+	kb, err := client.GetKeyBundle(t.Context(), evm.ID())
 	require.NoError(t, err)
 	assertSameBundle(t, evm, kb)
 
@@ -48,8 +49,8 @@ func TestRoundTrip(t *testing.T) {
 
 func TestDelegatesToBundle(t *testing.T) {
 	t.Parallel()
-	evm := ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1})
-	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), "evm-1")
+	evm := newKeyBundle(t, "evm")
+	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), evm.ID())
 	require.NoError(t, err)
 
 	rc := ocrtypes.ReportContext{
@@ -81,7 +82,8 @@ func TestDelegatesToBundle(t *testing.T) {
 
 func TestServerErrors(t *testing.T) {
 	t.Parallel()
-	srv := &server{ks: ocr.StaticKeystore{ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1})}}
+	evm := newKeyBundle(t, "evm")
+	srv := &server{ks: ocr.StaticKeystore{evm}}
 	validRC := reportContextToPB(ocrtypes.ReportContext{})
 
 	for name, tc := range map[string]struct {
@@ -104,7 +106,7 @@ func TestServerErrors(t *testing.T) {
 		},
 		"no report context": {
 			call: func() error {
-				_, err := srv.SignOnchain(t.Context(), &pb.SignOnchainRequest{KeyBundleId: "evm-1"})
+				_, err := srv.SignOnchain(t.Context(), &pb.SignOnchainRequest{KeyBundleId: evm.ID()})
 				return err
 			},
 			want: codes.InvalidArgument,
@@ -112,7 +114,7 @@ func TestServerErrors(t *testing.T) {
 		"short config digest": {
 			call: func() error {
 				_, err := srv.SignOnchain(t.Context(), &pb.SignOnchainRequest{
-					KeyBundleId:   "evm-1",
+					KeyBundleId:   evm.ID(),
 					ReportContext: &pb.ReportContext{ConfigDigest: []byte{1}, ExtraHash: make([]byte, 32)},
 				})
 				return err
@@ -122,7 +124,7 @@ func TestServerErrors(t *testing.T) {
 		"round out of range": {
 			call: func() error {
 				_, err := srv.VerifyOnchain(t.Context(), &pb.VerifyOnchainRequest{
-					KeyBundleId:   "evm-1",
+					KeyBundleId:   evm.ID(),
 					ReportContext: &pb.ReportContext{ConfigDigest: make([]byte, 32), Round: 256, ExtraHash: make([]byte, 32)},
 				})
 				return err
@@ -131,7 +133,7 @@ func TestServerErrors(t *testing.T) {
 		},
 		"short point": {
 			call: func() error {
-				_, err := srv.ConfigDiffieHellman(t.Context(), &pb.ConfigDiffieHellmanRequest{KeyBundleId: "evm-1", Point: []byte{1}})
+				_, err := srv.ConfigDiffieHellman(t.Context(), &pb.ConfigDiffieHellmanRequest{KeyBundleId: evm.ID(), Point: []byte{1}})
 				return err
 			},
 			want: codes.InvalidArgument,
@@ -160,8 +162,8 @@ func TestServerErrors(t *testing.T) {
 
 func TestVerifyFailsClosed(t *testing.T) {
 	t.Parallel()
-	evm := ocr.NewSeededKeyBundle("evm-1", "evm", [32]byte{1})
-	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), "evm-1")
+	evm := newKeyBundle(t, "evm")
+	kb, err := serve(t, ocr.StaticKeystore{evm}).GetKeyBundle(t.Context(), evm.ID())
 	require.NoError(t, err)
 
 	rc := ocrtypes.ReportContext{}
@@ -207,4 +209,11 @@ func (failingKeystore) List(context.Context, ...string) ([]ocr.KeyBundle, error)
 
 func (failingKeystore) Get(context.Context, string) (ocr.KeyBundle, error) {
 	return nil, errors.New("keystore is locked")
+}
+
+func newKeyBundle(t *testing.T, chainType string) ocr.KeyBundle {
+	t.Helper()
+	kb, err := ocr.NewKeyBundle(chainType)
+	require.NoError(t, err)
+	return kb
 }
