@@ -23,10 +23,19 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
-func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
-	r := &registryService{local: registry.NewRegistry(lggr)}
+func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, info InstanceInfo, grpcCfg GRPCConfig,
+	grpcOpts loop.GRPCOpts) (*registryService, error) {
+	local := registry.NewRegistry(lggr)
+	r := &registryService{local: local}
 
-	if cfg.ProxyURL != "" {
+	if cfg.ProxyURL == "" {
+		metadata, err := newLocalMetadata(info, cfg.CapabilityDonID)
+		if err != nil {
+			return nil, err
+		}
+
+		local.SetRegistryMetadata(metadata)
+	} else {
 		dial := dialer(grpcOpts)
 		conn, err := dial(cfg.ProxyURL)
 		if err != nil {
@@ -66,8 +75,9 @@ func Dial(opts loop.GRPCOpts, target string) (*grpc.ClientConn, error) {
 }
 
 // startRegistry builds the registry and starts it.
-func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
-	r, err := newRegistry(lggr, cfg, grpcCfg, grpcOpts)
+func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, info InstanceInfo, grpcCfg GRPCConfig,
+	grpcOpts loop.GRPCOpts) (*registryService, error) {
+	r, err := newRegistry(lggr, cfg, info, grpcCfg, grpcOpts)
 	if err != nil {
 		return nil, err
 	}

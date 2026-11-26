@@ -6,10 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"strconv"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/curve25519"
 
@@ -17,9 +17,18 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3confighelper"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	"github.com/smartcontractkit/capabilities/libs/capability"
 )
 
 const testInstances = 4
+
+// seedPrefix separates the test keys derived here from any other keys derived from an index.
+const seedPrefix = "cre/capability/embed/ocr/test/"
+
+func seed(purpose string, i int) [32]byte {
+	return sha256.Sum256([]byte(seedPrefix + purpose + "/" + strconv.Itoa(i)))
+}
 
 func TestEmbeddedOraclesReachConsensus(t *testing.T) {
 	t.Parallel()
@@ -29,19 +38,6 @@ func TestEmbeddedOraclesReachConsensus(t *testing.T) {
 		require.NoError(t, err)
 		return network.BinaryNetworkEndpointFactory
 	})
-}
-
-func TestEmbeddedPeerIDsDiffer(t *testing.T) {
-	t.Parallel()
-	first, err := EmbeddedPeerID(0)
-	require.NoError(t, err)
-	again, err := EmbeddedPeerID(0)
-	require.NoError(t, err)
-	second, err := EmbeddedPeerID(1)
-	require.NoError(t, err)
-
-	assert.Equal(t, first, again, "an instance's peer is derived from its index")
-	assert.NotEqual(t, first, second)
 }
 
 func testLocalConfig() ocrtypes.LocalConfig {
@@ -147,13 +143,13 @@ type testKeys struct {
 
 func testKeysOf(t *testing.T, i int) *testKeys {
 	t.Helper()
-	peerID, err := EmbeddedPeerID(i)
+	peerID, err := capability.EmbeddedPeerID(i)
 	require.NoError(t, err)
 
 	offchainSeed := seed("offchain", i)
 	onchainSeed := seed("onchain", i)
 	k := &testKeys{
-		peerID:       peerID,
+		peerID:       peerID.String(),
 		offchain:     ed25519.NewKeyFromSeed(offchainSeed[:]),
 		configSecret: seed("config", i),
 		onchain:      ed25519.NewKeyFromSeed(onchainSeed[:]),
