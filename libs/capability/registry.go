@@ -20,20 +20,21 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, info InstanceInfo, grpcCfg GRPCConfig,
 	grpcOpts loop.GRPCOpts) (*registryService, error) {
 	local := registry.NewRegistry(lggr)
-	r := &registryService{local: local}
-
+	r := &registryService{local: local, syncTimeout: syncTimeout}
 	if cfg.ProxyURL == "" {
 		metadata, err := newLocalMetadata(info, cfg.CapabilityDonID)
 		if err != nil {
 			return nil, err
 		}
 
+		r.metadata = metadata
 		local.SetRegistryMetadata(metadata)
 	} else {
 		dial := dialer(grpcOpts)
@@ -59,7 +60,7 @@ func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, info InstanceInfo, 
 		r.fallback = remote.NewCapabilitiesRegistryClient(lggr, conn, transport)
 	}
 
-	r.Service, r.eng = services.Config{Name: "CapabilityRegistry", Close: r.close}.NewServiceEngine(lggr)
+	r.Service, r.eng = services.Config{Name: "CapabilityRegistry", Start: r.start, Close: r.close}.NewServiceEngine(lggr)
 	return r, nil
 }
 
@@ -105,6 +106,57 @@ type registryService struct {
 	mu sync.Mutex
 	// added is what Add registered, so close undoes exactly that, in reverse.
 	added []string
+
+	// metadata is the registry's config when no node gives it any. Nil when the node does.
+	metadata *localMetadata
+
+	// syncTimeout is how long start waits for the node's registry to have synced.
+	syncTimeout time.Duration
+}
+
+// syncTimeout is how long a run waits for the node's registry to sync from chain before it fails.
+const syncTimeout = time.Minute
+
+// syncRetryInterval is how often start asks the node's registry whether it has synced.
+const syncRetryInterval = time.Second
+
+// start waits until the node's registry has synced from chain once, so every capability started after it sees the
+// DONs and configs the node launched it with. The node and this process race at boot, so start asks again until
+// syncTimeout passes, then fails the run. A registry that fails to start can't be closed, so start releases the
+// connection itself.
+func (r *registryService) start(ctx context.Context) error {
+	if r.fallback == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, r.syncTimeout)
+	defer cancel()
+	ticker := time.NewTicker(syncRetryInterval)
+	defer ticker.Stop()
+	for {
+		_, err := r.fallback.LocalNode(ctx)
+		if err == nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return errors.Join(fmt.Errorf("the node's registry did not sync within %s: %w", r.syncTimeout, err),
+				r.conn.Close())
+		case <-ticker.C:
+		}
+	}
+}
+
+// AddOCR3Config gives every capability on the registry config as its OCR3 config under key. Only a registry with no
+// node behind it, as an embedded run's, takes config this way; a node gives its registry the config on chain.
+func (r *registryService) AddOCR3Config(key string, config ocrtypes.ContractConfig) error {
+	if r.metadata == nil {
+		return errors.New("this registry does not own its config locally")
+	}
+
+	r.metadata.addOCR3Config(key, config)
+	return nil
 }
 
 // close undoes every Add in reverse, then releases the connection the deregistrations travel on.

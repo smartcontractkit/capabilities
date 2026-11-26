@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +17,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry/remote"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 )
 
 var testGRPC = GRPCConfig{AdvertiseHost: defaultHost}
@@ -30,7 +33,8 @@ func newTestGRPCOpts(t *testing.T, reg *prometheus.Registry) loop.GRPCOpts {
 // process and the two race, so a registry proxy that is not up yet has to delay the first lookup
 // rather than fail the run.
 //
-// Nothing is listening on the port below, and building the registry still succeeds.
+// Nothing is listening on the port below, and building the registry still succeeds. Starting it waits for the node's
+// registry to sync, and fails once that takes too long.
 func TestNewRegistryDoesNotDial(t *testing.T) {
 	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 
@@ -38,22 +42,38 @@ func TestNewRegistryDoesNotDial(t *testing.T) {
 	require.NotNil(t, reg.fallback)
 	assert.Empty(t, reg.added, "nothing is added yet, so nothing is announced")
 
+	reg.syncTimeout = 2 * syncRetryInterval
+	require.ErrorContains(t, reg.Start(t.Context()), "the node's registry did not sync")
+}
+
+// TestRegistryStartWaitsForTheNodeToSync checks start returns once the node's registry has synced from chain, and not
+// before.
+func TestRegistryStartWaitsForTheNodeToSync(t *testing.T) {
+	node := newSpyRegistry(t)
+	node.reg.SetRegistryMetadata(nil)
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
+	require.NoError(t, err)
+
+	synced := syncedMetadata(t, node.reg)
+	time.AfterFunc(2*syncRetryInterval, func() { node.reg.SetRegistryMetadata(synced) })
+	started := time.Now()
 	require.NoError(t, reg.Start(t.Context()))
+	assert.GreaterOrEqual(t, time.Since(started), 2*syncRetryInterval, "start waits for the node's registry to sync")
 	require.NoError(t, reg.Close())
 }
 
 // TestNewRegistryDoesNotValidateTheTarget pins something worth knowing before debugging one: not
-// even a nonsense target fails here.
+// even a nonsense target fails construction.
 //
-// grpc.NewClient defers everything to the first RPC, so a typo in --capabilities.proxy-url is not
-// reported at startup - it surfaces as a failed capability lookup later on.
+// grpc.NewClient defers everything to the first RPC, so a typo in --capabilities.proxy-url is
+// reported when the registry starts and asks the node whether it has synced, after syncTimeout.
 func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 	for _, target := range []string{"!://not a target", "unknownscheme:///x"} {
 		t.Run(target, func(t *testing.T) {
 			reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: target}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 			require.NoError(t, err)
-			require.NoError(t, reg.Start(t.Context()))
-			assert.NoError(t, reg.Close())
+			reg.syncTimeout = syncRetryInterval
+			require.Error(t, reg.Start(t.Context()), "it fails when the node's registry is asked whether it has synced")
 		})
 	}
 }
@@ -73,6 +93,32 @@ func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
 	require.NoError(t, err, "the run's own DON is known")
 	_, err = reg.DONByID(t.Context(), 2)
 	assert.Error(t, err, "there is no node to ask about any other DON")
+}
+
+// TestRegistryAddOCR3Config checks a registry with no node gives every capability the run hosts the OCR3 configs added
+// to it, and that one with a node takes its config only from the node.
+func TestRegistryAddOCR3Config(t *testing.T) {
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{CapabilityDonID: 1}, InstanceInfo{Total: 1}, testGRPC,
+		newTestGRPCOpts(t, prometheus.NewRegistry()))
+	require.NoError(t, err)
+	require.NoError(t, reg.Start(t.Context()))
+	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
+	require.NoError(t, reg.Add(t.Context(), newFake()))
+
+	got, err := reg.ConfigForCapability(t.Context(), fakeID, 1)
+	require.NoError(t, err)
+	assert.Empty(t, got.Ocr3Configs, "a registry with no node has no OCR3 config until some is added")
+
+	config := ocrtypes.ContractConfig{ConfigDigest: ocrtypes.ConfigDigest{1}, ConfigCount: 1}
+	require.NoError(t, reg.AddOCR3Config("__default__", config))
+	got, err = reg.ConfigForCapability(t.Context(), fakeID, 1)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]ocrtypes.ContractConfig{"__default__": config}, got.Ocr3Configs)
+
+	withNode, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: "localhost:1"}, InstanceInfo{Total: 1}, testGRPC,
+		newTestGRPCOpts(t, prometheus.NewRegistry()))
+	require.NoError(t, err)
+	require.Error(t, withNode.AddOCR3Config("__default__", config))
 }
 
 // TestRegistryAddHoldsUntilClose covers the local half: this process's registry resolves what was
@@ -176,14 +222,26 @@ func counterTotal(t *testing.T, g prometheus.Gatherer, name string) float64 {
 // spyRegistry is the node's registry, recording what is announced to it and what is taken back.
 type spyRegistry struct {
 	registry.CapabilitiesRegistry
+	reg *registry.Registry
 
 	mu      sync.Mutex
 	adds    []string
 	removes []string
 }
 
+// newSpyRegistry is a node's registry that has synced.
 func newSpyRegistry(t *testing.T) *spyRegistry {
-	return &spyRegistry{CapabilitiesRegistry: registry.NewRegistry(logger.Test(t))}
+	reg := registry.NewRegistry(logger.Test(t))
+	reg.SetRegistryMetadata(syncedMetadata(t, reg))
+	return &spyRegistry{CapabilitiesRegistry: reg, reg: reg}
+}
+
+// syncedMetadata is the metadata of a node's registry that has synced, which knows the local node.
+func syncedMetadata(t *testing.T, reg *registry.Registry) registry.CapabilitiesRegistryMetadata {
+	t.Helper()
+	m, err := newLocalMetadata(InstanceInfo{Total: 1}, 1)
+	require.NoError(t, err)
+	return m
 }
 
 func (s *spyRegistry) Add(ctx context.Context, c capabilities.BaseCapability) error {
