@@ -370,7 +370,6 @@ func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, trigg
 	if reply == nil {
 		return nil, fmt.Errorf("failed to register latest and finalized log pollers block: 'nil' for triggerID: %s", triggerID)
 	}
-	lts.lggr.Debugf("Latest finalized block number: %d, triggerID: %s", reply.FinalizedBlockNumber, triggerID)
 
 	return big.NewInt(reply.FinalizedBlockNumber), nil
 }
@@ -396,7 +395,6 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 				lts.lggr.Infof("Unregistered while polling triggerID: %s", triggerID)
 				return
 			}
-			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, state.lastBlock)
 			logs, err := lts.fetchLogsFromLogPoller(ctx, state)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
@@ -413,7 +411,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 				continue
 			}
 
-			err = lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state)
+			sentCount, err := lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
 				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
@@ -421,8 +419,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 				return
 			}
 
-			lts.lggr.Debugf("Finished sending events for triggerID: %s, about to update latest block number (current offset: %d, latest finalized block: %d)", triggerID, state.lastBlock, finalizedBlockNumber)
-			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber, triggerID)
+			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
@@ -430,7 +427,9 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 				// serious error occurred while updating the last processed block, so we break the loop
 				return
 			}
-			successMessage := fmt.Sprintf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d, sent logs: %d", triggerID, calculatedLatestBlock, len(logs))
+			// Single summary line per poll; keep per-poll logging to one line since this runs for every trigger on every tick.
+			successMessage := fmt.Sprintf("Log trigger poll complete for triggerID: %s, fromBlock: %d, finalizedBlock: %d, logsFetched: %d, logsSent: %d, newOffset: %d",
+				triggerID, state.lastBlock, finalizedBlockNumber, len(logs), sentCount, calculatedLatestBlock)
 			monitoring.LogAndEmitSuccess(ctx, successMessage, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerSuccess(telemetryContext, triggerID, input, len(logs), calculatedLatestBlock.Int64()))
 		}
 	}
@@ -440,8 +439,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
-	trigger logTriggerState) error {
-	lts.lggr.Debugf("Sending logs to workflow, triggerID: %s, finalizedBlockNumber: %d, logs size %d", triggerID, finalizedBlockNumber, len(logs))
+	trigger logTriggerState) (int, error) {
 	var needsUpdate bool
 	sentCount := 0
 
@@ -557,11 +555,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		err := lts.triggers.Update(triggerID, trigger.lastBlock, trigger.unfinalizedSentEventIDs)
 		if err != nil {
 			lts.lggr.Errorf("Failed to update unfinalized sent event IDs for triggerID: %s, error: %v", triggerID, err)
-			return fmt.Errorf("failed to update unfinalized sent event IDs for triggerID: %s: %w", triggerID, err)
+			return sentCount, fmt.Errorf("failed to update unfinalized sent event IDs for triggerID: %s: %w", triggerID, err)
 		}
 	}
-	lts.lggr.Debugf("Total logs successfully sent for triggerID: %s: %d (originally got: %d)", triggerID, sentCount, len(logs))
-	return nil
+	return sentCount, nil
 }
 
 // deliverLogReliably sends a single EVM log to the BaseTriggerCapability
@@ -651,7 +648,7 @@ func (lts *LogTriggerService) generateLogIdentifier(log *evmtypes.Log) string {
 	return fmt.Sprintf("%x:%x:%d", log.TxHash, log.BlockHash, log.LogIndex)
 }
 
-func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, currentBlockNumber *big.Int, finalizedBlockNumber *big.Int, triggerID string) *big.Int {
+func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, currentBlockNumber *big.Int, finalizedBlockNumber *big.Int) *big.Int {
 	result := currentBlockNumber
 	for _, l := range logs {
 		// it has to iterate over all logs to update the last block number, as it could be multiple addresses with different block numbers among them
@@ -660,10 +657,6 @@ func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, current
 			result = blockNumber
 		}
 	}
-
-	lts.lggr.Debugf("getLatestBlockNumber result: %d (logs size: %d, currentBlockNumber: %d, finalizedBlockNumber: %d, triggerID: %s)",
-		result,
-		len(logs), currentBlockNumber, finalizedBlockNumber, triggerID)
 
 	return result
 }
