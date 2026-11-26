@@ -5,13 +5,16 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
+	"sync"
 
 	"github.com/smartcontractkit/chainlink-common/keystore/corekeys"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	keystoreocr "github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr"
@@ -37,6 +40,10 @@ type localMetadata struct {
 	don   capabilities.DON
 	nodes []capabilities.Node
 	local int
+
+	mu sync.Mutex
+	// ocr3Configs are the OCR3 configs added to every capability on the DON.
+	ocr3Configs map[string]ocrtypes.ContractConfig
 }
 
 var _ registry.CapabilitiesRegistryMetadata = (*localMetadata)(nil)
@@ -105,14 +112,26 @@ func (m *localMetadata) NodeByPeerID(_ context.Context, peerID p2ptypes.PeerID) 
 	return m.nodes[j], nil
 }
 
-// ConfigForCapability is the empty config of a capability on the DON: an embedded run configures its capabilities
-// itself.
+func (m *localMetadata) addOCR3Config(key string, config ocrtypes.ContractConfig) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ocr3Configs == nil {
+		m.ocr3Configs = map[string]ocrtypes.ContractConfig{}
+	}
+
+	m.ocr3Configs[key] = config
+}
+
+// ConfigForCapability is the config of a capability on the DON: only the OCR3 configs added to the run, as an
+// embedded run configures its capabilities itself.
 func (m *localMetadata) ConfigForCapability(ctx context.Context, _ string, donID uint32) (capabilities.CapabilityConfiguration, error) {
 	if _, err := m.DONByID(ctx, donID); err != nil {
 		return capabilities.CapabilityConfiguration{}, err
 	}
 
-	return capabilities.CapabilityConfiguration{}, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return capabilities.CapabilityConfiguration{Ocr3Configs: maps.Clone(m.ocr3Configs)}, nil
 }
 
 func (m *localMetadata) DONsForCapability(context.Context, string) ([]capabilities.DONWithNodes, error) {

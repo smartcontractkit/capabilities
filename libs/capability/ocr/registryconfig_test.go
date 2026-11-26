@@ -1,0 +1,70 @@
+package ocr
+
+import (
+	"context"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
+)
+
+func TestRegistryConfig(t *testing.T) {
+	t.Parallel()
+	cc := ocrtypes.ContractConfig{
+		ConfigDigest: ocrtypes.ConfigDigest{0, 14, 1},
+		ConfigCount:  2,
+		Signers:      []ocrtypes.OnchainPublicKey{{1}},
+		Transmitters: []ocrtypes.Account{"f98665742002d7212b9a74c37bb17dcd0f96ff9d", "5994a5155e9b81ab7794b79bfbf076ef5ef7c437"},
+	}
+
+	reg := &fakeRegistry{configs: map[string]ocrtypes.ContractConfig{capabilitiespb.OCR3ConfigDefaultKey: cc}}
+	c := &registryConfig{registry: reg, capabilityID: "test@1.0.0", donID: 3}
+
+	count, digest, err := c.LatestConfigDetails(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), count)
+	assert.Equal(t, cc.ConfigDigest, digest)
+
+	latest, err := c.LatestConfig(t.Context(), count)
+	require.NoError(t, err)
+	assert.Equal(t, cc, latest)
+
+	digest, err = c.ConfigDigest(t.Context(), latest)
+	require.NoError(t, err)
+	assert.Equal(t, cc.ConfigDigest, digest)
+
+	assert.Equal(t, "test@1.0.0", reg.capabilityID)
+	assert.Equal(t, uint32(3), reg.donID)
+
+	_, err = c.ConfigDigest(t.Context(), ocrtypes.ContractConfig{})
+	require.ErrorContains(t, err, "no digest")
+
+	reg.configs = nil
+	_, _, err = c.LatestConfigDetails(t.Context())
+	require.ErrorContains(t, err, "no OCR config")
+}
+
+// fakeRegistry only serves capability configs, and records what it was last asked for.
+type fakeRegistry struct {
+	registry.CapabilitiesRegistry
+	configs map[string]ocrtypes.ContractConfig
+
+	mu           sync.Mutex
+	capabilityID string
+	donID        uint32
+}
+
+func (r *fakeRegistry) ConfigForCapability(_ context.Context, capabilityID string, donID uint32) (capabilities.CapabilityConfiguration, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.capabilityID = capabilityID
+	r.donID = donID
+	return capabilities.CapabilityConfiguration{Ocr3Configs: r.configs}, nil
+}

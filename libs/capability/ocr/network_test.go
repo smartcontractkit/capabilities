@@ -15,7 +15,6 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	libocr "github.com/smartcontractkit/libocr/offchainreporting2plus"
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3shims"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -53,24 +52,19 @@ func TestRemoteOraclesReachConsensus(t *testing.T) {
 // testOraclesReachConsensus runs a DON of testInstances oracles, each over the networking newFactory returns, and
 // checks every one transmits an attested report.
 func testOraclesReachConsensus(t *testing.T, newFactory func(id int) ocrtypes.BinaryNetworkEndpointFactory) {
-	config := testConfig(t)
 	transmitted := make(chan transmission, 100)
+	config := testRegistryConfig(t)
 	for id := range testInstances {
 		lggr := logger.Test(t)
-		k := testKeysOf(t, id)
-		oracle, err := libocr.NewOracle(libocr.OCR3OracleArgs2[string]{
-			BinaryNetworkEndpointFactory: newFactory(id),
-			ContractConfigTracker:        staticConfig{config: config},
-			OffchainConfigDigester:       staticConfig{config: config},
-			OffchainKeyring:              k,
-			OnchainKeyring:               ocr3shims.OnchainKeyringAsOnchainKeyring2[string](k),
-			LocalConfig:                  testLocalConfig(),
-			ReportingPluginFactory:       echoPluginFactory{},
-			ContractTransmitter:          &recordingTransmitter{id: id, account: k.transmitAccount(), transmitted: transmitted},
-			Database:                     NewMemoryDB(fmt.Sprint(id), lggr),
-			Logger:                       logger.NewOCRWrapper(lggr, true, func(string) {}),
-			MetricsRegisterer:            prometheus.NewRegistry(),
-		})
+		oracle, err := NewRegistryOracle(t.Context(), libocr.OCR3OracleArgs2[echoInfo]{
+			LocalConfig:            testLocalConfig(),
+			ReportingPluginFactory: echoPluginFactory{},
+			ContractTransmitter:    &recordingTransmitter{id: id, transmitted: transmitted},
+			Database:               NewMemoryDB(fmt.Sprint(id), lggr),
+			Logger:                 logger.NewOCRWrapper(lggr, true, func(string) {}),
+			MetricsRegisterer:      prometheus.NewRegistry(),
+		}, Network{BinaryNetworkEndpointFactory: newFactory(id)}, testEmbeddedClient(t, id), config.registry,
+			config.capabilityID, 0)
 		require.NoError(t, err)
 		require.NoError(t, oracle.Start())
 		t.Cleanup(func() { assert.NoError(t, oracle.Close()) })

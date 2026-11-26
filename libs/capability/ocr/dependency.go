@@ -37,7 +37,7 @@ type Network struct {
 }
 
 // init provides the node's networking however the capability is run: from the node at Config.URL for run and compat,
-// and over the in-process network for each instance of embed.
+// and in-process for each instance of embed.
 func init() {
 	capability.RunInjector.MustProvideConfig(ConfigNamespace, &Config{})
 	capability.RunInjector.MustProvide(newNodeNetwork)

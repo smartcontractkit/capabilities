@@ -8,9 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/libocr/commontypes"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
+	"github.com/smartcontractkit/chainlink-common/keystore/corekeys/ocr2key"
+	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+
+	keystoreocr "github.com/smartcontractkit/capabilities/libs/capability/keystore/ocr"
 )
 
 func TestNewNodeNetwork(t *testing.T) {
@@ -34,4 +39,50 @@ func TestNewNodeNetwork(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "12D3KooWPeer", network.BinaryNetworkEndpointFactory.PeerID())
 	assert.Equal(t, bootstrappers, network.V2Bootstrappers)
+}
+
+func TestNodeSigning(t *testing.T) {
+	t.Parallel()
+	evm := newKeyBundle(t, "evm")
+	solana := newKeyBundle(t, "solana")
+	otherEVM := newKeyBundle(t, "evm")
+	signerOf := func(bundles ...keystoreocr.KeyBundle) ocrtypes.OnchainPublicKey {
+		keys := ocr2key.MultichainPublicKey{}
+		for _, b := range bundles {
+			keys[b.ChainType()] = b.PublicKey()
+		}
+
+		signer, err := keys.MarshalBinary()
+		require.NoError(t, err)
+		return signer
+	}
+
+	identityFor := func(cc ocrtypes.ContractConfig) (identity, error) {
+		reg := &fakeRegistry{configs: map[string]ocrtypes.ContractConfig{capabilitiespb.OCR3ConfigDefaultKey: cc}}
+		return nodeIdentity(t.Context(), keystoreocr.NewLocalClient(keystoreocr.StaticKeystore{evm, solana, otherEVM}),
+			&registryConfig{registry: reg, capabilityID: "test@1.0.0", donID: 3})
+	}
+
+	unknown := newKeyBundle(t, "evm")
+	signing, err := identityFor(ocrtypes.ContractConfig{
+		Signers:      []ocrtypes.OnchainPublicKey{signerOf(unknown), signerOf(evm, solana)},
+		Transmitters: []ocrtypes.Account{"aaaa", "bbbb"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ocrtypes.Account("bbbb"), signing.TransmitAccount, "the transmitter is paired with the node's signer")
+	assert.Equal(t, evm.OffchainPublicKey(), signing.OffchainKeyring.OffchainPublicKey(), "offchain signing uses the evm bundle")
+	assert.Equal(t, signerOf(evm, solana), signing.onchainKeyring.PublicKey())
+
+	_, err = identityFor(ocrtypes.ContractConfig{Signers: []ocrtypes.OnchainPublicKey{signerOf(unknown)}, Transmitters: []ocrtypes.Account{"aaaa"}})
+	require.ErrorContains(t, err, "none of the node's 3 OCR key bundles make up one of the 1 signers")
+
+	_, err = identityFor(ocrtypes.ContractConfig{Signers: []ocrtypes.OnchainPublicKey{signerOf(solana)}, Transmitters: []ocrtypes.Account{"aaaa"}})
+	require.ErrorContains(t, err, "with an evm bundle among them")
+}
+
+func newKeyBundle(t *testing.T, chainType string) keystoreocr.KeyBundle {
+	t.Helper()
+	kb, err := keystoreocr.NewKeyBundle(chainType)
+	require.NoError(t, err)
+	return kb
 }

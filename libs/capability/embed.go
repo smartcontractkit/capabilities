@@ -9,6 +9,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/do/v2"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/registry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -142,6 +143,15 @@ func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *I
 	// Reflection is needed because something like Capability((*CronServer)(nil)) == nil is false
 	if v := reflect.ValueOf(c); !v.IsValid() || (v.Kind() == reflect.Pointer && v.IsNil()) {
 		return zero, errors.New("failed to instantiate capability: the constructor returned neither a capability nor an error")
+	}
+
+	capInfo, err := c.Info(ctx)
+	if err != nil {
+		return zero, fmt.Errorf("failed to get the capability's info: %w", err)
+	}
+
+	if err = i.ProvideValue(capInfo); err != nil {
+		return zero, fmt.Errorf("failed to provide the capability's info: %w", err)
 	}
 
 	if err = c.Start(ctx); err != nil {
