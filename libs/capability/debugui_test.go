@@ -1,8 +1,10 @@
 package capability
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,6 +20,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
@@ -243,4 +247,82 @@ func TestFillDebugMetadata(t *testing.T) {
 	assert.Equal(t, "mine", given.WorkflowID, "what the page sends is kept")
 	assert.Equal(t, uint32(7), given.WorkflowDonID)
 	assert.NotEmpty(t, given.WorkflowOwner)
+
+	_, err := strconv.Atoi(first.ReferenceID)
+	assert.NoError(t, err, "the report method reads the reference ID as an integer")
+}
+
+func TestReportOutput(t *testing.T) {
+	payload, err := anypb.New(&sdk.ReportResponse{
+		ConfigDigest:  []byte{1},
+		SeqNr:         2,
+		ReportContext: []byte{3},
+		RawReport:     []byte{4},
+		Sigs:          []*sdk.AttributedSignature{{SignerId: 2}, {SignerId: 1}},
+	})
+	require.NoError(t, err)
+
+	r := debugOutput(&sdk.ReportResponse{}, payload, nil, true)
+	require.Empty(t, r.Error)
+	require.Nil(t, r.Output, "the report is not shown as a whole")
+	require.NotNil(t, r.Report)
+	assert.JSONEq(t, `{"config_digest": "0x01", "seq_nr": "2", "report_context": "0x03", "raw_report": "0x04", "sigs": [[{"signature": "0x", "signer_id": 2}, {"signature": "0x", "signer_id": 1}]]}`, string(r.Report.Body), "the report is shown as it is, with one instance's signatures")
+}
+
+// reportInstance returns a report whose body and envelope are its own.
+type reportInstance struct {
+	services.Service
+	capabilities.ExecutableAndTriggerCapability
+	report  []byte
+	digest  []byte
+	seqNr   uint64
+	context []byte
+	signers []uint32
+}
+
+func (reportInstance) Methods() []Method { return nil }
+
+func (r reportInstance) Execute(context.Context, capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+	sigs := make([]*sdk.AttributedSignature, len(r.signers))
+	for i, s := range r.signers {
+		sigs[i] = &sdk.AttributedSignature{SignerId: s}
+	}
+
+	payload, err := anypb.New(&sdk.ReportResponse{
+		ConfigDigest: r.digest, SeqNr: r.seqNr, ReportContext: r.context, RawReport: r.report, Sigs: sigs,
+	})
+	return capabilities.CapabilityResponse{Payload: payload}, err
+}
+
+func TestExecuteIgnoresReportSignatures(t *testing.T) {
+	m := Method{Name: "Report", Input: &sdk.ReportRequest{}, Output: &sdk.ReportResponse{}}
+	show := func(payload *anypb.Any, err error) debugResult {
+		return debugOutput(m.Output, payload, err, true)
+	}
+	cs := []Capability{
+		reportInstance{report: []byte{1}, digest: []byte{1}, seqNr: 1, context: []byte{1}, signers: []uint32{1}},
+		reportInstance{report: []byte{1}, digest: []byte{1}, seqNr: 1, context: []byte{1}, signers: []uint32{1, 2}},
+	}
+	requests := []capabilities.CapabilityRequest{{Method: "Report"}, {Method: "Report"}}
+
+	r := (&debugHandler{}).execute(t.Context(), show, cs, nil, requests, true)
+	require.Empty(t, r.Error, "reports that differ only in their signatures agree")
+	require.Empty(t, r.Instances)
+	require.NotNil(t, r.Report)
+	assert.JSONEq(t, `{"config_digest": "0x01", "seq_nr": "1", "report_context": "0x01", "raw_report": "0x01", "sigs": [[{"signature": "0x", "signer_id": 1}], [{"signature": "0x", "signer_id": 1}, {"signature": "0x", "signer_id": 2}]]}`, string(r.Report.Body), "one body with every instance's signatures")
+}
+
+func TestExecuteReportBodiesDiffer(t *testing.T) {
+	m := Method{Name: "Report", Input: &sdk.ReportRequest{}, Output: &sdk.ReportResponse{}}
+	show := func(payload *anypb.Any, err error) debugResult {
+		return debugOutput(m.Output, payload, err, true)
+	}
+	cs := []Capability{reportInstance{report: []byte{1}}, reportInstance{report: []byte{2}}}
+	requests := []capabilities.CapabilityRequest{{Method: "Report"}, {Method: "Report"}}
+
+	r := (&debugHandler{}).execute(t.Context(), show, cs, nil, requests, true)
+	require.Contains(t, r.Error, "instances disagree", "different report bodies are a real disagreement")
+	require.Len(t, r.Instances, 2)
+	assert.JSONEq(t, `{"config_digest": "0x", "seq_nr": "0", "report_context": "0x", "raw_report": "0x01", "sigs": [[]]}`, string(r.Instances[0].Report.Body))
+	assert.JSONEq(t, `{"config_digest": "0x", "seq_nr": "0", "report_context": "0x", "raw_report": "0x02", "sigs": [[]]}`, string(r.Instances[1].Report.Body))
 }

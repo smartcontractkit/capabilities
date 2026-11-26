@@ -13,6 +13,8 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
 type Result[T any] struct {
@@ -63,18 +65,31 @@ func ExecuteEach[C capabilities.Executable](
 	ctx context.Context,
 	cs []C,
 	requests []capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	if len(requests) != len(cs) {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("%d requests for %d instances", len(requests), len(cs))
-	}
-
-	results, err := each(cs, func(i int, c C) (capabilities.CapabilityResponse, error) {
-		return c.Execute(ctx, cloneCapabilityRequest(requests[i]))
-	})
-
+	results, err := ExecuteEachResults(ctx, cs, requests)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
 
+	return AgreeResponses(results)
+}
+
+// ExecuteEachResults is ExecuteEach with every instance's response, which a caller that shows each instance needs.
+func ExecuteEachResults[C capabilities.Executable](
+	ctx context.Context,
+	cs []C,
+	requests []capabilities.CapabilityRequest) ([]Result[capabilities.CapabilityResponse], error) {
+	if len(requests) != len(cs) {
+		return nil, fmt.Errorf("%d requests for %d instances", len(requests), len(cs))
+	}
+
+	return each(cs, func(i int, c C) (capabilities.CapabilityResponse, error) {
+		return c.Execute(ctx, cloneCapabilityRequest(requests[i]))
+	})
+}
+
+// AgreeResponses is the response every instance returned, or a *MismatchError when they disagree, on the response
+// or the error.
+func AgreeResponses(results []Result[capabilities.CapabilityResponse]) (capabilities.CapabilityResponse, error) {
 	return agree(results, sameCapabilityResponse)
 }
 
@@ -435,5 +450,18 @@ func samePayload(a, b *anypb.Any) bool {
 	if aErr != nil || bErr != nil {
 		return proto.Equal(a, b)
 	}
+	if ar, ok := am.(*sdk.ReportResponse); ok {
+		br, ok := bm.(*sdk.ReportResponse)
+		return ok && sameReportBody(ar, br)
+	}
 	return proto.Equal(am, bm)
+}
+
+// sameReportBody compares reports without their signatures, which need not match between instances: each signs
+// the same body with the set of oracles it collected.
+func sameReportBody(a, b *sdk.ReportResponse) bool {
+	a = proto.Clone(a).(*sdk.ReportResponse)
+	b = proto.Clone(b).(*sdk.ReportResponse)
+	a.Sigs, b.Sigs = nil, nil
+	return proto.Equal(a, b)
 }
