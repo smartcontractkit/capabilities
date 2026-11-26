@@ -108,22 +108,18 @@ func expectSuccessfulTransmissionEvent(t *testing.T, mockForwarderClient *mocks.
 		Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 }
 
-// TestAssessFailedTransmission_TxGasCheck guards the tx-gas check fix (report 91254). When
-// the gas limit is user-provided, the retry decision compares the prior tx's actual onchain
-// gas limit against the requested gas limit — both trustless — instead of the forwarder-
-// recorded budget against our offchain estimate. A retry delivers more receiver gas iff the
+// TestAssessFailedTransmission_TxGasCheck covers the retry decision for a failed transmission.
+// It compares the prior tx's actual onchain gas limit against the request's gas limit — both
+// trustless, and identical across honest nodes. A retry delivers more receiver gas iff the
 // prior tx used less gas than the request, since the forwarder overhead is identical between
-// attempts. The estimate comparison remains for node-derived gas and as fallback when the
-// prior tx cannot be fetched.
+// attempts. No forwarder gas accounting is involved.
 func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 	t.Parallel()
-
-	overhead := contracts.ForwarderGasOverhead(0)
 
 	newWriteReport := func() *WriteReport {
 		return &WriteReport{
 			ReceiverGasMinimum:   ConfiguredReceiverGasMinimum,
-			forwarderGasOverhead: overhead,
+			forwarderGasOverhead: contracts.ForwarderGasOverhead(0),
 			lggr:                 logger.Sugared(logger.Test(t)),
 			beholderProcessor:    test.NopBeholderProcessor{},
 			messageBuilder:       monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
@@ -171,10 +167,10 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
 			State:    contracts.TransmissionStateFailed,
 			GasLimit: big.NewInt(309_432), // attacker's tx recorded budget
-		}, retriever, monitoring.TelemetryContext{}, true)
+		}, retriever, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.True(t, decision.retry)
-		require.Equal(t, requestedGasLimit-overhead, decision.receiverGasBudget)
+		require.Equal(t, uint64(380_000), decision.priorTxGas)
 	})
 
 	t.Run("prior tx used exactly the requested gas => no retry (genuine revert)", func(t *testing.T) {
@@ -186,7 +182,7 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
 			State:    contracts.TransmissionStateFailed,
 			GasLimit: big.NewInt(int64(requestedGasLimit - 50_000)),
-		}, retriever, monitoring.TelemetryContext{}, true)
+		}, retriever, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.False(t, decision.retry)
 	})
@@ -200,34 +196,34 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
 			State:    contracts.TransmissionStateFailed,
 			GasLimit: big.NewInt(int64(requestedGasLimit)),
-		}, retriever, monitoring.TelemetryContext{}, true)
+		}, retriever, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.False(t, decision.retry)
 	})
 
-	t.Run("tx gas fetch fails => falls back to estimate comparison", func(t *testing.T) {
+	t.Run("tx gas fetch fails => retry", func(t *testing.T) {
 		t.Parallel()
 
 		requestedGasLimit := uint64(500_000)
 		wr, retriever := newWriteReportWithUnfetchableTxGas(t)
 		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
-		// Recorded budget (450k) > estimate (requested - overhead) => enough gas, no retry.
+		// The recorded budget no longer matters: without the prior tx's gas we retry, which
+		// sends at least as much gas as the failed attempt had.
 		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
 			State:    contracts.TransmissionStateFailed,
 			GasLimit: big.NewInt(450_000),
-		}, retriever, monitoring.TelemetryContext{}, true)
+		}, retriever, monitoring.TelemetryContext{})
 		require.NoError(t, err)
-		require.False(t, decision.retry)
-		require.Equal(t, requestedGasLimit-overhead, decision.receiverGasBudget)
+		require.True(t, decision.retry)
 	})
 
-	t.Run("node-derived gas => estimate comparison as before", func(t *testing.T) {
+	t.Run("gas limit check disabled => no retry and no tx fetch", func(t *testing.T) {
 		t.Parallel()
 
 		requestedGasLimit := uint64(500_000)
 		wr := newWriteReport()
-		// Prior failed tx exists (hash is resolved) but its gas is never fetched for
-		// node-derived gas — the estimate comparison decides.
+		wr.disableGasLimitCheck = true
+		// The mock EVM service is never set: any GetTransactionByHash call would nil-panic.
 		mockForwarderClient := mocks.NewCREForwarderClient(t)
 		priorTxHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
@@ -235,13 +231,13 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 			Return([]*evmtypes.Log{{TxHash: priorTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
 		retriever := NewTxHashRetriever(mockForwarderClient, logger.Test(t), newWriteReportTestFixture(t).transmissionID)
 		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
-		// Recorded budget (450k) > estimate => enough gas, no retry — unchanged behavior.
 		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
 			State:    contracts.TransmissionStateFailed,
-			GasLimit: big.NewInt(450_000),
-		}, retriever, monitoring.TelemetryContext{}, false)
+			GasLimit: big.NewInt(1),
+		}, retriever, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.False(t, decision.retry)
+		require.Equal(t, priorTxHash, decision.priorTxHash)
 	})
 
 	t.Run("nil recorded gas limit but tx carried requested gas => no retry", func(t *testing.T) {
@@ -252,7 +248,7 @@ func TestAssessFailedTransmission_TxGasCheck(t *testing.T) {
 		request := &evm.WriteReportRequest{GasConfig: &evm.GasConfig{GasLimit: requestedGasLimit}}
 		decision, err := wr.assessFailedTransmission(t.Context(), request, contracts.TransmissionInfo{
 			State: contracts.TransmissionStateFailed,
-		}, retriever, monitoring.TelemetryContext{}, true)
+		}, retriever, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.False(t, decision.retry)
 	})
@@ -1773,25 +1769,36 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 	})
 
 	t.Run("failed with enough gas early returns without waiting for delta stage", func(t *testing.T) {
-		for _, queuePosition := range []int{1, 2, 3} {
+		// Positions 2+: with a single prior failed attempt the queue-count exit doesn't apply,
+		// so only the prior tx's gas can end polling early.
+		for _, queuePosition := range []int{2, 3} {
 			t.Run("queue position "+strconv.Itoa(queuePosition), func(t *testing.T) {
 				wr, testLogger, mockForwarderClient, request, transmissionID :=
 					setupPollTransmissionInfoForQueuePosition(t, queuePosition)
 				wr.transmissionScheduler.DeltaStage = 5 * time.Second
 
-				desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-				request.GasConfig = &evm.GasConfig{
-					GasLimit: contracts.ForwarderGasOverhead(0) + desiredReceiverGas,
-				}
+				requestedGasLimit := uint64(500_000)
+				request.GasConfig = &evm.GasConfig{GasLimit: requestedGasLimit}
 
 				mockForwarderClient.
 					On("GetTransmissionInfo", mock.Anything, transmissionID).
 					Return(contracts.TransmissionInfo{
-						Success:  false,
-						State:    contracts.TransmissionStateFailed,
-						GasLimit: new(big.Int).SetUint64(desiredReceiverGas + 1),
+						Success: false,
+						State:   contracts.TransmissionStateFailed,
 					}, nil).
 					Once()
+
+				// One prior failed attempt (fewer than queuePosition), sent with the requested gas:
+				// a retry would not deliver more gas, so polling stops without waiting.
+				priorTxHash := evmtypes.Hash(test.RandomBytes(32))
+				mockForwarderClient.EXPECT().
+					GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+					Return([]*evmtypes.Log{{TxHash: priorTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
+				mockEVMService := mocks2.NewEVMService(t)
+				mockEVMService.EXPECT().
+					GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: priorTxHash, IsExternal: false}).
+					Return(&evmtypes.Transaction{Gas: requestedGasLimit}, nil)
+				wr.EVMService = mockEVMService
 
 				start := time.Now()
 				txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
@@ -1799,7 +1806,6 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, contracts.TransmissionStateFailed, info.State)
 				require.Less(t, time.Since(start), 500*time.Millisecond)
-				mockForwarderClient.AssertNotCalled(t, "GetReportProcessedEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			})
 		}
 	})
@@ -1810,15 +1816,12 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 			setupPollTransmissionInfoForQueuePosition(t, queuePosition)
 		wr.transmissionScheduler.DeltaStage = 200 * time.Millisecond
 
-		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-		request.GasConfig = &evm.GasConfig{
-			GasLimit: contracts.ForwarderGasOverhead(0) + desiredReceiverGas,
-		}
+		requestedGasLimit := uint64(500_000)
+		request.GasConfig = &evm.GasConfig{GasLimit: requestedGasLimit}
 
 		failedInfo := contracts.TransmissionInfo{
-			Success:  false,
-			State:    contracts.TransmissionStateFailed,
-			GasLimit: big.NewInt(NotEnoughReceiverGas),
+			Success: false,
+			State:   contracts.TransmissionStateFailed,
 		}
 
 		mockForwarderClient.EXPECT().
@@ -1826,12 +1829,21 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 			Return(failedInfo, nil).
 			Maybe()
 
+		// The prior attempt was sent with less gas than requested, so a retry would help and
+		// polling keeps waiting for the delta stage.
+		priorTxHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return([]*evmtypes.Log{
-				{TxHash: evmtypes.Hash(test.RandomBytes(32)), Data: failedLogData(), BlockNumber: big.NewInt(100)},
+				{TxHash: priorTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)},
 			}, nil).
 			Maybe()
+		mockEVMService := mocks2.NewEVMService(t)
+		mockEVMService.EXPECT().
+			GetTransactionByHash(mock.Anything, evmtypes.GetTransactionByHashRequest{Hash: priorTxHash, IsExternal: false}).
+			Return(&evmtypes.Transaction{Gas: requestedGasLimit - 100_000}, nil).
+			Maybe()
+		wr.EVMService = mockEVMService
 
 		start := time.Now()
 		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
@@ -1847,17 +1859,15 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 			setupPollTransmissionInfoForQueuePosition(t, queuePosition)
 		wr.transmissionScheduler.DeltaStage = 5 * time.Second
 
-		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-		request.GasConfig = &evm.GasConfig{
-			GasLimit: contracts.ForwarderGasOverhead(0) + desiredReceiverGas,
-		}
+		request.GasConfig = &evm.GasConfig{GasLimit: 500_000}
 
+		// All prior queue nodes already attempted (2 failed attempts >= queue position), so
+		// polling stops without needing the prior tx's gas.
 		mockForwarderClient.
 			On("GetTransmissionInfo", mock.Anything, transmissionID).
 			Return(contracts.TransmissionInfo{
-				Success:  false,
-				State:    contracts.TransmissionStateFailed,
-				GasLimit: big.NewInt(NotEnoughReceiverGas),
+				Success: false,
+				State:   contracts.TransmissionStateFailed,
 			}, nil).
 			Once()
 

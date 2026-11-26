@@ -17,11 +17,17 @@ type Config struct {
 	// The minimum amount of gas that the receiver contract must get to process the forwarder report. This is the default value used when the user doesn't specify a gas limit when invoking WriteReport.
 	ReceiverGasMinimum uint64 `json:"receiverGasMinimum"`
 	// Safety margin, in gas, added on top of the forwarder contract's internal gas reservation
-	// when deriving the receiver gas budget offchain. It covers pre-route consumption not visible
+	// to compute the minimum gas limit accepted for an explicit WriteReport gas limit
+	// (ReceiverGasMinimum + forwarder overhead). It covers pre-route consumption not visible
 	// in the contract constants (tx intrinsic cost, calldata, ecrecover per signature, storage).
 	// 0 means "use the default" (see contracts.DefaultForwarderGasOverheadMargin). Set per chain
 	// when the chain's gas metering or report/signature sizes differ materially from mainnet.
-	ForwarderGasOverheadMargin    uint64        `json:"forwarderGasOverheadMargin"`
+	ForwarderGasOverheadMargin uint64 `json:"forwarderGasOverheadMargin"`
+	// DisableGasLimitCheck skips comparing a failed transmission tx's onchain gas limit against
+	// the requested gas limit, treating the failed attempt as having had sufficient gas (no
+	// resubmission). Set it for chains that don't honor a per-tx gas limit, where the sent limit
+	// cannot be compared with the requested one. Default false.
+	DisableGasLimitCheck          bool          `json:"disableGasLimitCheck"`
 	NodeAddress                   string        `json:"nodeAddress"`
 	ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
 	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`

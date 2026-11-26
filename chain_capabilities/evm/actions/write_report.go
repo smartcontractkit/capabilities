@@ -49,6 +49,7 @@ type WriteReport struct {
 	forwarderClient      contracts.CREForwarderClient
 	ReceiverGasMinimum   uint64
 	forwarderGasOverhead uint64
+	disableGasLimitCheck bool
 	chainSelector        uint64
 
 	lggr              logger.SugaredLogger
@@ -103,6 +104,7 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		forwarderClient:      e.forwarderClient,
 		ReceiverGasMinimum:   e.ReceiverGasMinimum,
 		forwarderGasOverhead: e.forwarderGasOverhead,
+		disableGasLimitCheck: e.disableGasLimitCheck,
 		chainSelector:        e.chainSelector,
 
 		lggr:              lggr,
@@ -130,7 +132,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	e.lggr = e.lggr.With(transmissionID.LogAttrs()...)
 
 	ctx = contexts.WithChainSelector(ctx, e.chainSelector)
-	userProvidedGas := request.GasConfig != nil && request.GasConfig.GasLimit != 0
 	if request.GasConfig == nil || request.GasConfig.GasLimit == 0 {
 		request.GasConfig = &evm.GasConfig{}
 		request.GasConfig.GasLimit, err = e.txGasLimit.Limit(ctx)
@@ -189,13 +190,14 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 		return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(transmissionInfo.State)), nil
 	case contracts.TransmissionStateFailed:
-		decision, err := e.assessFailedTransmission(ctx, request, transmissionInfo, txHashRetriever, telemetryContext, userProvidedGas)
+		decision, err := e.assessFailedTransmission(ctx, request, transmissionInfo, txHashRetriever, telemetryContext)
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 		if !decision.retry {
 			e.lggr.Infow("Returning without a transmission attempt - prior transmission failed with sufficient gas",
-				"receiverGasBudget", decision.receiverGasBudget,
+				"requestedGasLimit", request.GasConfig.GetGasLimit(),
+				"priorTxGasLimit", decision.priorTxGas,
 				"transmissionReceiverGasBudget", transmissionInfo.GasLimit,
 			)
 			reply, err := e.buildRevertReplyFromTx(ctx, decision.priorTxHash, transmissionInfo, transmissionID)
@@ -207,7 +209,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			return reply, e.meteringFromReply(ctx, metadata, reply, transmissionOutcomeFromState(transmissionInfo.State)), nil
 		}
 		monitoring.LogAndEmitSuccess(ctx, "Retrying a failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, decision.receiverGasBudget, transmissionInfo.GasLimit, queuePosition))
+			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, request.GasConfig.GetGasLimit(), transmissionInfo.GasLimit, queuePosition))
 	default:
 		errorMsg := getInvalidStateErrorMessage(transmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport invalid transmission state", errorMsg))
@@ -360,21 +362,19 @@ func (e *WriteReport) pollTransmissionInfo(
 			case contracts.TransmissionStateSucceeded, contracts.TransmissionStateInvalidReceiver:
 				return lastValidInfo, nil
 			case contracts.TransmissionStateFailed:
-				// Cheap estimate check while polling; the authoritative decision is made after
-				// polling completes (see assessFailedTransmission).
-				if e.recordedBudgetExceedsEstimate(request, lastValidInfo) {
-					// none of the previous nodes will try to resend this transmission, so we can stop polling early
-					return lastValidInfo, nil
-				}
-				_, count, err := txHashRetriever.GetFailedTransmissionHashWithCount(ctx)
+				priorTxHash, count, err := txHashRetriever.GetFailedTransmissionHashWithCount(ctx)
 				if err != nil {
 					e.lggr.Debugw("Failed to get tx hash and attempt count during polling", "error", err)
 				} else if count >= queuePosition {
 					e.lggr.Infow("Stopping poll - all prior nodes in queue finished their transmission attempts",
 						"queuePosition", queuePosition,
 						"failedAttemptCount", count,
-						"transmissionReceiverGasBudget", lastValidInfo.GasLimit,
 					)
+					return lastValidInfo, nil
+				} else if e.priorAttemptHadSufficientGas(ctx, request, *priorTxHash) {
+					// A retry would not deliver more gas than the failed attempt had, so none of the
+					// previous nodes will resend this transmission and we can stop polling early.
+					// The authoritative decision is made after polling (see assessFailedTransmission).
 					return lastValidInfo, nil
 				}
 			case contracts.TransmissionStateNotAttempted:
@@ -436,79 +436,70 @@ type failedTransmissionDecision struct {
 	retry bool
 	// priorTxHash is the failed attempt's tx hash, set when retry=false.
 	priorTxHash evmtypes.Hash
-	// receiverGasBudget is the offchain-derived receiver gas budget, for telemetry.
-	receiverGasBudget uint64
+	// priorTxGas is the failed attempt tx's onchain gas limit; 0 when it was not fetched
+	// (gas limit check disabled, or the tx could not be read).
+	priorTxGas uint64
 }
 
 // assessFailedTransmission decides whether a failed transmission should be retried.
 //
 // The verdict answers one question: would our resubmission deliver more receiver gas than
 // the failed attempt got? A retry sends the identical report through the identical forwarder,
-// so the forwarder overhead cancels out and the answer reduces to comparing gas limits.
+// and every honest node sends the same gas limit, so the answer reduces to comparing the prior
+// tx's actual onchain gas limit (consensus data the previous submitter cannot misreport) with
+// the request's gas limit. Retry only if the prior tx used less. Any inequality — lower or
+// higher — is anomalous and emits a warn log plus a gas mismatch metric.
 //
-// When the user provided the gas limit, the comparison is trustless on both sides: the prior
-// tx's actual onchain gas limit (consensus data the previous submitter cannot misreport)
-// against the user's requested limit (what every honest node would have submitted). Any
-// inequality — lower or higher — is anomalous and emits a warn log plus a gas mismatch metric.
-//
-// When the gas limit was node-derived, or the prior tx's gas cannot be fetched, the comparison
-// falls back to the forwarder-recorded receiver budget against our offchain estimate.
-func (e *WriteReport) assessFailedTransmission(ctx context.Context, request *evm.WriteReportRequest, transmissionInfo contracts.TransmissionInfo, txHashRetriever TxHashRetriever, telemetryContext monitoring.TelemetryContext, userProvidedGas bool) (failedTransmissionDecision, error) {
-	receiverGasBudget := e.estimateReceiverGasBudget(request)
-
+// If the prior tx's gas limit cannot be read, we retry: the resubmission carries at least the
+// gas the failed attempt had, at the cost of a possibly redundant transaction. With
+// disableGasLimitCheck (chains that don't honor a per-tx gas limit) the failed attempt is
+// treated as having had sufficient gas and is never retried.
+func (e *WriteReport) assessFailedTransmission(ctx context.Context, request *evm.WriteReportRequest, transmissionInfo contracts.TransmissionInfo, txHashRetriever TxHashRetriever, telemetryContext monitoring.TelemetryContext) (failedTransmissionDecision, error) {
 	priorTxHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 	if err != nil {
 		if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
 			monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 		} else {
-			e.lggr.Errorw("Failed to retrieve the prior failed transmission's tx hash", "error", err.Error(), "receiverGasBudget", receiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
+			e.lggr.Errorw("Failed to retrieve the prior failed transmission's tx hash", "error", err.Error(), "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
 		}
 		return failedTransmissionDecision{}, err
 	}
 
-	if userProvidedGas {
-		priorTxGas, gasErr := e.fetchTxGasLimit(ctx, *priorTxHash)
-		if gasErr == nil {
-			requestedGasLimit := request.GasConfig.GetGasLimit()
-			if priorTxGas != requestedGasLimit {
-				e.warnGasMismatch(ctx, telemetryContext, request, *priorTxHash, requestedGasLimit, priorTxGas)
-			}
-			return failedTransmissionDecision{
-				retry:             priorTxGas < requestedGasLimit,
-				priorTxHash:       *priorTxHash,
-				receiverGasBudget: receiverGasBudget,
-			}, nil
-		}
-		e.lggr.Debugw("Failed to fetch the prior failed transmission tx's gas limit, falling back to estimate comparison", "error", gasErr)
+	if e.disableGasLimitCheck {
+		return failedTransmissionDecision{priorTxHash: *priorTxHash}, nil
 	}
 
-	// Node-derived gas, or the prior tx's gas could not be fetched: compare the forwarder-
-	// recorded receiver budget against the offchain estimate. A nil recorded budget is retryable.
-	if transmissionInfo.GasLimit == nil || transmissionInfo.GasLimit.Uint64() <= receiverGasBudget {
-		return failedTransmissionDecision{retry: true, receiverGasBudget: receiverGasBudget}, nil
+	priorTxGas, gasErr := e.fetchTxGasLimit(ctx, *priorTxHash)
+	if gasErr != nil {
+		e.lggr.Warnw("Failed to fetch the prior failed transmission tx's gas limit, retrying the transmission", "error", gasErr, "txHash", common.Bytes2Hex(priorTxHash[:]))
+		return failedTransmissionDecision{retry: true, priorTxHash: *priorTxHash}, nil
 	}
-	return failedTransmissionDecision{priorTxHash: *priorTxHash, receiverGasBudget: receiverGasBudget}, nil
+
+	requestedGasLimit := request.GasConfig.GetGasLimit()
+	if priorTxGas != requestedGasLimit {
+		e.warnGasMismatch(ctx, telemetryContext, request, *priorTxHash, requestedGasLimit, priorTxGas)
+	}
+	return failedTransmissionDecision{
+		retry:       priorTxGas < requestedGasLimit,
+		priorTxHash: *priorTxHash,
+		priorTxGas:  priorTxGas,
+	}, nil
 }
 
-// estimateReceiverGasBudget derives the receiver gas budget offchain: the requested gas
-// limit minus the forwarder's gas overhead, or the configured receiver gas minimum when no
-// explicit limit was provided.
-func (e *WriteReport) estimateReceiverGasBudget(request *evm.WriteReportRequest) uint64 {
-	receiverGasBudget := e.ReceiverGasMinimum + e.forwarderGasOverhead
-	if request.GasConfig != nil && request.GasConfig.GasLimit > receiverGasBudget {
-		receiverGasBudget = request.GasConfig.GasLimit - e.forwarderGasOverhead
+// priorAttemptHadSufficientGas reports whether the failed prior tx was sent with at least the
+// requested gas limit, i.e. a retry would not deliver more gas. Used only as the polling
+// early-exit heuristic, so it makes a single read attempt and reports false on any failure.
+// With the gas limit check disabled the prior attempt is assumed to have had enough gas.
+func (e *WriteReport) priorAttemptHadSufficientGas(ctx context.Context, request *evm.WriteReportRequest, priorTxHash evmtypes.Hash) bool {
+	if e.disableGasLimitCheck {
+		return true
 	}
-	return receiverGasBudget
-}
-
-// recordedBudgetExceedsEstimate reports whether the forwarder-recorded receiver budget
-// exceeds our offchain estimate, i.e. the failed attempt plausibly had enough gas. Used only
-// as the polling early-exit heuristic; a nil recorded budget counts as not enough.
-func (e *WriteReport) recordedBudgetExceedsEstimate(request *evm.WriteReportRequest, transmissionInfo contracts.TransmissionInfo) bool {
-	if transmissionInfo.GasLimit == nil {
+	tx, err := e.GetTransactionByHash(ctx, evmtypes.GetTransactionByHashRequest{Hash: priorTxHash, IsExternal: false})
+	if err != nil {
+		e.lggr.Debugw("Failed to fetch the prior failed transmission tx during polling", "error", err, "txHash", common.Bytes2Hex(priorTxHash[:]))
 		return false
 	}
-	return transmissionInfo.GasLimit.Uint64() > e.estimateReceiverGasBudget(request)
+	return tx.Gas >= request.GasConfig.GetGasLimit()
 }
 
 // warnGasMismatch reports a prior tx whose onchain gas limit differs from the requested one.
