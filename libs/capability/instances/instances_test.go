@@ -424,7 +424,8 @@ func TestSamePayloadIgnoresReportSignatures(t *testing.T) {
 	report := func(signers ...uint32) *anypb.Any {
 		sigs := make([]*sdk.AttributedSignature, len(signers))
 		for i, signer := range signers {
-			sigs[i] = &sdk.AttributedSignature{SignerId: signer, Signature: []byte{byte(signer)}}
+			sig := []byte{byte(signer)} //nolint:gosec // G115: signer fit in a byte
+			sigs[i] = &sdk.AttributedSignature{SignerId: signer, Signature: sig}
 		}
 
 		payload, err := anypb.New(&sdk.ReportResponse{
