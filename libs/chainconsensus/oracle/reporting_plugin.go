@@ -833,13 +833,18 @@ func (rp *reportingPlugin) Outcome(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	requestIDs := query.RequestIDs
-	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil && rp.agreeOnEnableMissingRequestRecovery(aos) {
-		seen := make(map[string]struct{}, len(query.RequestIDs))
-		for _, requestID := range query.RequestIDs {
-			seen[requestID] = struct{}{}
+	// The leader's query is untrusted and may repeat IDs; each request must yield at most one outcome.
+	seen := make(map[string]struct{}, len(query.RequestIDs))
+	requestIDs := make([]string, 0, len(query.RequestIDs))
+	for _, requestID := range query.RequestIDs {
+		if _, ok := seen[requestID]; ok {
+			continue
 		}
+		seen[requestID] = struct{}{}
+		requestIDs = append(requestIDs, requestID)
+	}
 
+	if prevOutcome := rp.tryUnmarshalPreviousOutcome(outctx); prevOutcome != nil && rp.agreeOnEnableMissingRequestRecovery(aos) {
 		// Requests that the leader's query omitted but that a quorum of nodes still supplied
 		// observations for (via addObservationsOfPrevMissingRequests) must still be aggregated here,
 		// otherwise they would be recycled into MissingRequestIDs forever instead of getting resolved.
