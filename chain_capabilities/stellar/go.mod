@@ -7,7 +7,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20261001142216-b1dea8dbb961
 	github.com/smartcontractkit/chain-selectors v1.0.104
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20261120142832-4bf2efe972ea
-	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20261118112459-1195bbccafcf
+	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20261118180951-353e61fe935a
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20261119151352-033d47887ddd
 	github.com/smartcontractkit/libocr v0.0.0-20260810200708-618b5bf7f342
