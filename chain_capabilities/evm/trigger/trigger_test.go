@@ -638,7 +638,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
 		require.Equal(t, big.NewInt(5), latestBlock)
 	})
 
@@ -661,7 +661,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
 		require.Equal(t, big.NewInt(3), latestBlock)
 	})
 
@@ -684,7 +684,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2), "triggerID")
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2))
 		require.Equal(t, big.NewInt(2), latestBlock)
 	})
 }
@@ -753,8 +753,9 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		})
 		state, _ := service.triggers.Read(triggerID)
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id", Owner: "0xowner"})
-		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state)
+		sentCount, err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state)
 		require.NoError(t, err)
+		require.Equal(t, len(expectedLogs), sentCount)
 		actualLog1 := <-sendCh
 		require.NoError(t,
 			service.baseTrigger.AckEvent(t.Context(), triggerID, actualLog1.Id),
@@ -788,7 +789,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id", Owner: "0xowner"})
 		// Send 2 logs to workflow, with space for only a single log in the sendCh
-		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, big.NewInt(0), triggerID, state)
+		_, err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, big.NewInt(0), triggerID, state)
 		require.NoError(t, err)
 		actualLog1 := <-sendCh
 		require.NoError(t, service.baseTrigger.AckEvent(t.Context(), triggerID, actualLog1.Id))
@@ -822,8 +823,9 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
 		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
-		err := service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, []*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState)
+		sentCount, err := service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, []*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState)
 		require.NoError(t, err)
+		require.Zero(t, sentCount)
 		require.Len(t, logCh, 0)
 		select {
 		case msg := <-logCh:
@@ -841,7 +843,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		}
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
-		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state)
+		_, err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed to update unfinalized sent event IDs for triggerID: trigger-1: cannot find trigger with ID \"trigger-1\"")
 	})
