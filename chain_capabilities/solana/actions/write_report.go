@@ -120,6 +120,7 @@ func (s *Solana) WriteReport(
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
 
 func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*solcap.WriteReportReply, capabilities.ResponseMetadata, error) {
+	lggr := s.messageBuilder.RequestLggr(s.lggr, telemetryContext)
 	wr := &WriteReport{
 		SolanaService:            s.SolanaService,
 		forwarderClient:          s.forwarderClient,
@@ -127,12 +128,12 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		chainSelector:            s.chainSelector,
 		txComputeLimit:           s.txComputeLimit,
 		reportSizeLimit:          s.reportSizeLimit,
-		lggr:                     s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		lggr:                     lggr,
 		beholderProcessor:        s.beholderProcessor,
 		messageBuilder:           s.messageBuilder,
 		transmissionScheduler:    s.transmissionScheduler,
 		gasMeter:                 s.gasMeter,
-		txReporter:               txevents.NewReporter(s.txEvents, s.chainSelector, metadata, s.lggr),
+		txReporter:               txevents.NewReporter(s.txEvents, s.chainSelector, metadata, lggr),
 	}
 
 	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
@@ -623,7 +624,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 // failing the reply.
 func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature, outcome eventspb.TransmissionOutcome) capabilities.ResponseMetadata {
 	charged, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (feeAndStatus, error) {
-		fee, txStatus, feeErr := wr.getFee(ctx, sig)
+		fee, txStatus, feeErr := wr.getFeeAndStatus(ctx, sig)
 		return feeAndStatus{fee: fee, status: txStatus}, feeErr
 	})
 	if err != nil {
@@ -640,7 +641,7 @@ type feeAndStatus struct {
 	status eventspb.TxStatus
 }
 
-func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, eventspb.TxStatus, error) {
+func (wr *WriteReport) getFeeAndStatus(ctx context.Context, sig solana.Signature) (uint64, eventspb.TxStatus, error) {
 	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
 		return 0, eventspb.TxStatus_TX_STATUS_UNSPECIFIED, fmt.Errorf("failed to get transaction: %w", err)

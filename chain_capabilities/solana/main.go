@@ -358,7 +358,6 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		cfg.MaxUnknownRequestsCacheSize = defaultMaxUnknownRequestsCacheSize
 		c.lggr.Infof("MaxUnknownRequestsCacheSize is zero, setting to %d.", cfg.MaxUnknownRequestsCacheSize)
 	}
-	cfg.TxEvents = cfg.TxEvents.Normalized()
 
 	return &cfg, nil
 }
