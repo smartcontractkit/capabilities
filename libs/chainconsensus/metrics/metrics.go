@@ -41,7 +41,7 @@ func newConsensusMetrics(chainInfo types.ChainInfo, metricsNamePrefix string) (*
 }
 
 func (m *consensusMetrics) init() error {
-	meter := beholder.GetMeter()
+	meter := beholder.GetMeter() //nolint:staticcheck // SA1019: migrate off beholder globals
 	var err error
 
 	m.outcomeChainSafeHeight, err = meter.Int64Gauge(

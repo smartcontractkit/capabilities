@@ -65,7 +65,7 @@ type MetricsCapBasic struct {
 
 // NewMetricsCapBasic creates a new MetricsCapBasic using the provided MetricsInfoCapBasic
 func NewMetricsCapBasic(info MetricsInfoCapBasic) (MetricsCapBasic, error) {
-	meter := beholder.GetMeter()
+	meter := beholder.GetMeter() //nolint:staticcheck // SA1019: migrate off beholder globals
 	set := MetricsCapBasic{}
 
 	// Create new metrics

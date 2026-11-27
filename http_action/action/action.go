@@ -56,7 +56,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	s.cfg.ApplyDefault()
 
-	s.metrics, err = common.NewMetrics(beholder.GetMeter())
+	s.metrics, err = common.NewMetrics(beholder.GetMeter()) //nolint:staticcheck // SA1019: migrate off beholder globals
 	if err != nil {
 		return err
 	}
@@ -113,12 +113,11 @@ func (s *service) Description() string {
 
 func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*capabilities.ResponseAndMetadata[*http.Response], caperrors.Error) {
 	s.lggr.Debugw("Received request", "metadata", metadata)
-	ctx = metadata.ContextWithCRE(ctx)
-	startTime := time.Now()
-	s.metrics.IncrementRequestCount(ctx, s.lggr)
 	// set the context with the workflow owner and workflow id
 	// these are required for request/response checks
 	ctx = metadata.ContextWithCRE(ctx)
+	startTime := time.Now()
+	s.metrics.IncrementRequestCount(ctx, s.lggr)
 
 	// Validation runs in the client (gateway or direct) via ValidatedRequest
 	response, externalEndpointLatency, err := s.client.SendRequest(ctx, metadata, input, startTime)

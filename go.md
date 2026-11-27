@@ -29,6 +29,7 @@ flowchart LR
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
+	capabilities/libs --> chainlink-common/keystore
 	capabilities/libs --> chainlink-common/x/config
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/scheduler/cron --> capabilities/libs

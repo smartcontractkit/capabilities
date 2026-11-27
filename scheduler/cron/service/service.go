@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
+	"go.opentelemetry.io/otel/metric/noop"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/smartcontractkit/capabilities/scheduler/cron/protos"
@@ -94,7 +95,12 @@ func NewService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory l
 		}
 	}()
 
-	metrics, err := NewMetrics()
+	// The loop server sets limitsFactory.Meter to the beholder client's Meter; it is nil only in tests.
+	meter := limitsFactory.Meter
+	if meter == nil {
+		meter = noop.NewMeterProvider().Meter("cron")
+	}
+	metrics, err := NewMetrics(meter)
 	if err != nil {
 		return nil, fmt.Errorf("error creating metrics: %w", err)
 	}

@@ -340,3 +340,47 @@ func TestCompleteRequest_UnknownRequestsCacheEviction(t *testing.T) {
 	require.Contains(t, h.unknownRequestsResultByID, "req-4")
 	h.lock.RUnlock()
 }
+
+func TestCompleteRequest_RepeatedUnknownReplyKeepsOneEntryPerID(t *testing.T) {
+	h := newHandler(logger.Test(t), nil, test.GetConsensusMetrics(t), time.Minute, 10)
+
+	completeUnknown := func(t *testing.T, id, value string) {
+		require.NoError(t, h.CompleteProtoRequest(id, &types.RequestReport{
+			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte(value)},
+		}))
+	}
+
+	completeUnknown(t, "req-1", "first")
+	completeUnknown(t, "req-1", "second")
+	completeUnknown(t, "req-1", "third")
+
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+	require.Len(t, h.unknownRequestsResultByID, 1)
+	require.Equal(t, 1, h.unknownRequestsOrderedByTimeout.Len(), "ordering list must not outgrow the map")
+	require.Equal(t, []byte("third"), h.unknownRequestsResultByID["req-1"].Reply.Value)
+}
+
+func TestCompleteRequest_OverwritingUnknownReplyDoesNotEvictOthers(t *testing.T) {
+	const maxCacheSize = 3
+	h := newHandler(logger.Test(t), nil, test.GetConsensusMetrics(t), time.Minute, maxCacheSize)
+
+	completeUnknown := func(t *testing.T, id string) {
+		require.NoError(t, h.CompleteProtoRequest(id, &types.RequestReport{
+			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte(id)},
+		}))
+	}
+
+	completeUnknown(t, "req-1")
+	completeUnknown(t, "req-2")
+	completeUnknown(t, "req-3")
+	completeUnknown(t, "req-3") // cache is full, but this replaces an existing entry and must not evict req-1
+
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+	require.Len(t, h.unknownRequestsResultByID, maxCacheSize)
+	require.Equal(t, maxCacheSize, h.unknownRequestsOrderedByTimeout.Len())
+	require.Contains(t, h.unknownRequestsResultByID, "req-1")
+	require.Contains(t, h.unknownRequestsResultByID, "req-2")
+	require.Contains(t, h.unknownRequestsResultByID, "req-3")
+}

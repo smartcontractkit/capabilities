@@ -32,7 +32,7 @@ func newTestGRPCOpts(t *testing.T, reg *prometheus.Registry) loop.GRPCOpts {
 //
 // Nothing is listening on the port below, and building the registry still succeeds.
 func TestNewRegistryDoesNotDial(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: "localhost:1", CapabilityDonID: 1}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 
 	require.NoError(t, err, "an unreachable proxy should not fail construction")
 	require.NotNil(t, reg.fallback)
@@ -50,7 +50,7 @@ func TestNewRegistryDoesNotDial(t *testing.T) {
 func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 	for _, target := range []string{"!://not a target", "unknownscheme:///x"} {
 		t.Run(target, func(t *testing.T) {
-			reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: target}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
+			reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: target}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 			require.NoError(t, err)
 			require.NoError(t, reg.Start(t.Context()))
 			assert.NoError(t, reg.Close())
@@ -59,12 +59,9 @@ func TestNewRegistryDoesNotValidateTheTarget(t *testing.T) {
 }
 
 // TestNewRegistryWithoutAProxyIsLocalOnly covers a binary with no node behind it: it dials nothing,
-// and resolves only what it hosts.
-//
-// The metadata calls failing is the point rather than a shortcoming. A process holding capability
-// values has no way to know which DONs exist, so saying so beats answering with something invented.
+// and resolves only what it hosts. Its run is the only DON it knows.
 func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{CapabilityDonID: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{CapabilityDonID: 1}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
 	require.NoError(t, reg.Start(t.Context()))
@@ -73,13 +70,15 @@ func TestNewRegistryWithoutAProxyIsLocalOnly(t *testing.T) {
 	assert.Nil(t, reg.fallback)
 
 	_, err = reg.DONByID(t.Context(), 1)
-	assert.Error(t, err, "there is no node to ask, so the metadata calls should fail")
+	require.NoError(t, err, "the run's own DON is known")
+	_, err = reg.DONByID(t.Context(), 2)
+	assert.Error(t, err, "there is no node to ask about any other DON")
 }
 
 // TestRegistryAddHoldsUntilClose covers the local half: this process's registry resolves what was
 // added to it, and stops doing so once it closes.
 func TestRegistryAddHoldsUntilClose(t *testing.T) {
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 
@@ -106,7 +105,7 @@ func TestRegistryAddHoldsUntilClose(t *testing.T) {
 func TestRegistryAddAnnouncesToTheNode(t *testing.T) {
 	node := newSpyRegistry(t)
 
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, prometheus.NewRegistry()))
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 
@@ -127,7 +126,7 @@ func TestRegistryAddAnnouncesToTheNode(t *testing.T) {
 // The client metrics must count the call.
 func TestRegistryDialsWithTheRunsInterceptors(t *testing.T) {
 	metrics := prometheus.NewRegistry()
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, newSpyRegistry(t))}, testGRPC, newTestGRPCOpts(t, metrics))
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, newSpyRegistry(t))}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, metrics))
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 	t.Cleanup(func() { assert.NoError(t, reg.Close()) })
@@ -142,7 +141,7 @@ func TestRegistryDialsWithTheRunsInterceptors(t *testing.T) {
 func TestRegistryServesWithTheRunsInterceptors(t *testing.T) {
 	node := newSpyRegistry(t)
 	metrics := prometheus.NewRegistry()
-	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, testGRPC, newTestGRPCOpts(t, metrics))
+	reg, err := newRegistry(logger.Test(t), CapabilitiesConfig{ProxyURL: serveNodeRegistry(t, node)}, InstanceInfo{Total: 1}, testGRPC, newTestGRPCOpts(t, metrics))
 	require.NoError(t, err)
 	require.NoError(t, reg.Start(t.Context()))
 	t.Cleanup(func() { assert.NoError(t, reg.Close()) })

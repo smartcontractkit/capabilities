@@ -9,8 +9,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 )
 
 // Metrics contains metrics for cron capability
@@ -34,17 +32,16 @@ func MetricViews() []sdkmetric.View {
 	}
 }
 
-// NewMetrics creates a new instance of Metrics
-func NewMetrics() (*Metrics, error) {
+// NewMetrics creates a new instance of Metrics that records to meter.
+func NewMetrics(meter metric.Meter) (*Metrics, error) {
 	m := &Metrics{}
-	if err := m.init(); err != nil {
+	if err := m.init(meter); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (m *Metrics) init() error {
-	meter := beholder.GetMeter()
+func (m *Metrics) init(meter metric.Meter) error {
 	var err error
 
 	m.activeTriggersGauge, err = meter.Int64Gauge(

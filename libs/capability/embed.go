@@ -93,13 +93,14 @@ func StartCapabilities[T Capability](ctx context.Context, lggr logger.Logger, ba
 			instLggr = logger.Named(lggr, fmt.Sprintf("Instance%d", id))
 		}
 
-		reg, err := startRegistry(ctx, instLggr, cfg.capabilities, cfg.grpc, *cfg.grpcOpts)
+		info := InstanceInfo{ID: id, Total: total}
+		reg, err := startRegistry(ctx, instLggr, cfg.capabilities, info, cfg.grpc, *cfg.grpcOpts)
 		if err != nil {
 			return built, svcs, fmt.Errorf("failed to start registry: %w", err)
 		}
 		svcs = append(svcs, reg)
 
-		c, err := startCapability(ctx, instLggr, base.Clone(), InstanceInfo{ID: id, Total: total}, ctor, reg, cfg)
+		c, err := startCapability(ctx, instLggr, base.Clone(), info, ctor, reg, cfg)
 		if err != nil {
 			return built, svcs, err
 		}
@@ -116,6 +117,7 @@ func startCapability[T Capability](ctx context.Context, lggr logger.Logger, i *I
 
 	if err := errors.Join(
 		i.ProvideValue(info),
+		i.ProvideValue(*cfg.grpcOpts),
 		i.ProvideValue(lggr),
 		i.ProvideValue[registry.CapabilitiesRegistry](reg),
 		i.ProvideValue(cfg.capabilities),

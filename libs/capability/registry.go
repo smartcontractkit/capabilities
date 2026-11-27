@@ -23,10 +23,19 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
-func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
-	r := &registryService{local: registry.NewRegistry(lggr)}
+func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, info InstanceInfo, grpcCfg GRPCConfig,
+	grpcOpts loop.GRPCOpts) (*registryService, error) {
+	local := registry.NewRegistry(lggr)
+	r := &registryService{local: local}
 
-	if cfg.ProxyURL != "" {
+	if cfg.ProxyURL == "" {
+		metadata, err := newLocalMetadata(info, cfg.CapabilityDonID)
+		if err != nil {
+			return nil, err
+		}
+
+		local.SetRegistryMetadata(metadata)
+	} else {
 		dial := dialer(grpcOpts)
 		conn, err := dial(cfg.ProxyURL)
 		if err != nil {
@@ -54,17 +63,21 @@ func newRegistry(lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig,
 	return r, nil
 }
 
-// dialer makes gRPC clients with the interceptors in opts. opts has no transport credentials, so
-// dialer adds insecure credentials.
+// dialer makes gRPC clients with the interceptors in opts. See Dial.
 func dialer(opts loop.GRPCOpts) func(target string) (*grpc.ClientConn, error) {
-	return func(target string) (*grpc.ClientConn, error) {
-		return grpc.NewClient(target, append(slices.Clone(opts.DialOpts), grpc.WithTransportCredentials(insecure.NewCredentials()))...)
-	}
+	return func(target string) (*grpc.ClientConn, error) { return Dial(opts, target) }
+}
+
+// Dial makes a gRPC client of a service the node serves the run, such as its capabilities registry, with the
+// interceptors in opts. opts has no transport credentials, so Dial adds insecure credentials.
+func Dial(opts loop.GRPCOpts, target string) (*grpc.ClientConn, error) {
+	return grpc.NewClient(target, append(slices.Clone(opts.DialOpts), grpc.WithTransportCredentials(insecure.NewCredentials()))...)
 }
 
 // startRegistry builds the registry and starts it.
-func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, grpcCfg GRPCConfig, grpcOpts loop.GRPCOpts) (*registryService, error) {
-	r, err := newRegistry(lggr, cfg, grpcCfg, grpcOpts)
+func startRegistry(ctx context.Context, lggr logger.Logger, cfg CapabilitiesConfig, info InstanceInfo, grpcCfg GRPCConfig,
+	grpcOpts loop.GRPCOpts) (*registryService, error) {
+	r, err := newRegistry(lggr, cfg, info, grpcCfg, grpcOpts)
 	if err != nil {
 		return nil, err
 	}
