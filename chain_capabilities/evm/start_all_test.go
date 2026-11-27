@@ -16,7 +16,10 @@ func TestStartAll(t *testing.T) {
 		return serviceManager{
 			name:  name,
 			start: func(context.Context) error { events = append(events, "start "+name); return startErr },
-			close: func() error { events = append(events, "close "+name); return errors.New("close errors are logged, not returned") },
+			close: func() error {
+				events = append(events, "close "+name)
+				return errors.New("close errors are logged, not returned")
+			},
 		}
 	}
 
