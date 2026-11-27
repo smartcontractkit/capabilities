@@ -51,6 +51,7 @@ type EVM struct {
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
 	forwarderGasOverhead     uint64
+	disableGasLimitCheck     bool
 	LookbackBlocks           uint64
 
 	lggr              logger.SugaredLogger
@@ -89,6 +90,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		forwarderClient:          kfc,
 		ReceiverGasMinimum:       cfg.ReceiverGasMinimum,
 		forwarderGasOverhead:     contracts.ForwarderGasOverhead(cfg.ForwarderGasOverheadMargin),
+		disableGasLimitCheck:     cfg.DisableGasLimitCheck,
 		lggr:                     logger.Sugared(lggr),
 		beholderProcessor:        beholderProcessor,
 		messageBuilder:           messageBuilder,
