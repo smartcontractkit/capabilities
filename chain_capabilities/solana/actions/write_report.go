@@ -26,12 +26,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	eventspb "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/gasmeter"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/txevents"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
@@ -72,6 +74,10 @@ type WriteReport struct {
 	transmissionScheduler ts.TransmissionScheduler
 
 	gasMeter *gasmeter.Meter
+
+	// txReporter emits ChainTransactionObserved for the transaction this write bills.
+	// Nil when transaction events are disabled.
+	txReporter *txevents.Reporter
 }
 
 func (s *Solana) WriteReport(
@@ -114,6 +120,7 @@ func (s *Solana) WriteReport(
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
 
 func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*solcap.WriteReportReply, capabilities.ResponseMetadata, error) {
+	lggr := s.messageBuilder.RequestLggr(s.lggr, telemetryContext)
 	wr := &WriteReport{
 		SolanaService:            s.SolanaService,
 		forwarderClient:          s.forwarderClient,
@@ -121,11 +128,12 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		chainSelector:            s.chainSelector,
 		txComputeLimit:           s.txComputeLimit,
 		reportSizeLimit:          s.reportSizeLimit,
-		lggr:                     s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		lggr:                     lggr,
 		beholderProcessor:        s.beholderProcessor,
 		messageBuilder:           s.messageBuilder,
 		transmissionScheduler:    s.transmissionScheduler,
 		gasMeter:                 s.gasMeter,
+		txReporter:               txevents.NewReporter(s.txEvents, s.chainSelector, metadata, lggr),
 	}
 
 	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
@@ -189,7 +197,7 @@ func (wr *WriteReport) executeWriteReport(
 			"returning without a transmission attempt - report already onchain",
 			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.successWriteReportReply(&transmissionInfo.Signature), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature), nil
+		return wr.successWriteReportReply(&transmissionInfo.Signature), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature, transmissionOutcomeFromState(transmissionInfo.State)), nil
 
 	case TransmissionStateFailed:
 		decision := wr.assessFailedTransmission(ctx, request, transmissionInfo, telemetryContext, userProvidedComputeLimit, prior)
@@ -200,7 +208,7 @@ func (wr *WriteReport) executeWriteReport(
 				"priorTxComputeUnitLimit", decision.priorTxComputeUnitLimit,
 				"requestedComputeUnitLimit", request.ComputeConfig.GetComputeLimit(),
 			)
-			return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature), nil
+			return wr.failedWriteReportReply(&transmissionInfo.Signature, new(UnknownIssueExecutingReceiverContractMessage)), wr.meteringFromTxSignature(ctx, telemetryContext, request, transmissionInfo.Signature, transmissionOutcomeFromState(transmissionInfo.State)), nil
 		}
 		wr.lggr.Infow(
 			"prior transmission attempt failed with a lower compute unit limit than requested - retrying",
@@ -247,7 +255,7 @@ func (wr *WriteReport) executeWriteReport(
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed getting transmission info after submitting report, %w", err)
 	}
 
-	meteringMetadata := wr.meteringFromTxSignature(ctx, telemetryContext, request, last.Signature)
+	meteringMetadata := wr.meteringFromTxSignature(ctx, telemetryContext, request, last.Signature, transmissionOutcomeFromState(last.State))
 
 	switch last.State {
 	case TransmissionStateSucceeded:
@@ -614,34 +622,45 @@ func (wr *WriteReport) pollTransmissionInfo(
 // transaction, so that every node reports the gas spent, regardless of which node transmitted.
 // A fee lookup failure is surfaced via monitoring and yields empty metadata instead of
 // failing the reply.
-func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature) capabilities.ResponseMetadata {
-	feeInLamports, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (uint64, error) {
-		return wr.getFee(ctx, sig)
+func (wr *WriteReport) meteringFromTxSignature(ctx context.Context, telemetryContext monitoring.TelemetryContext, request *solcap.WriteReportRequest, sig solana.Signature, outcome eventspb.TransmissionOutcome) capabilities.ResponseMetadata {
+	charged, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (feeAndStatus, error) {
+		fee, txStatus, feeErr := wr.getFeeAndStatus(ctx, sig)
+		return feeAndStatus{fee: fee, status: txStatus}, feeErr
 	})
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, sig, err.Error()))
 		return capabilities.ResponseMetadata{}
 	}
-	wr.gasMeter.Emit(ctx, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(feeInLamports))
-	return metering.GetResponseMetadataWriteReport(feeInLamports, wr.chainSelector)
+	wr.gasMeter.Emit(ctx, telemetryContext.RequestMetadata, sig.String(), new(big.Int).SetUint64(charged.fee))
+	wr.txReporter.Charged(ctx, sig.String(), charged.status, outcome)
+	return metering.GetResponseMetadataWriteReport(charged.fee, wr.chainSelector)
 }
 
-func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (uint64, error) {
+type feeAndStatus struct {
+	fee    uint64
+	status eventspb.TxStatus
+}
+
+func (wr *WriteReport) getFeeAndStatus(ctx context.Context, sig solana.Signature) (uint64, eventspb.TxStatus, error) {
 	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
-		return 0, fmt.Errorf("failed to get transaction: %w", err)
+		return 0, eventspb.TxStatus_TX_STATUS_UNSPECIFIED, fmt.Errorf("failed to get transaction: %w", err)
 	}
 	if tx == nil {
-		return 0, errors.New("failed to get transaction fee: empty transaction response")
+		return 0, eventspb.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction response")
 	}
 	if tx.Meta == nil {
-		return 0, errors.New("failed to get transaction fee: empty transaction meta")
+		return 0, eventspb.TxStatus_TX_STATUS_UNSPECIFIED, errors.New("failed to get transaction fee: empty transaction meta")
 	}
 
 	feeInLamports := tx.Meta.Fee
+	status := eventspb.TxStatus_TX_STATUS_SUCCESS
+	if tx.Meta.Err != "" {
+		status = eventspb.TxStatus_TX_STATUS_REVERTED
+	}
 
-	wr.lggr.Debugw("WriteReport fee", "feeInLamports", feeInLamports)
-	return feeInLamports, nil
+	wr.lggr.Debugw("WriteReport fee", "feeInLamports", feeInLamports, "txStatus", status.String())
+	return feeInLamports, status, nil
 }
 
 func (wr *WriteReport) successWriteReportReply(sig *solana.Signature) *solcap.WriteReportReply {
@@ -667,4 +686,18 @@ func (wr *WriteReport) fatalWriteReportReply(message string) *solcap.WriteReport
 	r.ErrorMessage = new(message)
 
 	return r
+}
+
+// transmissionOutcomeFromState maps the forwarder's transmission state to the event outcome.
+func transmissionOutcomeFromState(state TransmissionState) eventspb.TransmissionOutcome {
+	switch state {
+	case TransmissionStateSucceeded:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_SUCCEEDED
+	case TransmissionStateFailed:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_RECEIVER_REVERTED
+	case TransmissionStateNotAttempted:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_NOT_ATTEMPTED
+	default:
+		return eventspb.TransmissionOutcome_TRANSMISSION_OUTCOME_UNSPECIFIED
+	}
 }
