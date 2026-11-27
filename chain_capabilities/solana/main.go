@@ -221,7 +221,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
-	var toStart []interface{ Start(context.Context) error }
+	var toStart []serviceManager
 	if cfg.ReadsEnabled {
 		consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
 		if err != nil {
@@ -246,7 +246,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		if err != nil {
 			return fmt.Errorf("error when creating oracle: %w", err)
 		}
-		toStart = append(toStart, c.requestPoller, c.consensusHandler, c.oracle)
+		toStart = append(toStart,
+			serviceManager{"requestPoller", c.requestPoller.Start, c.requestPoller.Close},
+			serviceManager{"consensusHandler", c.consensusHandler.Start, c.consensusHandler.Close},
+			serviceManager{"oracle", c.oracle.Start, func() error { return c.oracle.Close(context.Background()) }},
+		)
 	} else {
 		c.lggr.Warn("Initialising solana oracle required for chain reads is disabled")
 	}
@@ -258,7 +262,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.gasMeter = gasmeter.New(c.lggr, c.meteringCfg, c.chainSelector, dependencies.CapabilityDonID)
 	c.WithGasMeter(c.gasMeter)
 	if c.gasMeter != nil {
-		toStart = append(toStart, c.gasMeter)
+		toStart = append(toStart, serviceManager{"gasMeter", c.gasMeter.Start, c.gasMeter.Close})
 	}
 
 	c.triggerService, err = trigger.NewLogTriggerService(trigger.LogTriggerServiceOpts{
@@ -276,11 +280,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create log trigger service: %w", err)
 	}
 
-	toStart = append(toStart, c.triggerService)
-	for _, service := range toStart {
-		if err := service.Start(ctx); err != nil {
-			return err
-		}
+	toStart = append(toStart, serviceManager{"triggerService", c.triggerService.Start, c.triggerService.Close})
+	if err := startAll(ctx, c.lggr, toStart); err != nil {
+		return err
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
@@ -369,4 +371,28 @@ type closeFunc func() error
 
 func (f closeFunc) Close() error {
 	return f()
+}
+
+type serviceManager struct {
+	name  string
+	start func(context.Context) error
+	close func() error
+}
+
+// startAll starts services in order. If one fails, the services already started
+// are closed in reverse order before returning. Initialise is not retried and the
+// LOOP server closes every host connection when it returns an error, so anything
+// left running would spin forever against closed connections.
+func startAll(ctx context.Context, lggr logger.Logger, toStart []serviceManager) error {
+	for i, s := range toStart {
+		if err := s.start(ctx); err != nil {
+			for j := i - 1; j >= 0; j-- {
+				if cerr := toStart[j].close(); cerr != nil {
+					lggr.Errorw("failed to close service after startup failure", "service", toStart[j].name, "err", cerr)
+				}
+			}
+			return err
+		}
+	}
+	return nil
 }

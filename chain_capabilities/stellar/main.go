@@ -254,10 +254,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 
-	for _, service := range []interface{ Start(context.Context) error }{c.requestPoller, c.consensusHandler, c.blocksProvider, c.oracle} {
-		if err = service.Start(ctx); err != nil {
-			return err
-		}
+	if err = startAll(ctx, c.lggr, []serviceManager{
+		{"requestPoller", c.requestPoller.Start, c.requestPoller.Close},
+		{"consensusHandler", c.consensusHandler.Start, c.consensusHandler.Close},
+		{"blocksProvider", c.blocksProvider.Start, c.blocksProvider.Close},
+		{"oracle", c.oracle.Start, func() error { return c.oracle.Close(context.Background()) }},
+	}); err != nil {
+		return err
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
@@ -331,4 +334,28 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	}
 
 	return &cfg, nil
+}
+
+type serviceManager struct {
+	name  string
+	start func(context.Context) error
+	close func() error
+}
+
+// startAll starts services in order. If one fails, the services already started
+// are closed in reverse order before returning. Initialise is not retried and the
+// LOOP server closes every host connection when it returns an error, so anything
+// left running would spin forever against closed connections.
+func startAll(ctx context.Context, lggr logger.Logger, toStart []serviceManager) error {
+	for i, s := range toStart {
+		if err := s.start(ctx); err != nil {
+			for j := i - 1; j >= 0; j-- {
+				if cerr := toStart[j].close(); cerr != nil {
+					lggr.Errorw("failed to close service after startup failure", "service", toStart[j].name, "err", cerr)
+				}
+			}
+			return err
+		}
+	}
+	return nil
 }
